@@ -24,6 +24,11 @@ on:
         description: Approved exact commit SHA
         required: true
         type: string
+      transaction_wait_observation:
+        description: One current146 original maximum with bounded same-backend windows; no legacy driver
+        required: false
+        default: false
+        type: boolean
       small_metadata_calibration:
         description: Only one legal identity and four units; no maximum scenario
         required: false
@@ -793,7 +798,7 @@ jobs:
           retention-days: 7
 
   prepare-cost:
-    if: github.repository == 'BA7IEE/srvf-nest-api' && github.ref == 'refs/heads/codex/activity-os-r5-e4-github-validation' && github.run_attempt == 1 && ((github.event_name == 'workflow_dispatch' && inputs.expected_sha == github.sha) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[e4-prepare-cost-once]')))
+    if: github.repository == 'BA7IEE/srvf-nest-api' && github.ref == 'refs/heads/codex/activity-os-r5-e4-github-validation' && github.run_attempt == 1 && !inputs.transaction_wait_observation && ((github.event_name == 'workflow_dispatch' && inputs.expected_sha == github.sha) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[e4-prepare-cost-once]')))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -971,3 +976,217 @@ jobs:
       - name: Remove this job's ephemeral PostgreSQL container
         if: always()
         run: docker compose down
+
+  transaction-wait-observation:
+    if: github.repository == 'BA7IEE/srvf-nest-api' && github.ref == 'refs/heads/codex/activity-os-r5-e4-github-validation' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 && inputs.transaction_wait_observation && inputs.expected_sha == github.sha
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_ENV: test
+      JEST_MAX_WORKERS: '1'
+      SRVF_TEST_RUN_SCOPE: app_test,app_test_w1
+      EXPECTED_SHA: ${{ inputs.expected_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.3
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma:generate
+      - name: Pin exact current source and unchanged original maximum before any database fixture
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
+          node <<'NODE'
+          const fs = require('node:fs'), crypto = require('node:crypto');
+          const pins = {
+            'test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts': '5408651f58567fe8b9468f93326686ede1b6ac4da1d15028784fd0c3e3e51d87',
+            'test/helpers/e4-slice-read-diagnostic.ts': '9ac9b049a37e91190efbc06a881716651390d9f6b0cb46a67272abb9648bf97f',
+          };
+          for (const [file, sha] of Object.entries(pins))
+            if (crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') !== sha) throw Error('SOURCE_PIN_REFUSED');
+          if (fs.readdirSync('prisma/migrations', {withFileTypes:true}).filter(x=>x.isDirectory()).length !== 146) throw Error('CURRENT_146_REFUSED');
+          fs.mkdirSync('tmp/e4-transaction-wait-evidence', {recursive:true});
+          fs.writeFileSync('tmp/e4-transaction-wait-evidence/binding.json', JSON.stringify({
+            head:process.env.GITHUB_SHA, run:process.env.GITHUB_RUN_ID, attempt:process.env.GITHUB_RUN_ATTEMPT,
+            purpose:'DIAGNOSTIC_ONLY', acceptance:'NOT_AN_ACCEPTANCE_RESULT', pins,
+            businessTransactionMs:30000, originalCaseMs:600000, legacyDriver:'NOT_USED',
+          })+'\n');
+          NODE
+      - name: Offline observer and unchanged-opening tests
+        run: pnpm exec jest --config test/jest-unit.config.ts --runInBand --runTestsByPath src/modules/activities/e4-slice-read-diagnostic.spec.ts src/modules/activities/e4-maximum-stage-receipt.spec.ts
+      - name: Start a fresh isolated PostgreSQL 16 service
+        run: |
+          if docker inspect u-nest-api-postgres >/dev/null 2>&1; then exit 1; fi
+          touch "$RUNNER_TEMP/e4-observer-start-intent"
+          start_status=0
+          docker compose up -d postgres || start_status=$?
+          docker inspect --format '{{.Id}}' u-nest-api-postgres > "$RUNNER_TEMP/e4-observer-container-id"
+          test "$start_status" = 0
+          for attempt in $(seq 1 60); do
+            if docker exec u-nest-api-postgres pg_isready -U postgres -d postgres >/dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Run the exact original maximum once and retain bounded closed diagnostics
+        run: |
+          node <<'NODE'
+          const fs=require('node:fs'), cp=require('node:child_process'), path=require('node:path');
+          const privateDir=fs.mkdtempSync(path.join(process.env.RUNNER_TEMP,'e4-wait-private-'));
+          fs.chmodSync(privateDir,0o700);
+          const privateJest=path.join(privateDir,'jest.json');
+          const dir='tmp/e4-transaction-wait-evidence';
+          const target='E4 maximum real sources with unchanged transaction and query budgets 2,000 identities / 10,000 segments / 50,000 slices yield 8,000 policy units without repeated awards';
+          const pattern='^'+target.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$';
+          const markers=['E4_SLICE_READ ', 'E4_MAXIMUM_STAGE ',
+            'E4 maximum prepare phases (fixed counters) ',
+            'E4 maximum method boundaries (fixed counters) ',
+            'E4 maximum native request boundaries (fixed counters) ',
+            'E4 maximum engine request waits (fixed counters) ',
+            'E4 maximum prepare failure (fixed redacted counters) ',
+            'E4 maximum failure exact same-command facts '];
+          let bytes=0, records=0, discarded=0, refused=false, timedOut=false, terminationRequested=false, terminationFailed=false; const windows={}, seen=new Set(); let observerCleanup='NOT_OBSERVED';
+          function line(value) {
+            for(const marker of markers) {
+              const i=value.indexOf(marker); if(i<0) continue;
+              try {
+                const text=value.slice(i+marker.length).trim();
+                const object=JSON.parse(text);
+                if(Buffer.byteLength(text)>65536 || ++records>512) throw Error('BOUND');
+                if(marker==='E4_SLICE_READ ' && (object.schema!=='e4-slice-read/v2' || object.purpose!=='DIAGNOSTIC_ONLY' || object.acceptance!=='NOT_AN_ACCEPTANCE_RESULT')) throw Error('SCHEMA');
+                const safe=JSON.stringify({marker:marker.trim(), data:object});
+                if(bytes+Buffer.byteLength(safe)>2097152)throw Error('BOUND');
+                bytes+=Buffer.byteLength(safe); seen.add(marker.trim());
+                if(marker==='E4_SLICE_READ ' && object.stage==='INDEPENDENT_CLEANUP') observerCleanup=object.status;
+                if(marker==='E4_SLICE_READ ' && object.stage==='WINDOW_DRAINED') windows[object.phase]=object.windows.find(w=>w.phase===object.phase)?.sampleCoverage ?? 'UNKNOWN';
+                fs.appendFileSync(dir+'/closed-observations.jsonl',safe+'\n',{mode:0o600});
+                // Chunks preserve a complete large frame even when a log line is truncated.
+                for(let p=0;p<safe.length;p+=12000) process.stdout.write('E4_CLOSED_CHUNK '+JSON.stringify({record:records,index:p/12000,total:Math.ceil(safe.length/12000),data:safe.slice(p,p+12000)})+'\n');
+              } catch { refused=true; }
+              return;
+            }
+            discarded++;
+          }
+          const child=cp.spawn('pnpm',['exec','jest','--config','test/jest-e2e.config.ts','--runInBand',
+            '--runTestsByPath','test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts',
+            '--testNamePattern',pattern,'--json','--outputFile',privateJest],{stdio:['ignore','pipe','pipe'],detached:true});
+          let killTimer, terminalTimer, closeReceipt=null, finalized=false, groupAbsent=null;
+          const groupExists=()=>{
+            if(!Number.isSafeInteger(child.pid)||child.pid<1){terminationFailed=true;return null;}
+            try{process.kill(-child.pid,0);return true;}catch(error){if(error?.code==='ESRCH')return false;terminationFailed=true;return null;}
+          };
+          const signalGroup=(signal)=>{try{process.kill(-child.pid,signal);}catch(error){if(error?.code!=='ESRCH')terminationFailed=true;}};
+          const beginTermination=()=>{
+            terminationRequested=true; signalGroup('SIGTERM');
+            killTimer=setTimeout(()=>{
+              if(groupExists()!==false)signalGroup('SIGKILL');
+              terminalTimer=setTimeout(()=>{
+                groupAbsent=groupExists()===false;
+                finish(closeReceipt?.exitCode??null,closeReceipt?.signal??null,closeReceipt!==null);
+                // A bounded UNKNOWN receipt is persisted even if child close never arrives.
+                if(!closeReceipt||!groupAbsent)process.exit(1);
+              },1000);
+            },5000);
+          };
+          const watchdog=setTimeout(()=>{timedOut=true;beginTermination();},720000);
+          watchdog.unref();
+          for(const stream of [child.stdout,child.stderr]) {
+            let buffer='';
+            stream.setEncoding('utf8');
+            stream.on('data',chunk=>{buffer+=chunk; let n; while((n=buffer.indexOf('\n'))>=0){line(buffer.slice(0,n));buffer=buffer.slice(n+1);} if(buffer.length>131072){buffer='';refused=true;}});
+            stream.on('end',()=>{if(buffer)line(buffer);});
+          }
+          child.on('error',()=>{refused=true;});
+          function finish(exitCode,signal,closeObserved){
+            if(finalized)return;finalized=true;
+            clearTimeout(watchdog);clearTimeout(killTimer);clearTimeout(terminalTimer);
+            const summary={head:process.env.GITHUB_SHA,run:process.env.GITHUB_RUN_ID,status:'UNKNOWN',exitCode,signaled:!!signal,records,bytes,discarded,closedEvidenceRefused:refused,windowCoverage:windows,
+              process:{timedOut,terminationRequested,terminationFailed,closeObserved,groupAbsent,watchdogMs:720000},
+              evidenceCompleteness:{drainedWindows:Object.keys(windows).length,expectedWindows:4,observerCleanup,
+                methodCounters:seen.has('E4 maximum method boundaries (fixed counters)'),nativeCounters:seen.has('E4 maximum native request boundaries (fixed counters)')}};
+            try {
+              const raw=JSON.parse(fs.readFileSync(privateJest,'utf8'));
+              const selected=raw.testResults.flatMap(s=>s.assertionResults).filter(t=>!['pending','todo','disabled'].includes(t.status));
+              if(selected.length!==1 || selected[0].fullName!==target || raw.numTotalTestSuites!==1) throw Error('SELECTION_REFUSED');
+              const text=(selected[0].failureMessages ?? []).join('\n');
+              const numeric=(pattern)=>{const m=text.match(pattern),v=m?Number(m[1]):null;return Number.isSafeInteger(v)&&v>=0&&v<=3600000?v:null;};
+              summary.failureEvidence={codes:['P2028','P2010','P2002','P2003','57014','23514'].filter(c=>new RegExp('\\b'+c+'\\b').test(text)),
+                transactionTimeoutMs:numeric(/timeout for this transaction was (\d+) ms/),transactionElapsedMs:numeric(/(\d+) ms passed since the start of the transaction/),
+                locations:[]};
+              const files=['src/modules/activities/activity-time-settlement.service.ts','src/modules/activities/activity-contribution-settlement.service.ts','test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts'];
+              for(const file of files){const pattern=new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+':([0-9]+):([0-9]+)','g');let m;while((m=pattern.exec(text))&&summary.failureEvidence.locations.length<8)summary.failureEvidence.locations.push({file,line:Number(m[1]),column:Number(m[2])});}
+              summary.originalCase=selected[0].status==='passed' && exitCode===0 && raw.success ? 'PASS' : 'FAIL';
+              summary.counts={passed:raw.numPassedTests,failed:raw.numFailedTests,skipped:raw.numPendingTests};
+              summary.status=refused || records===0 || timedOut || terminationRequested || terminationFailed || !closeObserved || groupAbsent!==true ? 'UNKNOWN'
+                : Object.keys(windows).length!==4 || observerCleanup!=='OBSERVED' || !summary.evidenceCompleteness.methodCounters || !summary.evidenceCompleteness.nativeCounters ? 'PARTIAL_DIAGNOSTIC_ONLY' : 'COLLECTED_DIAGNOSTIC_ONLY';
+            } catch { summary.status='UNKNOWN'; }
+            finally {fs.rmSync(privateDir,{recursive:true,force:true});}
+            fs.writeFileSync(dir+'/summary.json',JSON.stringify(summary)+'\n');
+            process.stdout.write('E4_TRANSACTION_WAIT_SUMMARY '+JSON.stringify(summary)+'\n');
+            process.exitCode=summary.status==='COLLECTED_DIAGNOSTIC_ONLY' && summary.originalCase==='PASS' ? 0 : 1;
+          }
+          child.on('close',(exitCode,signal)=>{
+            closeReceipt={exitCode,signal};
+            groupAbsent=groupExists()===false;
+            if(groupAbsent)finish(exitCode,signal,true);
+            else if(!terminationRequested){clearTimeout(watchdog);beginTermination();}
+            // Existing escalation remains armed while any descendant survives its parent.
+          });
+          NODE
+      - name: Independently observe worker cleanup after original global teardown
+        if: always()
+        run: |
+          node <<'NODE'
+          const fs=require('node:fs'),cp=require('node:child_process');
+          let result={head:process.env.GITHUB_SHA,run:process.env.GITHUB_RUN_ID,status:'UNKNOWN',dedicatedLease:'NOT_APPLICABLE'};
+          try {
+            const sql="SELECT json_build_object('workerDatabases',(SELECT count(*) FROM pg_database WHERE datname='app_test_w1'),'templateDatabases',(SELECT count(*) FROM pg_database WHERE datname='app_test'),'clients',(SELECT count(*) FROM pg_stat_activity WHERE datname IN ('app_test','app_test_w1')))::text";
+            const facts=JSON.parse(cp.execFileSync('docker',['exec','u-nest-api-postgres','psql','-U','postgres','-d','postgres','-XAt','-v','ON_ERROR_STOP=1','-c',sql],{encoding:'utf8',timeout:5000,maxBuffer:4096}));
+            if(!['workerDatabases','templateDatabases','clients'].every(k=>Number.isSafeInteger(facts[k])&&facts[k]>=0&&facts[k]<=10000))throw Error('SHAPE');
+            result={...result,status:facts.workerDatabases===0&&facts.clients===0?'WORKER_ABSENT_NO_CLIENTS':'REMAINS',facts,templatePolicy:'RETAINED_BY_ORIGINAL_GLOBAL_TEARDOWN_UNTIL_SERVICE_REMOVAL'};
+          }catch{}
+          fs.mkdirSync('tmp/e4-transaction-wait-evidence',{recursive:true});
+          fs.writeFileSync('tmp/e4-transaction-wait-evidence/post-global-cleanup.json',JSON.stringify(result)+'\n');
+          process.stdout.write('E4_POST_GLOBAL_CLEANUP '+JSON.stringify(result)+'\n');
+          if(result.status!=='WORKER_ABSENT_NO_CLIENTS')process.exitCode=1;
+          NODE
+      - name: Remove only the service this job created and preserve the actual result
+        if: always()
+        run: |
+          node <<'NODE'
+          const fs=require('node:fs'),cp=require('node:child_process');
+          let status=fs.existsSync(process.env.RUNNER_TEMP+'/e4-observer-start-intent')?'UNKNOWN':'NOT_CREATED';
+          if(fs.existsSync(process.env.RUNNER_TEMP+'/e4-observer-container-id')) {
+            status='UNKNOWN';
+            const id=fs.readFileSync(process.env.RUNNER_TEMP+'/e4-observer-container-id','utf8').trim();
+            if(/^[a-f0-9]{64}$/.test(id)) {
+              const removed=cp.spawnSync('docker',['rm','-f',id],{stdio:'ignore',timeout:10000});
+              const inspected=cp.spawnSync('docker',['ps','-aq','--no-trunc','--filter','id='+id],{encoding:'utf8',timeout:5000});
+              if(removed.status===0&&inspected.status===0&&!inspected.stdout.trim())status='REMOVED';
+            }
+          }
+          fs.mkdirSync('tmp/e4-transaction-wait-evidence',{recursive:true});
+          fs.writeFileSync('tmp/e4-transaction-wait-evidence/container-cleanup.json',JSON.stringify({status})+'\n');
+          process.stdout.write('E4_CONTAINER_CLEANUP '+JSON.stringify({status})+'\n');
+          if(status==='UNKNOWN')process.exitCode=1;
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e4-transaction-wait-${{ github.run_id }}
+          path: |
+            tmp/e4-transaction-wait-evidence/binding.json
+            tmp/e4-transaction-wait-evidence/closed-observations.jsonl
+            tmp/e4-transaction-wait-evidence/summary.json
+            tmp/e4-transaction-wait-evidence/post-global-cleanup.json
+            tmp/e4-transaction-wait-evidence/container-cleanup.json
+          if-no-files-found: error
+          retention-days: 7
