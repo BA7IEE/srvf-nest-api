@@ -16,6 +16,8 @@ import { ParticipationTimeLedgerService } from './participation-time-ledger.serv
 import { ParticipationTimeCorrectionService } from './participation-time-correction.service';
 import { ParticipationTimeLedgerAccessService } from './participation-time-ledger-access.service';
 import { LedgerReadyBatchCommitter } from './ledger-ready-batch-committer.service';
+import { ActivityContributionSettlementService } from './activity-contribution-settlement.service';
+import { ActivityContributionSettlementQueryService } from './activity-contribution-settlement-query.service';
 import { AuthzModule } from '../authz/authz.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { UsersModule } from '../users/users.module';
@@ -46,6 +48,9 @@ import { SettlementNotificationProducer } from './settlement-notification-produc
     LedgerPostingAuditRecorder,
     LedgerPostingService,
     LedgerPreparationService,
+    // The independent worker graph must enforce the same native proof/gate contract as HTTP.
+    ActivityContributionSettlementService,
+    ActivityContributionSettlementQueryService,
     ParticipationTimeLedgerService,
     ParticipationTimeCorrectionService,
     ParticipationTimeLedgerAccessService,

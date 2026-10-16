@@ -349,12 +349,12 @@ describe('E4 frozen migration counterpart for the older scale source checker', (
   });
 });
 
-describe('E4 frozen ordinary oracle after the approved145 pin mirrors', () => {
+describe('E4 frozen ordinary oracle after the approved146 pin mirrors', () => {
   const path = resolve(
     __dirname,
     '../../../test/e2e/activity-os-r5-e4-contribution-settlement.e2e-spec.ts',
   );
-  it('restores all frozen source bytes without changing the three live145 pin mirrors', () => {
+  it('restores all frozen source bytes without changing the three live146 pin mirrors', () => {
     const source = readFileSync(path, 'utf8');
     const opening = restoreE4OrdinaryOracleOpening(source);
     expect(createHash('sha256').update(opening).digest('hex')).toBe(
@@ -362,11 +362,11 @@ describe('E4 frozen ordinary oracle after the approved145 pin mirrors', () => {
     );
     expect(restoreE4OrdinaryOracleOpening(opening)).toBe(opening);
     expect(readFileSync(path, 'utf8')).toBe(source);
-    expect(source.split('b03a7298e625b703fa2f011c0fbcc6c0')).toHaveLength(4);
+    expect(source.split('40b56bac5a571c56e589cbc549419bfa')).toHaveLength(4);
   });
   it.each([
     ['oracle', 'function fixedE4RootAggregateSql(', 'function changedOracle('],
-    ['pin', 'b03a7298e625b703fa2f011c0fbcc6c0', '0'.repeat(32)],
+    ['pin', '40b56bac5a571c56e589cbc549419bfa', '0'.repeat(32)],
   ])('refuses changed %s source', (_label, before, after) => {
     const source = readFileSync(path, 'utf8');
     const changed = source.replace(before, after);

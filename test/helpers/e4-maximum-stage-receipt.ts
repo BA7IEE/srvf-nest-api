@@ -242,9 +242,9 @@ export function restoreE4OrdinaryOracleOpening(source: string): string {
   const hash = (text: string) => createHash('sha256').update(text).digest('hex');
   const opening = '46c31154bfa284f923ab34ca8be651573a8fe3a1f6d6035e1010265371a17e72';
   if (hash(source) === opening) return source;
-  if (hash(source) !== '44afff610dcb0e1a90206b6402fe240fd8021cfd07b249252022215b43f7d992')
+  if (hash(source) !== '4285d78205ab48726173b228e43ca9669438b060327a06603cdb8e9e87e0e27e')
     throw new Error('E4 ordinary frozen oracle mirror source refused');
-  const candidatePin = 'b03a7298e625b703fa2f011c0fbcc6c0';
+  const candidatePin = '40b56bac5a571c56e589cbc549419bfa';
   if (source.split(candidatePin).length !== 4)
     throw new Error('E4 ordinary frozen oracle mirror count refused');
   const restored = source.replaceAll(candidatePin, 'ade4d2af9aa0baf8400a79fc6b62c797');

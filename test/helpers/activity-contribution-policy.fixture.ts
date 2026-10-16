@@ -8,6 +8,7 @@ import {
   E4_MIGRATION_142,
   E4_MIGRATION_143,
   E4_MIGRATION_144,
+  E4_MIGRATION_145,
 } from './e4-migration-prefix';
 import type { INestApplication } from '@nestjs/common';
 import { BindingScopeType, PrincipalType, Role, UserStatus, Prisma } from '@prisma/client';
@@ -268,7 +269,7 @@ export function installE4ValidationDatabase(options?: {
       deployFailure(error);
     }
   }
-  type HistoricalCount = 137 | 138 | 139 | 140 | 141 | 142 | 143 | 144;
+  type HistoricalCount = 137 | 138 | 139 | 140 | 141 | 142 | 143 | 144 | 145;
   function deployHistoricalMigrations(count: HistoricalCount): void;
   function deployHistoricalMigrations(count: HistoricalCount, timeout: number): Promise<void>;
   function deployHistoricalMigrations(
@@ -289,6 +290,7 @@ export function installE4ValidationDatabase(options?: {
       E4_MIGRATION_142,
       E4_MIGRATION_143,
       E4_MIGRATION_144,
+      E4_MIGRATION_145,
     ].slice(0, count - 136);
     for (const name of successors) {
       const directory = join(temporary, 'migrations', name);
@@ -309,6 +311,19 @@ export function installE4ValidationDatabase(options?: {
   function deploySourceReuseMigrations(timeout: number): Promise<void>;
   function deploySourceReuseMigrations(timeout?: number) {
     return deployHistoricalMigrations(143, timeout);
+  }
+  function deployEvaluationKeyMigrations(): void;
+  function deployEvaluationKeyMigrations(timeout: number): Promise<void>;
+  function deployEvaluationKeyMigrations(timeout?: number) {
+    return deployHistoricalMigrations(145, timeout);
+  }
+  function deployLatestMigrations(): void;
+  function deployLatestMigrations(timeout: number): Promise<void>;
+  function deployLatestMigrations(timeout?: number) {
+    if (!baseline || !initialized) throw new Error('E4 baseline owner is not initialized');
+    if (timeout !== undefined && (!Number.isInteger(timeout) || timeout < 1 || timeout > 120000))
+      throw new Error('E4 latest migration deadline invalid');
+    return deploy(undefined, timeout);
   }
   const previous = {
     worker: process.env.JEST_WORKER_ID,
@@ -447,10 +462,8 @@ export function installE4ValidationDatabase(options?: {
     deploySourceBucketMigrations() {
       deployHistoricalMigrations(144);
     },
-    deployLatestMigrations() {
-      if (!baseline || !initialized) throw new Error('E4 baseline owner is not initialized');
-      deploy();
-    },
+    deployEvaluationKeyMigrations,
+    deployLatestMigrations,
     async recreateCurrentMigrations() {
       if (!baseline || !initialized || worker === undefined)
         throw new Error('E4 baseline owner is not initialized');

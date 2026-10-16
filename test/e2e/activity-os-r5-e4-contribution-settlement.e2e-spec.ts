@@ -533,7 +533,7 @@ describe('E4 native contribution: actual policy, frozen source, review and atomi
         sameDatabase: true,
         origin: true,
         guardPin: 'fa428e2eb3e733f770cbb31c15dd4720',
-        completePin: 'b03a7298e625b703fa2f011c0fbcc6c0',
+        completePin: '40b56bac5a571c56e589cbc549419bfa',
         ownsVersion: true,
         superuser: true,
         sameUser: true,
@@ -607,7 +607,7 @@ describe('E4 native contribution: actual policy, frozen source, review and atomi
         };
         const before = await metadata(observer);
         expect(before).toHaveLength(1);
-        expect(before[0].pin).toBe('b03a7298e625b703fa2f011c0fbcc6c0');
+        expect(before[0].pin).toBe('40b56bac5a571c56e589cbc549419bfa');
         const facts = await reviewFacts(observer, c.input, c.submitted.settlementRunId);
         await expect(
           observer.$transaction(async (tx) => {
@@ -658,7 +658,7 @@ describe('E4 native contribution: actual policy, frozen source, review and atomi
               await tx.$executeRaw(
                 Prisma.raw(definition.replace('CREATE FUNCTION', 'CREATE OR REPLACE FUNCTION')),
               );
-              expect((await metadata(tx))[0].pin).not.toBe('b03a7298e625b703fa2f011c0fbcc6c0');
+              expect((await metadata(tx))[0].pin).not.toBe('40b56bac5a571c56e589cbc549419bfa');
               if (point === 'historical_body')
                 expect((await metadata(tx))[0].pin).toBe('edd162a44264b0d073d0009d3e592d0e');
             } else if (point === 'security_definer') {

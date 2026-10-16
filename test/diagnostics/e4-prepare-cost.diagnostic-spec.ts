@@ -108,6 +108,11 @@ export const E4_REAL_KEY_CARRY = Object.freeze({
   completeFunctionMd5: 'b03a7298e625b703fa2f011c0fbcc6c0',
   sourceMigration: E4_REAL_SOURCE_C,
 });
+export const E4_POLICY_BAND_PLAN = Object.freeze({
+  migration: '20261015221000_activity_contribution_policy_band_planning',
+  migrationSha256: '01191936bce3e35602fb38edc57b20543bdc8b6c62f2efa225a49d87bdfdaeb0',
+  completeFunctionMd5: '40b56bac5a571c56e589cbc549419bfa',
+});
 export function diagnosticTransactionMs(env: NodeJS.ProcessEnv = process.env): 30000 | 90000 {
   return env.SRVF_E4_REAL_STATISTICS === '1' || env.SRVF_E4_REAL_SOURCE_C === '1' ? 30000 : 90000;
 }
@@ -993,6 +998,54 @@ export async function verifyRealKeyCarryDatabase(db: Pick<PrismaClient, '$queryR
     source_checksum: E4_REAL_SOURCE_C.migrationSha256,
     checksum: E4_REAL_KEY_CARRY.migrationSha256,
     complete_pin: E4_REAL_KEY_CARRY.completeFunctionMd5,
+    source_pin: E4_REAL_SOURCE_C.sourceFunctionMd5,
+    statement_guard: true,
+    deferred_guard: true,
+  });
+}
+
+export function verifyPolicyBandMigrationSource() {
+  verifyRealKeyCarryMigrationSource();
+  const sql = readFileSync(
+    resolve(__dirname, '../../prisma/migrations', E4_POLICY_BAND_PLAN.migration, 'migration.sql'),
+    'utf8',
+  );
+  const previous = readFileSync(
+    resolve(__dirname, '../../prisma/migrations', E4_REAL_KEY_CARRY.migration, 'migration.sql'),
+    'utf8',
+  );
+  if (
+    createHash('sha256').update(sql).digest('hex') !== E4_POLICY_BAND_PLAN.migrationSha256 ||
+    createHash('md5').update(sql.split('$$')[1]).digest('hex') !==
+      E4_POLICY_BAND_PLAN.completeFunctionMd5 ||
+    sql
+      .slice(sql.indexOf('BEGIN;'))
+      .replace('policy_bands AS NOT MATERIALIZED', 'policy_bands AS MATERIALIZED') !==
+      previous.slice(previous.indexOf('BEGIN;'))
+  )
+    throw new Error('E4 current146 exact policy-band source refused');
+}
+export async function verifyPolicyBandDatabase(db: Pick<PrismaClient, '$queryRaw'>) {
+  const [metadata] = await db.$queryRaw<Record<string, unknown>[]>`
+    SELECT (SELECT count(*)::int FROM _prisma_migrations WHERE finished_at IS NULL AND rolled_back_at IS NULL) AS pending,
+      (SELECT count(*)::int FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL) AS count,
+      (SELECT checksum FROM _prisma_migrations WHERE migration_name='20261013000000_activity_contribution_assert_source_reuse' AND finished_at IS NOT NULL AND rolled_back_at IS NULL) AS prior_checksum,
+      (SELECT checksum FROM _prisma_migrations WHERE migration_name='20261015000000_activity_contribution_source_bucket_lateral' AND finished_at IS NOT NULL AND rolled_back_at IS NULL) AS source_checksum,
+      (SELECT checksum FROM _prisma_migrations WHERE migration_name='20261015010000_activity_contribution_evaluation_join_key' AND finished_at IS NOT NULL AND rolled_back_at IS NULL) AS checksum,
+      (SELECT checksum FROM _prisma_migrations WHERE migration_name='20261015221000_activity_contribution_policy_band_planning' AND finished_at IS NOT NULL AND rolled_back_at IS NULL) AS planning_checksum,
+      (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure) AS complete_pin,
+      (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_source_rows(text)'::regprocedure) AS source_pin,
+      (SELECT tgenabled='O' AND tgtype=4 AND tgnewtable='e4_inserted_evaluations' FROM pg_trigger WHERE tgname='e4_evaluation_set_guard' AND tgrelid='public."ParticipantContributionEvaluation"'::regclass) AS statement_guard,
+      (SELECT tgenabled='O' AND tgtype=5 AND tgdeferrable AND tginitdeferred FROM pg_trigger WHERE tgname='e4_revision_complete_guard' AND tgrelid='public."ActivitySettlementContributionRevision"'::regclass) AS deferred_guard
+  `;
+  expect(metadata).toEqual({
+    count: 146,
+    pending: 0,
+    planning_checksum: E4_POLICY_BAND_PLAN.migrationSha256,
+    prior_checksum: E4_DIAGNOSTIC_PLAN.migration143Sha256,
+    source_checksum: E4_REAL_SOURCE_C.migrationSha256,
+    checksum: E4_REAL_KEY_CARRY.migrationSha256,
+    complete_pin: E4_POLICY_BAND_PLAN.completeFunctionMd5,
     source_pin: E4_REAL_SOURCE_C.sourceFunctionMd5,
     statement_guard: true,
     deferred_guard: true,
@@ -4025,7 +4078,15 @@ async function completeDiagnosticSettlement(
 }
 
 /** This closed Jest child is registered only through an IPC-supervised parent. */
+export function assertCurrentDiagnosticApplication(env: NodeJS.ProcessEnv) {
+  if (env.SRVF_E4_REAL_KEY_CARRY === '1')
+    throw new Error(
+      'Historical145 full chain requires the matching145 application; use the independent146 migration/entry validation. Refused before fixture installation.',
+    );
+}
+
 function registerDiagnosticChild() {
+  assertCurrentDiagnosticApplication(process.env);
   const head = process.env.SRVF_E4_DIAGNOSTIC_HEAD ?? '';
   const realStatistics = process.env.SRVF_E4_REAL_STATISTICS === '1';
   const realSource = process.env.SRVF_E4_REAL_SOURCE_C === '1';

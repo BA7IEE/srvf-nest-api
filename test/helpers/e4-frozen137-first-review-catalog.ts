@@ -2,9 +2,9 @@ import { Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 
 // Test-only profile for the frozen137 catalog (the body remains through142).
-// Production requires145. Never infer an expected pin from the database.
-const CURRENT_CATALOG_SHA256 = '221e86a74b9450bde6bac57c3f47730e5f872bb7d109f8938047811bb4628115';
-const CURRENT_COMPLETE = "pg_catalog.md5(complete_proc.prosrc)='b03a7298e625b703fa2f011c0fbcc6c0'";
+// Production requires146. Never infer an expected pin from the database.
+const CURRENT_CATALOG_SHA256 = '97a2fa8ae1dd4f9168f0567e575400fa9b259b1cc6c59a1b3324e30ec62726ad';
+const CURRENT_COMPLETE = "pg_catalog.md5(complete_proc.prosrc)='40b56bac5a571c56e589cbc549419bfa'";
 const FROZEN_COMPLETE = "pg_catalog.md5(complete_proc.prosrc)='21fe9ecf6df989a3f8fa5878df40b93c'";
 
 export function frozen137FirstReviewCatalogQuery(query: Prisma.Sql): Prisma.Sql {

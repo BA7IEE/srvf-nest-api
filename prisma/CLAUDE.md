@@ -1,5 +1,7 @@
 # prisma — 本地铁律
 
+> **2026-10-16 本地候选146**：当前146个migration、196个模型。仅将145完整函数内policy_bands改为NOT MATERIALIZED，正文MD5为40b56bac5a571c56e589cbc549419bfa；历史迁移、完整校验、双guard及原预算保留。非空升级／7项定向回归及fresh真实入口通过；归档复用与fresh结果分开，未证明普遍性能收益。未push、未跑满额／完整CI、未操作生产，人工与Trusted签字不变。见[验证证据](../docs/plans/e4-146-validation.json)。下方为历史时点。
+
 > **2026-10-15 开发候选**：当前145个 migration、196个模型。145在完整JSON/FULL JOIN/root及双guard内携带metadata.evaluationUnitKey作为JOIN key，143／144 SQL不改；complete正文MD5为b03a7298e625b703fa2f011c0fbcc6c0，144来源pin仍为19d84ee9f25b81d33f0ffdef0a800ab5。145真实small／500五阶段及冻结oracle通过；旧C唯一满额仍超30秒，145满额未跑，旧143初始化及四项回归、常规required CI仍hold。off准备任务回执兼容单人隔离通过，不代表正式active启用。原满额容量／预算、全部guard与人工签字边界不变；Draft PR1380未合入或部署。详见来源复用评审稿，下方保留历史时点。
 
 > **E4 §12.23最新结果（2026-10-05；满额prepare首红，未签／未交付）**：获准中断恢复后仅补跑一次原满额，实际P2028／prepare 30,892ms超过原30,000ms，1项失败／退出1；原数量通过，同请求七事实0，未观察到COMMIT，不据此关闭历史迟提交UNKNOWN。按首红未继续后续业务／收益，不重跑。原同backend租约普通回收后具名库／连接／租约0／0／0。第137条SHA仍3f73112f745247fd5ce4762a1b8e8d3551e4648f48ec47e76eb9b54ad4fd8b02，旧1–136、schema／seed／五工具／CUTOVER未改；此前98迁移及26业务通过保留，冷lint两次OOM仍未验收。实际3b／完整4b与条件Draft不提前办理，开关关闭、不操作生产；见§12.23.17，下方为历史时点。
