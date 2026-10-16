@@ -53,7 +53,7 @@ export class ContributionRulesService {
     @Inject(appConfig.KEY) private readonly config: AppConfig,
   ) {}
 
-  private assertLegacyWriteAllowed(): void {
+  private assertLegacyRuleWriteAllowed(): void {
     if (this.config.contributionSettlementMode === 'active')
       throw new BizException(BizCode.CONTRIBUTION_RULE_READONLY);
   }
@@ -233,7 +233,7 @@ export class ContributionRulesService {
     auditMeta: AuditMeta,
   ): Promise<ContributionRuleResponseDto> {
     await this.assertCanOrThrow(currentUser, 'contribution.create.rule');
-    this.assertLegacyWriteAllowed();
+    this.assertLegacyRuleWriteAllowed();
     const normalizedStatus = dto.status ?? ContributionRuleStatus.ACTIVE;
     const durationThreshold = dto.durationThreshold ?? null;
     const pointsAbove = dto.pointsAbove ?? null;
@@ -319,7 +319,7 @@ export class ContributionRulesService {
     auditMeta: AuditMeta,
   ): Promise<ContributionRuleResponseDto> {
     await this.assertCanOrThrow(currentUser, 'contribution.update.rule');
-    this.assertLegacyWriteAllowed();
+    this.assertLegacyRuleWriteAllowed();
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.contributionRule.findFirst({
         where: notDeletedWhere({ id }),
@@ -402,7 +402,7 @@ export class ContributionRulesService {
     auditMeta: AuditMeta,
   ): Promise<void> {
     await this.assertCanOrThrow(currentUser, 'contribution.delete.rule');
-    this.assertLegacyWriteAllowed();
+    this.assertLegacyRuleWriteAllowed();
     await this.prisma.$transaction(async (tx) => {
       // PR #3 audit:softDelete 需要 before 完整快照(沿 certificates.softDelete 范式),
       // 因此 select 从 { id: true } 扩展为 contributionRuleSafeSelect。

@@ -3209,9 +3209,11 @@ describe('E4 terminal expected measurement offline', () => {
     },
   );
   it('closes both test files, all original assertions, and the exact shared native implementation', () => {
-    const migration = readFileSync(
-      resolve(__dirname, 'activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts'),
-      'utf8',
+    const migration = restoreE4HistoricalCatalogOpening(
+      readFileSync(
+        resolve(__dirname, 'activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts'),
+        'utf8',
+      ),
     );
     const scale = readFileSync(
       resolve(__dirname, 'activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts'),

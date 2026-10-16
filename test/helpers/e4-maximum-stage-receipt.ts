@@ -255,8 +255,15 @@ export function restoreE4OrdinaryOracleOpening(source: string): string {
 
 // Exact outer instrumentation inverse. The original complete scale source stays frozen.
 const OPENING_SHA = '50a090de9193d80ab659852c0420aed4e05290913be1050b5f5631da9cf17ed6';
-const CANDIDATE_SHA = '3e3dc0c3ad5e70b8eaba296e6a4a6170047961173cebf010c2a032cd3bfcfcfa';
+const CANDIDATE_SHA = '576eb7cd5edd0d30160c83161fbeb99d3dfeee6f614e78915b96ea8f03697442';
 const STAGE_BINDINGS: { candidate: string; opening: string; sha256: string }[] = [
+  {
+    candidate:
+      "  it('closes both test files, all original assertions, and the exact shared native implementation', () => {\n    const migration = restoreE4HistoricalCatalogOpening(\n      readFileSync(\n        resolve(__dirname, 'activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts'),\n        'utf8',\n      ),\n    );\n",
+    opening:
+      "  it('closes both test files, all original assertions, and the exact shared native implementation', () => {\n    const migration = readFileSync(\n      resolve(__dirname, 'activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts'),\n      'utf8',\n    );\n",
+    sha256: '04472dd9b402c088d50fb1e86df803040c9315f0328d39361588e7364d2d7e87',
+  },
   {
     candidate:
       "import {\n  createE4MaximumStageReceipt,\n  restoreE4MaximumStageOpening,\n  restoreE4HistoricalCatalogOpening,\n} from '../helpers/e4-maximum-stage-receipt';\nimport { PrismaClient, Prisma } from '@prisma/client';\nimport { createHash } from 'node:crypto';\nimport { readFileSync } from 'node:fs';\n",

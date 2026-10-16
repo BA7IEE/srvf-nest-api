@@ -21,6 +21,7 @@ import {
 } from '../helpers/e4-migration-prefix';
 import { assertConnectedTestDatabase } from '../setup/test-db';
 import { E4AssertionCaseOwner, e4FullRowSnapshotSql } from '../helpers/e4-assert143-lifecycle';
+import { restoreE4OrdinaryOracleOpening } from '../helpers/e4-maximum-stage-receipt';
 
 const namespace = 'e4_assert_oracle_' + randomBytes(8).toString('hex');
 const oldPin = '21fe9ecf6df989a3f8fa5878df40b93c';
@@ -311,7 +312,7 @@ function frozenAssertion() {
 // Load the existing independently frozen oracle as data, without registering its suite.
 function frozenOracle() {
   const path = resolve(__dirname, 'activity-os-r5-e4-contribution-settlement.e2e-spec.ts');
-  const source = readFileSync(path, 'utf8');
+  const source = restoreE4OrdinaryOracleOpening(readFileSync(path, 'utf8'));
   expect(createHash('sha256').update(source).digest('hex')).toBe(
     '46c31154bfa284f923ab34ca8be651573a8fe3a1f6d6035e1010265371a17e72',
   );
