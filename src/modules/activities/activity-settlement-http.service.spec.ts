@@ -1,4 +1,4 @@
-import { Role, UserStatus } from '@prisma/client';
+import { Prisma, Role, UserStatus } from '@prisma/client';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { ContributionProofSummary } from './activity-contribution-settlement-presenter';
@@ -145,6 +145,7 @@ describe('E4 settlement HTTP read proof wiring', () => {
     const rbac = { can: jest.fn().mockResolvedValue(false) };
     const contributions = { readSummaryInTx: jest.fn().mockResolvedValue(summary()) };
     type Dependencies = ConstructorParameters<typeof ActivitySettlementHttpService>;
+    const reviews = { firstReview: jest.fn(), finalReview: jest.fn() };
     const service = new ActivitySettlementHttpService(
       db as unknown as Dependencies[0],
       authz as unknown as Dependencies[1],
@@ -152,11 +153,11 @@ describe('E4 settlement HTTP read proof wiring', () => {
       {} as Dependencies[3],
       {} as Dependencies[4],
       {} as Dependencies[5],
-      {} as Dependencies[6],
+      reviews as unknown as Dependencies[6],
       {} as Dependencies[7],
       withContributions ? (contributions as unknown as Dependencies[8]) : undefined,
     );
-    return { db, authz, rbac, contributions, service, version, run };
+    return { db, authz, rbac, contributions, service, version, run, reviews };
   }
 
   it('does not add native evidence to legacy workbench or version detail', async () => {
@@ -274,4 +275,80 @@ describe('E4 settlement HTTP read proof wiring', () => {
     expect(f.db.activity.findFirst).not.toHaveBeenCalled();
     expect(f.contributions.readSummaryInTx).not.toHaveBeenCalled();
   });
+  it.each(['first', 'final'] as const)(
+    'passes current actor, exact %s action/version and same tx to lock-after authorization',
+    async (stage) => {
+      const f = setup();
+      const current = { ...actor, role: Role.ADMIN };
+      const tx = {
+        user: { findFirst: jest.fn().mockResolvedValue(current) },
+      } as unknown as Prisma.TransactionClient;
+      const callback = jest.fn((...args: unknown[]) => {
+        const authorize = args[3] as (tx: Prisma.TransactionClient) => Promise<typeof actor>;
+        return authorize(tx);
+      });
+      f.reviews.firstReview.mockImplementation(callback);
+      f.reviews.finalReview.mockImplementation(callback);
+      const expectation = {
+        evidenceSealId: 'seal',
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        contentHash: 'e'.repeat(64),
+      };
+      await expect(
+        f.service.review(
+          'requested-version',
+          stage,
+          'approve',
+          { operationKey: 'review', expectation },
+          actor,
+          { requestId: 'test', ip: null, ua: null },
+        ),
+      ).resolves.toEqual(current);
+      expect(f.authz.explain).toHaveBeenLastCalledWith(
+        current,
+        stage === 'first'
+          ? ACTIVITY_SETTLEMENT_ACTION.firstReview
+          : ACTIVITY_SETTLEMENT_ACTION.finalReview,
+        { type: 'attendance_settlement_version', id: 'requested-version' },
+        tx,
+      );
+      expect(callback).toHaveBeenCalledTimes(1);
+    },
+  );
+  it.each(['first', 'final'] as const)(
+    'rejects an inactive user in the %s lock-after callback',
+    async (stage) => {
+      const f = setup();
+      const tx = {
+        user: { findFirst: jest.fn().mockResolvedValue(null) },
+      } as unknown as Prisma.TransactionClient;
+      const callback = jest.fn((...args: unknown[]) =>
+        (args[3] as (tx: Prisma.TransactionClient) => Promise<unknown>)(tx),
+      );
+      f.reviews.firstReview.mockImplementation(callback);
+      f.reviews.finalReview.mockImplementation(callback);
+      await expect(
+        f.service.review(
+          'requested-version',
+          stage,
+          'approve',
+          {
+            operationKey: 'review',
+            expectation: {
+              evidenceSealId: 'seal',
+              evidenceRevision: 0,
+              populationRevision: 0,
+              workflowRevision: 0,
+              contentHash: 'e'.repeat(64),
+            },
+          },
+          actor,
+          { requestId: 'test', ip: null, ua: null },
+        ),
+      ).rejects.toMatchObject({ biz: BizCode.UNAUTHORIZED });
+      expect(f.authz.explain).toHaveBeenCalledTimes(1);
+    },
+  );
 });

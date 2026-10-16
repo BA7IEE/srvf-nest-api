@@ -1,3 +1,12 @@
+import {
+  closeE5MatrixApp,
+  markE5MatrixUnknown,
+  e5ActiveMatrixOptions,
+  assertE5MatrixMode,
+  assertE5MatrixSettled,
+  e5MatrixIt as it,
+  e5MatrixBeforeEach as beforeEach,
+} from '../helpers/e5-active-matrix';
 import type { INestApplication } from '@nestjs/common';
 import { MemberStatus, PrincipalType, PrismaClient } from '@prisma/client';
 import { setImmediate as nextTurn } from 'node:timers/promises';
@@ -11,7 +20,6 @@ import {
 import { ActivityTimeSettlementService } from '../../src/modules/activities/activity-time-settlement.service';
 import {
   E4_META,
-  closeE13Fixture,
   createE4Fixture,
   createE4Source,
   e4Actor,
@@ -40,7 +48,7 @@ function record(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-installE4ValidationDatabase();
+installE4ValidationDatabase(e5ActiveMatrixOptions());
 describe('E4 contribution concurrency: actual PostgreSQL barriers and atomic proof receipts', () => {
   let current: E4Fixture | undefined;
   let secondApp: INestApplication | undefined;
@@ -63,8 +71,10 @@ describe('E4 contribution concurrency: actual PostgreSQL barriers and atomic pro
     lockDb = undefined;
     process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     current = await createE4Fixture();
+    assertE5MatrixMode(current.app);
     // A separate real application/pool; do not reset its shared worker database again.
     secondApp = await createTestApp();
+    assertE5MatrixMode(secondApp);
     lockDb = new PrismaClient();
     await lockDb.$connect();
     await Promise.all([
@@ -74,11 +84,12 @@ describe('E4 contribution concurrency: actual PostgreSQL barriers and atomic pro
     ]);
   }, 120_000);
   afterEach(async () => {
+    assertE5MatrixSettled();
     jest.restoreAllMocks();
     const cleanup = await Promise.allSettled([
       lockDb?.$disconnect(),
-      secondApp?.close(),
-      closeE13Fixture(current),
+      closeE5MatrixApp(secondApp),
+      closeE5MatrixApp(current?.app),
     ]);
     current = undefined;
     secondApp = undefined;
@@ -88,7 +99,10 @@ describe('E4 contribution concurrency: actual PostgreSQL barriers and atomic pro
     const failures = cleanup.flatMap((result) =>
       result.status === 'rejected' ? [result.reason as unknown] : [],
     );
-    if (failures.length) throw new AggregateError(failures, 'E4 concurrency cleanup failed');
+    if (failures.length) {
+      markE5MatrixUnknown();
+      throw new AggregateError(failures, 'E4 concurrency cleanup failed');
+    }
   });
 
   async function holdCommandLock(f: E4Fixture, command: PrepareCommand) {

@@ -1,3 +1,11 @@
+import {
+  closeE5MatrixApp,
+  e5ActiveMatrixOptions,
+  assertE5MatrixMode,
+  assertE5MatrixSettled,
+  e5MatrixIt as it,
+  e5MatrixBeforeEach as beforeEach,
+} from '../helpers/e5-active-matrix';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -5,7 +13,6 @@ import { resolve } from 'node:path';
 import { CorrectionApplicationService } from '../../src/modules/activities/correction-application.service';
 import { ActivityTimeAllocationService } from '../../src/modules/activities/activity-time-allocation.service';
 import {
-  closeE13Fixture,
   createE4Fixture,
   createE4Source,
   e4Actor,
@@ -218,16 +225,18 @@ async function assertFixedE4Oracle(db: PrismaClient, revisionId: string, expecte
   });
 }
 
-installE4ValidationDatabase();
+installE4ValidationDatabase(e5ActiveMatrixOptions());
 describe('E4 current correction contribution proof: actual predecessor and actual D7 source', () => {
   let f: E4Fixture;
   const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
   beforeEach(async () => {
     process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     f = await createE4Fixture();
+    assertE5MatrixMode(f.app);
   }, 120_000);
   afterEach(async () => {
-    await closeE13Fixture(f);
+    assertE5MatrixSettled();
+    await closeE5MatrixApp(f?.app);
     if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
     else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
   });

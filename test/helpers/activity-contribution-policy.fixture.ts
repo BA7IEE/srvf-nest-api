@@ -187,6 +187,7 @@ export function e4N1InstallRetainFailure(
 /** E4 local validation touches only this checkout's explicitly approved w98.
  * CI uses its existing assigned worker/global setup; no template or other-worker mutation here. */
 export function installE4ValidationDatabase(options?: {
+  settlementMode?: 'fixture' | 'active';
   baselineMigrationCount?: 136;
   historicalMigration137?: true;
   allowInstallRetain?: boolean;
@@ -404,7 +405,7 @@ export function installE4ValidationDatabase(options?: {
           );
         await deploy(baselineSchema, options?.boundMigrationProcesses ? remaining : undefined);
       }
-      process.env.ACTIVITY_E4_CONTRIBUTION_SETTLEMENT_MODE = 'fixture';
+      process.env.ACTIVITY_E4_CONTRIBUTION_SETTLEMENT_MODE = options?.settlementMode ?? 'fixture';
     } finally {
       setupPending--;
     }
@@ -937,6 +938,7 @@ export async function createE4Source(
     startsAt?: Date;
     endsAt?: Date;
     recognizedServiceHours?: number;
+    additionalSession?: { startsAt: Date; endsAt: Date };
     withoutFrozenContribution?: boolean;
     batch?: boolean;
     beforeSeal?: (draft: E13Draft & { positionId: string }) => Promise<void>;
@@ -947,6 +949,54 @@ export async function createE4Source(
   if (!draft.positionId) throw new Error('E4 source position required');
   const startsAt = options.startsAt ?? new Date('2020-03-01T08:00:00.000Z');
   const endsAt = options.endsAt ?? new Date('2020-03-01T09:00:00.000Z');
+  // Optional second historical session is created before the frozen snapshot/seal.
+  // It shares the activity/member but has its own physical session, position and identity.
+  let additional: { sessionId: string; positionId: string; identityId?: string } | undefined;
+  if (options.additionalSession) {
+    const baseSession = await fixture.db.activitySession.findUniqueOrThrow({
+      where: { id: draft.sessionId },
+    });
+    const {
+      id: _sessionId,
+      createdAt: _created,
+      updatedAt: _updated,
+      ...sessionData
+    } = baseSession;
+    void [_sessionId, _created, _updated];
+    const session = await fixture.db.activitySession.create({
+      data: {
+        ...sessionData,
+        name: fixture.key('extra_session_name'),
+        code: fixture.key('extra_session'),
+        startAt: options.additionalSession.startsAt,
+        endAt: options.additionalSession.endsAt,
+        checkInOpenAt: options.additionalSession.startsAt,
+        checkInCloseAt: options.additionalSession.endsAt,
+        checkOutOpenAt: options.additionalSession.startsAt,
+        checkOutCloseAt: options.additionalSession.endsAt,
+      },
+    });
+    const basePosition = await fixture.db.activitySessionPosition.findUniqueOrThrow({
+      where: { id: draft.positionId },
+    });
+    const {
+      id: _positionId,
+      createdAt: _positionCreated,
+      updatedAt: _positionUpdated,
+      ...positionData
+    } = basePosition;
+    void [_positionId, _positionCreated, _positionUpdated];
+    const position = await fixture.db.activitySessionPosition.create({
+      data: {
+        ...positionData,
+        sessionId: session.id,
+        code: fixture.key('extra_position'),
+        startAt: options.additionalSession.startsAt,
+        endAt: options.additionalSession.endsAt,
+      },
+    });
+    additional = { sessionId: session.id, positionId: position.id };
+  }
   const window = {
     effectiveFrom: '1900-01-01T00:00:00.000Z',
     effectiveUntil: '2101-01-01T00:00:00.000Z',
@@ -997,7 +1047,11 @@ export async function createE4Source(
   const actor = e4Actor(fixture.creator, true);
   await fixture.db.activity.update({
     where: { id: draft.activityId },
-    data: { startAt: startsAt, endAt: endsAt, statusCode: 'published' },
+    data: {
+      startAt: startsAt,
+      endAt: options.additionalSession?.endsAt ?? endsAt,
+      statusCode: 'published',
+    },
   });
   await fixture.db.activitySession.update({
     where: { id: draft.sessionId },
@@ -1047,6 +1101,15 @@ export async function createE4Source(
   const scopes = [
     { layerCode: 'activity' as const, sessionId: null, positionId: null },
     { layerCode: 'position' as const, sessionId: draft.sessionId, positionId: draft.positionId },
+    ...(additional
+      ? [
+          {
+            layerCode: 'position' as const,
+            sessionId: additional.sessionId,
+            positionId: additional.positionId,
+          },
+        ]
+      : []),
   ];
   const snapshot = await fixture.db.activityRuleSnapshot.create({
     data: {
@@ -1062,6 +1125,14 @@ export async function createE4Source(
             sessionId: draft.sessionId,
             positions: [{ positionId: draft.positionId, attendanceRoleCode: 'service' }],
           },
+          ...(additional
+            ? [
+                {
+                  sessionId: additional.sessionId,
+                  positions: [{ positionId: additional.positionId, attendanceRoleCode: 'service' }],
+                },
+              ]
+            : []),
         ],
         timePolicyPointers: {
           selectionRevisionId: timeSelection.id,
@@ -1154,6 +1225,63 @@ export async function createE4Source(
       earlyLeaveFlag: false,
     },
   });
+  if (additional && options.additionalSession) {
+    const extraIdentity = await fixture.db.activityParticipationIdentity.create({
+      data: {
+        activityId: draft.activityId,
+        sessionId: additional.sessionId,
+        registrationId: registration.id,
+        memberId: fixture.creator.memberId,
+        currentStatusCode: 'pass',
+        currentPositionId: additional.positionId,
+        populationIncluded: true,
+      },
+    });
+    additional.identityId = extraIdentity.id;
+    const extraEvents: string[] = [];
+    for (const [eventTypeCode, occurredAt] of [
+      ['check_in', options.additionalSession.startsAt],
+      ['check_out', options.additionalSession.endsAt],
+    ] as const) {
+      const event = await fixture.db.attendancePunchEvent.create({
+        data: {
+          activityId: draft.activityId,
+          sessionId: additional.sessionId,
+          positionId: additional.positionId,
+          participationIdentityId: extraIdentity.id,
+          memberId: extraIdentity.memberId,
+          eventTypeCode,
+          sourceCode: 'self_qr',
+          occurredAt,
+          receivedAt: occurredAt,
+          operatorUserId: actor.id,
+          eventKey: fixture.key(eventTypeCode),
+          requestHash: 'b'.repeat(64),
+          evidenceRevision: 0,
+        },
+      });
+      extraEvents.push(event.id);
+    }
+    await fixture.db.participantServiceSegmentRevision.create({
+      data: {
+        participationIdentityId: extraIdentity.id,
+        segmentKey: '0001',
+        revision: 1,
+        sourceCheckInEventId: extraEvents[0],
+        sourceCloseEventId: extraEvents[1],
+        resultCode: 'valid',
+        statusCode: 'draft',
+        checkInAt: options.additionalSession.startsAt,
+        checkOutAt: options.additionalSession.endsAt,
+        serviceHours:
+          (options.additionalSession.endsAt.getTime() -
+            options.additionalSession.startsAt.getTime()) /
+          3_600_000,
+        lateFlag: false,
+        earlyLeaveFlag: false,
+      },
+    });
+  }
   await options.beforeSeal?.({ ...draft, positionId: draft.positionId });
   await fixture.app.get(EvidenceSealService).seal(draft.activityId, actor, E4_META);
   let generated: Pick<
@@ -1264,8 +1392,27 @@ export async function createE4Source(
     actor,
     E4_META,
   );
+  if (additional) {
+    const extraSegment = await fixture.db.participantServiceSegmentRevision.findFirstOrThrow({
+      where: { participationIdentityId: additional.identityId, statusCode: 'draft' },
+    });
+    await fixture.app.get(ActivityTimeSettlementService).allocate(
+      draft.activityId,
+      {
+        ...expectation,
+        operationKey: fixture.key('extra_recognize'),
+        sourceSegmentId: extraSegment.id,
+        expectedRevision: 0,
+        recognitionModeCode: 'automatic',
+        evidenceAttachmentIds: [],
+      },
+      actor,
+      E4_META,
+    );
+  }
   return {
     ...draft,
+    additional,
     identity,
     segment,
     snapshot,
@@ -1519,7 +1666,7 @@ export async function submitE4Time(
     E4_META,
   );
 }
-export async function postE4Ledger(f: E4Fixture, submitted: TimeSettlementReceiptResult) {
+export async function prepareE4Ledger(f: E4Fixture, submitted: TimeSettlementReceiptResult) {
   const version = await f.db.attendanceSettlementVersion.findUniqueOrThrow({
     where: { id: submitted.settlementVersionId },
   });
@@ -1564,13 +1711,16 @@ export async function postE4Ledger(f: E4Fixture, submitted: TimeSettlementReceip
   for (const item of items) await preparation.prepareChunk(job.jobId, item.id);
   const ready = await preparation.finalize(job.jobId);
   if (ready.batchStatus !== 'ready') throw new Error('E4 ledger preparation did not become ready');
-  const committed = await f.app.get(LedgerPostingService).commitBatch(
-    {
-      postingBatchId: final.ledgerPostingBatchId,
-      operationKey: f.key('commit'),
-    },
-    e4Actor(f.finalReviewer),
-    E4_META,
-  );
-  return { batchId: final.ledgerPostingBatchId, committed };
+  const commitCommand = {
+    postingBatchId: final.ledgerPostingBatchId,
+    operationKey: f.key('commit'),
+  };
+  return { batchId: final.ledgerPostingBatchId, commitCommand };
+}
+export async function postE4Ledger(f: E4Fixture, submitted: TimeSettlementReceiptResult) {
+  const { batchId, commitCommand } = await prepareE4Ledger(f, submitted);
+  const committed = await f.app
+    .get(LedgerPostingService)
+    .commitBatch(commitCommand, e4Actor(f.finalReviewer), E4_META);
+  return { batchId, committed, commitCommand };
 }

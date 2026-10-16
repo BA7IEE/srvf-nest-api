@@ -1,0 +1,453 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-16T04:39:14.329975+00:00",
+  "baseCommit": "b9e9de049fb88e21a23934e342d3c16f8ecd23e2",
+  "localDelivery": "READY_FOR_REVIEW_LOCAL",
+  "release5Acceptance": "NOT_ACCEPTED",
+  "production": "NO_GO",
+  "scope": {
+    "environment": "selected SRVF cloud only",
+    "newProtectedWrites": false,
+    "productionCode": [
+      "src/modules/activities/activity-settlement-http.service.ts",
+      "src/modules/activities/settlement-review.service.ts"
+    ],
+    "noFreshPublicationRerun": true,
+    "noPushOrGitHubRun": true,
+    "noMaximumOrFullCI": true,
+    "noProductionOrHumanSignoff": true
+  },
+  "defect": {
+    "trigger": "HTTP first-review waiting on observed Activity FOR UPDATE; reviewer explicit bindings soft-revoked before release",
+    "before": "HTTP200; review was accepted",
+    "after": "existing HTTP403/Biz30100; version/review/outbox/audit unchanged",
+    "fix": "HTTP passes exact action/version authorization callback; same tx reloads current ACTIVE User, repeats after Activity→Run→Version locks before replay and after native full guard; audit/decision/batch use reloaded actor",
+    "unchanged": [
+      "lock order",
+      "full native guards",
+      "first-review barrier",
+      "5/7/30-second business budgets and 15-second review budget",
+      "migration146 SQL/pin and historical migrations",
+      "permission definitions and global guards"
+    ],
+    "internalBoundary": "Optional callback preserves existing trusted internal service caller boundary; no claim all direct internal calls now reauthorize"
+  },
+  "matrix": {
+    "historicalSyntheticSource": true,
+    "freshHttpPublicationEvidence": "docs/plans/e4-146-validation.json (prior b9e9, not rerun)",
+    "crossDayAndMultipleSessions": {
+      "passed": true,
+      "sameActivityMemberAndFrozenSnapshot": true,
+      "physicalSessions": 2,
+      "identities": 2,
+      "evaluationUnits": 2,
+      "pointsTotal": "2.02",
+      "dayCredits": [
+        ["2020-03-01", "0.51"],
+        ["2020-03-02", "1.51"]
+      ],
+      "noPerSliceDoubleAward": true
+    },
+    "restart": {
+      "passed": true,
+      "realNewApplicationContexts": ["active", "off", "active/maintenance", "active"],
+      "offReadsOriginalProof": true,
+      "prepareReplayEqualsWholeOriginalReceipt": true,
+      "offNewNativeWriteDenied": true,
+      "completeNativeFactsUnchangedOnDeniedWrite": true,
+      "legacyRuleCrudRestoredOnlyInOff": true,
+      "noPermanentLatch": true,
+      "maintenanceRemainsIndependent": true
+    },
+    "originalReadyBatchRecovery": {
+      "passed": true,
+      "offCommitDenied": true,
+      "preparingEntriesPreserved": true,
+      "formalEffectUsesCommittedBatchJoin": true,
+      "sameBatchAndJob": true,
+      "deployedWorkerModule": "NotificationOutboxWorkerModule → ActivityBatchWorkerModule",
+      "independentPoolSameDatabase": true,
+      "committedContribution": "1.00",
+      "dayVersion": 1,
+      "secondDrainNoCreditDayOrOutboxChange": true,
+      "frozenRootsAndEvaluationsUnchanged": true
+    },
+    "activeProfiles": {
+      "passed": 8,
+      "intentionallySkipped": 8,
+      "correctionCases": 2,
+      "httpCases": 3,
+      "concurrencyCases": 3,
+      "scope": "unchanged-time and actual V3 correction; old JWT grants/member status; real prepare lock waits; transactional audit failure; successful HTTP first/final approval and replay",
+      "notFullCartesianMatrix": true
+    },
+    "dbTestPassTotal": 12,
+    "unitPassTotal": 222,
+    "unitSnapshotsMatched": 4,
+    "sourceVersionBoundary": "3 matrix cases passed before mechanical prepareE4Ledger extraction and later worker-case append; later worker and active correction cases exercise extracted owner. Final sticky cleanup changes verified offline; no business fixture rerun for cleanup-only code. Final profile lifecycle also proves failed close remains UNKNOWN after a later successful close."
+  },
+  "preservedFailures": [
+    {
+      "artifact": "matrix-initial",
+      "result": "3 FAIL",
+      "causes": [
+        "new session fixture reused activity/name unique key",
+        "new test incorrectly required prepare replay.replayed instead of original receipt",
+        "actual reviewer revocation-after-lock defect returned200"
+      ]
+    },
+    {
+      "artifact": "review-after",
+      "result": "2 new tests FAIL / original53 PASS",
+      "cause": "new expected event list omitted existing tx:start; fixed without changing old assertions"
+    },
+    {
+      "artifact": "worker-recovery-targeted",
+      "result": "1 FAIL",
+      "cause": "new fixture assertion incorrectly assumed ready batch had no preparing ledger rows; fixed to whole-row equality and zero committed effect"
+    },
+    {
+      "artifact": "tmp/e5-entry/active-matrix-20261016/worker-recovery-process.json",
+      "result": "INTERRUPTED_UNKNOWN exit -15",
+      "cause": "patch script failed before selector update, subsequent launcher used prior selection; owner stopped to avoid repeating passed cases",
+      "businessStage": "NOT_OBSERVED; only BASELINE_DEPLOY observed, no business acceptance inferred",
+      "immediateCleanupCounts": {
+        "databases": 1,
+        "clients": 0,
+        "leaseBackends": 0,
+        "leaseLocks": 0
+      },
+      "normalOwnedRecovery": "tmp/e5-entry/active-matrix-20261016/interrupted-owner-cleanup.json",
+      "descendantsConfirmedTerminal": "Z before reacquiring lease; no force/client termination"
+    },
+    {
+      "kind": "offline instrumentation correction",
+      "cause": "initial whole-scale-file check incorrectly used historical frozen projection SHA50a090…; corrected to unchanged full file bytes at approved b9e9 base",
+      "fullScaleSha256": "3e3dc0c3ad5e70b8eaba296e6a4a6170047961173cebf010c2a032cd3bfcfcfa"
+    },
+    {
+      "kind": "static checks",
+      "cause": "initial new test lint/typed replay field mistakes and generated CODEMAP drift corrected; no old assertions relaxed"
+    }
+  ],
+  "results": {
+    "review-before": {
+      "artifact": "tmp/e5-entry/active-matrix-20261016/review-before-result.json",
+      "sha256": "33f1dff2333b8a3d8a5b57344941f8a3532cb14d5bd5b9e4c04186d766e7a069",
+      "success": true,
+      "passed": 53,
+      "failed": 0,
+      "skipped": 0,
+      "suitesPassed": 2,
+      "suitesFailed": 0,
+      "snapshotsMatched": 0
+    },
+    "review-after": {
+      "artifact": "tmp/e5-entry/active-matrix-20261016/review-after-result.json",
+      "sha256": "9fc552bbe276246fcecf7fe78a857217df48693b00c08ff32b62e0751b368989",
+      "success": false,
+      "passed": 53,
+      "failed": 2,
+      "skipped": 0,
+      "suitesPassed": 1,
+      "suitesFailed": 1,
+      "snapshotsMatched": 0
+    },
+    "review-complete": {
+      "artifact": "tmp/e5-entry/active-matrix-20261016/review-complete-result.json",
+      "sha256": "414a936da2f91ab8949195d60f2110e9088d82e72d65d340a76b860430620713",
+      "success": true,
+      "passed": 60,
+      "failed": 0,
+      "skipped": 0,
+      "suitesPassed": 2,
+      "suitesFailed": 0,
+      "snapshotsMatched": 0
+    },
+    "unit-final": {
+      "artifact": "tmp/e5-entry/active-matrix-20261016/unit-final-result.json",
+      "sha256": "9bc61c9672d1e5dfd87fa12da888f705b75ddcae20da5a3554068f146c8a73be",
+      "success": true,
+      "passed": 222,
+      "failed": 0,
+      "skipped": 0,
+      "suitesPassed": 6,
+      "suitesFailed": 0,
+      "snapshotsMatched": 4
+    },
+    "matrix-initial": {
+      "artifact": "tmp/e5-entry/active-matrix-20261016/matrix-initial-result.json",
+      "sha256": "dce0f6e03fbdfb5d00d9f224fc991423e628923e5491946978e8562cda3c512c",
+      "success": false,
+      "passed": 0,
+      "failed": 3,
+      "skipped": 0,
+      "suitesPassed": 0,
+      "suitesFailed": 1,
+      "snapshotsMatched": 0,
+      "tests": [
+        {
+          "name": "E5 active supplemental matrix: existing historical fixtures, no fresh publication rerun keeps two physical sessions separate and distributes one award per unit across Beijing days",
+          "status": "failed",
+          "durationMs": 12540
+        },
+        {
+          "name": "E5 active supplemental matrix: existing historical fixtures, no fresh publication rerun restarts active to off to active, preserves proof and replay, and completes the original native run once",
+          "status": "failed",
+          "durationMs": 17721
+        },
+        {
+          "name": "E5 active supplemental matrix: existing historical fixtures, no fresh publication rerun rechecks reviewer bindings after an observed Activity lock wait and writes no review or notification",
+          "status": "failed",
+          "durationMs": 12596
+        }
+      ]
+    },
+    "matrix-repair": {
+      "artifact": "tmp/e5-entry/active-matrix-20261016/matrix-repair-result.json",
+      "sha256": "922de2d0913f6d5a898377f8c9109bdc3a1671fe20c64cc4d123423097ab7eba",
+      "success": true,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "suitesPassed": 1,
+      "suitesFailed": 0,
+      "snapshotsMatched": 0,
+      "tests": [
+        {
+          "name": "E5 active supplemental matrix: existing historical fixtures, no fresh publication rerun keeps two physical sessions separate and distributes one award per unit across Beijing days",
+          "status": "passed",
+          "durationMs": 16968
+        },
+        {
+          "name": "E5 active supplemental matrix: existing historical fixtures, no fresh publication rerun restarts active to off to active, preserves proof and replay, and completes the original native run once",
+          "status": "passed",
+          "durationMs": 27810
+        },
+        {
+          "name": "E5 active supplemental matrix: existing historical fixtures, no fresh publication rerun rechecks reviewer bindings after an observed Activity lock wait and writes no review or notification",
+          "status": "passed",
+          "durationMs": 17280
+        }
+      ]
+    },
+    "worker-recovery-targeted": {
+      "artifact": "tmp/e5-entry/active-matrix-20261016/worker-recovery-targeted-result.json",
+      "sha256": "5363ba4396ee0e88556c82f69df94f45320d188b16d9155855222acbe4eafa16",
+      "success": false,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 3,
+      "suitesPassed": 0,
+      "suitesFailed": 1,
+      "snapshotsMatched": 0,
+      "tests": [
+        {
+          "name": "E5 active supplemental matrix: existing historical fixtures, no fresh publication rerun resumes the original ready batch after off with the deployed worker and commits exactly once",
+          "status": "failed",
+          "durationMs": 23445
+        }
+      ]
+    },
+    "worker-recovery-repair": {
+      "artifact": "tmp/e5-entry/active-matrix-20261016/worker-recovery-repair-result.json",
+      "sha256": "c7bab4698d0a5101102e64f560c31e91f6305d824ccf71edff96faf87aff68a8",
+      "success": true,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 3,
+      "suitesPassed": 1,
+      "suitesFailed": 0,
+      "snapshotsMatched": 0,
+      "tests": [
+        {
+          "name": "E5 active supplemental matrix: existing historical fixtures, no fresh publication rerun resumes the original ready batch after off with the deployed worker and commits exactly once",
+          "status": "passed",
+          "durationMs": 17248
+        }
+      ]
+    },
+    "active-profiles": {
+      "artifact": "tmp/e5-entry/active-matrix-20261016/active-profiles-result.json",
+      "sha256": "9d6b407f4b83dbc4e7b519ed5513d8e4c50ab78063b2fd995a745eee7e344966",
+      "success": true,
+      "passed": 8,
+      "failed": 0,
+      "skipped": 8,
+      "suitesPassed": 3,
+      "suitesFailed": 0,
+      "snapshotsMatched": 0,
+      "tests": [
+        {
+          "name": "E4 current correction contribution proof: actual predecessor and actual D7 source makes a current own proof when time is unchanged and reverses/reposts without a second fixed award",
+          "status": "passed",
+          "durationMs": 28859
+        },
+        {
+          "name": "E4 current correction contribution proof: actual predecessor and actual D7 source reevaluates a shortened actual V3 service source and binds the new proof to that exact application",
+          "status": "passed",
+          "durationMs": 21027
+        },
+        {
+          "name": "E4 contribution concurrency: actual PostgreSQL barriers and atomic proof receipts rereads revoked explicit grants after an observed real lock wait and creates no proof or receipt",
+          "status": "passed",
+          "durationMs": 14811
+        },
+        {
+          "name": "E4 contribution concurrency: actual PostgreSQL barriers and atomic proof receipts rereads inactive member status after the actual lock wait rather than trusting the initial actor",
+          "status": "passed",
+          "durationMs": 11039
+        },
+        {
+          "name": "E4 contribution concurrency: actual PostgreSQL barriers and atomic proof receipts rolls back actual time/proof/evaluation/receipt writes if the final transactional audit fails",
+          "status": "passed",
+          "durationMs": 11003
+        },
+        {
+          "name": "E4 contribution HTTP: real JWT, scoped workbench and immutable Admin proof prepares and submits through HTTP, reading each version own frozen proof on App and Admin",
+          "status": "passed",
+          "durationMs": 19295
+        },
+        {
+          "name": "E4 contribution HTTP: real JWT, scoped workbench and immutable Admin proof rechecks explicit scoped and GLOBAL grants for the same pre-existing JWT after revocation",
+          "status": "passed",
+          "durationMs": 19970
+        },
+        {
+          "name": "E4 contribution HTTP: real JWT, scoped workbench and immutable Admin proof refuses App proof reads when the linked member becomes inactive despite the old JWT and grants",
+          "status": "passed",
+          "durationMs": 14285
+        }
+      ]
+    }
+  },
+  "originalAssertions": {
+    "base": "b9e9de049fb88e21a23934e342d3c16f8ecd23e2",
+    "results": [
+      {
+        "path": "test/e2e/activity-os-r5-e4-contribution-settlement-correction.e2e-spec.ts",
+        "originalAssertionStatements": 52,
+        "currentAssertionStatements": 52,
+        "allOriginalAssertionsPreservedInOrder": true,
+        "originalAssertionSha256": "9850f6b94f3df6c3bd4be2d0bbe6a58fd0974971ef4cee8ead36277777d34a51"
+      },
+      {
+        "path": "test/e2e/activity-os-r5-e4-contribution-settlement-http.e2e-spec.ts",
+        "originalAssertionStatements": 31,
+        "currentAssertionStatements": 34,
+        "allOriginalAssertionsPreservedInOrder": true,
+        "originalAssertionSha256": "1c44de98a3eb9ff81ad293fd28ebff600b73df5c8cbbca791fc929a098bd1d52"
+      },
+      {
+        "path": "test/e2e/activity-os-r5-e4-contribution-settlement-concurrency.e2e-spec.ts",
+        "originalAssertionStatements": 28,
+        "currentAssertionStatements": 28,
+        "allOriginalAssertionsPreservedInOrder": true,
+        "originalAssertionSha256": "99f7e35b5d6eaf2b1176e9ccef74c4e21c815aa605527505224f68d4b1e4d326"
+      }
+    ],
+    "frozenOracleSha256": "3e3dc0c3ad5e70b8eaba296e6a4a6170047961173cebf010c2a032cd3bfcfcfa"
+  },
+  "profileLifecycle": {
+    "actualHelperCompiled": true,
+    "databaseAccess": false,
+    "results": [
+      {
+        "case": "body timeout then late settle",
+        "outcome": "PASS",
+        "stickyUnknown": true
+      },
+      {
+        "case": "setup timeout then late settle",
+        "outcome": "PASS",
+        "stickyUnknown": true
+      },
+      {
+        "case": "app close failure then later successful close",
+        "outcome": "PASS",
+        "resourceRetained": true
+      },
+      {
+        "case": "auxiliary cleanup failure",
+        "outcome": "PASS",
+        "stickyUnknown": true
+      },
+      {
+        "case": "normal settled and closed",
+        "outcome": "PASS"
+      },
+      {
+        "case": "default fixture profile",
+        "outcome": "PASS"
+      }
+    ]
+  },
+  "resources": {
+    "observedAt": "2026-10-16T04:37:49.148430+00:00",
+    "database": "app_test_w98",
+    "capturedMaintenanceBackendPids": [
+      164744, 165897, 166924, 167201, 167390, 167955, 168461, 169229, 169842
+    ],
+    "leaseBackendCountDerivedFromLocks": false,
+    "instrumentPositiveControl": 1,
+    "counts": {
+      "databases": 0,
+      "clients": 0,
+      "leaseBackends": 0,
+      "leaseLocks": 0
+    }
+  },
+  "sourceHashes": {
+    "CODEMAP.md": "d97438dcc7af9c23579468fc29c68793d26cfb732b7707fd4b056340dd917764",
+    "docs/handoff/admin-web.md": "c6270f9b64a3a20215ee5b27815a1ce7e787804a23994868506d247943938803",
+    "docs/ops/activity-contribution-settlement.md": "f5e0f02c343e607cfd1a68b5e0aac8575aa062e1e94103489f32efb3f866674a",
+    "docs/ops/server-deployment-runbook.md": "5f1177f0d8c53fe24841e9f2e8af59636ea7f8b9b2790fd6999f0ff6dc508dbf",
+    "src/modules/activities/activity-settlement-http.service.spec.ts": "8a30b41d393129f30a847a507c73d4256a7ba098bea71c02f0c769de12e587b2",
+    "src/modules/activities/activity-settlement-http.service.ts": "eb5fc5ad8acd8ee639fb0b646b8688034b758c1b441c60e787dbeddc255a4939",
+    "src/modules/activities/settlement-review.service.spec.ts": "9783856056e295fb54bce34553639eafe7081878169c7e137c28afa6e16e4462",
+    "src/modules/activities/settlement-review.service.ts": "033ef93f7d88a956d84963a55252b0ca07adb6254b12549a9446e9cfc09607a0",
+    "test/e2e/activity-os-r5-e4-contribution-settlement-concurrency.e2e-spec.ts": "04d5662966a6fe57e013e76e519fa7ea940b89527f482a07c64b54bfaad582e0",
+    "test/e2e/activity-os-r5-e4-contribution-settlement-correction.e2e-spec.ts": "2c8f84437865ebc17336f9cc474f44367fb53c5dfbfc72c0be708a89dd29f5e2",
+    "test/e2e/activity-os-r5-e4-contribution-settlement-http.e2e-spec.ts": "8c6a091c4ae60152b7960832ec5cef7b1ee421fa8b52e3f7793151f74e9b9bb7",
+    "test/e2e/activity-os-r5-e5-active-matrix.e2e-spec.ts": "a3e7e42809dce54ea36a301126ae37f076cafc47dfe2c0223e6b04e001b3f30d",
+    "test/helpers/activity-contribution-policy.fixture.ts": "8d0cad3183f759ee8588fbf384b7cb8168ceb392c3b9b41227aefe295ec97eb5",
+    "test/helpers/e5-active-matrix.ts": "5267639f8963af7d45cd0203003d125d3e846e8a6341de8fb0e4340a2cb0e90d"
+  },
+  "checks": {
+    "targetedLint": "PASS (10 changed TS paths plus final profile helper recheck)",
+    "typecheckTestProject": "PASS (tsc --project test/tsconfig.test.json --noEmit)",
+    "readtax": "PASS",
+    "counts": "PASS",
+    "codemap": "PASS_AFTER_GENERATOR",
+    "rbacmap": "PASS",
+    "opsRequired": "PASS",
+    "diffCheck": "PASS",
+    "fullQuick": "NOT_RUN",
+    "fullCI": "NOT_RUN"
+  },
+  "remaining": [
+    "146 maximum/default-JIT capacity and timeout failure boundary not accepted",
+    "required full CI and GitHub validation not run",
+    "3b review actual migrations137–146 and applicable4b/Trusted/human business approval still outstanding",
+    "production fleet/config/SHA change, cutover and D8-OPS not authorized or performed"
+  ],
+  "limitations": [
+    "Historical synthetic snapshot is a validation fixture, not new HTTP publication provenance",
+    "Final native-guard callback rejection unit case uses mock transaction sequencing; not a real PostgreSQL rollback proof",
+    "No production capacity/performance claim from small fixtures",
+    "Prior P2028/UNKNOWN and earlier maximum failures remain recorded in e4-146-validation.json and historical review plans"
+  ],
+  "independentReview": {
+    "reviewer": "/root/review_c_real_path",
+    "mode": "read-only cross-review",
+    "result": "NO_REMAINING_SUBSTANTIVE_BLOCKER_FOR_LOCAL_REVIEW_COMMIT",
+    "verified": [
+      "raw Jest counts and all result artifact hashes",
+      "all14 source hashes",
+      "6 offline lifecycle cases including late settle and repeat close",
+      "9 captured maintenance PIDs, four-zero and observer positive control",
+      "old52/31/28 assertions and unchanged scale file against b9"
+    ],
+    "humanOrTrustedSignoff": false
+  }
+}

@@ -191,11 +191,12 @@ export class SettlementReviewService {
     input: SettlementReviewInput,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    reauthorizeInTx?: (tx: PrismaTx) => Promise<CurrentUserPayload>,
   ): Promise<SettlementReviewResult> {
     // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
     // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
     this.activityWorkflowGate.assertV11WriteAllowed();
-    return await this.review('first', input, currentUser, auditMeta);
+    return await this.review('first', input, currentUser, auditMeta, reauthorizeInTx);
   }
 
   /**
@@ -208,11 +209,12 @@ export class SettlementReviewService {
     input: SettlementReviewInput,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    reauthorizeInTx?: (tx: PrismaTx) => Promise<CurrentUserPayload>,
   ): Promise<SettlementReviewResult> {
     // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
     // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
     this.activityWorkflowGate.assertV11WriteAllowed();
-    return await this.review('final', input, currentUser, auditMeta);
+    return await this.review('final', input, currentUser, auditMeta, reauthorizeInTx);
   }
 
   // ===== ① Activity FOR UPDATE(锁序第一层)=====
@@ -516,6 +518,7 @@ export class SettlementReviewService {
     input: SettlementReviewInput,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    reauthorizeInTx?: (tx: PrismaTx) => Promise<CurrentUserPayload>,
   ): Promise<SettlementReviewResult> {
     const { activityId, actionCode, operationKey, requestHash } = input;
 
@@ -540,6 +543,9 @@ export class SettlementReviewService {
         //    这里要先拿到版本 id 才能判"是不是同一条决定",所以版本行必须先锁上 ——
         //    锁序不变(版本本来就是第三把)。
         const version = await this.lockSubmittedVersion(tx, run);
+        // HTTP authorization observed before a lock wait is stale. Reuse its exact
+        // action/resource policy in this transaction before replay or business writes.
+        let actor = reauthorizeInTx ? await reauthorizeInTx(tx) : currentUser;
 
         // §6.11 路径 `:settlementVersionId` 的 HTTP 锚点。此处已经持有 Activity → Run
         // → Version 三把既有锁；锁外“看过 v1”不能替代对当前指针实际锁到版本的复核。
@@ -586,8 +592,8 @@ export class SettlementReviewService {
             contentHash: version.contentHash,
             operationKey,
             requestHash,
-            actorUserId: currentUser.id,
-            actorRoleSnap: currentUser.role,
+            actorUserId: actor.id,
+            actorRoleSnap: actor.role,
             auditMeta,
             tx,
           });
@@ -614,7 +620,7 @@ export class SettlementReviewService {
             submittedByUserId: version.createdByUserId,
             firstReviewerUserId,
           },
-          currentUser.id,
+          actor.id,
         );
         if (violation !== null) throw new BizException(SEPARATION_TO_BIZ_CODE[violation]);
 
@@ -663,6 +669,7 @@ export class SettlementReviewService {
           } else await this.contributions.assertVersionInTx(tx, version.id);
         }
 
+        if (reauthorizeInTx) actor = await reauthorizeInTx(tx);
         const actedAt = new Date();
 
         // ⑩ 状态推进 + 批次准备。
@@ -683,7 +690,7 @@ export class SettlementReviewService {
               settlementVersionId: version.id,
               operationKey,
               requestHash,
-              actorUserId: currentUser.id,
+              actorUserId: actor.id,
               totalCount: version.personCount,
             });
             runStatusAfter = 'posting';
@@ -708,7 +715,7 @@ export class SettlementReviewService {
           settlementVersionId: version.id,
           stageCode,
           actionCode,
-          actorUserId: currentUser.id,
+          actorUserId: actor.id,
           actedAt,
           // 退回时缺省把原因也落进 append-only 的动作行 —— 否则单看审核流水
           // 说不清为什么退。
@@ -786,8 +793,8 @@ export class SettlementReviewService {
           contentHash: version.contentHash,
           operationKey,
           requestHash,
-          actorUserId: currentUser.id,
-          actorRoleSnap: currentUser.role,
+          actorUserId: actor.id,
+          actorRoleSnap: actor.role,
           auditMeta,
           tx,
         });

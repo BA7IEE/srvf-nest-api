@@ -1,10 +1,17 @@
+import {
+  closeE5MatrixApp,
+  e5ActiveMatrixOptions,
+  assertE5MatrixMode,
+  assertE5MatrixSettled,
+  e5MatrixIt as it,
+  e5MatrixBeforeEach as beforeEach,
+} from '../helpers/e5-active-matrix';
 import { MemberStatus, PrincipalType, Role } from '@prisma/client';
 import request, { type Response } from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import {
   E13_ADMIN,
   E13_APP,
-  closeE13Fixture,
   createE4Fixture,
   createE4Source,
   installE4ValidationDatabase,
@@ -140,7 +147,7 @@ async function expectPersistedProof(
   return root;
 }
 
-installE4ValidationDatabase();
+installE4ValidationDatabase(e5ActiveMatrixOptions());
 describe('E4 contribution HTTP: real JWT, scoped workbench and immutable Admin proof', () => {
   let current: E4Fixture | undefined;
   const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
@@ -155,10 +162,12 @@ describe('E4 contribution HTTP: real JWT, scoped workbench and immutable Admin p
     // Test process only; the application uses its real guards and permission engines.
     process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     current = await createE4Fixture();
+    assertE5MatrixMode(current.app);
   }, 120_000);
   afterEach(async () => {
+    assertE5MatrixSettled();
     try {
-      await closeE13Fixture(current);
+      await closeE5MatrixApp(current?.app);
     } finally {
       current = undefined;
       if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
@@ -265,6 +274,40 @@ describe('E4 contribution HTTP: real JWT, scoped workbench and immutable Admin p
     expect(formalRoot.id).not.toBe(draftRoot.id);
     expect(formalRoot.kindCode).toBe('submitted');
     expect(draftRoot.kindCode).toBe('draft');
+    // Regression for the lock-after authorization callback: valid scoped/GLOBAL reviewers
+    // still approve and replay through the real HTTP owner, with the original proof intact.
+    const version = await f.db.attendanceSettlementVersion.findUniqueOrThrow({
+      where: { id: formalVersionId },
+    });
+    const expectation = {
+      evidenceSealId: version.evidenceSealId,
+      evidenceRevision: version.evidenceRevision,
+      populationRevision: version.populationRevision,
+      workflowRevision: version.workflowRevision,
+      contentHash: version.contentHash,
+    };
+    for (const [stage, actor] of [
+      ['first', f.reviewer],
+      ['final', f.finalReviewer],
+    ] as const) {
+      const command = { ...expectation, operationKey: f.key(`http_${stage}_review`) };
+      const url = `${E13_ADMIN}/attendance-settlements/${formalVersionId}/${stage}-approve`;
+      expect(
+        successData(
+          await request(httpServer(f.app)).post(url).set('Authorization', actor.auth).send(command),
+        ),
+      ).toMatchObject({ stageCode: stage, replayed: false });
+      expect(
+        successData(
+          await request(httpServer(f.app)).post(url).set('Authorization', actor.auth).send(command),
+        ),
+      ).toMatchObject({ stageCode: stage, replayed: true });
+    }
+    expect(
+      await f.db.activitySettlementContributionRevision.findUniqueOrThrow({
+        where: { id: formalRoot.id },
+      }),
+    ).toEqual(formalRoot);
   }, 120_000);
 
   it('distinguishes an explicit zero policy from pending and retains its four-tuple and explanation', async () => {

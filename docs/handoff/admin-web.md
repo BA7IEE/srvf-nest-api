@@ -1041,3 +1041,6 @@ PR 5 交付时这里写着一条如实说的限制:**旧的 `POST` / `DELETE /ro
 真实业务验收未完成，shadow／Gate仍关闭；不能用生成客户端把这些状态改成已上线。
 
 改后端 API surface / RBAC / 契约 → **同 PR** 改本文件受影响行 + `pnpm docs:openapi`(沿 [`AGENTS.md`](../../AGENTS.md) 反漂铁律);"改什么必须动哪篇哪节"的逐行对照见 [`README.md §2`](README.md)。前端对接前先读本文件 + 对 live `/api/docs-json` 核字段。
+
+
+E5 本地工程补验（2026-10-16）：审核 HTTP 接线在 Activity→Run→Version 锁后，使用同事务当前 ACTIVE User 与相同 action／版本资源重新判权；权限撤销即返回既有拒绝码，审核决定、通知、版本及审计同事务回滚。入锁前可用性不保证等待后仍可审核。该补验不代表生产启用或 Trusted／业务签字，最终结果见[active矩阵证据](../plans/e5-active-matrix-validation.json)。

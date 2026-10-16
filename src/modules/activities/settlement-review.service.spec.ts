@@ -709,3 +709,53 @@ describe('§12.26 exact first/approve owner orchestration', () => {
     },
   );
 });
+
+describe('HTTP review authorization after actual owner locks', () => {
+  it.each(['first', 'final'] as const)(
+    'rejects revoked %s authorization before replay or writes',
+    async (stage) => {
+      const f = reviewFixture(stage);
+      const reauthorize = jest.fn((tx: Prisma.TransactionClient) => {
+        expect(tx).toBe(f.prismaTx);
+        expect(f.events).toEqual(['tx:start', 'lock:activity', 'lock:run', 'lock:version']);
+        return Promise.reject(new Error('revoked-characterization'));
+      });
+      const call =
+        stage === 'first'
+          ? f.service.firstReview.bind(f.service)
+          : f.service.finalReview.bind(f.service);
+      await expect(call(f.input, f.actor, REVIEW_META, reauthorize)).rejects.toThrow(
+        'revoked-characterization',
+      );
+      expect(reauthorize).toHaveBeenCalledTimes(1);
+      expect(f.tx.settlementReviewAction.create).not.toHaveBeenCalled();
+      expect(f.tx.attendanceSettlementVersion.update).not.toHaveBeenCalled();
+      expect(f.audit.log).not.toHaveBeenCalled();
+      expect(f.notifications.enqueueReviewed).not.toHaveBeenCalled();
+    },
+  );
+});
+
+it('propagates guard-after authorization failure after the real first-review barrier ordering', async () => {
+  const f = reviewFixture('first', 'policy_v1');
+  enableFreshFirstReviewProof(f);
+  const failure = new Error('revoked-after-barrier');
+  const authorize = jest
+    .fn()
+    .mockResolvedValueOnce(f.actor)
+    .mockImplementationOnce(() => {
+      expect(f.events.slice(-4)).toEqual(['catalog:before', 'version', 'catalog:after', 'barrier']);
+      return Promise.reject(failure);
+    });
+  await expect(f.service.firstReview(f.input, f.actor, REVIEW_META, authorize)).rejects.toBe(
+    failure,
+  );
+  expect(authorize).toHaveBeenCalledTimes(2);
+  expect(f.tx.attendanceSettlementVersion.update).toHaveBeenCalledTimes(1);
+  expect(f.tx.settlementReviewAction.create).not.toHaveBeenCalled();
+  expect(f.tx.attendanceSettlementRun.update).not.toHaveBeenCalled();
+  expect(f.tx.ledgerPostingBatch.create).not.toHaveBeenCalled();
+  expect(f.notifications.enqueueReviewed).not.toHaveBeenCalled();
+  expect(f.audit.log).not.toHaveBeenCalled();
+  expect(f.events).not.toContain('tx:end');
+});

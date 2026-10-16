@@ -92,7 +92,7 @@
 | `ACTIVITY_V11_WORKFLOW_ENABLED` | ✅ | ✅ | `:517` | 同上,首次上线填 `false`(切换闸,见 `docs/ops/activity-batch-worker-runbook.md`) |
 | `ACTIVITY_OS_CONTROL_PLANE_MODE` | ✅ | ✅ | `src/config/app.config.ts` 的 `parseActivityControlPlaneMode` | 严格 `off` / `shadow` / `active`，首次填 `off`；`active` 且 v1.1 未开时拒启 |
 | `ACTIVITY_E3_CONTRIBUTION_SHADOW_MODE` | — | — | `src/config/app.config.ts` 的 `parseContributionShadowMode` | E3 独立开关，未设置默认 `off`；部署值保持 `off`，不得继承 B6 的 `shadow`；启用另审 |
-| `ACTIVITY_E4_CONTRIBUTION_SETTLEMENT_MODE` | — | — | `src/config/app.config.ts` 的 `parseContributionSettlementMode` | E4 本地未交付候选，缺省 `off`、部署保持 `off`；仅 `test` 可用 `fixture`，smoke／production 使用 fixture 拒启，无 active；正式启用另审 |
+| `ACTIVITY_E4_CONTRIBUTION_SETTLEMENT_MODE` | — | — | `src/config/app.config.ts` 的 `parseContributionSettlementMode` | 缺省 `off`、部署保持 `off`；严格 `active` 已有 E5 工程路径，启用仍另审并受独立 v1.1／maintenance 写闸约束；仅 `test` 可用 `fixture`，smoke／production 使用 fixture 拒启 |
 | `INSURANCE_ENFORCEMENT_ENABLED` | — | ✅ | `:326` | 第二阶段 §1.5 |
 | `STORAGE_CONSISTENCY_MODE` | — | ✅ | `:542` | 第二阶段 §1.5 |
 

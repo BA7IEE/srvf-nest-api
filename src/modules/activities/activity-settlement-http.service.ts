@@ -17,6 +17,7 @@ import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { AuthzService } from '../authz/authz.service';
 import { RbacService } from '../permissions/rbac.service';
+import { loadActiveUserIdentityInTx } from '../users/user-active-identity.query';
 import { ActivityClosureService } from './activity-closure.service';
 import { SettlementDraftDispatchService } from './settlement-draft-dispatch.service';
 import {
@@ -960,9 +961,22 @@ export class ActivitySettlementHttpService {
       expectation: command.expectation,
       expectedSettlementVersionId: settlementVersionId,
     };
+    const reauthorizeInTx = async (tx: Prisma.TransactionClient) => {
+      const actor = await loadActiveUserIdentityInTx(tx, currentUser.id);
+      if (!actor) throw new BizException(BizCode.UNAUTHORIZED);
+      await this.assertCanSettlementReview(
+        actor,
+        stageCode === 'first'
+          ? ACTIVITY_SETTLEMENT_ACTION.firstReview
+          : ACTIVITY_SETTLEMENT_ACTION.finalReview,
+        settlementVersionId,
+        tx,
+      );
+      return actor;
+    };
     return stageCode === 'first'
-      ? await this.reviews.firstReview(input, currentUser, auditMeta)
-      : await this.reviews.finalReview(input, currentUser, auditMeta);
+      ? await this.reviews.firstReview(input, currentUser, auditMeta, reauthorizeInTx)
+      : await this.reviews.finalReview(input, currentUser, auditMeta, reauthorizeInTx);
   }
 
   async close(
@@ -1227,11 +1241,17 @@ export class ActivitySettlementHttpService {
     currentUser: CurrentUserPayload,
     action: string,
     settlementVersionId: string,
+    tx?: Prisma.TransactionClient,
   ): Promise<void> {
-    const decision = await this.authz.explain(currentUser, action, {
-      type: 'attendance_settlement_version',
-      id: settlementVersionId,
-    });
+    const decision = await this.authz.explain(
+      currentUser,
+      action,
+      {
+        type: 'attendance_settlement_version',
+        id: settlementVersionId,
+      },
+      tx,
+    );
     if (decision.allow) return;
 
     if (decision.reason === 'self_approval_forbidden') {
@@ -1250,7 +1270,10 @@ export class ActivitySettlementHttpService {
 
     // 与既有 activity 写面同口径：解析失败时只有已持该 action 的主体才交由 service
     // 给出真实业务错误；无码者始终 30100，避免版本存在性成为枚举面。
-    if (decision.reason === 'resource_not_found' && (await this.rbac.can(currentUser, action))) {
+    if (
+      decision.reason === 'resource_not_found' &&
+      (await this.rbac.can(currentUser, action, undefined, tx))
+    ) {
       return;
     }
     throw new BizException(BizCode.RBAC_FORBIDDEN);
