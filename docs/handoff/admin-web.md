@@ -1046,3 +1046,6 @@ PR 5 交付时这里写着一条如实说的限制:**旧的 `POST` / `DELETE /ro
 
 
 E5 本地工程补验（2026-10-16）：审核 HTTP 接线在 Activity→Run→Version 锁后，使用同事务当前 ACTIVE User 与相同 action／版本资源重新判权；权限撤销即返回既有拒绝码，审核决定、通知、版本及审计同事务回滚。入锁前可用性不保证等待后仍可审核。该补验不代表生产启用或 Trusted／业务签字，最终结果见[active矩阵证据](../plans/e5-active-matrix-validation.json)。
+
+
+E4/E5 测试尾链状态（2026-10-17）：4f4db745普通CI39048441257仍FAIL，500整例及unchanged-time复制oracle通过，重放因false→true预期标志差异被测试误断言；旧D6原2000 prepare另有P2028（原30秒，记录52.763秒），根因UNKNOWN，不能用受限500抵消。当前仅修正重放其余事实比较及V3严格请求slices、补实际COMMIT／长源拒绝证据与原D6观测，接口／业务／前端契约不改。无独立DB／性能追加，新SHA普通CI待验；3b／Trusted及生产NO_GO继续保留。

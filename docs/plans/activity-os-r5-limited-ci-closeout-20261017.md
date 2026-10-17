@@ -54,3 +54,12 @@ edf5c9aa普通CI39046228028已结束FAIL：500整例实际PASS（prepare入口4�
 旧结果包Library `libfile_51b7d5b89ba48191b92d1a17d635898e`（SHA256 `a2ac5e4924f5dfcb227a9f8c0e014f200cc2639a2598722d012d604e63f5e8d1`）与上一补充包 `libfile_9f7083a83b208191801a422aa632a8bf`（SHA256 `18e2a076f7370bb8acbed1d21c247a28856c36409d960b4b6979f2c000a14ccf`）保持不变。最新窗口的journal／HTTP观测／清理、实测源码及委托grant记录另出补充包，不覆盖旧失败。
 
 **本次未做：** 未重跑A/B、500独立窗口或原满额，未重启同一DB尝试，未放宽30／300／600秒、guard或既有断言；未改生产SQL／schema／migration／默认开关、未读写生产或用户Mac；未自主决定grant、未代签3b／Trusted、未Ready／合并／部署。
+
+
+## 2026-10-17 重放／V3 尾链契约与旧 D6 独立调查
+
+4f4db745普通CI39048441257完成FAIL：Fast checks（461套10266项／8快照、冷lint2011文件零诊断206.425秒／原300秒）、Harness、Docker及E2E2／4／5通过；E2E1首次unchanged-time复制oracle已通过，随后只因初次replayed=false／重放true的预期差异被错误整对象比较拦住，unchanged COMMIT／V3／长跨度负例仍NOT_RUN。当前显式断言两次标志并比较其余全部事实，保留原gate不重入及196表不变；V3去掉真实闭集parser不接受的请求intervalKindCode（由服务端补入），共享的两条请求均用实际parser快测。RED11通过5失败→GREEN16／16，无应用／DB调用。两次commit现在先检查真实返回状态、批次／版本锚点、落库committedAt及完整账本条数，再输出通过；长跨度负例保存前后逐表快照并call-through观察原span guard的scale_limit及真实长源输入，避免20225误归因。真实尾链仍等新SHA普通CI，不将快测当DB验收。
+
+E2E3旧D6原2000人数用例仍是独立必过项：prepare实际HTTP500／Biz50000／P2028，原30000毫秒、记录52763毫秒，尚未进入worker2000测量／COMMIT。此前四次同源码用例通过，但未采集prepare耗时；通过轮也与D7有重叠，不能据此认定随机抖动或共享争抢，根因UNKNOWN。当前只在下一次必要普通CI的原2000 prepare复用既有有界engine request／transaction观测并记录UTC及本Jest进程CPU／event loop，无新增查询、数据／worker／超时改动。Promise在途时间和事务桥接时间不等于PG执行时间；截断／pending／安装恢复异常保留UNKNOWN。R5受限500通过不抵消D6失败。独立额度仍38／43、历史性能4／4，不建新手动库或盲重跑。
+
+本次未做：未修改业务源码、SQL／pins、guard、原30／300／600秒或CI控制面；未重跑独立500／原满额／A-B，未触及生产或Mac，未代签3b／Trusted或Ready／合并／部署。

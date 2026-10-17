@@ -8,6 +8,7 @@ import {
   assertNativeContributionLaunchSpans as launchSpans,
 } from '../../src/modules/activities/activity-contribution-launch-policy';
 import { ContributionSettlementPolicyError } from '../../src/modules/activities/activity-contribution-settlement-policy';
+import { parseCorrectionChangeSet } from '../../src/modules/activities/correction-change-set';
 import {
   AppPrepareTimeSettlementDto,
   AppRecognizeTimeSettlementDto,
@@ -15,10 +16,97 @@ import {
 import { nativeLaunchSlices } from '../helpers/activity-native-launch.fixture';
 import {
   assertNativeLaunchFrozenOracle,
+  assertNativeLaunchPrepareReplay,
   nativeLaunchAdmissionPolicies,
   nativeLaunchPrepareRequest,
+  nativeLaunchV3Allocation,
   type NativeLaunchStage,
 } from '../helpers/native-launch-live.fixture';
+
+describe('native correction tail against the actual replay and V3 contracts', () => {
+  const initial = { replayed: false, newPostingBatchId: 'batch', receipt: { count: 4 } };
+
+  it('requires the initial false and replay true while preserving all other receipt facts', () => {
+    expect(() =>
+      assertNativeLaunchPrepareReplay(initial, { ...initial, replayed: true }),
+    ).not.toThrow();
+  });
+
+  it('rejects an initial receipt incorrectly marked as replayed', () => {
+    expect(() =>
+      assertNativeLaunchPrepareReplay(
+        { ...initial, replayed: true },
+        { ...initial, replayed: true },
+      ),
+    ).toThrow();
+  });
+
+  it('rejects a repeated receipt that does not report replay', () => {
+    expect(() => assertNativeLaunchPrepareReplay(initial, { ...initial })).toThrow();
+  });
+
+  it('rejects changed non-flag facts even when both replay flags are correct', () => {
+    expect(() =>
+      assertNativeLaunchPrepareReplay(initial, {
+        ...initial,
+        replayed: true,
+        receipt: { count: 3 },
+      }),
+    ).toThrow();
+  });
+
+  it.each([false, true])('accepts the real V3 allocation request with long source=%s', (long) => {
+    const startsAt = new Date('2020-03-03T08:00:00.000Z');
+    const endsAt = new Date(startsAt.getTime() + 20_000);
+    const allocation = nativeLaunchV3Allocation({
+      participationIdentityId: 'identity',
+      segmentKey: 'segment',
+      baseSegmentRevisionId: 'base_segment',
+      baseAllocationRevisionId: 'base_allocation',
+      startsAt,
+      endsAt,
+    });
+    const requested = {
+      schemaVersion: 3,
+      results: [],
+      segments: [
+        {
+          participationIdentityId: allocation.participationIdentityId,
+          segmentKey: allocation.segmentKey,
+          checkInAt: new Date(startsAt.getTime() - (long ? 2 * 86_400_000 : 0)).toISOString(),
+          checkOutAt: endsAt.toISOString(),
+          resultCode: 'valid',
+          serviceHours: '0.01',
+        },
+      ],
+      timeCorrection: {
+        baseSettlementVersionId: 'base_version',
+        baseTimeLedgerHash: 'a'.repeat(64),
+        reason: 'Isolated actual V3 source correction',
+        items: [{ rootEntryId: 'root', recognizedSeconds: 20 }],
+      },
+      allocations: [allocation],
+    };
+    const parsed = parseCorrectionChangeSet(requested);
+    expect(parsed.allocations?.[0].slices).toHaveLength(5);
+    expect(
+      parsed.allocations?.[0].slices.every((slice) => slice.intervalKindCode === 'service_segment'),
+    ).toBe(true);
+    const withInternalField = {
+      ...requested,
+      allocations: [
+        {
+          ...allocation,
+          slices: allocation.slices.map((slice) => ({
+            ...slice,
+            intervalKindCode: 'service_segment',
+          })),
+        },
+      ],
+    };
+    expect(() => parseCorrectionChangeSet(withInternalField)).toThrow();
+  });
+});
 
 // Offline counterexample inputs only; this suite does not prove a live admission or COMMIT.
 describe('native launch minimal lawful counterexample inputs', () => {

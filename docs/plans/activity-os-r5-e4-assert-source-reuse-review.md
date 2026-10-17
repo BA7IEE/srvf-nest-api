@@ -502,3 +502,10 @@ CI outbox十例被ts-node10缺ES2023映射→SWC回退ES3/getter错误阻断；D
 ## 2026-10-17 当前500整例通过与unchanged-time oracle合同补齐
 
 edf5c9aa普通CI39046228028已结束FAIL：500整例实际PASS（prepare入口4次含3负例、2000 evaluations、500 ledger pairs、冻结oracle及COMMIT），501身份／501current段／2501物理slice均20225且196表不变；shape／bytes负例及单人base冻结oracle／COMMIT通过。唯一业务spec失败在unchanged-time复制证明的测试oracle：oracle0、stored4、storedDifferences4、rootMatches=true；新helper遗漏既有assertFixedE4Oracle的复制分支，不能据此判业务算法错误。当前仅复用同SHA既有合同，核四项根字段、完整evaluation文档及固定根aggregate，再递归前驱的冻结oracle／day；不改SQL/pins、expectedCount4／differences0或业务源码。原实现快测RED6通过4失败，修复GREEN10／10；完整测试类型／定向lint及最终SHA普通CI另记。未完成的resumable／unchanged COMMIT／V3／长源负例继续待实际CI；独立额度仍38／43、历史性能4／4，无新增手动DB或满额。
+
+
+### 2026-10-17 重放及 V3 请求尾链补齐（普通 CI 待验）
+
+4f4db745／CI39048441257的unchanged-time复制oracle已实测通过，原整对象replay断言因false→true误报；当前明确两标志并比其余全部事实，保留gate不重入／196表不变。V3两条请求共用的manual slices移除闭集不接受的intervalKindCode，由真实parser补入；两项合同快测RED11／5→GREEN16／0，无DB。commit通过记录改为先核真实返回与落库batch／entries；长源负例新增196逐表before/after及原span guard call-through拒绝输入，原20225与完整跨度边界不放宽。
+
+同轮旧D6原2000 case在prepare为P2028（30000／52763毫秒），worker2000及其COMMIT未执行；此前四次通过、相关源码相同，prepare耗时／PG等待未捕获，根因UNKNOWN。原用例仍必过，不能用受限500抵消。仅在新必要普通CI原2000 prepare复用有界请求／事务观察、UTC和本Jest进程计数；不加SQL查询／容量次数或改数据、worker、超时。不将请求在途／事务桥接时间冒称PG执行。最终结果及未知项按实际新SHA外部证据记录。

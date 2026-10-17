@@ -155,7 +155,7 @@
   },
   "protectedFilesApplied": true,
   "maintainerGrantPresent": false,
-  "currentRequiredCI": "50b7d635 ordinary CI39043784343 FAILURE: shape/bytes each196-table proofPASS, two positiveprepareHTTP400/40000; explicit-DTO fixture followup pre-push, next ordinary CI pending",
+  "currentRequiredCI": "4f4db745 CI39048441257 FAILURE: unchanged copy frozen oracle PASS then expected replay flag mismatch; legacy D6 2000 prepare P2028 original30000/elapsed52763. Tail-contract/D6-observation followup pre-push; next exact-SHA ordinaryCI PENDING.",
   "originalMaximum": "NOT_VALIDATED_FOR_LIMITED_LAUNCH",
   "trusted": "MAINTAINER_APPROVAL_REQUIRED",
   "production": "NOT_RUN",
@@ -300,7 +300,10 @@
       ".github/workflows/activity-os-r5-e4-validation.yml",
       "docs/ai-harness/ROUTE_AUTHZ.md"
     ],
-    "signaturesExcluded": ["SQL3b substantive review", "Trusted approval"],
+    "signaturesExcluded": [
+      "SQL3b substantive review",
+      "Trusted approval"
+    ],
     "experiment": {
       "newAttempt": 1,
       "maxNewDatabases": 1,
@@ -423,7 +426,10 @@
     "futureDiagnostics": "Per-table names/hash snapshot emitted before equality assertion, without raw data"
   },
   "formalTypecheck": {
-    "command": ["pnpm", "typecheck"],
+    "command": [
+      "pnpm",
+      "typecheck"
+    ],
     "exitCode": 0,
     "seconds": 207.38263741099945
   },
@@ -450,31 +456,49 @@
   "formalSmallChecks": [
     {
       "name": "cold-lint-selftest",
-      "command": ["pnpm", "exec", "tsx", "scripts/check-cold-lint.ts", "--selftest"],
+      "command": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "scripts/check-cold-lint.ts",
+        "--selftest"
+      ],
       "exitCode": 0,
       "seconds": 2.90007355799753
     },
     {
       "name": "docs-authz",
-      "command": ["pnpm", "docs:authz:check"],
+      "command": [
+        "pnpm",
+        "docs:authz:check"
+      ],
       "exitCode": 0,
       "seconds": 2.9880204309993132
     },
     {
       "name": "codemap",
-      "command": ["pnpm", "docs:codemap:check"],
+      "command": [
+        "pnpm",
+        "docs:codemap:check"
+      ],
       "exitCode": 1,
       "seconds": 1.5503887119994033
     },
     {
       "name": "boundaries",
-      "command": ["pnpm", "docs:boundaries:check"],
+      "command": [
+        "pnpm",
+        "docs:boundaries:check"
+      ],
       "exitCode": 0,
       "seconds": 2.76102977499977
     },
     {
       "name": "signoff",
-      "command": ["pnpm", "cutover:check:signoff"],
+      "command": [
+        "pnpm",
+        "cutover:check:signoff"
+      ],
       "exitCode": 1,
       "seconds": 10.994994659999065
     }
@@ -524,7 +548,10 @@
     "staticFixReview": "No blocking finding from existing read-only reviewer; not actual DB/IPC acceptance"
   },
   "previousFormalFullColdLint": {
-    "command": ["pnpm", "lint"],
+    "command": [
+      "pnpm",
+      "lint"
+    ],
     "exitCode": 0,
     "wallSeconds": 291.4819794140021,
     "wholeProcessGroupPeakRssBytes": 12733943808,
@@ -615,7 +642,10 @@
     "independentDatabaseAttemptsAdded": 0,
     "performanceCallsAdded": 0,
     "formalTypecheck": {
-      "command": ["pnpm", "typecheck"],
+      "command": [
+        "pnpm",
+        "typecheck"
+      ],
       "exitCode": 0,
       "seconds": 246.28154171999995
     },
@@ -639,13 +669,19 @@
       },
       {
         "name": "authz-check",
-        "command": ["pnpm", "docs:authz:check"],
+        "command": [
+          "pnpm",
+          "docs:authz:check"
+        ],
         "exitCode": 0,
         "seconds": 3.2537185010005487
       },
       {
         "name": "codemap-check",
-        "command": ["pnpm", "docs:codemap:check"],
+        "command": [
+          "pnpm",
+          "docs:codemap:check"
+        ],
         "exitCode": 0,
         "seconds": 8.209486065999954
       }
@@ -688,16 +724,30 @@
     "nativeAdmission": {
       "tests": 2,
       "phase": "REAL_SEAL",
-      "httpStatuses": [503, 503],
-      "bizCodes": [20153, 20153],
+      "httpStatuses": [
+        503,
+        503
+      ],
+      "bizCodes": [
+        20153,
+        20153
+      ],
       "generateCalls": 0,
       "prepareCalls": 0,
       "fingerprints": "NOT_RUN"
     },
     "outbox": "actual spec PASS114.329s",
     "d6": "actual spec PASS19.929s",
-    "shardsPassed": [2, 3, 4, 5],
-    "otherBlockers": ["3b signed136/actual146", "Trusted waiting"],
+    "shardsPassed": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "otherBlockers": [
+      "3b signed136/actual146",
+      "Trusted waiting"
+    ],
     "rootCause": "Native spec enabled responsibility only; .env.test v1.1 gate remains off when the real app config is created. EvidenceSealService.assertV11WriteAllowed rejects before transaction. Installer does not enable this gate for ordinary CI.",
     "minimalCorrection": "Enable both fixture-specific gates only during createE4Fixture, restore prior values exactly, explicitly assert real ActivityWorkflowGate enabled and not read-only. Do not change production defaults, maintenance env, business assertions or budgets.",
     "manualDatabaseCallsAdded": 0
@@ -996,7 +1046,10 @@
       "sourceExplanation": {
         "newHelperOmittedUnchangedTimeBranch": true,
         "existingContract": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts:4240-4267",
-        "e4SourceRowsDomains": ["time_revision", "correction_time_proof"],
+        "e4SourceRowsDomains": [
+          "time_revision",
+          "correction_time_proof"
+        ],
         "unchangedTimeUsesCopiedEvaluations": true,
         "productionAlgorithmDefectEstablished": false,
         "pinnedSqlOrExpectedCountChanged": false
@@ -1039,5 +1092,67 @@
     },
     "businessSqlPinsAndAssertionsUnchanged": true,
     "nextOrdinaryCi": "PENDING; exactSHA post-push result in external evidence"
+  },
+  "nativeReplayAndV3TailFollowup": {
+    "previousHead": "4f4db745e2b5c8b98621d55eaf9a7e7a499d539d",
+    "run": 39048441257,
+    "status": "FAIL",
+    "copyFrozenOracle": "PASS",
+    "replayFailure": "Only expected false->true replay flag difference in old whole-object assertion",
+    "tailNotRun": [
+      "unchanged COMMIT",
+      "V3 prepare/evaluation/COMMIT",
+      "long complete-source rejection"
+    ],
+    "legacyD6": {
+      "mandatoryPopulation": 2000,
+      "phase": "prepare",
+      "status": "FAIL",
+      "prisma": "P2028",
+      "transactionTimeoutMs": 30000,
+      "transactionElapsedMs": 52763,
+      "rootCause": "UNKNOWN",
+      "priorFourCases": "PASS; prepare elapsed NOT_CAPTURED",
+      "worker2000": "NOT_RUN",
+      "commit2000": "NOT_RUN",
+      "limited500DoesNotWaive": true
+    },
+    "changes": [
+      "assert both replay flags plus every other fact",
+      "V3 allocation uses exact manual slices request; server adds intervalKindCode",
+      "verify actual commit result and stored batch/ledger count before emittingPASS",
+      "observe original span policy scale_limit/complete-span arguments and196-table before/after",
+      "reuse existing bounded engine request/transaction observers only for originalD6 population2000 prepare; no extra query, no worker/data/budget change"
+    ],
+    "pureRegression": {
+      "redPassed": 11,
+      "redFailed": 5,
+      "greenPassed": 16,
+      "greenFailed": 0,
+      "appOrDatabaseCalls": 0
+    },
+    "testTypecheck": {
+      "name": "test-typecheck",
+      "command": [
+        "node",
+        "node_modules/typescript/bin/tsc",
+        "--noEmit",
+        "-p",
+        "test/tsconfig.test.json"
+      ],
+      "exitCode": 0,
+      "seconds": 31.211749636000604,
+      "appOrDatabaseCalls": 0
+    },
+    "businessSrcPrismaAndCiControlsUnchanged": true,
+    "nextOrdinaryCi": "PENDING; exact-SHA post-push evidence external",
+    "independentBudget": {
+      "attempts": 38,
+      "ceiling": 43,
+      "historicalPerformance": 4,
+      "performanceCeiling": 4,
+      "newManualDB": 0,
+      "newPerformance": 0
+    }
   }
 }

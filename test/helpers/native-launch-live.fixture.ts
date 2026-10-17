@@ -43,6 +43,38 @@ export function observeNativeLaunchHttp(
 }
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 
+export function assertNativeLaunchPrepareReplay<T extends { replayed: boolean }>(
+  initial: T,
+  repeated: T,
+) {
+  assert.equal(initial.replayed, false);
+  assert.equal(repeated.replayed, true);
+  const { replayed: initialReplay, ...initialFacts } = initial;
+  const { replayed: repeatedReplay, ...repeatedFacts } = repeated;
+  assert.notEqual(initialReplay, repeatedReplay);
+  assert.deepEqual(repeatedFacts, initialFacts);
+}
+
+export function nativeLaunchV3Allocation(input: {
+  participationIdentityId: string;
+  segmentKey: string;
+  baseSegmentRevisionId: string;
+  baseAllocationRevisionId: string;
+  startsAt: Date;
+  endsAt: Date;
+}) {
+  return {
+    participationIdentityId: input.participationIdentityId,
+    segmentKey: input.segmentKey,
+    baseSegmentRevisionId: input.baseSegmentRevisionId,
+    baseAllocationRevisionId: input.baseAllocationRevisionId,
+    recognitionModeCode: 'manual',
+    manualReason: 'Short manual slices must not hide the complete source span',
+    slices: nativeLaunchSlices(input.startsAt, input.endsAt),
+    evidenceAttachmentIds: [],
+  };
+}
+
 export function nativeLaunchPrepareRequest(
   expectation: Pick<AppPrepareTimeSettlementDto, 'expectedDraftVersion' | 'expectedEvidenceSealId'>,
   operationKey: string,

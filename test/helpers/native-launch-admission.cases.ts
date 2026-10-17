@@ -4,15 +4,23 @@ import { ActivityTimeSettlementService } from '../../src/modules/activities/acti
 import { ActivityContributionSettlementService } from '../../src/modules/activities/activity-contribution-settlement.service';
 import { ActivityContributionSettlementQueryService } from '../../src/modules/activities/activity-contribution-settlement-query.service';
 import { ActivityTimeAllocationService } from '../../src/modules/activities/activity-time-allocation.service';
-import { CorrectionApplicationService } from '../../src/modules/activities/correction-application.service';
+import {
+  CorrectionApplicationService,
+  type CorrectionPrepareResult,
+  type CorrectionCommitResult,
+} from '../../src/modules/activities/correction-application.service';
+import * as launchPolicy from '../../src/modules/activities/activity-contribution-launch-policy';
+import { ContributionSettlementPolicyError } from '../../src/modules/activities/activity-contribution-settlement-policy';
 import type { TimeSettlementReceiptResult } from '../../src/modules/activities/activity-time-settlement-command';
 import { nativeLaunchSlices } from './activity-native-launch.fixture';
 import {
   assertNativeLaunchFrozenOracle,
+  assertNativeLaunchPrepareReplay,
   createNativeLaunchLiveSource,
   createNativeLaunchSealedSource,
   nativeLaunchAdmissionPolicies,
   nativeLaunchBusinessFingerprint,
+  nativeLaunchV3Allocation,
   observeNativeLaunchHttp,
   type NativeLaunchStage,
 } from './native-launch-live.fixture';
@@ -134,6 +142,44 @@ export async function runNativeLaunchSmallAdmission(
   const contributions = f.app.get(ActivityContributionSettlementService);
   const gate = jest.spyOn(contributions, 'assertNewNativeCorrectionInTx');
   const copy = jest.spyOn(queries, 'assertLaunchCopyInTx');
+  const assertCommitted = async (
+    prepared: CorrectionPrepareResult,
+    committed: CorrectionCommitResult,
+    label: string,
+  ) => {
+    assert.equal(committed.correctionRequestId, prepared.correctionRequestId);
+    assert.equal(committed.correctionApplicationId, prepared.correctionApplicationId);
+    assert.equal(committed.activityId, source.activityId);
+    assert.equal(committed.correctionStatus, 'applied');
+    assert.equal(committed.applicationStatus, 'committed');
+    assert.equal(committed.replayed, false);
+    assert.equal(committed.ledger.postingBatchId, prepared.newPostingBatchId);
+    assert.equal(committed.ledger.settlementVersionId, prepared.newSettlementVersionId);
+    assert.equal(committed.ledger.batchStatus, 'committed');
+    assert.equal(committed.ledger.replayed, false);
+    assert(committed.ledger.committedAt instanceof Date);
+    const batch = await stage(label + '_STORED_BATCH', () =>
+      observer.ledgerPostingBatch.findUniqueOrThrow({ where: { id: prepared.newPostingBatchId } }),
+    );
+    const entries = await stage(label + '_STORED_ENTRIES', () =>
+      observer.participationLedgerEntry.findMany({ where: { postingBatchId: batch.id } }),
+    );
+    assert.equal(batch.statusCode, 'committed');
+    assert.equal(batch.settlementVersionId, prepared.newSettlementVersionId);
+    assert.equal(batch.settlementRunId, committed.ledger.settlementRunId);
+    assert.equal(batch.committedAt?.getTime(), committed.ledger.committedAt.getTime());
+    assert(entries.length > 0);
+    assert.equal(entries.length, committed.ledger.entryCount);
+    assert(entries.every((entry) => entry.activityId === source.activityId));
+    return {
+      correctionStatus: committed.correctionStatus,
+      applicationStatus: committed.applicationStatus,
+      batchStatus: batch.statusCode,
+      committedAtObserved: true,
+      storedEntryCount: entries.length,
+      returnedEntryCount: committed.ledger.entryCount,
+    };
+  };
   try {
     const result = await stage('ADMISSION_IO_126', () =>
       observer.participantSettlementResultRevision.findFirstOrThrow({
@@ -200,15 +246,28 @@ export async function runNativeLaunchSmallAdmission(
     const repeated = await stage('UNCHANGED_RESUMABLE_PREPARE', () =>
       correction.prepare(command, e4Actor(f.finalReviewer), E4_META),
     );
-    assert.deepEqual(repeated, unchanged);
+    assertNativeLaunchPrepareReplay(unchanged, repeated);
     assert.equal(gate.mock.calls.length, 1, 'Resumable must return before the new admission');
     assert.equal((await nativeLaunchBusinessFingerprint(observer, stage)).hash, beforeReplay.hash);
-    await stage('UNCHANGED_COMMIT', () =>
+    const unchangedCommitted = await stage('UNCHANGED_COMMIT', () =>
       correction.commit(command, e4Actor(f.finalReviewer), E4_META),
+    );
+    const unchangedLedger = await assertCommitted(
+      unchanged,
+      unchangedCommitted,
+      'UNCHANGED_COMMIT',
     );
     emit({
       label: 'unchanged-time real new gate/copy, resumable no new gate/write, and COMMIT',
-      value: { gateCalls: 1, evaluations: 4, replaySame: true, replayFingerprintSame: true },
+      value: {
+        gateCalls: 1,
+        evaluations: 4,
+        initialReplayed: unchanged.replayed,
+        repeatedReplayed: repeated.replayed,
+        allOtherReceiptFactsSame: true,
+        replayFingerprintSame: true,
+        ledger: unchangedLedger,
+      },
     });
 
     const originalManifest = await stage('ADMISSION_IO_194', () =>
@@ -267,7 +326,6 @@ export async function runNativeLaunchSmallAdmission(
       const startsAt = long
         ? new Date(source.startsAt.getTime() - 2 * 86_400_000)
         : source.startsAt;
-      const slices = nativeLaunchSlices(source.startsAt, endsAt);
       const seconds: Record<string, number> = {
         volunteer_service: 8,
         training: 4,
@@ -303,19 +361,14 @@ export async function runNativeLaunchSmallAdmission(
                 })),
               },
               allocations: [
-                {
+                nativeLaunchV3Allocation({
                   participationIdentityId: source.raw.people[0].identityId,
                   segmentKey: currentSegment.segmentKey,
                   baseSegmentRevisionId: currentSegment.id,
                   baseAllocationRevisionId: allocation.allocationRevisionId,
-                  recognitionModeCode: 'manual',
-                  manualReason: 'Short manual slices must not hide the complete source span',
-                  slices: slices.map((slice) => ({
-                    ...slice,
-                    intervalKindCode: 'service_segment',
-                  })),
-                  evidenceAttachmentIds: [],
-                },
+                  startsAt: source.startsAt,
+                  endsAt,
+                }),
               ],
             },
             reason: long
@@ -364,7 +417,10 @@ export async function runNativeLaunchSmallAdmission(
     assert.equal(changedProof.sourceKindCode, 'correction_time_proof');
     assert(changedProof.correctionTimeSourceProofId);
     await assertNativeLaunchFrozenOracle(observer, changedProof, 4, stage);
-    await stage('V3_COMMIT', () => correction.commit(v3command, e4Actor(f.finalReviewer), E4_META));
+    const changedCommitted = await stage('V3_COMMIT', () =>
+      correction.commit(v3command, e4Actor(f.finalReviewer), E4_META),
+    );
+    const changedLedger = await assertCommitted(changed, changedCommitted, 'V3_COMMIT');
     const evaluations = await stage('ADMISSION_IO_323', () =>
       observer.participantContributionEvaluation.findMany({
         where: { contributionRevisionId: changedProof.id },
@@ -376,37 +432,75 @@ export async function runNativeLaunchSmallAdmission(
     );
     emit({
       label: 'changed-time real V3 gate/bytes/count/day evaluation and COMMIT',
-      value: { evaluations: 4, recognizedSeconds: 20, originalLaunchArgumentObserved: true },
+      value: {
+        evaluations: 4,
+        recognizedSeconds: 20,
+        originalLaunchArgumentObserved: true,
+        ledger: changedLedger,
+      },
     });
 
     const longCommand = await stage('LONG_FULL_SOURCE_SHORT_SLICE_SUBMIT_REVIEW', () =>
       buildTimeRequest(changed.newSettlementVersionId, true),
     );
     const beforeLong = await nativeLaunchBusinessFingerprint(observer, stage);
+    stage.snapshot?.('LONG_FULL_SOURCE_BEFORE', beforeLong);
     const callsBeforeLong = gate.mock.calls.length;
-    await stage('LONG_FULL_SOURCE_PREPARE_REJECT', () =>
-      assert.rejects(
-        () => correction.prepare(longCommand, e4Actor(f.finalReviewer), E4_META),
-        (error: unknown) => {
-          if (typeof error !== 'object' || error === null) return false;
-          const biz: unknown = Reflect.get(error, 'biz');
-          stage.observe?.({
-            transport: 'service',
-            entry: 'correction.prepare/full-source-span',
-            status: null,
-            bizCode:
-              typeof biz === 'object' &&
-              biz !== null &&
-              typeof Reflect.get(biz, 'code') === 'number'
-                ? (Reflect.get(biz, 'code') as number)
-                : null,
-          });
-          return typeof biz === 'object' && biz !== null && Reflect.get(biz, 'code') === 20225;
-        },
-      ),
-    );
-    assert.equal(gate.mock.calls.length, callsBeforeLong + 1);
+    let prepareRejection: unknown;
+    let spanRejection: { error: unknown; spans: { startsAt: Date; endsAt: Date }[] } | undefined;
+    const originalSpans = launchPolicy.assertNativeContributionLaunchSpans;
+    const spanGuard = jest
+      .spyOn(launchPolicy, 'assertNativeContributionLaunchSpans')
+      .mockImplementation((spans) => {
+        try {
+          return originalSpans(spans);
+        } catch (error) {
+          spanRejection = { error, spans: [...spans] };
+          throw error;
+        }
+      });
+    try {
+      await stage('LONG_FULL_SOURCE_PREPARE_REJECT', () =>
+        assert.rejects(
+          () => correction.prepare(longCommand, e4Actor(f.finalReviewer), E4_META),
+          (error: unknown) => {
+            prepareRejection = error;
+            if (typeof error !== 'object' || error === null) return false;
+            const biz: unknown = Reflect.get(error, 'biz');
+            stage.observe?.({
+              transport: 'service',
+              entry: 'correction.prepare/full-source-span',
+              status: null,
+              bizCode:
+                typeof biz === 'object' &&
+                biz !== null &&
+                typeof Reflect.get(biz, 'code') === 'number'
+                  ? (Reflect.get(biz, 'code') as number)
+                  : null,
+            });
+            return typeof biz === 'object' && biz !== null && Reflect.get(biz, 'code') === 20225;
+          },
+        ),
+      );
+      assert.equal(gate.mock.calls.length, callsBeforeLong + 1);
+      const actualGateResult = gate.mock.results[callsBeforeLong];
+      assert.equal(actualGateResult.type, 'return');
+      await assert.rejects(actualGateResult.value, (error: unknown) => error === prepareRejection);
+      assert(spanRejection?.error instanceof ContributionSettlementPolicyError);
+      assert.equal(spanRejection.error.reason, 'scale_limit');
+      assert.equal(spanRejection.spans.length, 1);
+      assert.equal(
+        spanRejection.spans[0].startsAt.getTime(),
+        source.startsAt.getTime() - 2 * 86_400_000,
+      );
+      assert.equal(spanRejection.spans[0].endsAt.getTime(), source.startsAt.getTime() + 20_000);
+      assert.equal(spanGuard.mock.results.filter((result) => result.type === 'throw').length, 1);
+    } finally {
+      spanGuard.mockRestore();
+    }
     const afterLong = await nativeLaunchBusinessFingerprint(observer, stage);
+    stage.snapshot?.('LONG_FULL_SOURCE_AFTER', afterLong);
+    assert.deepEqual(afterLong.rows, beforeLong.rows);
     assert.equal(afterLong.hash, beforeLong.hash);
     emit({
       label:
@@ -416,6 +510,8 @@ export async function runNativeLaunchSmallAdmission(
         submittedAndReviewed: true,
         fullSpanMs: 2 * 86_400_000 + 20_000,
         manualSliceSpanMs: 20_000,
+        originalSpanGuardRejectedCompleteSource: true,
+        gateAndPrepareSameRejection: true,
         before: beforeLong.hash,
         after: afterLong.hash,
         scope: 'correction.prepare intended complete source; no fabricated current segment',

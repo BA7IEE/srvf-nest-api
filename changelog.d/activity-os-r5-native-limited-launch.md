@@ -13,3 +13,7 @@ The second ordinary CI passed the actual outbox and D6 worker specs but both nat
 At50b7d635, real shape/bytes generate rejections each preserved all196 table hashes. Both positive prepare requests then failed400/40000 before service admission. The fixture now explicitly projects the actual four-field prepare DTO; real strict DTO tests reproduce the old three extra-field errors and pass after the fix. Allocation/submit contracts, production validation and core assertions are unchanged; downstream live acceptance remains pending ordinary CI.
 
 The fourth ordinary CI at edf5c9aa passes the entire500 boundary/oracle/ledger case and both policy/bytes first-generate196-table checks. Its one small-case failure is the new frozen-oracle helper treating an unchanged-time copy as new source rows (oracle0/stored4), despite the established migration-spec oracle explicitly validating copies against their predecessor. Reuse that existing copy/root/document/recursive frozen-oracle contract, with a6-pass4-fail to10/10 pure regression; no production algorithm, SQL/pin, expected count or zero-difference assertion changes. Later resumable/V3/full-span outcomes still require the new exact-SHA ordinary CI.
+
+
+- 补齐原生更正测试尾链：首次／重放标志分别核验，其余收据事实保持全等；V3请求manual slices沿真实闭集，服务端生成intervalKindCode。两次COMMIT核实际返回和落库账本，长来源负例记录原跨度guard抛错与196表逐表快照。纯契约回归RED11／5→GREEN16／0，无DB；新SHA真实CI待验。
+- 保留4f普通CI旧D6原2000 prepare的P2028失败（30000／52763毫秒），根因UNKNOWN；原用例仍必过，仅复用有界诊断记录原调用，不改变30秒、数据量、worker或guard，不用受限500替代。
