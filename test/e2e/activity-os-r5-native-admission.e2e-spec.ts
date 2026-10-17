@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { PrismaClient } from '@prisma/client';
 import appConfig from '../../src/config/app.config';
+import { ActivityWorkflowGate } from '../../src/common/activity-workflow/activity-workflow.gate';
 import {
   closeE13Fixture,
   createE4Fixture,
@@ -65,17 +66,24 @@ describe('active native limited launch: applicable business boundaries, original
     started = performance.now();
     pending++;
     try {
-      // Publishing creates an owner through the real responsibility workflow.
-      // Match the native runner's fixture setting, then restore the caller exactly.
+      // This fixture publishes an owner and writes the real v1.1 seal/settlement chain.
+      // Match the native runner's two gates, then restore the caller exactly.
       const previousResponsibility = process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
+      const previousV11 = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
       process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED = 'true';
+      process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
       try {
         f = await createE4Fixture();
       } finally {
         if (previousResponsibility === undefined)
           delete process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
         else process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED = previousResponsibility;
+        if (previousV11 === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+        else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousV11;
       }
+      const workflowGate = f.app.get(ActivityWorkflowGate);
+      assert.equal(workflowGate.isV11Enabled(), true);
+      assert.equal(workflowGate.isReadonlyMaintenance(), false);
       assert.equal(
         f.app.get<ReturnType<typeof appConfig>>(appConfig.KEY).activityResponsibilityWorkflow
           .enabled,

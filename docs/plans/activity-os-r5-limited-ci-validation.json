@@ -155,7 +155,7 @@
   },
   "protectedFilesApplied": true,
   "maintainerGrantPresent": false,
-  "currentRequiredCI": "Prior6cd CI39039566624 FAILURE; followup ordinary CI not yet triggered at this pre-push record",
+  "currentRequiredCI": "Second ordinary CI39042031516 FAILURE; fixture V11 app-creation followup not yet pushed at this pre-push record",
   "originalMaximum": "NOT_VALIDATED_FOR_LIMITED_LAUNCH",
   "trusted": "MAINTAINER_APPROVAL_REQUIRED",
   "production": "NOT_RUN",
@@ -300,10 +300,7 @@
       ".github/workflows/activity-os-r5-e4-validation.yml",
       "docs/ai-harness/ROUTE_AUTHZ.md"
     ],
-    "signaturesExcluded": [
-      "SQL3b substantive review",
-      "Trusted approval"
-    ],
+    "signaturesExcluded": ["SQL3b substantive review", "Trusted approval"],
     "experiment": {
       "newAttempt": 1,
       "maxNewDatabases": 1,
@@ -426,10 +423,7 @@
     "futureDiagnostics": "Per-table names/hash snapshot emitted before equality assertion, without raw data"
   },
   "formalTypecheck": {
-    "command": [
-      "pnpm",
-      "typecheck"
-    ],
+    "command": ["pnpm", "typecheck"],
     "exitCode": 0,
     "seconds": 207.38263741099945
   },
@@ -456,49 +450,31 @@
   "formalSmallChecks": [
     {
       "name": "cold-lint-selftest",
-      "command": [
-        "pnpm",
-        "exec",
-        "tsx",
-        "scripts/check-cold-lint.ts",
-        "--selftest"
-      ],
+      "command": ["pnpm", "exec", "tsx", "scripts/check-cold-lint.ts", "--selftest"],
       "exitCode": 0,
       "seconds": 2.90007355799753
     },
     {
       "name": "docs-authz",
-      "command": [
-        "pnpm",
-        "docs:authz:check"
-      ],
+      "command": ["pnpm", "docs:authz:check"],
       "exitCode": 0,
       "seconds": 2.9880204309993132
     },
     {
       "name": "codemap",
-      "command": [
-        "pnpm",
-        "docs:codemap:check"
-      ],
+      "command": ["pnpm", "docs:codemap:check"],
       "exitCode": 1,
       "seconds": 1.5503887119994033
     },
     {
       "name": "boundaries",
-      "command": [
-        "pnpm",
-        "docs:boundaries:check"
-      ],
+      "command": ["pnpm", "docs:boundaries:check"],
       "exitCode": 0,
       "seconds": 2.76102977499977
     },
     {
       "name": "signoff",
-      "command": [
-        "pnpm",
-        "cutover:check:signoff"
-      ],
+      "command": ["pnpm", "cutover:check:signoff"],
       "exitCode": 1,
       "seconds": 10.994994659999065
     }
@@ -517,7 +493,7 @@
   ],
   "currentRequiredCIWorkflow": ".github/workflows/ci.yml",
   "recordScope": "State before compatibility followup push; final exact-source CI results are in PR checks and the external evidence addendum",
-  "staticChecksAtRecord": "PASS for current increment: full typecheck,461 suites/10266 unit assertions/8 snapshots/5 todo,26 targeted DI regressions,5-file lint,authz,CODEMAP. New complete cold lint/harness and actual DB/IPC acceptance await ordinary CI; previous6cd full passes stay historical.",
+  "staticChecksAtRecord": "Current fixture-only V11 increment: test-project typecheck and changed-spec lint PASS. No local app/DB run. Prior866 full checks and actual outbox/D6 passes are historical; new full ordinary CI pending.",
   "precedingCI": {
     "head": "6cd414c2f3d96ebcbba16e03a88f2e52d21c8e57",
     "mergeSha": "6622b1361a57c7389647929aac8579317fd69bea",
@@ -548,10 +524,7 @@
     "staticFixReview": "No blocking finding from existing read-only reviewer; not actual DB/IPC acceptance"
   },
   "previousFormalFullColdLint": {
-    "command": [
-      "pnpm",
-      "lint"
-    ],
+    "command": ["pnpm", "lint"],
     "exitCode": 0,
     "wallSeconds": 291.4819794140021,
     "wholeProcessGroupPeakRssBytes": 12733943808,
@@ -577,9 +550,15 @@
     "scope": "Official pnpm lint, no cache, current source, original300-second inner window",
     "testedSourceCommit": "6cd414c2f3d96ebcbba16e03a88f2e52d21c8e57"
   },
-  "currentFullColdLint": "Pending ordinary CI after compatibility followup; previous full cold pass is historical and this increment uses targeted lint",
+  "currentFullColdLint": {
+    "status": "PASS",
+    "source": "866451fd527d5dbcf67cdf0052cf4d4544c7c436",
+    "run": 39042031516,
+    "step": "Fast checks / Lint",
+    "newFixtureFollowup": "Pending new ordinary CI"
+  },
   "compatibilityFollowup": {
-    "status": "NON_DB_PASS_LIVE_CI_PENDING",
+    "status": "LIVE_CI_FAIL_BEFORE_GENERATE_SEAL_503_20153",
     "scope": "Mandatory dispatcher admission DI, temporary fixture responsibility workflow during app creation with exact restore, test-child-only ES2022 target; no business assertions, preload, IPC, guards or budgets removed",
     "DIRegression": {
       "suites": 2,
@@ -636,10 +615,7 @@
     "independentDatabaseAttemptsAdded": 0,
     "performanceCallsAdded": 0,
     "formalTypecheck": {
-      "command": [
-        "pnpm",
-        "typecheck"
-      ],
+      "command": ["pnpm", "typecheck"],
       "exitCode": 0,
       "seconds": 246.28154171999995
     },
@@ -663,19 +639,13 @@
       },
       {
         "name": "authz-check",
-        "command": [
-          "pnpm",
-          "docs:authz:check"
-        ],
+        "command": ["pnpm", "docs:authz:check"],
         "exitCode": 0,
         "seconds": 3.2537185010005487
       },
       {
         "name": "codemap-check",
-        "command": [
-          "pnpm",
-          "docs:codemap:check"
-        ],
+        "command": ["pnpm", "docs:codemap:check"],
         "exitCode": 0,
         "seconds": 8.209486065999954
       }
@@ -707,6 +677,73 @@
         "exitCode": 0,
         "seconds": 294.8006651689975
       }
-    }
+    },
+    "testedSourceCommit": "866451fd527d5dbcf67cdf0052cf4d4544c7c436"
+  },
+  "secondOrdinaryCI": {
+    "head": "866451fd527d5dbcf67cdf0052cf4d4544c7c436",
+    "merge": "19dc4ac3061ed48c1dd3147d2de69e2c46e54e6a",
+    "run": 39042031516,
+    "conclusion": "failure",
+    "nativeAdmission": {
+      "tests": 2,
+      "phase": "REAL_SEAL",
+      "httpStatuses": [503, 503],
+      "bizCodes": [20153, 20153],
+      "generateCalls": 0,
+      "prepareCalls": 0,
+      "fingerprints": "NOT_RUN"
+    },
+    "outbox": "actual spec PASS114.329s",
+    "d6": "actual spec PASS19.929s",
+    "shardsPassed": [2, 3, 4, 5],
+    "otherBlockers": ["3b signed136/actual146", "Trusted waiting"],
+    "rootCause": "Native spec enabled responsibility only; .env.test v1.1 gate remains off when the real app config is created. EvidenceSealService.assertV11WriteAllowed rejects before transaction. Installer does not enable this gate for ordinary CI.",
+    "minimalCorrection": "Enable both fixture-specific gates only during createE4Fixture, restore prior values exactly, explicitly assert real ActivityWorkflowGate enabled and not read-only. Do not change production defaults, maintenance env, business assertions or budgets.",
+    "manualDatabaseCallsAdded": 0
+  },
+  "previous866StaticChecksAtRecord": "PASS for current increment: full typecheck,461 suites/10266 unit assertions/8 snapshots/5 todo,26 targeted DI regressions,5-file lint,authz,CODEMAP. New complete cold lint/harness and actual DB/IPC acceptance await ordinary CI; previous6cd full passes stay historical.",
+  "fixtureV11Followup": {
+    "status": "NON_DB_PASS_LIVE_CI_PENDING",
+    "changes": [
+      "Only during createE4Fixture: responsibility=true and V11=true",
+      "Exact finally restoration of both prior values or absence",
+      "Assert actual ActivityWorkflowGate enabled and not read-only"
+    ],
+    "readonlyMaintenanceEnvChanged": false,
+    "productionConfigChanged": false,
+    "businessAssertionsOrBudgetsChanged": false,
+    "newManualDbCalls": 0,
+    "newManualPerformanceCalls": 0,
+    "independentCumulativeAttempts": 38,
+    "independentCeiling": 43,
+    "liveAcceptance": "PENDING_ORDINARY_CI",
+    "validation": [
+      {
+        "name": "test-typecheck",
+        "command": [
+          "node",
+          "node_modules/typescript/bin/tsc",
+          "--noEmit",
+          "-p",
+          "test/tsconfig.test.json"
+        ],
+        "exitCode": 0,
+        "seconds": 47.02337717600312
+      },
+      {
+        "name": "targeted-lint",
+        "command": [
+          "node",
+          "--max-old-space-size=6144",
+          "node_modules/eslint/bin/eslint.js",
+          "--max-warnings",
+          "0",
+          "test/e2e/activity-os-r5-native-admission.e2e-spec.ts"
+        ],
+        "exitCode": 0,
+        "seconds": 50.375572746001126
+      }
+    ]
   }
 }

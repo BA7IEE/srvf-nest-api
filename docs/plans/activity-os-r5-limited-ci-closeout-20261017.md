@@ -4,6 +4,10 @@ PR1380 仍为 Draft／BLOCKED。旧 `9c5c60d6` 的500全链通过证据保留；
 
 ## 普通 CI 失败与兼容修复增量
 
+`866451fd` 的第二轮普通CI [39042031516](https://github.com/BA7IEE/srvf-nest-api/actions/runs/39042031516)也已结束FAIL，merge `19dc4ac3061ed48c1dd3147d2de69e2c46e54e6a`与head tree相同。E2E2／3／4／5和Fast checks／Harness／Docker全部通过：outbox实际spec PASS114.329秒，D6并发worker实际spec PASS19.929秒。E2E1新增两例均在真实封场返回503／20153，尚未到generate／prepare，全部196表准入验收NOT_RUN。上一轮只启用了测试职责开关，遗漏普通CI创建app时的v1.1开关；installer仅设置settlement mode，不会自动启用v1.1。
+
+当前最小增量只在同一个`createE4Fixture`期间同时设置职责与v1.1测试开关，`finally`逐项精确恢复原值／缺省；显式断言实际ActivityWorkflowGate已启用且非只读。未改只读维护环境变量、生产默认值、旧业务断言或30／600秒预算，未新增独立DB／手动500或满额。本次测试工程类型检查47.023秒和单spec lint50.376秒通过，只读复核无阻断，没有本地应用／DB调用。当前增量的真实业务结果仍待新普通CI，不能把第二轮失败或先前500通过倒签。后续最终SHA日志在PR checks和外部补充包，仓内本段是推送前记录。
+
 `6cd414c2` 的普通CI [39039566624](https://github.com/BA7IEE/srvf-nest-api/actions/runs/39039566624) 已结束FAIL；实际merge SHA `6622b1361a57c7389647929aac8579317fd69bea`与head tree相同。Fast checks（含正式冷lint／完整类型／全单元／构建）、Harness、Incident replay、Docker build／smoke和Golden journeys通过，E2E2／4通过，1／3／5失败。E2E1新增两例都在审批返回409／20030，尚未到generate，196表验收NOT_RUN；E2E3十例被SWC target/getter编译错误阻断；E2E5两例child在ready前退出，旧stderr未保存，不能倒填为相同根因。
 
 当前增量完整类型、461套10266项单元／8快照（5个原todo）、五文件定向lint及权限／CODEMAP检查通过；完整冷lint／Harness交由新普通CI，旧6cd结果不倒签。当前增量将dispatcher的contributions改为必需DI：ActivitiesModule已有真实provider，缺失时Nest拒绝装配，26项定向回归通过，含真实ContributionService＋查询替身；这不是数据库验收。新spec只在createE4Fixture期间临时启用责任工作流并finally精确恢复，匹配已实测runner：审批createOwnerForPublish需要该测试配置，未造业务状态或改默认开关。两个测试child仅指定ES2022编译target，保留原ts-node／SWC preload和Nest元数据：根ES2023不在已安装ts-node10映射中，会回退ES3。无DB探针复现旧getter错误、新target编译实际provider并保留构造参数元数据；实际child/IPC及业务回归仍待下一次普通CI，不启动独立DB窗口。

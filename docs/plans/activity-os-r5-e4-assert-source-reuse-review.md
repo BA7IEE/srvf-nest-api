@@ -490,3 +490,7 @@ GitHub当前普通CI没有新SHA结果；仓内声明required为`Lint / Typechec
 CI outbox十例被ts-node10缺ES2023映射→SWC回退ES3/getter错误阻断；D6两例仅有ready前退出，旧stderr被忽略，不能倒填原因。两个测试child显式ES2022，保持preload／元数据／IPC／断言；无DB真实源码编译探针旧错误复现、新target通过，真实worker验收待普通CI。该增量未增加独立数据库窗口或性能预算。两处权限摘要重新正式生成，663条声明不变；当前增量校验、普通CI和Library以后续最终记录为准，不用旧6cd的完整冷lint倒签新源码。
 
 **本次未做：** 未追加独立DB、500手动窗口／原满额或A/B；未改生产SQL／guard／默认开关／30秒／300秒／600秒，未跳过旧用例／放宽断言；未代签3b／Trusted，未Ready／合并／部署。
+
+## 2026-10-17 第二轮普通 CI 与 v1.1 测试前置补齐
+
+866451fd／merge19dc4ac3的普通CI39042031516已结束FAIL：E2E2／3／4／5、完整Fast checks、Harness及Docker通过，outbox114.329秒与D6 worker19.929秒为实际spec通过。新增两例都在封场503／20153，generate／prepare及196表检查未运行；不是P2028或准入码失败。普通installer只设置settlement mode，上一轮责任开关补齐没有同时声明新真相链必需的V11开关。当前只在createE4Fixture期间同时启用这两个测试开关并finally精确恢复，断言真实gate enabled且非maintenance；不修改只读位、生产默认、业务不变量／断言／预算，也没有追加独立实验。新最终SHA的实际结果以普通CI与外部补充包为准，旧失败保留。
