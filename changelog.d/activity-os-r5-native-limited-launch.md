@@ -17,3 +17,5 @@ The fourth ordinary CI at edf5c9aa passes the entire500 boundary/oracle/ledger c
 
 - 补齐原生更正测试尾链：首次／重放标志分别核验，其余收据事实保持全等；V3请求manual slices沿真实闭集，服务端生成intervalKindCode。两次COMMIT核实际返回和落库账本，长来源负例记录原跨度guard抛错与196表逐表快照。纯契约回归RED11／5→GREEN16／0，无DB；新SHA真实CI待验。
 - 保留4f普通CI旧D6原2000 prepare的P2028失败（30000／52763毫秒），根因UNKNOWN；原用例仍必过，仅复用有界诊断记录原调用，不改变30秒、数据量、worker或guard，不用受限500替代。
+
+- Docker Smoke就绪条件同时等待原生日注册锚行，沿用既有60次health轮询及后续原断言，避免单次日志可见性竞态；旧失败39051183515保留，新SHA验证待CI。按用户既有workflow/持续推进与受托执行授权正常精确grant后应用并clear，不包含3b/Trusted或生产。

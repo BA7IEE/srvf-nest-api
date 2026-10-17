@@ -224,7 +224,8 @@ jobs:
       - name: Wait for app /api/system/v1/health/live
         run: |
           for i in $(seq 1 60); do
-            if curl -fsS "http://localhost:${APP_HOST_PORT}/api/system/v1/health/live" >/dev/null 2>&1; then
+            if curl -fsS "http://localhost:${APP_HOST_PORT}/api/system/v1/health/live" >/dev/null 2>&1 &&
+              docker logs "$APP_CONTAINER" 2>&1 | grep -F 'Birthday greeting cron registered (09:00 Asia/Shanghai)' >/dev/null; then
               echo "App ready after ${i}s"
               exit 0
             fi

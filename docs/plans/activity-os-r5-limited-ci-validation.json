@@ -155,7 +155,7 @@
   },
   "protectedFilesApplied": true,
   "maintainerGrantPresent": false,
-  "currentRequiredCI": "4f4db745 CI39048441257 FAILURE: unchanged copy frozen oracle PASS then expected replay flag mismatch; legacy D6 2000 prepare P2028 original30000/elapsed52763. Tail-contract/D6-observation followup pre-push; next exact-SHA ordinaryCI PENDING.",
+  "currentRequiredCI": "c4489ab8 CI39051183562: all fiveE2E/Fast/Harness/Replay/Docker/GoldenPASS, overall3b signed136/current146FAIL. Native10checkpointsPASS; mandatory oldD62000PASS. Smoke39051183515 anchorvisibilityFAIL; minimalreadiness followup pre-push, exactnewSHA CI PENDING.",
   "originalMaximum": "NOT_VALIDATED_FOR_LIMITED_LAUNCH",
   "trusted": "MAINTAINER_APPROVAL_REQUIRED",
   "production": "NOT_RUN",
@@ -1154,5 +1154,31 @@
       "newManualDB": 0,
       "newPerformance": 0
     }
+  },
+  "dockerSmokeReadinessFollowup": {
+    "previousHead": "c4489ab84e05a954eb823bc8cea4b0bb73371e11",
+    "previousRun": 39051183515,
+    "previousJob": 117449920736,
+    "previousStatus": "FAIL",
+    "path": ".github/workflows/docker-smoke.yml",
+    "sourceSha256": "fda1561e8055aec32bb311b3d4192b78ae51fa9c1b5bff4b8e268728715bea73",
+    "candidateSha256": "39734e1ee7220db7d6a6776bea1d73de53152d24655c6614161f074c6b50ffb5",
+    "patchSha256": "c09b03a6b97fc3c72531968bec41805ba265bae5cf938742e20dbfdd8f5090f1",
+    "oldAnchorVisibleInCleanup": true,
+    "preciseTransportRootCause": "NOT_ESTABLISHED",
+    "existingReadinessAttempts": 60,
+    "originalBirthdayAssertionRetained": true,
+    "offlineShellChecks": 4,
+    "appOrDatabaseCalls": 0,
+    "normalExactGrantExecuted": true,
+    "userAuthority": "GitHub 工作流需要的话就补上 + explicitgrantdelegation + ongoingcontinue instruction",
+    "actorRecorded": "用户授权、AI代执行",
+    "grantCleared": true,
+    "newManualDB": 0,
+    "newManualPerformance": 0,
+    "newRetry": 0,
+    "businessTestPrismaSqlUnchanged": true,
+    "nextExactShaCi": "PENDING; no futurePASS claimed",
+    "3bTrustedSignature": "NOT_PERFORMED"
   }
 }

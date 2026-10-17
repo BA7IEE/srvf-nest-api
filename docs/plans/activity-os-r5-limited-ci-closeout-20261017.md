@@ -63,3 +63,14 @@ edf5c9aa普通CI39046228028已结束FAIL：500整例实际PASS（prepare入口4�
 E2E3旧D6原2000人数用例仍是独立必过项：prepare实际HTTP500／Biz50000／P2028，原30000毫秒、记录52763毫秒，尚未进入worker2000测量／COMMIT。此前四次同源码用例通过，但未采集prepare耗时；通过轮也与D7有重叠，不能据此认定随机抖动或共享争抢，根因UNKNOWN。当前只在下一次必要普通CI的原2000 prepare复用既有有界engine request／transaction观测并记录UTC及本Jest进程CPU／event loop，无新增查询、数据／worker／超时改动。Promise在途时间和事务桥接时间不等于PG执行时间；截断／pending／安装恢复异常保留UNKNOWN。R5受限500通过不抵消D6失败。独立额度仍38／43、历史性能4／4，不建新手动库或盲重跑。
 
 本次未做：未修改业务源码、SQL／pins、guard、原30／300／600秒或CI控制面；未重跑独立500／原满额／A-B，未触及生产或Mac，未代签3b／Trusted或Ready／合并／部署。
+
+
+## 2026-10-17 当前业务验证收口与 Smoke 就绪修复
+
+c4489ab8普通CI39051183562的五个E2E分片、Fast checks、Harness、事故回放、Docker构建及Golden journeys均通过；整体仅3b136/146签字差异FAIL。原生整例345.156秒、10检查点齐全：受限500/2000eval/500ledgerpairs、冻结oracle、两次更正真实COMMIT各4分录、重放两标志及其余事实一致、长来源原span guard拒绝20225且196表逐表/根hash零变化。旧D6原2000全链独立通过，prepare服务墙钟12.971秒、222桥接/pending0/COMPLETE，随后worker及COMMIT完成；该次模式off，不代表active R5满额2000验收。原30秒未改，旧52.763秒P2028仍FAIL，历史根因UNKNOWN。原R5满额仍NOT_VALIDATED。完整c448证据Librarylibfile_7beae1a119d081918e67e8cff6171d6f，SHA25695c7f3e2fc0f2e49e25791ab82bb48006b07f362cf459849f56c5ab1e8b6aa1f保持不变。
+
+独立Smoke39051183515/job117449920736生日单次grep在16:54:02.780返回1，16:54:02.920清理日志已含原注册锚行及Nest started；支持启动/日志可见性竞态推断，不证明精确传输根因，旧Smoke保持FAIL。当前最小修复只将同原锚行加入已有60次health readiness条件，后续原生日assert与其余Smoke不变，既不删断言也不另加轮询窗口；60次不是严格60秒墙钟。四项离线shell检查、补丁适用性及只读复查通过，无应用/DB调用；新SHA真实Smoke/CI结果待GitHub，不以候选快测倒签。
+
+授权判断补正：用户既有“GitHub 工作流需要的话就补上”、此前明确委托grant及持续推进指令覆盖该必要工作流小修。AGENTS37–38要求先有用户授权再以精确token落实，并未逐新路径规定再次用户往返；不能把新token等同新批准。当前正常CLI仅对.github/workflows/docker-smoke.yml登记“用户授权、AI代执行”后应用，已正常clear；未冒称维护者、未手改token或授权工具。旧c448包的“未应用/待新增授权”是当时判断记录，不重写；此补正不是把3b/Trusted或默认规则全放开。3b真实SQL审查、最终SHA Trusted、Ready/合并/生产仍独立保留。
+
+本次未做：未新增独立DB、手动500/满额/A-B或重试，未改业务源码/测试/SQL/guards/默认开关与30/300/600秒；未操作生产或Mac，未代签3b/Trusted、Ready、合并或部署。
