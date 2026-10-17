@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import type { ActivitySettlementContributionRevision, PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import type { ContributionPolicyDefinition } from '../../src/modules/activities/activity-contribution-policy-definition';
+import type { AppPrepareTimeSettlementDto } from '../../src/modules/activities/dto/app/app-activity-time-settlement.dto';
 import { httpServer } from './http-server';
 import type { E4Fixture } from './activity-contribution-policy.fixture';
 import {
@@ -41,6 +42,18 @@ export function observeNativeLaunchHttp(
   });
 }
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+
+export function nativeLaunchPrepareRequest(
+  expectation: Pick<AppPrepareTimeSettlementDto, 'expectedDraftVersion' | 'expectedEvidenceSealId'>,
+  operationKey: string,
+): AppPrepareTimeSettlementDto {
+  return {
+    operationKey,
+    expectedDraftVersion: expectation.expectedDraftVersion,
+    expectedEvidenceSealId: expectation.expectedEvidenceSealId,
+    expectedTimeRevision: 0,
+  };
+}
 
 /** Both are valid closed V1 policies. Bytes runs first; its band shape also exceeds launch. */
 export function nativeLaunchAdmissionPolicies() {
@@ -166,11 +179,7 @@ export async function createNativeLaunchLiveSource(
     expectation,
     draft,
     seal,
-    prepare: {
-      ...expectation,
-      operationKey: f.key('launch_prepare'),
-      expectedTimeRevision: 0,
-    },
+    prepare: nativeLaunchPrepareRequest(expectation, f.key('launch_prepare')),
   };
 }
 

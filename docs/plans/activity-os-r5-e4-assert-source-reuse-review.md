@@ -494,3 +494,7 @@ CI outbox十例被ts-node10缺ES2023映射→SWC回退ES3/getter错误阻断；D
 ## 2026-10-17 第二轮普通 CI 与 v1.1 测试前置补齐
 
 866451fd／merge19dc4ac3的普通CI39042031516已结束FAIL：E2E2／3／4／5、完整Fast checks、Harness及Docker通过，outbox114.329秒与D6 worker19.929秒为实际spec通过。新增两例都在封场503／20153，generate／prepare及196表检查未运行；不是P2028或准入码失败。普通installer只设置settlement mode，上一轮责任开关补齐没有同时声明新真相链必需的V11开关。当前只在createE4Fixture期间同时启用这两个测试开关并finally精确恢复，断言真实gate enabled且非maintenance；不修改只读位、生产默认、业务不变量／断言／预算，也没有追加独立实验。新最终SHA的实际结果以普通CI与外部补充包为准，旧失败保留。
+
+## 2026-10-17 两项196表实测通过及 prepare HTTP 契约修正
+
+50b7d635的普通CI39043784343完成FAIL，E2E2–5通过。shape／bytes两个真实generate409／20225、原政策来源及各196表逐表hash／根hash全等，已获得本次准入修复的实际正面证据；旧bb17的196表失败不倒签。500与单人BASE首次prepare400／40000，后续边界／纠错／V3／账本未完成。源码核对发现helper误将allocation专用expectedEvidenceRevision／expectedPopulationRevision／expectedWorkflowRevision带入prepare；实际响应明细未捕获，只能将离线真实DTO恰三项whitelist错误作为新的复现。显式prepare四字段后轻量契约6／6、测试类型和两文件lint通过；allocation与submit保留各自契约。当前只补此测试请求和三项纯DTO测试，不修改生产验证或业务，不追加独立DB，必要新普通CI另记最终源码结果。

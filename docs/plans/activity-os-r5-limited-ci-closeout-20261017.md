@@ -4,6 +4,10 @@ PR1380 仍为 Draft／BLOCKED。旧 `9c5c60d6` 的500全链通过证据保留；
 
 ## 普通 CI 失败与兼容修复增量
 
+`50b7d635` 的第三轮普通CI [39043784343](https://github.com/BA7IEE/srvf-nest-api/actions/runs/39043784343)已结束FAIL：Fast checks／Harness／Docker及E2E2–5通过，E2E1为2失败／1694通过。新增shape／bytes实际generate均409／20225、原政策来源断言通过，各196表前后逐表及根hash一致、零变化表；两项局部通过必须保留。500及单人BASE首次prepare均HTTP400／40000，后续501反例／纠错／V3／账本未完成，不能宣称全链通过。
+
+只读定位确定夹具prepare误展开allocation expectation，多发三个revision字段；真实`AppPrepareTimeSettlementDto`只接受operationKey／expectedDraftVersion／expectedEvidenceSealId／expectedTimeRevision。CI未保存400明细，不倒填其响应字段；新离线真实DTO＋strict whitelist复现恰三项错误，红5通过／1失败，显式四字段投影后6／6通过。allocation接受其三个revision，两个submit本已显式五字段；只改测试请求和新增三项纯契约测试，生产DTO／全局白名单／业务断言不变。测试类型34.255秒、两文件lint27.664秒通过，无app／DB调用；必要新普通CI结果另记外部包，独立尝试仍38／43、不追加手动性能或满额。
+
 `866451fd` 的第二轮普通CI [39042031516](https://github.com/BA7IEE/srvf-nest-api/actions/runs/39042031516)也已结束FAIL，merge `19dc4ac3061ed48c1dd3147d2de69e2c46e54e6a`与head tree相同。E2E2／3／4／5和Fast checks／Harness／Docker全部通过：outbox实际spec PASS114.329秒，D6并发worker实际spec PASS19.929秒。E2E1新增两例均在真实封场返回503／20153，尚未到generate／prepare，全部196表准入验收NOT_RUN。上一轮只启用了测试职责开关，遗漏普通CI创建app时的v1.1开关；installer仅设置settlement mode，不会自动启用v1.1。
 
 当前最小增量只在同一个`createE4Fixture`期间同时设置职责与v1.1测试开关，`finally`逐项精确恢复原值／缺省；显式断言实际ActivityWorkflowGate已启用且非只读。未改只读维护环境变量、生产默认值、旧业务断言或30／600秒预算，未新增独立DB／手动500或满额。本次测试工程类型检查47.023秒和单spec lint50.376秒通过，只读复核无阻断，没有本地应用／DB调用。当前增量的真实业务结果仍待新普通CI，不能把第二轮失败或先前500通过倒签。后续最终SHA日志在PR checks和外部补充包，仓内本段是推送前记录。

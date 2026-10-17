@@ -155,7 +155,7 @@
   },
   "protectedFilesApplied": true,
   "maintainerGrantPresent": false,
-  "currentRequiredCI": "Second ordinary CI39042031516 FAILURE; fixture V11 app-creation followup not yet pushed at this pre-push record",
+  "currentRequiredCI": "50b7d635 ordinary CI39043784343 FAILURE: shape/bytes each196-table proofPASS, two positiveprepareHTTP400/40000; explicit-DTO fixture followup pre-push, next ordinary CI pending",
   "originalMaximum": "NOT_VALIDATED_FOR_LIMITED_LAUNCH",
   "trusted": "MAINTAINER_APPROVAL_REQUIRED",
   "production": "NOT_RUN",
@@ -493,7 +493,7 @@
   ],
   "currentRequiredCIWorkflow": ".github/workflows/ci.yml",
   "recordScope": "State before compatibility followup push; final exact-source CI results are in PR checks and the external evidence addendum",
-  "staticChecksAtRecord": "Current fixture-only V11 increment: test-project typecheck and changed-spec lint PASS. No local app/DB run. Prior866 full checks and actual outbox/D6 passes are historical; new full ordinary CI pending.",
+  "staticChecksAtRecord": "Current explicit-prepare-DTO fixture increment: offline actualDTO regression red5/1→green6/0, test-project type and2-file lintPASS; no local app/DB. Prior50 ordinary Fast checks completePASS (461suites/10266tests/8snapshots/5todo and2011-file coldlint170.289s) are preserved; next exact-SHA ordinary CI pending.",
   "precedingCI": {
     "head": "6cd414c2f3d96ebcbba16e03a88f2e52d21c8e57",
     "mergeSha": "6622b1361a57c7389647929aac8579317fd69bea",
@@ -717,7 +717,7 @@
     "newManualPerformanceCalls": 0,
     "independentCumulativeAttempts": 38,
     "independentCeiling": 43,
-    "liveAcceptance": "PENDING_ORDINARY_CI",
+    "liveAcceptance": "SEAL_AND_GENERATE_PASS_PREPARE_DTO_FAIL",
     "validation": [
       {
         "name": "test-typecheck",
@@ -744,6 +744,212 @@
         "exitCode": 0,
         "seconds": 50.375572746001126
       }
-    ]
+    ],
+    "testedSourceCommit": "50b7d635bea5b709bbb47b831193f7587aad9093"
+  },
+  "thirdOrdinaryCI": {
+    "testedHead": "50b7d635bea5b709bbb47b831193f7587aad9093",
+    "run": 39043784343,
+    "conclusion": "failure",
+    "actualHttpObservationCounts": [
+      {
+        "entry": "/evidence-seals",
+        "status": 200,
+        "bizCode": 0,
+        "count": 4
+      },
+      {
+        "entry": "/settlement/generate",
+        "status": 200,
+        "bizCode": 0,
+        "count": 2
+      },
+      {
+        "entry": "/time-settlement/allocations",
+        "status": 200,
+        "bizCode": 0,
+        "count": 501
+      },
+      {
+        "entry": "/time-settlement/prepare",
+        "status": 400,
+        "bizCode": 40000,
+        "count": 2
+      },
+      {
+        "entry": "/settlement/generate/shape",
+        "status": 409,
+        "bizCode": 20225,
+        "count": 1
+      },
+      {
+        "entry": "/settlement/generate/bytes",
+        "status": 409,
+        "bizCode": 20225,
+        "count": 1
+      }
+    ],
+    "firstGenerateAll196FingerprintPairs": [
+      {
+        "dimension": "shape",
+        "beforeCaptured": true,
+        "afterCaptured": true,
+        "status": "PASS",
+        "beforeTables": 196,
+        "afterTables": 196,
+        "sameTableNames": true,
+        "beforeRoot": "a71d6a29e74cc2b3918fce4b36f4032744aa187d00f8877b2600363497a8f395",
+        "afterRoot": "a71d6a29e74cc2b3918fce4b36f4032744aa187d00f8877b2600363497a8f395",
+        "changedTables": []
+      },
+      {
+        "dimension": "bytes",
+        "beforeCaptured": true,
+        "afterCaptured": true,
+        "status": "PASS",
+        "beforeTables": 196,
+        "afterTables": 196,
+        "sameTableNames": true,
+        "beforeRoot": "da53fe462a27ab320d2d522a42a5c130141387a672ee39f273dc2a83bbd216e2",
+        "afterRoot": "da53fe462a27ab320d2d522a42a5c130141387a672ee39f273dc2a83bbd216e2",
+        "changedTables": []
+      }
+    ],
+    "passedCheckpoints": [
+      {
+        "label": "shape first native generate rejects20225 and all196 rollback",
+        "value": {
+          "identities": 1,
+          "endpoint": "settlement/generate",
+          "noFabricatedDraft": true,
+          "jsonBytes": 439,
+          "originalPolicyFunctionObserved": true,
+          "bytesBranchFirst": false,
+          "bytePolicyAlsoExceedsBandShape": false,
+          "before": "a71d6a29e74cc2b3918fce4b36f4032744aa187d00f8877b2600363497a8f395",
+          "after": "a71d6a29e74cc2b3918fce4b36f4032744aa187d00f8877b2600363497a8f395"
+        }
+      },
+      {
+        "label": "bytes first native generate rejects20225 and all196 rollback",
+        "value": {
+          "identities": 1,
+          "endpoint": "settlement/generate",
+          "noFabricatedDraft": true,
+          "jsonBytes": 9218,
+          "originalPolicyFunctionObserved": true,
+          "bytesBranchFirst": true,
+          "bytePolicyAlsoExceedsBandShape": true,
+          "before": "da53fe462a27ab320d2d522a42a5c130141387a672ee39f273dc2a83bbd216e2",
+          "after": "da53fe462a27ab320d2d522a42a5c130141387a672ee39f273dc2a83bbd216e2"
+        }
+      }
+    ],
+    "prepareHttpAttempts": 2,
+    "prepareHttpFailure": {
+      "status": 400,
+      "bizCode": 40000,
+      "validationResponseFieldDetails": "NOT_CAPTURED_IN_CI"
+    },
+    "later500BoundariesCorrectionsV3Ledger": "NOT_RUN",
+    "offlineContractReproduction": {
+      "actualDto": "AppPrepareTimeSettlementDto",
+      "actualGlobalOptions": {
+        "whitelist": true,
+        "forbidNonWhitelisted": true,
+        "transform": true
+      },
+      "oldExtraFields": [
+        "expectedEvidenceRevision",
+        "expectedPopulationRevision",
+        "expectedWorkflowRevision"
+      ],
+      "red": {
+        "passed": 5,
+        "failed": 1
+      },
+      "green": {
+        "passed": 6,
+        "failed": 0
+      },
+      "actualCiBodyNotBackfilled": true,
+      "newAppOrDatabaseCalls": 0
+    },
+    "minimalFix": "Explicit prepare DTO projection; allocation and submit contracts kept distinct; no production DTO/validation/guard changes",
+    "independentBudgetUnchanged": {
+      "cumulativeAttempts": 38,
+      "ceiling": 43,
+      "newFollowupPerformance": 0
+    }
+  },
+  "prepareHttpContractFollowup": {
+    "status": "NON_DB_PASS_LIVE_CI_PENDING",
+    "scope": "Only fixture prepare request projection and3new pure actual-DTO strict validation tests; allocation unchanged and two submit bodies already explicit5fields",
+    "oldFieldsRejectedOffline": [
+      "expectedEvidenceRevision",
+      "expectedPopulationRevision",
+      "expectedWorkflowRevision"
+    ],
+    "ciResponseDetailsCaptured": false,
+    "contractRed": {
+      "passed": 5,
+      "failed": 1
+    },
+    "contractGreen": {
+      "passed": 6,
+      "failed": 0
+    },
+    "validation": [
+      {
+        "name": "contract-green",
+        "command": [
+          "node",
+          "node_modules/jest/bin/jest.js",
+          "--config",
+          "test/jest-unit.config.ts",
+          "--testRegex",
+          "/test/e2e/activity-os-r5-native-policy-input\\.e2e-spec\\.ts$",
+          "--runInBand",
+          "--runTestsByPath",
+          "test/e2e/activity-os-r5-native-policy-input.e2e-spec.ts",
+          "--json",
+          "--outputFile=/workspace/r5-native-http-contract-20261017/contract-green.json"
+        ],
+        "exitCode": 0,
+        "seconds": 3.5520369299993035,
+        "appOrDatabaseCalls": 0
+      },
+      {
+        "name": "test-typecheck",
+        "command": [
+          "node",
+          "node_modules/typescript/bin/tsc",
+          "--noEmit",
+          "-p",
+          "test/tsconfig.test.json"
+        ],
+        "exitCode": 0,
+        "seconds": 34.25538093000068,
+        "appOrDatabaseCalls": 0
+      },
+      {
+        "name": "targeted-lint",
+        "command": [
+          "node",
+          "--max-old-space-size=6144",
+          "node_modules/eslint/bin/eslint.js",
+          "--max-warnings",
+          "0",
+          "test/helpers/native-launch-live.fixture.ts",
+          "test/e2e/activity-os-r5-native-policy-input.e2e-spec.ts"
+        ],
+        "exitCode": 0,
+        "seconds": 27.664237117001903,
+        "appOrDatabaseCalls": 0
+      }
+    ],
+    "appOrDbCalls": 0,
+    "productionDtoOrWhitelistChanged": false,
+    "businessAssertionsOrBudgetsChanged": false
   }
 }
