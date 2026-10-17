@@ -434,3 +434,33 @@ prepare入口共9条：容量正例HTTP1＋service反例3；tiny故障／成功H
 证据目录/workspace/r5-native-fixture-repair-20261017，完整结果RESULT.md、result-summary.json、execution/summary.json及逐场journal／cleanup／source-manifest；维护者两处权限摘要命令为MAINTAINER-AUTHZ.md。旧0／4与510秒失败保留；本轮只是关闭以上受限现场子集，run38906073016的34.619秒／P2028仍FAIL，B仍REJECTED。ROUTE_AUTHZ主文件未改，required CI、原cold lint及权限摘要缺口／Trusted／人工门不据此关闭，PR1380保持Draft。
 
 **本次未做：** 未追加实验、真实纠错／等待撤权／独立deferred COMMIT／policy或bytes或长段DB反例／原2000满额；未操作生产或用户Mac、未部署／开关／Ready／合并；未自发grant或代批Trusted。
+
+### 2026-10-17 同范围收尾：语义预算、历史证据与真实交付门
+
+收尾开始时本地、远端与PR HEAD均为`edbeaf7c90aebc17c697d7cdfc0ee1b4e9c6885a`；数据库实测仍为9c5c60d6，之后只补文档，src／prisma不变。没有重新打开600秒窗口，容量4／4及语义32／40计数不增加。40是语义检查**分组上限**，原始32组为tiny15＋capacity500为17；余下8个名额未分配项目，不存在可逐项命名的“第33–40项验收”，更不能用容量4／4覆盖其他路径。
+
+核对原现场计划及历史记录后，必须区分本轮未跑与从未有证据：
+
+| 主题 | 当前可复用证据／仍开放部分 |
+| --- | --- |
+| 等待后撤权、旧JWT资格／成员失效、跨日多session、active→off兼容、独立worker恢复 | `e5-active-matrix-validation.json`记录3＋1＋8＝12项真实DB通过；10个相关源码／spec／helper SHA与当前逐字相同，审核修复两源码亦相同。原worker／账本／submit／access代码未变，无需因本轮32组不包含它们就重跑 |
+| 冲突payload、原生statement／deferred COMMIT回滚 | `e4-146-validation.json`已有freshEntry exactReplaysAndConflicts及nativeStatementAndDeferredCommitRollback记录，原SQL未变；历史通过不计入本轮32组，tiny故障仍不冒称deferred负例 |
+| 变时长／unchanged-time纠错算法 | 历史active两类纠错正确性可复用；新增前置活动检查、旧证明复制规模及变时长bytes／count／day准入接线尚无当前DB证明，保持NOT_RUN |
+| 与人数解耦的policy／bytes／长完整段+短manual slice反例 | 原计划要求真实拒绝及同事务零增量，本轮只跑既定三种人数／段／slice反例；上述维度仅单测通过，现场保持NOT_RUN |
+| 分阶段失败／准备中恢复细项 | 逐项核已有有效生命周期证据，不追加整套审核／恢复实验；旧final native-guard callback rejection只提供mock单测，两个纠错用例名称也不能直接证明“重启后准备中恢复”。未有PG证据的具体项不填通过 |
+
+历史JSON的sourceHashes与sourceVersionBoundary一并解释；baseCommit=b9e9是修复前基线，不当作验证源码的唯一标识。旧临时raw-result在当前executor不存在，本次核对现存仓内记录及源码SHA，没有冒称重新核验缺失原文件。E4 concurrency／correction默认helper为fixture，只有`SRVF_E5_ACTIVE_MATRIX=1`才是active；普通CI绿或spec存在不自动补证。2001units独立合法构造限制及原2000最大例不属于本次500验收的边界保持原文。
+
+本次继续串行完成非DB检查：修正pnpm自动依赖安装环境后的完整单元组exit0，461套、10255项、8快照通过，5个原todo保留；Jest193.799秒，外层195.069秒。旧460套通过／1套失败结果不倒签。当前唯一冷lint仍exit1／WINDOW_EXCEEDED：src1468文件178.128秒退出0，test538文件在总300.314秒SIGTERM，prisma未运行；未延长300秒、未重试。`scripts/check-cold-lint.ts`为enforcement-layer红区，当前无grant，未自行修改裁判。
+
+当前`docs:authz:check`失败仅两处ROUTE_AUTHZ输入摘要；663条entries及其他字节不变，主文件未改。维护者在云端本人执行：`pnpm harness:grant 'docs/ai-harness/ROUTE_AUTHZ.md' --reason 'PR1380：仅同步生成的两处inputDigest，663条权限声明无语义变化；Trusted审批独立'`，随后`pnpm docs:authz`、`pnpm docs:authz:check`与两处字节独立核对；完整可复制命令和断言见原结果包MAINTAINER-AUTHZ.md及收尾补充CLOSEOUT.md。pnpm环境沿用`pnpm_config_verify_deps_before_run=false`。grant由维护者本人执行的限制来自AGENTS.md §1“AI不得自行发放授权”，只解写权限，不解合并／Trusted。
+
+另实跑既有`cutover:check:signoff`为exit1：16项读数非退化，但3b签字migration-total136、实际146。137–146条SQL目录及完整SHA列于补充migrations-137-146.json，须维护者实际审查认可后按原流程重签，不能机械改计数或代签；本次未发现4b读数漂移，不增添重签要求。
+
+GitHub当前普通CI没有新SHA结果；仓内声明required为`Lint / Typecheck / E2E`与`Docker image build`，经典保护API403，`gh pr checks --required`未报告检查，不解释为无需CI。旧run38858575751属于9837d091：Diff guards在既有3b闸失败，E2E4亦失败；其余旧绿不替代当前证明。收尾开始时Trusted run39031898004的scan成功、approval WAITING。普通ci.yml无手动受限参数入口且会收集被禁止原最大例，本轮不触发整套、不删断言或代报绿；需要维护者确定符合该限制的执行入口，或另行明确必要的CI范围调整。最终SHA及Trusted状态见补充github-final.json，仍保持Draft／BLOCKED。
+
+剩余Release5必要项只保留：新增准入真实反例与新纠错gate集成、缺证的具体生命周期细项；原300秒lint及生成物／3b对拍修复；最终SHA required CI和既有Trusted人工门。真实映射／影子对账、前端契约发布回执、exact deployed SHA／fleet／稳定窗、只读及worker排空、D8-OPS两次现场授权仍仅在生产启用时按原边界完成，不混入本次容量窗口追加实验。
+
+收尾补充目录/workspace/r5-release5-closure-20261017。原结果ZIP SHA256 `a2ac5e4924f5dfcb227a9f8c0e014f200cc2639a2598722d012d604e63f5e8d1`与Library `libfile_51b7d5b89ba48191b92d1a17d635898e`保持不变，旧满额失败及B REJECTED不改判。
+
+**本次未做：** 未追加数据库实验／A／B／原满额，未运行包含原最大例的整套CI；未改生产SQL／guard／预算／workflow／旧断言；未读写生产或用户Mac、未Ready／合并／部署／开关、未自行grant或代签3b／Trusted。
