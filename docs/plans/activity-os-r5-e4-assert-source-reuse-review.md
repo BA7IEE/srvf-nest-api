@@ -374,3 +374,27 @@ active时旧规则create／update／softDelete在原RBAC后、任何事务／查
 后续接管消息明确要求“先推进不依赖它的测试和当前SHA的容量边界验证”，本轮据此准备一个新受限窗口：一个全新w98隔离库、一个真实发布的500身份活动，原生prepare正边界一次及501身份／501current段／2501物理slice反例各一次；反例输入置于原30秒事务内并回滚，逐次独立核对196表指纹。不重跑A／B、不更改其已用计数、不跑原2000满额；仍保留总600秒、4次容量prepare测量、≤40项逻辑语义及retry0，所有未执行项保持NOT_RUN。2001 units在500段×4类别的其余边界内不能独立构造，保留前后双重unit检查的内存回归，不伪造合法超额证明。现场精确SHA、结果和清理以本轮外部执行日志／PR报告为准，不在此预填通过。
 
 **精确写集**：新增共享launch policy及其spec；修改contribution query／service及对应spec、time query／service及对应spec、settlement-draft service、correction-application service；同步本节、admin交接、changelog fragment、生成CODEMAP；ROUTE_AUTHZ候选补丁另留待维护者授权。路由／DTO／schema／migration／workflow／全局配置／SQL evaluator不改；domain-map元数据输入未变。ROUTE_AUTHZ实际生成差异仅两处输入摘要，663条权限声明不变；主文件已恢复HEAD，限制来源是AGENTS.md §1与harness/redzone.json，生成命令`pnpm docs:authz`，不自行发放令牌或代批Trusted。现有9837d091已解决的旧派生物问题不重新记为本轮缺口。
+
+### 2026-10-17 受限候选实际验证收口（容量 NOT_RUN）
+
+最新接管指令明确：500边界所需的正常隔离验证在已批受限首发内，不因相对四人夹具的倍率另设业务批准门槛。本轮已执行当前业务代码提交 `8385d67b8d0a2d1e1b143eb4383b7e0d6b206835` 的现场验证；本节是结果记录，不增加下一次运行授权。共享准入、完整服务段拆日防线及跨模型复核已经完成，仍不能据此宣布容量验收通过。
+
+| 项目           | 实际结果                                                                                                                                                                                                      |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 定向单元／类型 | 6套300项通过；root、scripts、test三段typecheck通过。完整段很长但manual slice很短的膨胀反例保留                                                                                                                |
+| 全单元首次命令 | 460套通过／1套失败，10254通过／1失败／5 todo；失败为未修改CLI用例遇到全局pnpm11默认自动安装与环境目录问题。以`pnpm_config_verify_deps_before_run=false`单独复核该原套件32／32通过，不倒签首次全命令为绿       |
+| 必需冷lint     | 原300秒上限下src1468文件及test536文件各退出0，prisma阶段总墙钟300.121秒停止，整体FAIL_WINDOW_EXCEEDED。余下prisma及新增policy独立lint退出0，不冒充聚合命令通过                                                |
+| 其他静态       | diff、CODEMAP、边界元数据、离线OpenAPI与client新鲜度通过；harness guards为571通过／2失败／1已知缺口，两个失败对应受保护ROUTE_AUTHZ摘要未应用                                                                  |
+| 首次现场夹具   | 64.022秒，在真实seal返回409／20043：原始punch尚未投影到闭合段。容量prepare0次；保留失败，关闭应用／observer、正常DROP本人测试库并释放lease，独立四零                                                          |
+| 夹具修复与续行 | 按原E5原始输入夹具补齐与每人双punch关联的closed draft segment；发布、seal、generate仍走真实命令，不直接写证明或账本。沿同一保守600秒墙钟续行，计入首次失败与修复间隔，不重置预算                              |
+| 最终停止       | 500条真实allocate阶段通过300条完成里程碑后，执行额度耗尽。共同墙钟510.759秒（原运行器保留90秒清理余量）；精确最终分配数未持久化，记UNKNOWN，不把300里程碑当最终数量                                           |
+| 实际计数       | restore0；顺序新建隔离库2个、同时最多1个；fixture construction2次、重建1次；capacity prepare **0／4**、capacity retry0；语义检查分组6／40。这6组是迁移／catalog／真实发布前置证明，不是容量或冻结oracle通过数 |
+| 清理           | 两次均关闭应用和observer、正常DROP本人隔离库、释放lease；databases／clients／leaseBackends／leaseLocks均0／0／0／0。没有FORCE或未知后台资源                                                                   |
+
+本轮四项实际容量调用（500正边界、501身份、501current段、2501物理slice）及其196表回滚比较、冻结oracle、active／off回放恢复、500 submit／双审／账本COMMIT均 **NOT_RUN**。政策／bytes／完整长段的真实数据库反例、纠错、等待后撤权及独立deferred COMMIT反例也未执行；这些边界仅有上述针对性单测证明。失败原因是现场夹具构建和共同窗口消耗，不能表述为原生prepare性能失败或通过。没有增加运行窗口、重跑A／B或追加满额；旧run38906073016的34.619秒／P2028仍为FAIL。
+
+受保护候选仍仅为 `docs/ai-harness/ROUTE_AUTHZ.md` 两处inputDigest；生成命令`pnpm docs:authz`对应`tsx scripts/generate-authz-manifest.ts --write`。663条entries及其余manifest字段逐项相同，当前候选digest为`01eb12c434fbc04763c50ed8640ce8b41cb340c9b844d98bca5ae08b9309ea37`；补丁SHA256 `f577af2a55b6a49194534a392351a097fa8f98417667027a5e580d190170083d`。AGENTS.md §1及harness/redzone.json规定维护者grant，AI不自发令牌；主文件未包含候选差异，未绕过Trusted。该文档缺口没有阻止本轮隔离执行。
+
+原始执行日志、两份实际运行器、完整源码hash清单、两份journal／cleanup、静态结果及可审代码／生成物补丁保存在云端`/workspace/r5-limited-native-20261017/`。后续文档提交不改变上述被测业务代码；不得把文档HEAD当成重新执行过的数据库SHA。PR1380继续Draft；required CI、当前代码完整容量链、人工签字及生产Gate未关闭。
+
+**本次未做：** 未追加容量重跑／原2000满额、未改原30秒事务或SQL／双guard／migration／默认开关、未改生产库或用户Mac、未部署／合并／Ready、未代发红区授权或代签Trusted。
