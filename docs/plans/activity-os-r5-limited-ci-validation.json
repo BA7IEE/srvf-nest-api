@@ -951,5 +951,93 @@
     "appOrDbCalls": 0,
     "productionDtoOrWhitelistChanged": false,
     "businessAssertionsOrBudgetsChanged": false
+  },
+  "unchangedTimeOracleFollowup": {
+    "precedingCi": {
+      "observedAt": "2026-10-17T16:11:54.244581+00:00",
+      "testedHead": "edf5c9aa698d1242aa4643a28c7e4d8f9cf8c095",
+      "run": 39046228028,
+      "status": "FAIL",
+      "nativeFileSeconds": 415.384,
+      "e2eShard1": {
+        "passed": 1695,
+        "failed": 1
+      },
+      "passedCaseCheckpoints": [
+        "501 identities including excluded/no-source",
+        "501 current segments including voided",
+        "2501 physical slices after actual allocate",
+        "500/500/2500/2000 real active boundary, frozen oracle and ledger COMMIT",
+        "shape first native generate rejects20225 and all196 rollback",
+        "bytes first native generate rejects20225 and all196 rollback",
+        "one-person current active base actual ledger COMMIT and frozen oracle"
+      ],
+      "failure": {
+        "stage": "FROZEN_ORACLE after UNCHANGED_PREPARE",
+        "expected": {
+          "oracleCount": 4,
+          "storedCount": 4,
+          "expectedDifferences": 0,
+          "storedDifferences": 0,
+          "rootMatches": true
+        },
+        "actual": {
+          "oracleCount": 0,
+          "storedCount": 4,
+          "expectedDifferences": 0,
+          "storedDifferences": 4,
+          "rootMatches": true
+        },
+        "stack": [
+          "test/helpers/native-launch-live.fixture.ts:266",
+          "test/helpers/native-launch-admission.cases.ts:198"
+        ]
+      },
+      "sourceExplanation": {
+        "newHelperOmittedUnchangedTimeBranch": true,
+        "existingContract": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts:4240-4267",
+        "e4SourceRowsDomains": ["time_revision", "correction_time_proof"],
+        "unchangedTimeUsesCopiedEvaluations": true,
+        "productionAlgorithmDefectEstablished": false,
+        "pinnedSqlOrExpectedCountChanged": false
+      },
+      "notRunAfterFailure": [
+        "unchanged resumable replay/fingerprint",
+        "unchanged COMMIT",
+        "changed-time V3 gate/evaluation/COMMIT",
+        "approved long full-source correction rejection"
+      ],
+      "ciCleanup": {
+        "nativeFinalizerHookFailureReported": false,
+        "manualFourZeroProofTransferred": false,
+        "independentResourceCountsForThisCi": "NOT_CAPTURED"
+      },
+      "budget": {
+        "newManualDatabases": 0,
+        "newPerformance": 0,
+        "independentAttempts": 38,
+        "independentCeiling": 43,
+        "historicalPerformance": 4,
+        "historicalPerformanceCeiling": 4
+      }
+    },
+    "changeScope": [
+      "test/helpers/native-launch-live.fixture.ts",
+      "test/e2e/activity-os-r5-native-policy-input.e2e-spec.ts"
+    ],
+    "existingFrozenContract": "migration spec assertFixedE4Oracle:4240-4267",
+    "fastBranchRegression": {
+      "red": {
+        "passed": 6,
+        "failed": 4
+      },
+      "green": {
+        "passed": 10,
+        "failed": 0
+      },
+      "databaseCalls": 0
+    },
+    "businessSqlPinsAndAssertionsUnchanged": true,
+    "nextOrdinaryCi": "PENDING; exactSHA post-push result in external evidence"
   }
 }

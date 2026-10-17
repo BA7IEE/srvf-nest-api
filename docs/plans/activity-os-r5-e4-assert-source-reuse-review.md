@@ -498,3 +498,7 @@ CI outbox十例被ts-node10缺ES2023映射→SWC回退ES3/getter错误阻断；D
 ## 2026-10-17 两项196表实测通过及 prepare HTTP 契约修正
 
 50b7d635的普通CI39043784343完成FAIL，E2E2–5通过。shape／bytes两个真实generate409／20225、原政策来源及各196表逐表hash／根hash全等，已获得本次准入修复的实际正面证据；旧bb17的196表失败不倒签。500与单人BASE首次prepare400／40000，后续边界／纠错／V3／账本未完成。源码核对发现helper误将allocation专用expectedEvidenceRevision／expectedPopulationRevision／expectedWorkflowRevision带入prepare；实际响应明细未捕获，只能将离线真实DTO恰三项whitelist错误作为新的复现。显式prepare四字段后轻量契约6／6、测试类型和两文件lint通过；allocation与submit保留各自契约。当前只补此测试请求和三项纯DTO测试，不修改生产验证或业务，不追加独立DB，必要新普通CI另记最终源码结果。
+
+## 2026-10-17 当前500整例通过与unchanged-time oracle合同补齐
+
+edf5c9aa普通CI39046228028已结束FAIL：500整例实际PASS（prepare入口4次含3负例、2000 evaluations、500 ledger pairs、冻结oracle及COMMIT），501身份／501current段／2501物理slice均20225且196表不变；shape／bytes负例及单人base冻结oracle／COMMIT通过。唯一业务spec失败在unchanged-time复制证明的测试oracle：oracle0、stored4、storedDifferences4、rootMatches=true；新helper遗漏既有assertFixedE4Oracle的复制分支，不能据此判业务算法错误。当前仅复用同SHA既有合同，核四项根字段、完整evaluation文档及固定根aggregate，再递归前驱的冻结oracle／day；不改SQL/pins、expectedCount4／differences0或业务源码。原实现快测RED6通过4失败，修复GREEN10／10；完整测试类型／定向lint及最终SHA普通CI另记。未完成的resumable／unchanged COMMIT／V3／长源负例继续待实际CI；独立额度仍38／43、历史性能4／4，无新增手动DB或满额。

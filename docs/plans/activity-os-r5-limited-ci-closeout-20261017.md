@@ -4,6 +4,8 @@ PR1380 仍为 Draft／BLOCKED。旧 `9c5c60d6` 的500全链通过证据保留；
 
 ## 普通 CI 失败与兼容修复增量
 
+edf5c9aa普通CI39046228028已结束FAIL：500整例实际PASS（prepare入口4次含3负例、2000 evaluations、500 ledger pairs、冻结oracle及COMMIT），501身份／501current段／2501物理slice均20225且196表不变；shape／bytes负例及单人base冻结oracle／COMMIT通过。唯一业务spec失败在unchanged-time复制证明的测试oracle：oracle0、stored4、storedDifferences4、rootMatches=true；新helper遗漏既有assertFixedE4Oracle的复制分支，不能据此判业务算法错误。当前仅复用同SHA既有合同，核四项根字段、完整evaluation文档及固定根aggregate，再递归前驱的冻结oracle／day；不改SQL/pins、expectedCount4／differences0或业务源码。原实现快测RED6通过4失败，修复GREEN10／10；完整测试类型／定向lint及最终SHA普通CI另记。未完成的resumable／unchanged COMMIT／V3／长源负例继续待实际CI；独立额度仍38／43、历史性能4／4，无新增手动DB或满额。
+
 `50b7d635` 的第三轮普通CI [39043784343](https://github.com/BA7IEE/srvf-nest-api/actions/runs/39043784343)已结束FAIL：Fast checks／Harness／Docker及E2E2–5通过，E2E1为2失败／1694通过。新增shape／bytes实际generate均409／20225、原政策来源断言通过，各196表前后逐表及根hash一致、零变化表；两项局部通过必须保留。500及单人BASE首次prepare均HTTP400／40000，后续501反例／纠错／V3／账本未完成，不能宣称全链通过。
 
 只读定位确定夹具prepare误展开allocation expectation，多发三个revision字段；真实`AppPrepareTimeSettlementDto`只接受operationKey／expectedDraftVersion／expectedEvidenceSealId／expectedTimeRevision。CI未保存400明细，不倒填其响应字段；新离线真实DTO＋strict whitelist复现恰三项错误，红5通过／1失败，显式四字段投影后6／6通过。allocation接受其三个revision，两个submit本已显式五字段；只改测试请求和新增三项纯契约测试，生产DTO／全局白名单／业务断言不变。测试类型34.255秒、两文件lint27.664秒通过，无app／DB调用；必要新普通CI结果另记外部包，独立尝试仍38／43、不追加手动性能或满额。

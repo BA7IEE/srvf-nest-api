@@ -1,3 +1,6 @@
+import { Prisma, type PrismaClient } from '@prisma/client';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { parseContributionPolicyDefinition } from '../../src/modules/activities/activity-contribution-policy-definition';
 import {
   assertNativeContributionLaunchJson as launchJson,
@@ -11,8 +14,10 @@ import {
 } from '../../src/modules/activities/dto/app/app-activity-time-settlement.dto';
 import { nativeLaunchSlices } from '../helpers/activity-native-launch.fixture';
 import {
+  assertNativeLaunchFrozenOracle,
   nativeLaunchAdmissionPolicies,
   nativeLaunchPrepareRequest,
+  type NativeLaunchStage,
 } from '../helpers/native-launch-live.fixture';
 
 // Offline counterexample inputs only; this suite does not prove a live admission or COMMIT.
@@ -57,9 +62,6 @@ describe('native launch minimal lawful counterexample inputs', () => {
     );
   });
 });
-import { plainToInstance } from 'class-transformer';
-import { validate } from 'class-validator';
-
 describe('native launch request bodies against the actual strict HTTP DTOs', () => {
   const expectation = {
     expectedDraftVersion: 1,
@@ -111,5 +113,103 @@ describe('native launch request bodies against the actual strict HTTP DTOs', () 
       evidenceAttachmentIds: [],
     });
     expect(await validate(dto, options)).toEqual([]);
+  });
+});
+
+// Actual helper, pinned SQL and CI failure shape; every database operation is a local double.
+describe('native launch frozen oracle dispatch for unchanged-time copied proofs', () => {
+  function fixture(
+    options: { documentsEqual?: boolean; predecessorStoredDifferences?: number } = {},
+  ) {
+    const current = {
+      id: 'copied_root',
+      sourceKindCode: 'unchanged_time',
+      previousContributionRevisionId: 'previous_root',
+      sourceSetHash: 's'.repeat(64),
+      evaluationSetHash: 'e'.repeat(64),
+      evaluationCount: 4,
+      recognizedPointsTotal: new Prisma.Decimal('1.00'),
+    };
+    const previous = {
+      ...current,
+      id: 'previous_root',
+      sourceKindCode: 'time_revision',
+      previousContributionRevisionId: null,
+    };
+    const lookup = jest.fn(async ({ where }: { where: { id: string } }) => {
+      if (where.id === current.id) return current;
+      if (where.id === previous.id) return previous;
+      throw new Error('Unexpected oracle root');
+    });
+    const raw = jest.fn(async (sql: string) => {
+      if (sql.startsWith('WITH summary('))
+        return [{ rootMatches: true, documentsEqual: options.documentsEqual ?? true }];
+      const copied = sql.includes("e4_source_rows('copied_root')");
+      return [
+        {
+          oracleCount: copied ? 0 : 4,
+          storedCount: 4,
+          expectedDifferences: 0,
+          storedDifferences: copied ? 4 : (options.predecessorStoredDifferences ?? 0),
+          rootMatches: true,
+        },
+      ];
+    });
+    const tx = {
+      $executeRawUnsafe: jest.fn(async () => 0),
+      $queryRawUnsafe: jest.fn(async () => [
+        {
+          evaluations: 4,
+          functionDifferences: 0,
+          storedDifferences: 0,
+        },
+      ]),
+    };
+    const db = {
+      activitySettlementContributionRevision: { findUniqueOrThrow: lookup },
+      $queryRawUnsafe: raw,
+      $transaction: jest.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
+    };
+    const stage: NativeLaunchStage = async (_label, work) => work();
+    return { current, previous, lookup, raw, tx, db: db as unknown as PrismaClient, stage };
+  }
+
+  it('checks copied documents and root, then evaluates the predecessor with the unchanged pinned oracle', async () => {
+    const f = fixture();
+    await assertNativeLaunchFrozenOracle(f.db, f.current, 4, f.stage);
+    expect(f.lookup.mock.calls.map(([command]) => command.where.id)).toEqual([
+      'copied_root',
+      'previous_root',
+    ]);
+    const canonical = f.raw.mock.calls.filter(([sql]) => sql.startsWith('WITH oracle('));
+    expect(canonical).toHaveLength(1);
+    expect(canonical[0][0]).toContain("e4_source_rows('previous_root')");
+    expect(f.raw.mock.calls.some(([sql]) => sql.startsWith('WITH summary('))).toBe(true);
+    expect(f.tx.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects changed copy root fields before accepting the predecessor', async () => {
+    const f = fixture();
+    f.current.evaluationSetHash = 'changed';
+    await expect(assertNativeLaunchFrozenOracle(f.db, f.current, 4, f.stage)).rejects.toThrow(
+      'Unchanged-time root fields must equal predecessor',
+    );
+    expect(f.raw).not.toHaveBeenCalled();
+  });
+
+  it('rejects different copied evaluation documents without running the predecessor oracle', async () => {
+    const f = fixture({ documentsEqual: false });
+    await expect(assertNativeLaunchFrozenOracle(f.db, f.current, 4, f.stage)).rejects.toThrow(
+      'Unchanged-time stored documents/root must equal predecessor',
+    );
+    expect(f.raw.mock.calls.filter(([sql]) => sql.startsWith('WITH oracle('))).toHaveLength(0);
+    expect(f.tx.$queryRawUnsafe).not.toHaveBeenCalled();
+  });
+
+  it('still rejects a stored difference against the immutable predecessor oracle', async () => {
+    const f = fixture({ predecessorStoredDifferences: 1 });
+    await expect(assertNativeLaunchFrozenOracle(f.db, f.current, 4, f.stage)).rejects.toThrow();
+    expect(f.raw.mock.calls.filter(([sql]) => sql.startsWith('WITH oracle('))).toHaveLength(1);
+    expect(f.raw.mock.calls.at(-1)?.[0]).toContain("e4_source_rows('previous_root')");
   });
 });

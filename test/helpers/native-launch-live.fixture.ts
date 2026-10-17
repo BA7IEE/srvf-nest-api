@@ -208,13 +208,22 @@ export async function nativeLaunchBusinessFingerprint(db: PrismaClient, stage: N
   return { tables: rows.length, hash: hash(JSON.stringify(rows)), rows };
 }
 
+type NativeLaunchOracleResult = {
+  oracleCount: number;
+  storedCount: number;
+  expectedDifferences: number;
+  storedDifferences: number;
+  rootMatches: boolean;
+  day: { evaluations: number; functionDifferences: number; storedDifferences: number };
+};
+
 /** Immutable original SQL oracle; no current evaluator output is used as expected data. */
 export async function assertNativeLaunchFrozenOracle(
   db: PrismaClient,
   root: Pick<ActivitySettlementContributionRevision, 'id' | 'sourceKindCode'>,
   expectedCount: number,
   stage: NativeLaunchStage,
-) {
+): Promise<NativeLaunchOracleResult> {
   const source = readFileSync(
     resolve(__dirname, '../e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts'),
     'utf8',
@@ -239,6 +248,49 @@ export async function assertNativeLaunchFrozenOracle(
     .replace('INTO counts,total,sources_hash,evaluations_hash FROM documents;', 'FROM documents')
     .replaceAll('root.id', quote(root.id))
     .replaceAll('root."sourceKindCode"', quote(root.sourceKindCode));
+  if (root.sourceKindCode === 'unchanged_time') {
+    // Same contract as assertFixedE4Oracle: copied proofs have no new source rows.
+    const current = await stage('FROZEN_UNCHANGED_ROOT', () =>
+      db.activitySettlementContributionRevision.findUniqueOrThrow({ where: { id: root.id } }),
+    );
+    assert.equal(current.sourceKindCode, 'unchanged_time');
+    assert(current.previousContributionRevisionId);
+    const previous = await stage('FROZEN_UNCHANGED_PREVIOUS', () =>
+      db.activitySettlementContributionRevision.findUniqueOrThrow({
+        where: { id: current.previousContributionRevisionId! },
+      }),
+    );
+    const fields = (value: typeof current) => ({
+      sourceSetHash: value.sourceSetHash,
+      evaluationSetHash: value.evaluationSetHash,
+      evaluationCount: value.evaluationCount,
+      recognizedPointsTotal: value.recognizedPointsTotal.toFixed(2),
+    });
+    assert.deepEqual(
+      fields(current),
+      fields(previous),
+      'Unchanged-time root fields must equal predecessor',
+    );
+    const [copy] = await stage('FROZEN_UNCHANGED_COPY_ORACLE', () =>
+      db.$queryRawUnsafe<{ rootMatches: boolean; documentsEqual: boolean }[]>(
+        `WITH summary(counts,total,source_hash,evaluation_hash) AS (${aggregate})
+        SELECT (SELECT counts=r."evaluationCount" AND total=r."recognizedPointsTotal"
+          AND evaluation_hash=r."evaluationSetHash"
+          FROM summary,"ActivitySettlementContributionRevision" r WHERE r.id=${quote(current.id)}) AS "rootMatches",
+        (SELECT coalesce(jsonb_agg(e4_evaluation_document(e) ORDER BY e."evaluationUnitKey" COLLATE "C"),'[]'::jsonb)
+          FROM "ParticipantContributionEvaluation" e WHERE e."contributionRevisionId"=${quote(current.id)})
+        IS NOT DISTINCT FROM
+        (SELECT coalesce(jsonb_agg(e4_evaluation_document(e) ORDER BY e."evaluationUnitKey" COLLATE "C"),'[]'::jsonb)
+          FROM "ParticipantContributionEvaluation" e WHERE e."contributionRevisionId"=${quote(previous.id)}) AS "documentsEqual"`,
+      ),
+    );
+    assert.deepEqual(
+      copy,
+      { rootMatches: true, documentsEqual: true },
+      'Unchanged-time stored documents/root must equal predecessor',
+    );
+    return assertNativeLaunchFrozenOracle(db, previous, expectedCount, stage);
+  }
   const [result] = await stage('FROZEN_ORACLE', () =>
     db.$queryRawUnsafe<
       {
