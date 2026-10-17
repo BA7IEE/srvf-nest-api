@@ -410,3 +410,27 @@ active时旧规则create／update／softDelete在原RBAC后、任何事务／查
 本次现场执行器先固定提交和源码SHA，顺序新建1人、500人两库（同时最多1库，正常阶段而非重试），restore0、常驻连接最多3、同一600秒脚本入口时钟、90秒清理保留和原30秒事务不变。极小场景成功prepare及审计后故障回滚prepare各一次，明确记为2次语义prepare；500仍最多4次容量prepare，所有HTTP回放／拒绝与语义检查分组分别持久化，分组上限40、retry0。极小全链及清理四零失败即停，500记NOT_RUN。故障注入先执行原audit再抛错，证明真实评价／receipt写入回滚，早于deferred barrier，不冒称guard提交负例。执行前不得预填结果。
 
 权限文档两处摘要的维护者精确命令另见云端/workspace/r5-native-fixture-repair-20261017/MAINTAINER-AUTHZ.md；主ROUTE_AUTHZ保持HEAD，AI不索取或生成令牌、不代批Trusted。本次未做：尚未执行新数据库场景、A／B重跑、原2000满额、生产或Mac操作；未把旧失败或未执行项改判为通过。
+
+### 2026-10-17 统一夹具真实全链与500边界实际结果
+
+测试提交 `9c5c60d6b0d0d86f0e4a7c178026756bf674a6f2`（src／prisma仍与8385d67b8d0a2d1e1b143eb4383b7e0d6b206835一致），唯一统一执行器exit0。先1人真实全链及清理通过，再沿同一时钟验证500；没有重启A／B或重置窗口。
+
+| 项目 | 实际结果 |
+| --- | --- |
+| 预算 | 共461.561110秒／600秒，含脚本入口模块加载、两场景与清理；ts-node进入脚本前bootstrap不含。原30秒事务、90秒清理保留不变 |
+| 精确计数 | restore0；正常顺序新库2、同时1；fixture阶段2、retry0；容量prepare4／4；语义检查分组32／40 |
+| tiny | 93.239375秒完成真实发布、封存、generate、HTTP allocate／prepare／submit、off旧receipt回放／新prepare20222拒绝、恢复active、双审、账本COMMIT及重放 |
+| 故障回滚 | 原audit写入后同tx确认4 evaluations和1receipt后抛错，真实HTTP500／50000，196表回基线；早于deferred barrier，不冒称其COMMIT负例 |
+| 500分配 | 500／500真实HTTP commands COMMITTED，阶段248.024633秒；全活动500身份／500段／2500物理slice／2000buckets及evaluation units，source manifest1075294 bytes |
+| 正例prepare | 完整HTTP调用13.535153秒；含记录的外层阶段13.623942秒；真实原SQL／双guard／事务COMMIT通过 |
+| 反例 | 501身份含excluded、501current段含voided、2501slice均实际进入prepare并20225拒绝，每次196表独立observer指纹与基线相同。2501真实allocate已先完成，异常栈在prepare；外层真实事务委托不等同独立HTTP或deferredCOMMIT负例 |
+| oracle | tiny4、500为2000，draft及submitted原冻结oracle／root hash／day均零差异 |
+| 最终入账 | 500 submit、双审、ledger prepare／chunks／finalize及COMMIT完成，重放不重复写。按实际(resultRevisionId,ledgerDate)核唯一两类分录配对；本单段单日夹具500对／1000行，5.00小时、250.00分，不推广为人数通式 |
+| 分类及日状态 | classified2000行／17500秒，逐项对submitted buckets／manifest；500 member-day，version1、各0.50分及latestBatch一致 |
+| 清理 | 两场景均app／observer关闭、正常DROP本人库、lease释放；独立四零0／0／0／0，pending0、UNKNOWN=false，无FORCE；catalog前后不变 |
+
+prepare入口共9条：容量正例HTTP1＋service反例3；tiny故障／成功HTTP各1＋off新拒绝service1；tiny active／off旧receipt HTTP回放2。32／40是检查分组，不能当HTTP调用总数。双审／账本调用原服务，不声明全部HTTP或部署worker图覆盖。共享helper SHA256 `93dad78ccb7caab3e57b85f5183232b4a99bcd69997e8660d66a50f22063f9e9`；实际执行器SHA256 `d25ee5639b7172284d6c374c2574e71894b30240686cb6da4aca45af891f537d`。新离线合同8项、定向lint、执行器类型及无DB预检通过；一次误用普通e2e配置在范围守卫处触库前被拒，保留失败，不计数据库执行。
+
+证据目录/workspace/r5-native-fixture-repair-20261017，完整结果RESULT.md、result-summary.json、execution/summary.json及逐场journal／cleanup／source-manifest；维护者两处权限摘要命令为MAINTAINER-AUTHZ.md。旧0／4与510秒失败保留；本轮只是关闭以上受限现场子集，run38906073016的34.619秒／P2028仍FAIL，B仍REJECTED。ROUTE_AUTHZ主文件未改，required CI、原cold lint及权限摘要缺口／Trusted／人工门不据此关闭，PR1380保持Draft。
+
+**本次未做：** 未追加实验、真实纠错／等待撤权／独立deferred COMMIT／policy或bytes或长段DB反例／原2000满额；未操作生产或用户Mac、未部署／开关／Ready／合并；未自发grant或代批Trusted。
