@@ -13,7 +13,27 @@ import {
   nativeLaunchSlices,
 } from './activity-native-launch.fixture';
 
-export type NativeLaunchStage = <T>(label: string, work: () => Promise<T>) => Promise<T>;
+export type NativeLaunchObservation = {
+  transport: 'http' | 'service';
+  entry: string;
+  status: number | null;
+  bizCode: number | null;
+};
+export type NativeLaunchStage = (<T>(label: string, work: () => Promise<T>) => Promise<T>) & {
+  observe?: (event: NativeLaunchObservation) => void;
+};
+export function observeNativeLaunchHttp(
+  stage: NativeLaunchStage,
+  entry: string,
+  response: { status: number; body: { code?: unknown } },
+) {
+  stage.observe?.({
+    transport: 'http',
+    entry,
+    status: response.status,
+    bizCode: typeof response.body.code === 'number' ? response.body.code : null,
+  });
+}
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 
 /** Both are valid closed V1 policies. Bytes runs first; its band shape also exceeds launch. */
@@ -75,6 +95,7 @@ export async function createNativeLaunchSealedSource(
       .post(published.appUrl + suffix)
       .set('Authorization', f.creator.auth)
       .send(body);
+    observeNativeLaunchHttp(stage, suffix, response);
     assert(
       [200, 201].includes(response.status) && response.body.code === 0,
       'NATIVE_LAUNCH_HTTP_' + response.status + '_' + response.body.code,

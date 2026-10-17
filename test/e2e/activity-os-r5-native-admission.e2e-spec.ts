@@ -55,6 +55,7 @@ const stage: NativeLaunchStage = async (label, work) => {
 };
 const emit = (result: NativeAdmissionResult) =>
   console.info('NATIVE_LAUNCH_CASE', JSON.stringify(result));
+stage.observe = (event) => console.info('NATIVE_LAUNCH_OBSERVATION', JSON.stringify(event));
 
 describe('active native limited launch: applicable business boundaries, original guards and budgets', () => {
   beforeEach(async () => {

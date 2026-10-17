@@ -13,6 +13,7 @@ import {
   createNativeLaunchSealedSource,
   nativeLaunchAdmissionPolicies,
   nativeLaunchBusinessFingerprint,
+  observeNativeLaunchHttp,
   type NativeLaunchStage,
 } from './native-launch-live.fixture';
 import {
@@ -59,12 +60,14 @@ export async function runNativeLaunchSmallAdmission(
       // An over-envelope frozen policy cannot lawfully acquire a draft for prepare.
       const response = await stage('GENERATE_REJECT_' + dimension, () =>
         import('supertest').then(({ default: request }) =>
-          import('./http-server').then(({ httpServer }) =>
-            request(httpServer(f.app))
+          import('./http-server').then(async ({ httpServer }) => {
+            const response = await request(httpServer(f.app))
               .post(source.appUrl + '/settlement/generate')
               .set('Authorization', f.creator.auth)
-              .send({ operationKey: f.key('rejected_generate') }),
-          ),
+              .send({ operationKey: f.key('rejected_generate') });
+            observeNativeLaunchHttp(stage, '/settlement/generate/' + dimension, response);
+            return response;
+          }),
         ),
       );
       assert.equal(response.status, 409);
@@ -385,6 +388,17 @@ export async function runNativeLaunchSmallAdmission(
         (error: unknown) => {
           if (typeof error !== 'object' || error === null) return false;
           const biz: unknown = Reflect.get(error, 'biz');
+          stage.observe?.({
+            transport: 'service',
+            entry: 'correction.prepare/full-source-span',
+            status: null,
+            bizCode:
+              typeof biz === 'object' &&
+              biz !== null &&
+              typeof Reflect.get(biz, 'code') === 'number'
+                ? (Reflect.get(biz, 'code') as number)
+                : null,
+          });
           return typeof biz === 'object' && biz !== null && Reflect.get(biz, 'code') === 20225;
         },
       ),
