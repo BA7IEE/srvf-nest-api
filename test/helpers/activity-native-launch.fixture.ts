@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 import type { Prisma } from '@prisma/client';
 import type { E4Fixture } from './activity-contribution-policy.fixture';
 import type { TimePolicyDefinition } from '../../src/modules/activities/activity-time-policy-definition';
+import type { ContributionPolicyDefinition } from '../../src/modules/activities/activity-contribution-policy-definition';
 import { memberIdentityData } from './member-identity.fixture';
 
 /** Raw observations only: never synthesizes publication, seal, settlement or ledger state. */
@@ -180,6 +181,7 @@ export async function createNativeLaunchPublication(
   fixture: E4Fixture,
   population: number,
   stage: <T>(label: string, work: () => Promise<T>) => Promise<T>,
+  options: { contributionDefinition?: ContributionPolicyDefinition } = {},
 ) {
   assert(Number.isInteger(population) && population >= 1 && population <= 500);
   const request = (await import('supertest')).default;
@@ -264,7 +266,7 @@ export async function createNativeLaunchPublication(
     effectiveFrom: '1900-01-01T00:00:00.000Z',
     effectiveUntil: '2101-01-01T00:00:00.000Z',
   };
-  const contribution = await createE13ActivePolicy(fixture, undefined, window);
+  const contribution = await createE13ActivePolicy(fixture, options.contributionDefinition, window);
   const time = await createD13ActivePolicy(fixture, LAUNCH_TIME_DEFINITION, window);
   await selectE13MetricNotRequired(fixture, activityId);
   const selected: Record<string, unknown>[] = [];
