@@ -398,3 +398,15 @@ active时旧规则create／update／softDelete在原RBAC后、任何事务／查
 原始执行日志、两份实际运行器、完整源码hash清单、两份journal／cleanup、静态结果及可审代码／生成物补丁保存在云端`/workspace/r5-limited-native-20261017/`。后续文档提交不改变上述被测业务代码；不得把文档HEAD当成重新执行过的数据库SHA。PR1380继续Draft；required CI、当前代码完整容量链、人工签字及生产Gate未关闭。
 
 **本次未做：** 未追加容量重跑／原2000满额、未改原30秒事务或SQL／双guard／migration／默认开关、未改生产库或用户Mac、未部署／合并／Ready、未代发红区授权或代签Trusted。
+
+### 2026-10-17 夹具契约修复与极小先行验证（执行前记录）
+
+接管续令要求在已授权范围先修测试设施，以相同入口极小夹具完整走通真实发布、prepare、confirm、回滚、off／恢复和清理，之后才验证500边界；不再次直接跑500，不增加满额实验，不重复索取同范围修复批准。当前仅增加共享原始夹具与离线合同spec，业务代码仍为8385d67b8d0a2d1e1b143eb4383b7e0d6b206835，无SQL／guard／migration或既有e2e断言变更。
+
+原始日志精确分解510759.462ms：首次含清理64022.232ms、修复及续行前间隔220782.545ms、第二次allocate前64359.094ms、实际allocate循环161173.224ms、第二次清理及残差422.366ms。真实观测窗分别49956.015／50274.019ms，已包含于REAL_PUBLICATION，不重复相加。首次20043是缺少双punch到闭合段的投影；第二次在下一条allocate前耗尽600秒扣90秒清理余量，未调用prepare，不能归为prepare性能。旧日志只证明分配成功300至399条，精确末值UNKNOWN。
+
+共享夹具在真实seal前核验每个身份恰有双punch及同身份闭合段，5个相邻物理slice覆盖4类别，保留真实政策激活／选择／发布快照。静态发现旧未执行尾部把全部正式账本行数当人数；原服务合同每结果／日期写service_credit与contribution_credit两条，故分别核成对分录及delta、分类秒数manifest与submitted buckets、成员日版本与已提交合计，保留原冻结oracle与账本guard，不以只改单值掩盖业务问题。离线合同8项通过，类型／定向lint通过；这些均非数据库验收。
+
+本次现场执行器先固定提交和源码SHA，顺序新建1人、500人两库（同时最多1库，正常阶段而非重试），restore0、常驻连接最多3、同一600秒脚本入口时钟、90秒清理保留和原30秒事务不变。极小场景成功prepare及审计后故障回滚prepare各一次，明确记为2次语义prepare；500仍最多4次容量prepare，所有HTTP回放／拒绝与语义检查分组分别持久化，分组上限40、retry0。极小全链及清理四零失败即停，500记NOT_RUN。故障注入先执行原audit再抛错，证明真实评价／receipt写入回滚，早于deferred barrier，不冒称guard提交负例。执行前不得预填结果。
+
+权限文档两处摘要的维护者精确命令另见云端/workspace/r5-native-fixture-repair-20261017/MAINTAINER-AUTHZ.md；主ROUTE_AUTHZ保持HEAD，AI不索取或生成令牌、不代批Trusted。本次未做：尚未执行新数据库场景、A／B重跑、原2000满额、生产或Mac操作；未把旧失败或未执行项改判为通过。
