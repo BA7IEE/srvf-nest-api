@@ -10,6 +10,7 @@ import { nativeLaunchSlices } from './activity-native-launch.fixture';
 import {
   assertNativeLaunchFrozenOracle,
   createNativeLaunchLiveSource,
+  createNativeLaunchSealedSource,
   nativeLaunchAdmissionPolicies,
   nativeLaunchBusinessFingerprint,
   type NativeLaunchStage,
@@ -38,7 +39,7 @@ export async function runNativeLaunchSmallAdmission(
     const jsonBytes = Buffer.byteLength(JSON.stringify(definition), 'utf8');
     assert.equal(jsonBytes > 8192, dimension === 'bytes');
     const source = await stage('PUBLICATION_' + dimension, () =>
-      createNativeLaunchLiveSource(f, 1, stage, { contributionDefinition: definition }),
+      createNativeLaunchSealedSource(f, 1, stage, { contributionDefinition: definition }),
     );
     const before = await nativeLaunchBusinessFingerprint(observer, stage);
     const original = queries.assertLaunchFrozenPolicyInTx.bind(queries);
@@ -54,13 +55,15 @@ export async function runNativeLaunchSmallAdmission(
         }
       });
     try {
-      const response = await stage('PREPARE_REJECT_' + dimension, () =>
+      // generate is the first native admission for a fresh, lawfully published source.
+      // An over-envelope frozen policy cannot lawfully acquire a draft for prepare.
+      const response = await stage('GENERATE_REJECT_' + dimension, () =>
         import('supertest').then(({ default: request }) =>
           import('./http-server').then(({ httpServer }) =>
             request(httpServer(f.app))
-              .post(source.appUrl + '/time-settlement/prepare')
+              .post(source.appUrl + '/settlement/generate')
               .set('Authorization', f.creator.auth)
-              .send(source.prepare),
+              .send({ operationKey: f.key('rejected_generate') }),
           ),
         ),
       );
@@ -79,9 +82,11 @@ export async function runNativeLaunchSmallAdmission(
     const after = await nativeLaunchBusinessFingerprint(observer, stage);
     assert.equal(after.hash, before.hash);
     emit({
-      label: dimension + ' real prepare rejects20225 and all196 rollback',
+      label: dimension + ' first native generate rejects20225 and all196 rollback',
       value: {
         identities: 1,
+        endpoint: 'settlement/generate',
+        noFabricatedDraft: true,
         jsonBytes,
         originalPolicyFunctionObserved: true,
         bytesBranchFirst: dimension === 'bytes',

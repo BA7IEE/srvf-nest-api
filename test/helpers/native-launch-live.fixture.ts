@@ -49,8 +49,8 @@ export function nativeLaunchAdmissionPolicies() {
   } satisfies Record<string, ContributionPolicyDefinition>;
 }
 
-/** Public publication/approval, real elapsed source window, raw punches, seal, draft and allocations. */
-export async function createNativeLaunchLiveSource(
+/** Public publication/approval, real elapsed source window, raw punches and seal. */
+export async function createNativeLaunchSealedSource(
   f: E4Fixture,
   population: number,
   stage: NativeLaunchStage,
@@ -82,6 +82,18 @@ export async function createNativeLaunchLiveSource(
     return response.body.data;
   };
   const seal = await stage('REAL_SEAL', () => post('/evidence-seals'));
+  return { ...published, post, raw, seal };
+}
+
+/** Positive sources continue through the first native admission, draft and allocations. */
+export async function createNativeLaunchLiveSource(
+  f: E4Fixture,
+  population: number,
+  stage: NativeLaunchStage,
+  options: { contributionDefinition?: ContributionPolicyDefinition } = {},
+) {
+  const published = await createNativeLaunchSealedSource(f, population, stage, options);
+  const { post, raw, seal } = published;
   const generated = await stage('REAL_GENERATE', () =>
     post('/settlement/generate', { operationKey: f.key('launch_generate') }),
   );

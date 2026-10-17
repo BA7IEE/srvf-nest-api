@@ -33,6 +33,11 @@ installE4ValidationDatabase({
       throw new Error('Native launch case resources UNKNOWN; DROP refused');
   },
 });
+// Restore the caller URL after the installer's outer finalizer and lease release.
+afterAll(() => {
+  if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+  else process.env.DATABASE_URL = previousDatabaseUrl;
+});
 const stage: NativeLaunchStage = async (label, work) => {
   const available = 510_000 - (performance.now() - started);
   if (available < 30_000 || (label.startsWith('PUBLICATION_') && available < 90_000))
@@ -91,11 +96,6 @@ describe('active native limited launch: applicable business boundaries, original
       throw error;
     }
   }, 90_000);
-  afterAll(() => {
-    if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
-    else process.env.DATABASE_URL = previousDatabaseUrl;
-  });
-
   it('accepts 500/500/2500/2000 and rejects501/501/2501 with all196 rollback, frozen oracle and actual ledger COMMIT', async () => {
     assert(f && observer);
     pending++;
