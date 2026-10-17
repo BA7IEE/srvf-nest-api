@@ -15,6 +15,13 @@ import {
   type ContributionEvaluation,
   type ContributionRegimeCode,
 } from './activity-contribution-settlement-policy';
+import type { CorrectionChangeSet } from './correction-change-set';
+import {
+  assertNativeContributionLaunchCount as launchCount,
+  assertNativeContributionLaunchJson as launchJson,
+  assertNativeContributionLaunchSpans as launchSpans,
+  assertNativeContributionLaunchTotal as launchTotal,
+} from './activity-contribution-launch-policy';
 
 type Tx = Prisma.TransactionClient;
 type Reauthorize = () => Promise<CurrentUserPayload>;
@@ -130,6 +137,79 @@ export class ActivityContributionSettlementService {
     if (mode !== 'active' && !(mode === 'fixture' && this.config.env === 'test'))
       throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
     this.activityWorkflowGate.assertV11WriteAllowed();
+  }
+
+  get usesLaunchAdmission(): boolean {
+    return this.config.contributionSettlementMode === 'active';
+  }
+
+  /** Only owners of a new native operation call this, after replay and under the Activity lock. */
+  async assertNewNativeActivityInTx(tx: Tx, activityId: string, workflowRevision?: number) {
+    if (!this.usesLaunchAdmission) return;
+    try {
+      await this.queries.assertLaunchActivityInTx(tx, activityId);
+      if (workflowRevision !== undefined)
+        await this.queries.assertLaunchFrozenPolicyInTx(tx, activityId, workflowRevision);
+    } catch (error) {
+      return contributionSettlementError(error);
+    }
+  }
+
+  async assertNewNativeDraftSizeInTx(
+    tx: Tx,
+    activityId: string,
+    identityIds: readonly string[],
+    projectedSegments: readonly { checkInAt: Date; checkOutAt: Date | null }[],
+  ) {
+    if (!this.usesLaunchAdmission) return;
+    try {
+      await this.queries.assertLaunchDraftInTx(tx, activityId, identityIds, projectedSegments);
+    } catch (error) {
+      return contributionSettlementError(error);
+    }
+  }
+
+  async assertNewNativeCorrectionInTx(
+    tx: Tx,
+    activityId: string,
+    baseVersionId: string,
+    changeSet: CorrectionChangeSet,
+  ) {
+    if (!this.usesLaunchAdmission) return;
+    try {
+      await this.queries.assertLaunchActivityInTx(tx, activityId);
+      launchJson(changeSet, 'sourceBytes');
+      launchCount(changeSet.results.length, 'identities');
+      launchCount(changeSet.segments.length, 'segments');
+      launchSpans(
+        changeSet.segments.map((row) => ({ startsAt: row.checkInAt, endsAt: row.checkOutAt })),
+      );
+      launchCount(changeSet.timeCorrection?.items.length ?? 0, 'buckets');
+      const allocations = changeSet.allocations ?? [];
+      launchCount(allocations.length, 'allocations');
+      launchTotal(
+        allocations.map((row) => row.slices.length),
+        'slices',
+      );
+      launchSpans(
+        allocations.flatMap((row) =>
+          row.slices.map((slice) => ({ startsAt: slice.startAt, endsAt: slice.endAt })),
+        ),
+      );
+      const previous = await tx.activitySettlementContributionRevision.findFirst({
+        where: {
+          settlementVersionId: baseVersionId,
+          kindCode: { in: ['submitted', 'correction'] },
+          regimeCode: 'policy_v1',
+        },
+        orderBy: { revision: 'desc' },
+      });
+      if (!previous || previous.activityId !== activityId)
+        throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+      await this.queries.assertLaunchCopyInTx(tx, previous);
+    } catch (error) {
+      return contributionSettlementError(error);
+    }
   }
 
   draftRegime(previous: ContributionRegimeCode | null): ContributionRegimeCode {
@@ -307,7 +387,12 @@ export class ActivityContributionSettlementService {
       throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
     try {
       const evaluation = timeProof
-        ? await this.queries.readCorrectionEvaluationInTx(tx, timeProof, previous)
+        ? await this.queries.readCorrectionEvaluationInTx(
+            tx,
+            timeProof,
+            previous,
+            this.usesLaunchAdmission,
+          )
         : null;
       const latest = await tx.activitySettlementContributionRevision.findFirst({
         where: { settlementRunId: input.settlementRunId },
@@ -426,7 +511,9 @@ export class ActivityContributionSettlementService {
     this.assertNativeWriteAllowed();
     if (time.kindCode !== 'draft') throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_STALE);
     try {
-      const evaluated = await this.queries.readTimeEvaluationInTx(tx, time);
+      const evaluated = this.usesLaunchAdmission
+        ? await this.queries.readTimeEvaluationInTx(tx, time, true)
+        : await this.queries.readTimeEvaluationInTx(tx, time);
       const previous = await tx.activitySettlementContributionRevision.findFirst({
         where: { settlementRunId: time.settlementRunId },
         orderBy: { revision: 'desc' },

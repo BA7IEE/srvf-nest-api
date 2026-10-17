@@ -3,6 +3,7 @@ import { Injectable, Optional } from '@nestjs/common';
 import { instanceToPlain } from 'class-transformer';
 import { Prisma, type ActivitySettlementTimeRevision } from '@prisma/client';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
+import { assertNativeContributionLaunchCount } from './activity-contribution-launch-policy';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -145,11 +146,15 @@ export class ActivityTimeSettlementService {
     tx: Tx,
     proof: TimeSettlementDraftProof,
     reauthorize: Reauthorize,
+    launchAdmission = false,
   ): Promise<TimeSettlementSourceSet> {
     const set = await this.queries.readSourceSetInTx(tx, proof);
-    await tx.$queryRaw`SELECT id FROM "ActivityParticipationIdentity"
+    const identities = await tx.$queryRaw<
+      { id: string }[]
+    >`SELECT id FROM "ActivityParticipationIdentity"
       WHERE "activityId" = ${proof.activityId} ORDER BY id FOR SHARE`;
     await reauthorize();
+    if (launchAdmission) assertNativeContributionLaunchCount(identities.length, 'identities');
     await tx.$queryRaw`SELECT id FROM "ParticipantServiceSegmentRevision"
       WHERE id = ANY(${set.segments.map((row) => row.id)}::text[]) ORDER BY id FOR SHARE`;
     await reauthorize();
@@ -301,9 +306,16 @@ export class ActivityTimeSettlementService {
             if (!this.contributions)
               throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
             this.contributions.assertNativeWriteAllowed();
+            await this.contributions.assertNewNativeActivityInTx(
+              tx,
+              activityId,
+              proof.workflowRevision,
+            );
           }
-          const set = await this.lockedSources(tx, proof, reauthorize);
-          const evaluated = await this.queries.evaluateInTx(tx, set);
+          const launchAdmission =
+            frozen.regime === 'policy_v1' && this.contributions?.usesLaunchAdmission === true;
+          const set = await this.lockedSources(tx, proof, reauthorize, launchAdmission);
+          const evaluated = await this.queries.evaluateInTx(tx, set, launchAdmission);
           const previous = await tx.activitySettlementTimeRevision.findFirst({
             where: { settlementRunId: proof.settlementRunId },
             orderBy: { revision: 'desc' },

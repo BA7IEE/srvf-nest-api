@@ -335,3 +335,42 @@ active时旧规则create／update／softDelete在原RBAC后、任何事务／查
 在未获两份受保护文件grant期间，追加只依赖非保护新spec的6项HTTP错误响应测试：真实Controller／Service／AllExceptionsFilter及ResponseInterceptor，小型TestModule使用合成principal、RBAC／Prisma／Audit doubles，不启动AppModule、不连接数据库、不改环境。POST／PATCH／DELETE均实际返回409／23013，DELETE原204声明不吞错误；RBAC先拒时三条路由实际返回403／30100，事务和审计均未调用。6项与原配置230项、旧规则18项合计254通过，定向lint通过，跨模型静态复核无阻断；app.close在afterAll执行。
 
 本验证仅补HTTP路由和Filter错误封装，未安装ValidationPipe或JWT／route guard，不代表参数校验、真实认证／授权、真实DB全链、容量或恢复执行验收。现有active锁内proof单测仍使用mock reader；真实active小链、更正／撤权／并发／恢复矩阵未据此关闭。两份受保护候选补丁与既有84文件证据包保持原摘要，可审且未应用；grant执行路径、精确命令、影响及最小后续计划已保存至/workspace/r5-e5-morning-handoff-81ae6537/MORNING.md。未运行最大例、推送、CI或生产操作。
+
+### 2026-10-17 受限原生首发候选（实施中，未验收容量）
+
+本轮沿维护者“赶紧推进啊”（Sentinel_86e1d92c3a8c81919052edfbf1812b2f，回应 Sentinel_c166e3ea8aac81919e14c067843f7dac）实施受限首发。A／B 隔离对照已结束，不再重跑或接回失败候选。B r2 实际消耗 restore1／fixture1／performance4／logical semantics39，65.573秒、retry0、清理四零；全调用均值72.8475→82.6565ms，目标段28.4225→32.1275ms，B无收益，REJECTED。此前 r1、run38906073016 的失败及 NOT_RUN 保留，不以本轮单测覆盖或改判。原失败34.619秒／P2028继续是失败。
+
+**目标与授权**：给现有全活动原生结算一个统一、可拒绝的首发范围；完成最小代码、针对性单元／静态证明和精确现场验证计划，沿原Draft PR1380集成。授权包括同范围代码、测试、交接及提交准备，不代表部署、真实队员操作、历史转换或放宽原30秒事务。安全隔离测试不得超此前尺寸／资源预算；任何扩大须先列明差额。禁止改已发布migration、原SQL算法／双guard、Trusted门禁、生产库、满额实验及未验证真实映射。
+
+准入集中在 `activity-contribution-launch-policy.ts`；Service只选择active新业务，Query收集同事务冻结事实，纯函数判断上限。候选上限是工程约束，**不是500容量已经通过的结论**：
+
+| 成本维度 | active新业务上限 |
+|---|---|
+| 全活动身份（含excluded、pending、absent、无source） | 500 |
+| 全活动current服务段／最新allocation | 各500 |
+| 物理slice／E4 source refs | 各2500 |
+| D4 bucket／D4 bucket source／E4 evaluation units | 各2000，分别计数 |
+| 活动输入历史 | punch events2000、全部segment revisions1000、全部allocation revisions1000 |
+| 冻结贡献policy | 1个version、累计1个role／4个category／8个band，每category最多2个band |
+| 冻结time policy／规则snapshot | 各1个version／snapshot，time policy最多1个role mapping |
+| 冻结选择 | selection items与resolved scopes各≤32 |
+| UTF-8 JSON字节 | 每policy definition≤8KiB，snapshot≤256KiB，selection≤64KiB，完整source输入／D4输出各≤4MiB，E4 evaluations≤8MiB |
+| 拆日工作 | 每个物理slice和完整闭合服务段至多2个北京自然日（结束时刻不含）；每个展开输入及E4实际day rows各≤5000 |
+
+按完整活动聚合判断，调用方不能传入子集、分页或分批绕过。D4在锁后重读来源，过滤有效／present之前检查manifest和实际物理slice；全部锁定身份也复核数量。草稿同时计入本次投影与未重建的保留段，写后仍在原事务内复核实际活动成本，历史输入溢出也回滚。新纠错在resumable返回之后、创建版本之前检查完整活动及输入；无时长变化时检查旧冻结证明的实际复制规模和政策形状，不重新计算当前政策奖励。变时长纠错在指纹计算前限JSON／数组成本，再对实际slice、group和evaluation输出复核。短manual slice不能掩盖完整长服务段的拆日成本。
+
+超界复用20225／HTTP409“活动分类结算规模超过本次处理上限”；无截断、无新错误码或重试。可能已在同一事务写入的临时D4／纠错行必须整体回滚，不能留下已提交半成品。原鉴权及等待后复核、命令幂等、完整原生guard、账本／奖励一致性与真实COMMIT仍必需。fixture保留原正确性限制，不证明active容量；legacy、旧回执、已有prepared及resumable恢复不附加这套新业务门槛。默认off、active→off兼容和原30秒预算均不变。
+
+**DoD与探针队列**：①共享边界及上述真实完整输入接线；②针对性边界／越界、过滤前计数、政策／bytes／day、回放与原guard的单测；③跨模型只读复核；④当前候选全本地检查、受影响生成物和交接；⑤下述exact-SHA active现场全链及required CI。①–④只产生工程候选，⑤未完成不能宣布受限首发可交付。原R5全域容量、真实映射、前端回执、人工3b／4b与Trusted、线上fleet及D8-OPS仍独立开放。
+
+**现场验证计划（本轮准备派发受限子集，其余保留NOT_RUN）**：
+
+1. 固定最终完整SHA及源码清单，不借b982历史绿；仅使用srvf-nest-api云内已核验的隔离PG16集群，记录system_identifier、owner／ACL、PG／扩展、146条migration及guard函数／catalog、196表基线和冻结oracle。旧快照生成时没有直接archive-SHA↔cluster-ID记录，只能陈述已有连续性推断，不能补造历史证明。无`--no-owner`，不关guard、不伪造业务状态。
+2. 先以当前active应用真实完成政策激活、选择、发布冻结、原打卡／封场／草稿／allocation、prepare、submit、首次审核、账本prepare／post与实际COMMIT，比较不可变oracle、评价及三类账本；实测包含全部鉴权和双guard的30秒事务耗时。fixture-only快照注入不作为正式active入场证明。
+3. 正边界一组为500身份、500段／allocation、2500slice、2000units，单简单政策，全部来源与输出不裁剪。负边界分别独立构造501身份（含excluded及无source）、501current段、2501slice、2001units、超policy／bytes、长完整段＋短slice；检查明确20225和独立事务读取的业务零增量。政策、bytes和day边界须与人数解耦。
+4. 同键同载荷重放、冲突载荷、等待后撤权、提交／首次审核／guard／COMMIT失败回滚分别留证；准备已有任务后切off，禁止新原生业务且重放原回执，恢复active后仅恢复原未完成任务、账本不重复。纠错覆盖变时长、unchanged-time复制以及准备中任务恢复。最终独立连接验证无业务半成品、租约／连接／子进程／临时库归零，失败保留原错误与NOT_RUN，retry0。
+5. **尺寸／资源差额必须先确认**：此前小fixture至多4身份／16units／80refs，restore1／fixture1／performance4／semantics≤40、总600秒。本正边界将身份扩大125倍、units125倍、refs31.25倍；负边界需要独立合法fixture，多入口active／off／恢复语义也不能挤作原39项oracle。常规PR CI仍含原2000身份／10000段／50000slice最大例，超本首发范围；本轮不派发、也不删改其断言。先交付具体候选与本计划，未经范围调整不自动触发该最大例，不把跳过CI当通过。
+
+后续接管消息明确要求“先推进不依赖它的测试和当前SHA的容量边界验证”，本轮据此准备一个新受限窗口：一个全新w98隔离库、一个真实发布的500身份活动，原生prepare正边界一次及501身份／501current段／2501物理slice反例各一次；反例输入置于原30秒事务内并回滚，逐次独立核对196表指纹。不重跑A／B、不更改其已用计数、不跑原2000满额；仍保留总600秒、4次容量prepare测量、≤40项逻辑语义及retry0，所有未执行项保持NOT_RUN。2001 units在500段×4类别的其余边界内不能独立构造，保留前后双重unit检查的内存回归，不伪造合法超额证明。现场精确SHA、结果和清理以本轮外部执行日志／PR报告为准，不在此预填通过。
+
+**精确写集**：新增共享launch policy及其spec；修改contribution query／service及对应spec、time query／service及对应spec、settlement-draft service、correction-application service；同步本节、admin交接、changelog fragment、生成CODEMAP；ROUTE_AUTHZ候选补丁另留待维护者授权。路由／DTO／schema／migration／workflow／全局配置／SQL evaluator不改；domain-map元数据输入未变。ROUTE_AUTHZ实际生成差异仅两处输入摘要，663条权限声明不变；主文件已恢复HEAD，限制来源是AGENTS.md §1与harness/redzone.json，生成命令`pnpm docs:authz`，不自行发放令牌或代批Trusted。现有9837d091已解决的旧派生物问题不重新记为本轮缺口。

@@ -2,6 +2,8 @@
 
 ## E4 原生贡献证明（Draft PR1380，未合并、未部署）
 
+2026-10-17受限首发候选：新active原生结算统一按完整活动准入，身份／current段各≤500、物理slice≤2500、evaluation units≤2000，并限制冻结政策复杂度、JSON字节、历史输入及完整服务段拆日成本。详细边界和未派发现场计划见[当前实施记录](../plans/activity-os-r5-e4-assert-source-reuse-review.md#2026-10-17-受限原生首发候选实施中未验收容量)。超界返回既有20225／HTTP409，整次操作回滚；前端应显示失败，不拆页／分批、截断人口或自动换key重试。旧回执重放及已有prepared／恢复沿原证明，不代表旧活动已取得新准入认证。候选尚未通过当前SHA的active完整现场／500边界验收；默认off，前端和生产均不得据此启用。
+
 既有 `GET /api/admin/v1/attendance-settlements/{settlementVersionId}/review-detail`
 增加可选的 `contributionProof`，仍使用 `attendance.read.sheet` 并保留服务端当前资格复核；
 不新增路由、权限或人工改分入口。字段与类型以本分支生成的 OpenAPI/Admin client 为准，

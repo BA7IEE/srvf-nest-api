@@ -948,6 +948,12 @@ export class SettlementDraftService {
     const regime = this.contributions?.draftRegime(previousRegime) ?? previousRegime ?? 'legacy';
     if (regime === 'policy_v1' && !this.contributions)
       throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+    if (regime === 'policy_v1')
+      await this.contributions?.assertNewNativeActivityInTx(
+        tx,
+        activityId,
+        activity.workflowRevision,
+      );
 
     const population = await this.readPopulation(
       tx,
@@ -1020,7 +1026,16 @@ export class SettlementDraftService {
         SETTLEMENT_DRAFT_BATCH_LIMITS.segments
     )
       throw new BizException(BizCode.SETTLEMENT_DRAFT_POPULATION_TOO_LARGE);
+    if (regime === 'policy_v1')
+      await this.contributions?.assertNewNativeDraftSizeInTx(
+        tx,
+        activityId,
+        identityIds,
+        [...projectionByIdentity.values()].flat(),
+      );
     const segmentStats = await this.persistSegments(tx, identityIds, projectionByIdentity);
+    if (regime === 'policy_v1')
+      await this.contributions?.assertNewNativeActivityInTx(tx, activityId);
 
     const personCount = new Set(population.map((row) => row.memberId)).size;
     const sessionParticipationCount = population.length;

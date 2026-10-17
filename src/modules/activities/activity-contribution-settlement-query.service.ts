@@ -31,6 +31,15 @@ import {
   type ContributionSource,
 } from './activity-contribution-settlement-policy';
 import { TIME_SETTLEMENT_LIMITS } from './activity-time-settlement-policy';
+import {
+  assertNativeContributionLaunchCount as launchCount,
+  assertNativeContributionLaunchEvaluations as launchEvaluations,
+  assertNativeContributionLaunchJson as launchJson,
+  assertNativeContributionLaunchPolicies as launchPolicies,
+  assertNativeContributionLaunchSpans as launchSpans,
+  assertNativeContributionLaunchSources as launchSources,
+  assertNativeContributionLaunchTotal as launchTotal,
+} from './activity-contribution-launch-policy';
 import { fingerprintMetricEnvelope } from './activity-metric-definition';
 import { presentContributionProof } from './activity-contribution-settlement-presenter';
 import {
@@ -339,6 +348,194 @@ export function buildFrozenContributionSources(input: {
 
 @Injectable()
 export class ActivityContributionSettlementQueryService {
+  /** The owner already holds the Activity lock. Count excluded and zero-source identities too. */
+  async assertLaunchActivityInTx(tx: Prisma.TransactionClient, activityId: string) {
+    launchCount(
+      await tx.activityParticipationIdentity.count({ where: { activityId } }),
+      'identities',
+    );
+    launchCount(
+      await tx.participantServiceSegmentRevision.count({
+        where: { identity: { activityId }, statusCode: { not: 'superseded' } },
+      }),
+      'segments',
+    );
+    const currentSegments = await tx.participantServiceSegmentRevision.findMany({
+      where: { identity: { activityId }, statusCode: { not: 'superseded' } },
+      select: { checkInAt: true, checkOutAt: true },
+      take: 501,
+    });
+    launchCount(currentSegments.length, 'segments');
+    launchSpans(
+      currentSegments.flatMap((row) =>
+        row.checkOutAt === null ? [] : [{ startsAt: row.checkInAt, endsAt: row.checkOutAt }],
+      ),
+    );
+    launchCount(await tx.attendancePunchEvent.count({ where: { activityId } }), 'punchEvents');
+    launchCount(
+      await tx.participantServiceSegmentRevision.count({ where: { identity: { activityId } } }),
+      'segmentRevisions',
+    );
+    launchCount(
+      await tx.participantTimeAllocationRevision.count({ where: { activityId } }),
+      'allocationRevisions',
+    );
+  }
+
+  async assertLaunchDraftInTx(
+    tx: Prisma.TransactionClient,
+    activityId: string,
+    identityIds: readonly string[],
+    projectedSegments: readonly { checkInAt: Date; checkOutAt: Date | null }[],
+  ) {
+    launchCount(identityIds.length, 'identities');
+    const retained = await tx.participantServiceSegmentRevision.count({
+      where: {
+        identity: { activityId },
+        participationIdentityId: { notIn: [...identityIds] },
+        statusCode: { not: 'superseded' },
+      },
+    });
+    launchTotal([retained, projectedSegments.length], 'segments');
+    launchSpans(
+      projectedSegments.flatMap((row) =>
+        row.checkOutAt === null ? [] : [{ startsAt: row.checkInAt, endsAt: row.checkOutAt }],
+      ),
+    );
+  }
+
+  private async readFrozenPoliciesInTx(
+    tx: Prisma.TransactionClient,
+    snapshot: Snapshot,
+    selection: Selection,
+    launchAdmission: boolean,
+  ) {
+    if (launchAdmission) {
+      launchJson(snapshot.resolvedConfig, 'snapshotBytes');
+      launchJson(selection.selectionJson, 'selectionBytes');
+      launchCount(selection.itemCount, 'selectionScopes');
+    }
+    const items = await tx.activityContributionPolicySelectionItem.findMany({
+      where: { selectionRevisionId: selection.id, activityId: snapshot.activityId },
+      take: 10_002,
+    });
+    if (launchAdmission) launchCount(items.length, 'selectionScopes');
+    const frozen = contributionFrozenSelection({ snapshot, selection, items });
+    if (launchAdmission) launchCount(frozen.resolved.size, 'selectionScopes');
+    const policies = await tx.contributionPolicyVersion.findMany({
+      where: {
+        id: { in: [...new Set(frozen.pointers.resolved.map((item) => item.pointer.versionId))] },
+      },
+    });
+    if (launchAdmission) launchPolicies(policies);
+    return { frozen, policies };
+  }
+
+  /** Preflight the same frozen policy as evaluation, before D4 builds or writes buckets. */
+  async assertLaunchFrozenPolicyInTx(
+    tx: Prisma.TransactionClient,
+    activityId: string,
+    workflowRevision: number,
+  ) {
+    await this.readTimePolicySelectionInTx(tx, activityId, workflowRevision, true);
+  }
+
+  private async readTimePolicySelectionInTx(
+    tx: Prisma.TransactionClient,
+    activityId: string,
+    workflowRevision: number,
+    launchAdmission: boolean,
+  ) {
+    const snapshot = await tx.activityRuleSnapshot.findUnique({
+      where: { activityId_workflowRevision: { activityId, workflowRevision } },
+      select: {
+        id: true,
+        activityId: true,
+        workflowRevision: true,
+        snapshotHash: true,
+        resolvedConfig: true,
+        contributionPolicySelectionRevisionId: true,
+      },
+    });
+    if (!snapshot?.contributionPolicySelectionRevisionId) return unavailable();
+    const selection = await tx.activityContributionPolicySelectionRevision.findFirst({
+      where: { id: snapshot.contributionPolicySelectionRevisionId, activityId },
+      select: {
+        id: true,
+        activityId: true,
+        revision: true,
+        selectionHash: true,
+        selectionJson: true,
+        itemCount: true,
+      },
+    });
+    if (!selection) return unavailable();
+    return {
+      snapshot,
+      selection,
+      ...(await this.readFrozenPoliciesInTx(tx, snapshot, selection, launchAdmission)),
+    };
+  }
+
+  /** New unchanged-time corrections copy immutable facts; never reevaluate a current policy. */
+  async assertLaunchCopyInTx(
+    tx: Prisma.TransactionClient,
+    previous: ActivitySettlementContributionRevision,
+  ) {
+    launchCount(previous.evaluationCount, 'evaluations');
+    const { snapshot, selection } = await this.readTimePolicySelectionInTx(
+      tx,
+      previous.activityId,
+      previous.workflowRevision,
+      true,
+    );
+    if (
+      snapshot.id !== previous.ruleSnapshotId ||
+      snapshot.snapshotHash !== previous.ruleSnapshotHash ||
+      selection.id !== previous.selectionRevisionId ||
+      selection.selectionHash !== previous.selectionRevisionHash
+    )
+      return unavailable();
+    const evaluations = await tx.participantContributionEvaluation.findMany({
+      where: { contributionRevisionId: previous.id },
+      take: 2_001,
+    });
+    if (evaluations.length !== previous.evaluationCount) return unavailable();
+    launchJson(evaluations, 'evaluationBytes');
+    const refs = evaluations.map((row) => {
+      if (!Array.isArray(row.sourceRefsJson) || !Array.isArray(row.beijingDayPointsJson))
+        return unavailable();
+      return row.sourceRefsJson;
+    });
+    launchTotal(
+      refs.map((rows) => rows.length),
+      'sourceRefs',
+    );
+    launchTotal(
+      evaluations.map((row) => (row.beijingDayPointsJson as Prisma.JsonArray).length),
+      'dayPieces',
+    );
+    const sources = refs.flat().map((value) => {
+      const source = record(value);
+      if (
+        typeof source.startsAt !== 'string' ||
+        typeof source.endsAt !== 'string' ||
+        typeof source.sourceSegmentId !== 'string' ||
+        typeof source.allocationRevisionId !== 'string'
+      )
+        return unavailable();
+      return {
+        sourceSegmentId: source.sourceSegmentId,
+        allocationRevisionId: source.allocationRevisionId,
+        startsAt: new Date(source.startsAt),
+        endsAt: new Date(source.endsAt),
+      };
+    });
+    launchCount(new Set(sources.map((row) => row.sourceSegmentId)).size, 'segments');
+    launchCount(new Set(sources.map((row) => row.allocationRevisionId)).size, 'allocations');
+    launchSpans(sources);
+  }
+
   async readSummaryInTx(
     tx: Prisma.TransactionClient,
     versionId: string,
@@ -380,7 +577,26 @@ export class ActivityContributionSettlementQueryService {
     tx: Prisma.TransactionClient,
     proof: CorrectionTimeSourceProof,
     previous: ActivitySettlementContributionRevision,
+    launchAdmission = false,
   ) {
+    if (launchAdmission) {
+      launchCount(proof.expectedSegmentCount, 'segments');
+      launchCount(proof.expectedSliceCount, 'slices');
+      launchJson(proof.sourceSnapshotJson, 'sourceBytes');
+      launchJson(proof.calculatedBucketsJson, 'sourceBytes');
+      if (!Array.isArray(proof.sourceSnapshotJson) || !Array.isArray(proof.calculatedBucketsJson))
+        return unavailable();
+      launchCount(proof.sourceSnapshotJson.length, 'segments');
+      launchCount(proof.calculatedBucketsJson.length, 'buckets');
+      launchTotal(
+        proof.sourceSnapshotJson.map((value) => {
+          const source = record(value);
+          if (!Array.isArray(source.slices)) return unavailable();
+          return source.slices.length;
+        }),
+        'slices',
+      );
+    }
     if (
       proof.activityId !== previous.activityId ||
       proof.settlementRunId !== previous.settlementRunId ||
@@ -413,16 +629,12 @@ export class ActivityContributionSettlementQueryService {
       },
     });
     if (!snapshot || !selection) return unavailable();
-    const items = await tx.activityContributionPolicySelectionItem.findMany({
-      where: { selectionRevisionId: selection.id, activityId: proof.activityId },
-      take: 10_002,
-    });
-    const frozen = contributionFrozenSelection({ snapshot, selection, items });
-    const policies = await tx.contributionPolicyVersion.findMany({
-      where: {
-        id: { in: [...new Set(frozen.pointers.resolved.map((item) => item.pointer.versionId))] },
-      },
-    });
+    const { frozen, policies } = await this.readFrozenPoliciesInTx(
+      tx,
+      snapshot,
+      selection,
+      launchAdmission,
+    );
     const records = proof.sourceSnapshotJson.map(record);
     const bases = await tx.participantTimeAllocationRevision.findMany({
       where: {
@@ -534,13 +746,17 @@ export class ActivityContributionSettlementQueryService {
       }
     }
     if (slices.length !== proof.expectedSliceCount) return unavailable();
+    if (launchAdmission) launchSpans(slices);
     const sources = buildFrozenContributionSources({ snapshot, frozen, buckets, slices, policies });
-    return evaluateSettlementContributions({
+    if (launchAdmission) launchSources(sources);
+    const evaluated = evaluateSettlementContributions({
       activityId: proof.activityId,
       settlementVersionId: proof.settlementVersionId,
       sourceKindCode: 'correction_time_proof',
       sources,
     });
+    if (launchAdmission) launchEvaluations(evaluated.evaluations);
+    return evaluated;
   }
 
   async readLedgerDaysInTx(
@@ -635,41 +851,17 @@ export class ActivityContributionSettlementQueryService {
   }
 
   /** Activity/Run/source locks belong to the caller; every read uses that very transaction. */
-  async readTimeEvaluationInTx(tx: Prisma.TransactionClient, time: ActivitySettlementTimeRevision) {
-    const snapshot = await tx.activityRuleSnapshot.findUnique({
-      where: {
-        activityId_workflowRevision: {
-          activityId: time.activityId,
-          workflowRevision: time.workflowRevision,
-        },
-      },
-      select: {
-        id: true,
-        activityId: true,
-        workflowRevision: true,
-        snapshotHash: true,
-        resolvedConfig: true,
-        contributionPolicySelectionRevisionId: true,
-      },
-    });
-    if (!snapshot?.contributionPolicySelectionRevisionId) return unavailable();
-    const selection = await tx.activityContributionPolicySelectionRevision.findFirst({
-      where: { id: snapshot.contributionPolicySelectionRevisionId, activityId: time.activityId },
-      select: {
-        id: true,
-        activityId: true,
-        revision: true,
-        selectionHash: true,
-        selectionJson: true,
-        itemCount: true,
-      },
-    });
-    if (!selection) return unavailable();
-    const items = await tx.activityContributionPolicySelectionItem.findMany({
-      where: { selectionRevisionId: selection.id, activityId: time.activityId },
-      take: 10_002,
-    });
-    const frozen = contributionFrozenSelection({ snapshot, selection, items });
+  async readTimeEvaluationInTx(
+    tx: Prisma.TransactionClient,
+    time: ActivitySettlementTimeRevision,
+    launchAdmission = false,
+  ) {
+    const { snapshot, selection, frozen, policies } = await this.readTimePolicySelectionInTx(
+      tx,
+      time.activityId,
+      time.workflowRevision,
+      launchAdmission,
+    );
     const buckets = await tx.participantSettlementTimeBucket.findMany({
       where: { timeRevisionId: time.id, activityId: time.activityId },
       select: {
@@ -695,18 +887,22 @@ export class ActivityContributionSettlementQueryService {
       WHERE b."timeRevisionId" = ${time.id} AND b."activityId" = ${time.activityId}
       ORDER BY b.id, a.id, s.ordinal LIMIT ${TIME_SETTLEMENT_LIMITS.slices + 1}
     `;
-    const policies = await tx.contributionPolicyVersion.findMany({
-      where: {
-        id: { in: [...new Set(frozen.pointers.resolved.map((item) => item.pointer.versionId))] },
-      },
-    });
+    if (launchAdmission) {
+      launchCount(buckets.length, 'buckets');
+      launchSpans(slices);
+      launchJson(slices, 'sourceBytes');
+      launchCount(new Set(slices.map((row) => row.sourceSegmentId)).size, 'segments');
+      launchCount(new Set(slices.map((row) => row.allocationRevisionId)).size, 'allocations');
+    }
     const sources = buildFrozenContributionSources({ snapshot, frozen, buckets, slices, policies });
+    if (launchAdmission) launchSources(sources);
     const evaluated = evaluateSettlementContributions({
       activityId: time.activityId,
       settlementVersionId: time.settlementVersionId,
       sourceKindCode: 'time_revision',
       sources,
     });
+    if (launchAdmission) launchEvaluations(evaluated.evaluations);
     return {
       ...evaluated,
       ruleSnapshotId: snapshot.id,

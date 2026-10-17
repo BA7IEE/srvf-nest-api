@@ -120,13 +120,19 @@ describe('D4 write orchestration and replay safety', () => {
   const allocations = { recognizeSealedDraftInTx: jest.fn() };
   const settlements = { submitTimeSettlementInTx: jest.fn() };
   const audit = { log: jest.fn() };
-  const contributions = { assertNativeWriteAllowed: jest.fn(), prepareTimeInTx: jest.fn() };
+  const contributions = {
+    assertNativeWriteAllowed: jest.fn(),
+    prepareTimeInTx: jest.fn(),
+    assertNewNativeActivityInTx: jest.fn(),
+    usesLaunchAdmission: false,
+  };
   const transaction = jest.fn(
     async (work: (client: Prisma.TransactionClient) => Promise<unknown>) => work(tx),
   );
 
   beforeEach(async () => {
     jest.resetAllMocks();
+    contributions.usesLaunchAdmission = false;
     config.activityV11Workflow.enabled = true;
     config.activityV11Workflow.readonlyMaintenance = false;
     // No connection is opened. All reachable delegates are mocked; the actual generated client
@@ -745,5 +751,66 @@ describe('D4 write orchestration and replay safety', () => {
     expect(f.createReceipt).toHaveBeenCalledTimes(1);
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(f.executeRaw).toHaveBeenCalledTimes(3);
+  });
+
+  it('rejects a new active operation before source evaluation, facts, receipt or audit', async () => {
+    const f = freshPrepare();
+    contributions.usesLaunchAdmission = true;
+    contributions.assertNewNativeActivityInTx.mockRejectedValue(
+      new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SCALE_LIMIT),
+    );
+    await expect(service.prepare(activityId, prepare, actor, meta)).rejects.toMatchObject({
+      biz: BizCode.ACTIVITY_TIME_SETTLEMENT_SCALE_LIMIT,
+    });
+    expect(queries.readSourceSetInTx).not.toHaveBeenCalled();
+    expect(queries.evaluateInTx).not.toHaveBeenCalled();
+    expect(f.createRevision).not.toHaveBeenCalled();
+    expect(f.createReceipt).not.toHaveBeenCalled();
+    expect(f.executeRaw).not.toHaveBeenCalled();
+    expect(audit.log).not.toHaveBeenCalled();
+  });
+
+  it('counts all locked identities even when the included population and sources are empty', async () => {
+    const f = freshPrepare();
+    contributions.usesLaunchAdmission = true;
+    const raw = jest.spyOn(tx, '$queryRaw');
+    for (let index = 0; index < 5; index++) raw.mockResolvedValueOnce([{ id: 'run' }]);
+    raw.mockResolvedValueOnce(
+      Array.from({ length: 501 }, (_, index) => ({ id: `excluded-${index}` })),
+    );
+    await expect(service.prepare(activityId, prepare, actor, meta)).rejects.toMatchObject({
+      biz: BizCode.ACTIVITY_TIME_SETTLEMENT_SCALE_LIMIT,
+    });
+    expect(queries.evaluateInTx).not.toHaveBeenCalled();
+    expect(f.createRevision).not.toHaveBeenCalled();
+    expect(f.createReceipt).not.toHaveBeenCalled();
+    expect(statement(raw.mock.calls[5][0])).toContain('FROM "ActivityParticipationIdentity"');
+  });
+
+  it('passes active admission to the full source evaluator while preserving the two complete guards', async () => {
+    const f = freshPrepare();
+    contributions.usesLaunchAdmission = true;
+    await expect(service.prepare(activityId, prepare, actor, meta)).resolves.toEqual(f.response);
+    expect(contributions.assertNewNativeActivityInTx).toHaveBeenCalledWith(tx, activityId, 0);
+    expect(queries.evaluateInTx).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ population: [], segments: [], latest: [] }),
+      true,
+    );
+    expect(statement(f.executeRaw.mock.calls[2][0])).toBe(nativeBarrier);
+  });
+
+  it('replays an existing authorized receipt before new capacity admission', async () => {
+    contributions.usesLaunchAdmission = true;
+    contributions.assertNewNativeActivityInTx.mockRejectedValue(
+      new Error('must not re-admit replay'),
+    );
+    const saved = receipt();
+    await expect(service.prepare(activityId, prepare, actor, meta)).resolves.toEqual(
+      saved.resultJson,
+    );
+    expect(contributions.assertNewNativeActivityInTx).not.toHaveBeenCalled();
+    expect(queries.evaluateInTx).not.toHaveBeenCalled();
+    expect(access.authorize).toHaveBeenCalledTimes(7);
   });
 });

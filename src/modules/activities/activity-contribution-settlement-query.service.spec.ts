@@ -266,6 +266,20 @@ describe('E4 current D7 source proof query', () => {
     });
     expect(result.evaluations[0].recognizedPoints).toBe('0.00');
   });
+
+  it('rejects oversized correction source JSON before fingerprinting or reading a frozen policy', async () => {
+    const f = correctionFixture();
+    f.proof.sourceSnapshotJson = Array.from({ length: 501 }, () => ({ slices: [] }));
+    await expect(
+      new ActivityContributionSettlementQueryService().readCorrectionEvaluationInTx(
+        f.prismaTx,
+        f.proof,
+        f.previous,
+        true,
+      ),
+    ).rejects.toThrow('scale_limit');
+    expect(f.tx.activityRuleSnapshot.findFirst).not.toHaveBeenCalled();
+  });
   it.each([
     'activityId',
     'settlementRunId',
@@ -693,6 +707,183 @@ describe('E4 frozen source query primitives', () => {
       expect.objectContaining({
         where: { activityId_workflowRevision: { activityId: 'activity-one', workflowRevision: 2 } },
       }),
+    );
+  });
+});
+
+describe('active launch facts cover the whole activity and frozen copies', () => {
+  function launchFixture() {
+    const input = fixture();
+    const tx = {
+      activityParticipationIdentity: { count: jest.fn().mockResolvedValue(500) },
+      attendancePunchEvent: { count: jest.fn().mockResolvedValue(1000) },
+      participantServiceSegmentRevision: {
+        count: jest.fn().mockResolvedValue(500),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      participantTimeAllocationRevision: { count: jest.fn().mockResolvedValue(500) },
+      activityRuleSnapshot: { findUnique: jest.fn().mockResolvedValue(input.snapshot) },
+      activityContributionPolicySelectionRevision: {
+        findFirst: jest.fn().mockResolvedValue(input.selection),
+      },
+      activityContributionPolicySelectionItem: {
+        findMany: jest.fn().mockResolvedValue(input.items),
+      },
+      contributionPolicyVersion: { findMany: jest.fn().mockResolvedValue(input.policies) },
+      participantContributionEvaluation: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const previous = {
+      id: 'previous',
+      activityId: input.snapshot.activityId,
+      workflowRevision: input.snapshot.workflowRevision,
+      ruleSnapshotId: input.snapshot.id,
+      ruleSnapshotHash: input.snapshot.snapshotHash,
+      selectionRevisionId: input.selection.id,
+      selectionRevisionHash: input.selection.selectionHash,
+      evaluationCount: 0,
+    } as ActivitySettlementContributionRevision;
+    return {
+      input,
+      tx,
+      previous,
+      service: new ActivityContributionSettlementQueryService(),
+      prismaTx: tx as unknown as Prisma.TransactionClient,
+    };
+  }
+
+  it('admits the whole 500 boundary and counts excluded/pending identities with no population filter', async () => {
+    const f = launchFixture();
+    await f.service.assertLaunchActivityInTx(f.prismaTx, 'activity-one');
+    expect(f.tx.activityParticipationIdentity.count).toHaveBeenCalledWith({
+      where: { activityId: 'activity-one' },
+    });
+    expect(f.tx.participantServiceSegmentRevision.count).toHaveBeenCalledWith({
+      where: { identity: { activityId: 'activity-one' }, statusCode: { not: 'superseded' } },
+    });
+  });
+
+  it('rejects 501 whole-activity identities before even collecting segment facts', async () => {
+    const f = launchFixture();
+    f.tx.activityParticipationIdentity.count.mockResolvedValue(501);
+    await expect(f.service.assertLaunchActivityInTx(f.prismaTx, 'activity-one')).rejects.toThrow(
+      'scale_limit',
+    );
+    expect(f.tx.participantServiceSegmentRevision.count).not.toHaveBeenCalled();
+  });
+  it('bounds complete current ledger spans even when they have no contribution refs', async () => {
+    const f = launchFixture();
+    f.tx.participantServiceSegmentRevision.findMany.mockResolvedValue([
+      {
+        checkInAt: new Date('2020-01-01T00:00:00.000Z'),
+        checkOutAt: new Date('2099-01-01T00:00:00.000Z'),
+      },
+    ]);
+    await expect(f.service.assertLaunchActivityInTx(f.prismaTx, 'activity-one')).rejects.toThrow(
+      'scale_limit',
+    );
+  });
+
+  it('bounds current and historical segment/allocation/event costs independently of people', async () => {
+    const f = launchFixture();
+    f.tx.participantServiceSegmentRevision.count.mockResolvedValueOnce(501);
+    await expect(f.service.assertLaunchActivityInTx(f.prismaTx, 'activity-one')).rejects.toThrow(
+      'scale_limit',
+    );
+    f.tx.attendancePunchEvent.count.mockResolvedValue(2001);
+    await expect(f.service.assertLaunchActivityInTx(f.prismaTx, 'activity-one')).rejects.toThrow(
+      'scale_limit',
+    );
+    f.tx.attendancePunchEvent.count.mockResolvedValue(1000);
+    f.tx.participantTimeAllocationRevision.count.mockResolvedValue(1001);
+    await expect(f.service.assertLaunchActivityInTx(f.prismaTx, 'activity-one')).rejects.toThrow(
+      'scale_limit',
+    );
+  });
+
+  it('counts retained excluded segments alongside the entire regenerated draft, including batch calls', async () => {
+    const f = launchFixture();
+    f.tx.participantServiceSegmentRevision.count.mockResolvedValue(80);
+    const segment = {
+      checkInAt: new Date('2020-01-01T01:00:00.000Z'),
+      checkOutAt: new Date('2020-01-01T02:00:00.000Z'),
+    };
+    await expect(
+      f.service.assertLaunchDraftInTx(
+        f.prismaTx,
+        'activity-one',
+        ['included'],
+        Array.from({ length: 420 }, () => segment),
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      f.service.assertLaunchDraftInTx(
+        f.prismaTx,
+        'activity-one',
+        ['included'],
+        Array.from({ length: 421 }, () => segment),
+      ),
+    ).rejects.toThrow('scale_limit');
+    expect(f.tx.participantServiceSegmentRevision.count).toHaveBeenCalledWith({
+      where: {
+        identity: { activityId: 'activity-one' },
+        participationIdentityId: { notIn: ['included'] },
+        statusCode: { not: 'superseded' },
+      },
+    });
+  });
+
+  it('rejects an oversized frozen snapshot before selection parsing, including zero-source activities', async () => {
+    const f = launchFixture();
+    f.input.snapshot.resolvedConfig = { padding: '中'.repeat(90_000) };
+    await expect(
+      f.service.assertLaunchFrozenPolicyInTx(f.prismaTx, 'activity-one', 2),
+    ).rejects.toThrow('scale_limit');
+    expect(f.tx.activityContributionPolicySelectionItem.findMany).not.toHaveBeenCalled();
+    expect(f.tx.contributionPolicyVersion.findMany).not.toHaveBeenCalled();
+  });
+
+  it('accepts a frozen zero-evaluation copy and rejects a mismatched snapshot anchor', async () => {
+    const f = launchFixture();
+    await expect(f.service.assertLaunchCopyInTx(f.prismaTx, f.previous)).resolves.toBeUndefined();
+    f.previous.ruleSnapshotId = 'different';
+    await expect(f.service.assertLaunchCopyInTx(f.prismaTx, f.previous)).rejects.toThrow(
+      'source_not_ready',
+    );
+  });
+
+  it('refuses a new unchanged-time correction with more than 2000 copied evaluations', async () => {
+    const f = launchFixture();
+    f.previous.evaluationCount = 2001;
+    await expect(f.service.assertLaunchCopyInTx(f.prismaTx, f.previous)).rejects.toThrow(
+      'scale_limit',
+    );
+    expect(f.tx.activityRuleSnapshot.findUnique).not.toHaveBeenCalled();
+    expect(f.tx.participantContributionEvaluation.findMany).not.toHaveBeenCalled();
+  });
+
+  it('counts actual copied refs and long spans without recalculating awards', async () => {
+    const f = launchFixture();
+    f.previous.evaluationCount = 1;
+    const ref = {
+      sourceSegmentId: 'segment',
+      allocationRevisionId: 'allocation',
+      startsAt: '2026-10-01T00:00:00.000Z',
+      endsAt: '2026-10-01T01:00:00.000Z',
+    };
+    f.tx.participantContributionEvaluation.findMany.mockResolvedValue([
+      { sourceRefsJson: Array.from({ length: 2501 }, () => ref), beijingDayPointsJson: [] },
+    ]);
+    await expect(f.service.assertLaunchCopyInTx(f.prismaTx, f.previous)).rejects.toThrow(
+      'scale_limit',
+    );
+    f.tx.participantContributionEvaluation.findMany.mockResolvedValue([
+      {
+        sourceRefsJson: [{ ...ref, endsAt: '2099-10-01T00:00:00.000Z' }],
+        beijingDayPointsJson: [],
+      },
+    ]);
+    await expect(f.service.assertLaunchCopyInTx(f.prismaTx, f.previous)).rejects.toThrow(
+      'scale_limit',
     );
   });
 });

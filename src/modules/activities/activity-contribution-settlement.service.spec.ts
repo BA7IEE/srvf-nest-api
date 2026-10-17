@@ -204,6 +204,7 @@ function setup(
   const command = { operationKey: 'operation-one', requestHash: '0'.repeat(64) };
   return {
     service,
+    queries,
     read,
     tx,
     prismaTx: tx as unknown as Prisma.TransactionClient,
@@ -815,6 +816,52 @@ describe('E4 transaction-owned contribution orchestration', () => {
 });
 
 describe('E5 explicit active admission reuses the frozen native contract', () => {
+  it('rejects a long correction segment before creating any new version or copied proof', async () => {
+    const f = setup('active');
+    jest.spyOn(f.queries, 'assertLaunchActivityInTx').mockResolvedValue(undefined);
+    const changes = {
+      schemaVersion: 3,
+      results: [],
+      segments: [
+        {
+          participationIdentityId: 'identity',
+          segmentKey: 'segment',
+          checkInAt: new Date('2020-01-01T00:00:00.000Z'),
+          checkOutAt: new Date('2099-01-01T00:00:00.000Z'),
+          resultCode: 'valid',
+          serviceHours: 1,
+        },
+      ],
+    };
+    await expect(
+      f.service.assertNewNativeCorrectionInTx(f.prismaTx, 'activity-one', 'version-one', changes),
+    ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_TIME_SETTLEMENT_SCALE_LIMIT });
+    expect(f.tx.activitySettlementContributionRevision.findFirst).not.toHaveBeenCalled();
+    expect(f.tx.activitySettlementContributionRevision.create).not.toHaveBeenCalled();
+  });
+  it('translates whole-activity capacity rejection without writing a contribution root', async () => {
+    const f = setup('active');
+    const activity = jest
+      .spyOn(f.queries, 'assertLaunchActivityInTx')
+      .mockRejectedValue(new ContributionSettlementPolicyError('scale_limit'));
+    const frozen = jest.spyOn(f.queries, 'assertLaunchFrozenPolicyInTx');
+    await expect(
+      f.service.assertNewNativeActivityInTx(f.prismaTx, 'activity-one', 1),
+    ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_TIME_SETTLEMENT_SCALE_LIMIT });
+    expect(activity).toHaveBeenCalledWith(f.prismaTx, 'activity-one');
+    expect(frozen).not.toHaveBeenCalled();
+    expect(f.tx.activitySettlementContributionRevision.create).not.toHaveBeenCalled();
+  });
+  it.each(['fixture', 'off'] as const)(
+    'leaves %s frozen validation and recovery outside new-business launch admission',
+    async (mode) => {
+      const f = setup(mode);
+      const activity = jest.spyOn(f.queries, 'assertLaunchActivityInTx');
+      await f.service.assertNewNativeActivityInTx(f.prismaTx, 'activity-one', 1);
+      expect(activity).not.toHaveBeenCalled();
+      expect(f.service.usesLaunchAdmission).toBe(false);
+    },
+  );
   it.each(['development', 'test', 'smoke', 'production'] as const)(
     'admits explicit active in %s while fixing the existing run regime',
     (env) => {
@@ -840,7 +887,7 @@ describe('E5 explicit active admission reuses the frozen native contract', () =>
     const { service, prismaTx, tx, command, reauthorize, read } = setup('active');
     const proof = time();
     await service.prepareTimeInTx(prismaTx, proof, 'policy_v1', command, reauthorize);
-    expect(read).toHaveBeenCalledWith(prismaTx, proof);
+    expect(read).toHaveBeenCalledWith(prismaTx, proof, true);
     expect(reauthorize).toHaveBeenCalledTimes(2);
     expect(tx.activitySettlementContributionRevision.create).toHaveBeenCalledTimes(1);
     expect(tx.$executeRaw).toHaveBeenCalledTimes(1);

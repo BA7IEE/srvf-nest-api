@@ -786,6 +786,67 @@ describe('D4 historical-role reuse stays inside one evaluation', () => {
     const set = sourceSet({ segments: [first, second], latest: rows });
     return { tx, access, service, set, snapshots, rows };
   }
+  it('checks pending/zero-source population before reading any physical slices', async () => {
+    const f = roleFixture();
+    f.set.population = Array.from({ length: 501 }, (_, i) => ({
+      participationIdentityId: String(i),
+      memberId: String(i),
+      pending: true,
+    }));
+    await expect(
+      f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set, true),
+    ).rejects.toThrow('scale_limit');
+    expect(f.tx.participantTimeAllocationSlice.findMany).not.toHaveBeenCalled();
+  });
+  it('rejects a long complete service segment even when its manual allocation slice is short', async () => {
+    const f = roleFixture();
+    f.set.segments = f.set.segments.map((row, i) =>
+      i === 0 ? { ...row, checkOutAt: new Date('2099-01-01T00:00:00.000Z') } : row,
+    );
+    f.rows[0].recognitionModeCode = 'manual';
+    f.rows[0].manualReason = 'split coverage';
+    await expect(
+      f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set, true),
+    ).rejects.toThrow('scale_limit');
+    expect(f.tx.participantTimeAllocationSlice.findMany).not.toHaveBeenCalled();
+  });
+  it('counts manifests belonging to invalid/excluded segments before result filtering', async () => {
+    const f = roleFixture();
+    f.set.population = [];
+    f.rows[0].sliceCount = 2501;
+    await expect(
+      f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set, true),
+    ).rejects.toThrow('scale_limit');
+    expect(f.tx.participantTimeAllocationSlice.findMany).not.toHaveBeenCalled();
+  });
+  it('checks actual physical slices independently of an understated manifest and empty population', async () => {
+    const f = roleFixture();
+    f.set.population = [];
+    f.rows.forEach((row) => {
+      row.sliceCount = 1;
+    });
+    const slice = {
+      allocationRevisionId: f.rows[0].id,
+      ordinal: 0,
+      activityId: 'activity',
+      categoryCode: 'training',
+      intervalKindCode: 'service_segment',
+      startAt: new Date('2026-01-01'),
+      endAt: new Date('2026-01-02'),
+    };
+    f.tx.participantTimeAllocationSlice.findMany.mockResolvedValue(
+      Array.from({ length: 2501 }, () => slice),
+    );
+    await expect(
+      f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set, true),
+    ).rejects.toThrow('scale_limit');
+    expect(f.tx.participantTimeAllocationSlice.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { allocationRevisionId: { in: f.rows.map((row) => row.id) } },
+      }),
+    );
+    expect(f.tx.timePolicyVersion.findMany).not.toHaveBeenCalled();
+  });
   it('reuses a successful role while retaining all reads and full builder input', async () => {
     const f = roleFixture();
     const resolver = jest.spyOn(historicalRolePolicy, 'historicalAttendanceRoleFromRuleSnapshot');

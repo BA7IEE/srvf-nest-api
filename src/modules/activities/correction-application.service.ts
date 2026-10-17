@@ -956,6 +956,13 @@ export class CorrectionApplicationService {
             return resumable;
           }
           this.assertContributionCorrectionWrite(baseVersion, changeSet);
+          if (native)
+            await this.contributions?.assertNewNativeCorrectionInTx(
+              tx,
+              anchor.activityId,
+              baseVersion.id,
+              changeSet,
+            );
 
           if (request.statusCode !== 'approved') {
             throw new BizException(BizCode.CORRECTION_APPLY_STATUS_INVALID);
