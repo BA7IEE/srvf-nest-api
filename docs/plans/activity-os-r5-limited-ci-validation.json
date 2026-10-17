@@ -1,7 +1,5 @@
 {
   "status": "BLOCKED",
-  "staticTestSourceCommit": "fc38089a508f7265731914386fd008d10fe93e9d",
-  "businessSourceUnchangedFrom": "8385d67b8d0a2d1e1b143eb4383b7e0d6b206835",
   "previous500ValidationCommit": "9c5c60d6b0d0d86f0e4a7c178026756bf674a6f2",
   "newWindow": {
     "windowStatus": "FAILED",
@@ -136,18 +134,223 @@
     "success": true,
     "numPassedTestSuites": 2,
     "numPassedTests": 11,
-    "numFailedTests": 0
+    "numFailedTests": 0,
+    "scope": "Pure input assertions only; no live acceptance"
   },
   "ciScopeProof": {
-    "defaultPattern": "^(?!E4 maximum real sources with unchanged transaction and query budgets 2,000 identities / 10,000 segments / 50,000 slices yield 8,000 policy units without repeated awards$)[\\s\\S]*$",
-    "manualPattern": "^E4\\ maximum\\ real\\ sources\\ with\\ unchanged\\ transaction\\ and\\ query\\ budgets\\ 2,000\\ identities\\ /\\ 10,000\\ segments\\ /\\ 50,000\\ slices\\ yield\\ 8,000\\ policy\\ units\\ without\\ repeated\\ awards$",
+    "effectiveDefault": "^(?!E4 maximum real sources with unchanged transaction and query budgets 2,000 identities / 10,000 segments / 50,000 slices yield 8,000 policy units without repeated awards$)[\\s\\S]*$",
+    "effectiveManual": "^E4\\ maximum\\ real\\ sources\\ with\\ unchanged\\ transaction\\ and\\ query\\ budgets\\ 2,000\\ identities\\ /\\ 10,000\\ segments\\ /\\ 50,000\\ slices\\ yield\\ 8,000\\ policy\\ units\\ without\\ repeated\\ awards$",
     "cliOverridesDefault": true,
-    "exactMaximumDefaultExcluded": true,
-    "neighborsRemainIncluded": true,
+    "onlyExactMaximumExcluded": true,
+    "collectedFileCount": 441,
+    "expectedFiles": [
+      "test/e2e/activity-os-r5-native-admission.e2e-spec.ts",
+      "test/e2e/activity-os-r5-native-limited-launch.e2e-spec.ts",
+      "test/e2e/activity-os-r5-native-policy-input.e2e-spec.ts",
+      "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts"
+    ],
+    "originalMaximumSourceSha256": "5408651f58567fe8b9468f93326686ede1b6ac4da1d15028784fd0c3e3e51d87",
     "databaseCalls": 0,
-    "scaleFileSha256": "5408651f58567fe8b9468f93326686ede1b6ac4da1d15028784fd0c3e3e51d87"
+    "scope": "Official configuration showConfig/listTests only; no test body/globalSetup executed"
   },
-  "protectedCandidate": {
+  "protectedFilesApplied": true,
+  "maintainerGrantPresent": false,
+  "currentFullColdLint": {
+    "command": [
+      "pnpm",
+      "lint"
+    ],
+    "exitCode": 0,
+    "wallSeconds": 291.4819794140021,
+    "wholeProcessGroupPeakRssBytes": 12733943808,
+    "resourceGuardBytes": 15032385536,
+    "resourceFailure": false,
+    "outerWatchdogFailure": false,
+    "scriptWindowSeconds": 300,
+    "maxConcurrentOriginalCLIs": 2,
+    "eachHeapMiB": 6144,
+    "candidateOnly": false,
+    "groupAbsent": true,
+    "remainingBeforeDefensiveCleanupPids": [],
+    "complete": {
+      "files": 2011,
+      "batches": 7,
+      "errors": 0,
+      "warnings": 0,
+      "elapsedMs": 290146,
+      "inputSeal": "c38933128fedda094d8cc03629513e4a3d2c33bdab193da347f632d7b102cbcb",
+      "configSeal": "ee2374149ab3469cc1dea836c7f071a60829cba74bfe56281bd268eb0f876e45"
+    },
+    "scriptSha256": "dfa9cc836eef3a6b515d0f640f487fec44ec82a9e063948c56e0fe0a8c4f93ed",
+    "scope": "Official pnpm lint, no cache, current source, original300-second inner window"
+  },
+  "currentRequiredCI": "NOT_YET_TRIGGERED_AT_THIS_RECORD; final exact-SHA run will be recorded externally after push without changing source SHA",
+  "originalMaximum": "NOT_VALIDATED_FOR_LIMITED_LAUNCH",
+  "trusted": "MAINTAINER_APPROVAL_REQUIRED",
+  "production": "NOT_RUN",
+  "ciFileCollection": {
+    "collectedFileCount": 441,
+    "databaseCalls": 0,
+    "source": "Official current config listTests; test bodies and globalSetup did not run"
+  },
+  "candidateScriptTypecheck": {
+    "status": "PASS",
+    "diagnosticCount": 0,
+    "wallMs": 1604,
+    "scope": "virtual protected-script replacement; actual protected file unmodified"
+  },
+  "businessSourceComparison": {
+    "commit": "8385d67b8d0a2d1e1b143eb4383b7e0d6b206835",
+    "srcPrismaDiffExitCode": 0,
+    "scope": "Historical comparison before the dispatch admission fix; not a claim about current source"
+  },
+  "priorStaticTestSourceCommit": "fc38089a508f7265731914386fd008d10fe93e9d",
+  "previous500BusinessSourceCommit": "8385d67b8d0a2d1e1b143eb4383b7e0d6b206835",
+  "confirmationWindow": {
+    "status": "FAILED",
+    "head": "bb17bbcee438b4ade49453f67c132c55153555c6",
+    "innerSeconds": 81.424807874,
+    "process": {
+      "exitCode": 1,
+      "outerWallSeconds": 82.07619642400095,
+      "businessStopAt510sSent": false,
+      "sigtermAt598sSent": false,
+      "hardKillAt600sSent": false,
+      "hardWindowSeconds": 600,
+      "cleanupReserveSeconds": 90,
+      "retry": 0,
+      "capacityRuns": 0,
+      "groupAbsent": true,
+      "unknown": false
+    },
+    "sourceActivities": 1,
+    "newDatabases": 1,
+    "restores": 0,
+    "negativeGenerateAttempts": [
+      {
+        "label": "GENERATE_REJECT_shape",
+        "status": "RETURNED_UNVALIDATED"
+      }
+    ],
+    "prepareAttempts": [],
+    "observations": [
+      {
+        "transport": "http",
+        "entry": "/evidence-seals",
+        "status": 200,
+        "bizCode": 0,
+        "phase": "REAL_SEAL",
+        "elapsedMs": 79724.089356
+      },
+      {
+        "transport": "http",
+        "entry": "/settlement/generate/shape",
+        "status": 409,
+        "bizCode": 20225,
+        "phase": "GENERATE_REJECT_shape",
+        "elapsedMs": 80542.37976899999
+      }
+    ],
+    "semanticGroups": [
+      {
+        "key": "schemaCatalog",
+        "status": "PASS"
+      },
+      {
+        "key": "policyShape",
+        "status": "FAIL"
+      },
+      {
+        "key": "policyBytes",
+        "status": "NOT_RUN"
+      },
+      {
+        "key": "base",
+        "status": "NOT_RUN"
+      },
+      {
+        "key": "unchanged",
+        "status": "NOT_RUN"
+      },
+      {
+        "key": "v3",
+        "status": "NOT_RUN"
+      },
+      {
+        "key": "longFullSource",
+        "status": "NOT_RUN"
+      },
+      {
+        "key": "cleanup",
+        "status": "PASS"
+      }
+    ],
+    "previousAttempts": 35,
+    "thisAttemptedGroups": 3,
+    "cumulativeAttemptedGroups": 38,
+    "ceiling": 43,
+    "failureAssertion": "all196 fingerprint equality, cases.ts86",
+    "capturedHttpStatus": 409,
+    "capturedBizCode": 20225,
+    "exactChangedTables": "NOT_CAPTURED; no claim of exact table count",
+    "retry": 0,
+    "performance": 0,
+    "cleanup": {
+      "pending": 0,
+      "unknown": false,
+      "appClosed": true,
+      "observerClosed": true,
+      "databaseDropped": true,
+      "leaseReleased": true,
+      "fourZero": {
+        "databases": 0,
+        "clients": 0,
+        "leaseBackends": 0,
+        "leaseLocks": 0
+      },
+      "elapsedMs": 81423.73288899999,
+      "within600": true,
+      "pendingAfterCleanup": 0
+    },
+    "cleanupRecordedElapsedSeconds": 81.423732889,
+    "timingProvenance": "innerSeconds uses final runner summary elapsedMs; cleanupRecordedElapsedSeconds is its earlier cleanup marker, 1.075 ms earlier. Immutable source files unchanged."
+  },
+  "delegatedAuthorization": {
+    "source": "Current user messages forwarded in source thread01a1184e-5691-7052-9009-5a5169a7b0e2",
+    "experimentApproval": "Sentinel_3b0058ac228881919495d8a2fe269c77",
+    "delegatedExecutionApproval": "Sentinel_6d3c627808a481919c555c52c1cbdddc",
+    "executor": "AI acting under this explicit user delegation",
+    "defaultRepositoryRule": "AGENTS.md37-38 requires maintainer execution and forbids AI self-issuance",
+    "interpretation": "This is a specific user-authorized execution exception for the listed five targets, not a claim that default repository rules permit AI grants. No identity/signature or gate implementation is changed.",
+    "grantTargets": [
+      "scripts/check-cold-lint.ts",
+      "test/jest-e2e.config.ts",
+      ".github/workflows/ci.yml",
+      ".github/workflows/activity-os-r5-e4-validation.yml",
+      "docs/ai-harness/ROUTE_AUTHZ.md"
+    ],
+    "signaturesExcluded": [
+      "SQL3b substantive review",
+      "Trusted approval"
+    ],
+    "experiment": {
+      "newAttempt": 1,
+      "maxNewDatabases": 1,
+      "maxSourceActivities": 3,
+      "populationPerActivity": 1,
+      "windowSeconds": 600,
+      "cleanupReserveSeconds": 90,
+      "transactionSeconds": 30,
+      "negativeGenerateEntries": 2,
+      "semanticPrepareEntries": 5,
+      "semanticGroups": 8,
+      "priorAttempts": 35,
+      "newCumulativeCeiling": 43,
+      "performanceCalls": 0,
+      "retry": 0
+    }
+  },
+  "protectedCandidateHistorical": {
     "files": [
       {
         "target": "scripts/check-cold-lint.ts",
@@ -182,34 +385,166 @@
     "patchLines": 114,
     "grantIssuedByAI": false
   },
-  "protectedFilesApplied": false,
-  "maintainerGrantPresent": false,
-  "currentFullColdLint": "NOT_RUN",
-  "currentRequiredCI": "NOT_RUN",
-  "originalMaximum": "NOT_VALIDATED_FOR_LIMITED_LAUNCH",
-  "trusted": "MAINTAINER_APPROVAL_REQUIRED",
-  "production": "NOT_RUN",
-  "ciFileCollection": {
-    "exitCode": 0,
-    "collectedFileCount": 441,
-    "expectedFilesRetained": [
-      "test/e2e/activity-os-r5-native-admission.e2e-spec.ts",
-      "test/e2e/activity-os-r5-native-policy-input.e2e-spec.ts",
-      "test/e2e/activity-os-r5-native-limited-launch.e2e-spec.ts",
-      "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts"
+  "protectedFixApplied": {
+    "files": [
+      {
+        "target": "scripts/check-cold-lint.ts",
+        "originalSha256": "2fdfb21b81e030e6e5865142038fc8096cf025c2dcd8e55d22527f8ec22f08de",
+        "candidate": "candidate-parallel-cold-lint.ts",
+        "candidateSha256": "dfa9cc836eef3a6b515d0f640f487fec44ec82a9e063948c56e0fe0a8c4f93ed",
+        "applied": true,
+        "actualSha256": "dfa9cc836eef3a6b515d0f640f487fec44ec82a9e063948c56e0fe0a8c4f93ed"
+      },
+      {
+        "target": "test/jest-e2e.config.ts",
+        "originalSha256": "595e5dec439c25e8c02a7ce7dbed49e1b360c112cdae1aacf110b5ba2290520f",
+        "candidate": "candidate-jest-e2e.config.ts",
+        "candidateSha256": "1f11745fd11d37d253cf230d27c7057a886646ec1e8cbba7768707af9c572cbd",
+        "applied": true,
+        "actualSha256": "1f11745fd11d37d253cf230d27c7057a886646ec1e8cbba7768707af9c572cbd"
+      },
+      {
+        "target": ".github/workflows/ci.yml",
+        "originalSha256": "36ad2e1074d8ad089ebb190623b5d6b577c7add73a83bc4f28686e2830d9615b",
+        "candidate": "candidate-ci.yml",
+        "candidateSha256": "67d5ffa4eb887632b2221046e6accdb8c6469e4807ef3fc32c8aa20b1924121a",
+        "applied": true,
+        "actualSha256": "67d5ffa4eb887632b2221046e6accdb8c6469e4807ef3fc32c8aa20b1924121a"
+      },
+      {
+        "target": ".github/workflows/activity-os-r5-e4-validation.yml",
+        "originalSha256": "29af5a903469afd424fc1cb36d9821610192eea752a258a7407e3377c766ee25",
+        "candidate": "candidate-activity-os-r5-e4-validation.yml",
+        "candidateSha256": "3f52739ecba14d1963c8f0fd08a7463515cdaf1fba929e29c69d71a71c34d515",
+        "applied": true,
+        "actualSha256": "3f52739ecba14d1963c8f0fd08a7463515cdaf1fba929e29c69d71a71c34d515"
+      }
     ],
-    "maximumFileRetained": true,
-    "databaseCalls": 0,
-    "scope": "listTests verifies file collection; exact maximum case filtering is proved separately by effective testNamePattern"
+    "patchSha256": "d2ecdd59ffbd037625fdce07991e40d94fc42dbef58872a1dec4426ed01a1ee8",
+    "patchLines": 114,
+    "grantIssuedByAI": false,
+    "authorizationRecord": "delegated-grants.json",
+    "executor": "AI explicitly delegated by user"
   },
-  "candidateScriptTypecheck": {
-    "status": "PASS",
-    "diagnosticCount": 0,
-    "wallMs": 1604,
-    "scope": "virtual protected-script replacement; actual protected file unmodified"
+  "delegatedGrantExecuted": true,
+  "authzVerification": {
+    "changedLines": 2,
+    "entries": 663,
+    "entriesUnchanged": true,
+    "onlyInputDigestChanged": true,
+    "oldInputDigest": "sha256:e884e9440d158cde6e1ffd842de4e9d6cd9f6a41df7db8a90265e86e9e59ad18",
+    "newInputDigest": "sha256:9b61415b4c962827900c718b9fb271532a19ad5fbdab8a39bd5f316adb57cd4c",
+    "routeSha256": "a76f4deae0b3ed66a4f7ff90ece33c89f54938c6783ff89be73374ffb2247dd5"
   },
-  "businessSourceComparison": {
-    "commit": "8385d67b8d0a2d1e1b143eb4383b7e0d6b206835",
-    "srcPrismaDiffExitCode": 0
-  }
+  "currentGenerationFix": {
+    "status": "STATIC_AND_UNIT_PASS_LIVE_NOT_VALIDATED",
+    "change": "Under Activity lock, after operation replay and original seal/run checks, active new native admission precedes the first job/item write. Existing frozen draft/history regime and generator recheck preserved.",
+    "limits": "Reservation and generation remain separate transactions. Does not claim every later failure persists zero records.",
+    "characterizationBefore": {
+      "suites": 2,
+      "tests": 15,
+      "passed": true
+    },
+    "regressionAfter": {
+      "suites": 2,
+      "tests": 24,
+      "passed": true
+    },
+    "liveRerun": false,
+    "exactChangedTablesInFailedWindow": "NOT_CAPTURED",
+    "futureDiagnostics": "Per-table names/hash snapshot emitted before equality assertion, without raw data"
+  },
+  "formalTypecheck": {
+    "command": [
+      "pnpm",
+      "typecheck"
+    ],
+    "exitCode": 0,
+    "seconds": 207.38263741099945
+  },
+  "formalFullUnit": {
+    "success": true,
+    "numPassedTestSuites": 461,
+    "numFailedTestSuites": 0,
+    "numPassedTests": 10264,
+    "numFailedTests": 0,
+    "numTodoTests": 5,
+    "snapshotsMatched": 8,
+    "process": {
+      "command": [
+        "pnpm",
+        "test",
+        "--runInBand",
+        "--json",
+        "--outputFile=/workspace/r5-admission-confirmation-20261017/full-unit-result.json"
+      ],
+      "exitCode": 0,
+      "seconds": 222.01568665299783
+    }
+  },
+  "formalSmallChecks": [
+    {
+      "name": "cold-lint-selftest",
+      "command": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "scripts/check-cold-lint.ts",
+        "--selftest"
+      ],
+      "exitCode": 0,
+      "seconds": 2.90007355799753
+    },
+    {
+      "name": "docs-authz",
+      "command": [
+        "pnpm",
+        "docs:authz:check"
+      ],
+      "exitCode": 0,
+      "seconds": 2.9880204309993132
+    },
+    {
+      "name": "codemap",
+      "command": [
+        "pnpm",
+        "docs:codemap:check"
+      ],
+      "exitCode": 1,
+      "seconds": 1.5503887119994033
+    },
+    {
+      "name": "boundaries",
+      "command": [
+        "pnpm",
+        "docs:boundaries:check"
+      ],
+      "exitCode": 0,
+      "seconds": 2.76102977499977
+    },
+    {
+      "name": "signoff",
+      "command": [
+        "pnpm",
+        "cutover:check:signoff"
+      ],
+      "exitCode": 1,
+      "seconds": 10.994994659999065
+    }
+  ],
+  "refreshedChecks": [
+    {
+      "name": "codemap-after-refresh",
+      "exitCode": 0,
+      "seconds": 3.8823525120023987
+    },
+    {
+      "name": "diff-check",
+      "exitCode": 0,
+      "seconds": 0.050115197998820804
+    }
+  ],
+  "currentRequiredCIWorkflow": ".github/workflows/ci.yml",
+  "recordScope": "State before the one ordinary CI push; post-push result is in the evidence addendum and PR checks",
+  "staticChecksAtRecord": "PASS: complete typecheck, full unit, official cold lint,36 selfchecks, pure inputs, authz and refreshedCODEMAP/boundary checks; SQL3b stillFAIL"
 }

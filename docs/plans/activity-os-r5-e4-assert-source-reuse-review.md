@@ -470,3 +470,14 @@ GitHub当前普通CI没有新SHA结果；仓内声明required为`Lint / Typechec
 最新状态见[受限CI收尾与维护者动作](activity-os-r5-limited-ci-closeout-20261017.md)：两CLI候选在原300秒内完成2007文件，272.441秒、零诊断；正式受保护入口尚待本人grant。唯一新小夹具窗口在REAL_GENERATE失败，prepare0，2组通过／1组失败／5组NOT_RUN，正常清理四零；未重试。首个政策门原已在generate，夹具已修正到首次准入，离线11项、类型及定向lint通过，实际修复后DB验证待普通CI。新增原生业务及全部仍适用测试保留；原满额仅拟精确隔离为历史／手动入口，不将其填绿。旧9c5c60d6的500通过证据及旧满额失败均保持。五个精确grant、137–146条SQL本人3b与最终SHA Trusted的位置及命令见该文档；无需用户在Mac运行云路径。
 
 **本次未做：** 未应用尚无grant的CI／lint／权限生成物候选，未重复数据库或500／满额，未改生产SQL／guard／既有断言，未代签3b／Trusted、Ready／合并／部署。
+
+
+### 2026-10-17 明确代执行授权与第二个独立语义窗口
+
+用户以`Sentinel_3b0058ac228881919495d8a2fe269c77`批准一个新尝试：1库、3个单人活动、600秒含90秒清理、原30秒事务、2次generate负例及5次prepare、8组语义、性能0、无重试，累计上限由40增至43；禁止重跑旧500或原满额。测试提交`bb17bbcee438b4ade49453f67c132c55153555c6`实际81.424807874秒（清理标记81.423732889秒），外层82.076196424秒，1库／1活动／restore0，generate1／2、prepare0／5、性能0。真实首个负例已在断言前记录HTTP409／Biz20225、data=null，原冻结政策方法一次及来源堆栈断言通过，随后196表指纹比较失败。未保存当时逐表before/after，不能声称精确变化表数。schema/catalog与cleanup通过，policyShape失败，另5组NOT_RUN；累计38／43次尝试，不是38项通过，未用5组不是重启授权。正常DROP、app/observer关闭、lease释放，独立四零、pending0、UNKNOWN=false、进程组消失；没有重试。前次f6324dc1未捕获HTTP码的失败保持不变。
+
+静态调用链显示HTTP调度层先独立提交job/item，底层generate准入拒绝后再持久化failed。当前最小修复在同一Activity锁内、既有operation重放及seal/run状态检查之后，首次receipt写入前调用原active准入；沿用draft优先、history回退及undefined→legacy冻结规则，fixture/off路径不变，生成器原准入保留。改编排前2套15项characterization通过，新增回归后2套24项通过；只读复审未发现阻断，精确跨模型ID无法独立核验，不补造身份。保留两事务间竞态的限制，不宣称所有后续失败均零持久写。补充安全逐表名称／hash日志先于断言，未削弱196表比较；当前修复真实HTTP/DB验收待普通CI，不再追加独立实验。
+
+用户另以`Sentinel_6d3c627808a481919c555c52c1cbdddc`明确委托执行既列五个精确grant。仓库默认要求“由维护者”运行且禁止AI自主发放；本次作为更高优先级用户的具体执行例外，正常CLI逐个登记“用户授权、AI代执行”，不冒称维护者身份或改默认规则。四份既审CI/lint候选已按原SHA核对后应用，权限文档正式生成并独立核对仅两处摘要、663条声明不变。3b实质SQL审查和Trusted批准没有被该委托替代。正式冷lint2011文件零诊断、内层290.146秒／原300秒、外层291.482秒通过，完整类型与461套10264项单元／8快照通过，5个todo保留。最终GitHub状态以[当前收口](activity-os-r5-limited-ci-closeout-20261017.md)和[机器记录](activity-os-r5-limited-ci-validation.json)为准。
+
+**本次未做：** 未重跑500／原满额、A/B或同一DB尝试，未把失败倒签为通过；未改原30/300/600秒、生产SQL／guard／schema／migration／默认开关；未触及生产或Mac、未代签3b／Trusted、未Ready／合并／部署。

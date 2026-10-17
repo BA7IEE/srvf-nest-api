@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { ESLint } from 'eslint';
 
-// Full, uncached lint through serial original CLI calls for the three original root globs.
+// Full, uncached lint through at most two original CLI calls for the three original root globs.
 // Reporting remains partitioned; config, projects, rules, heap and window stay fixed.
 export const COLD_LINT_PATTERNS = ['src/**/*.ts', 'test/**/*.ts', 'prisma/**/*.ts'];
 export const COLD_LINT_BATCH_SIZE = 300;
@@ -303,6 +303,7 @@ async function runCli(
   root: string,
   files: readonly string[],
   deadline: number,
+  outputBudget = { bytes: 0 },
 ): Promise<ChildResult> {
   requireCondition(Date.now() < deadline, 'WINDOW_EXCEEDED');
   const cli = resolve(dirname(require.resolve('eslint/package.json')), 'bin/eslint.js');
@@ -337,7 +338,8 @@ async function runCli(
     process.once('SIGTERM', interrupt);
     child.stdout.on('data', (chunk: Buffer) => {
       bytes += chunk.length;
-      if (bytes > OUTPUT_LIMIT) {
+      outputBudget.bytes += chunk.length;
+      if (bytes > OUTPUT_LIMIT || outputBudget.bytes > OUTPUT_LIMIT) {
         exceeded = true;
         stop();
       } else chunks.push(chunk);
@@ -392,18 +394,28 @@ export async function runColdLint(root: string): Promise<Report> {
   // The original globs avoid argument limits and retain the original CLI host.
   // Validate the complete report against the independently sealed jurisdiction.
   const children: ChildResult[] = [];
-  let outputBytes = 0;
-  for (const [index, pattern] of COLD_LINT_PATTERNS.entries()) {
+  const outputBudget = { bytes: 0 };
+  // Two original CLI processes fit the existing 4-vCPU/16-GiB executor.
+  // All three roots, each 6144-MiB heap and one 300-second deadline remain fixed.
+  // Wait for every started process to terminate, including a failed sibling.
+  const scan = async (index: number) => {
     const selected = files.filter((file) => file.startsWith(ROOTS[index] + '/'));
     assertInputUnchanged(before, inputSeal(root));
     phase('CLI_START', selected.length);
-    const child = await runCli(root, [pattern], deadline);
+    const child = await runCli(root, [COLD_LINT_PATTERNS[index]], deadline, outputBudget);
     phase('CLI_END', selected.length, child);
-    outputBytes += Buffer.byteLength(child.stdout, 'utf8');
-    requireCondition(outputBytes <= OUTPUT_LIMIT, 'REPORT_LIMIT');
-    // Reject a failed/missing/duplicate root before starting the next CLI.
     coldLintReport(root, selected, child);
-    children.push(child);
+    return child;
+  };
+  for (let offset = 0; offset < ROOTS.length; offset += 2) {
+    const indexes = Array.from(
+      { length: Math.min(2, ROOTS.length - offset) },
+      (_, index) => offset + index,
+    );
+    const results = await Promise.allSettled(indexes.map(scan));
+    const rejected = results.find((result) => result.status === 'rejected');
+    if (rejected?.status === 'rejected') throw rejected.reason;
+    for (const result of results) if (result.status === 'fulfilled') children.push(result.value);
   }
   const total = coldLintRootReports(root, files, children);
   for (const [index, batch] of batches.entries()) {

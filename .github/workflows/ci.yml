@@ -534,6 +534,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p tmp
+          echo '::notice::Native launch scope: 500 identities / 2500 slices / 2000 units. Historical 2000-identity E4 capacity is NOT_VALIDATED; explicit manual/diagnostic positive selection only. Default and nightly E2E keep every other applicable test.'
           pnpm test:e2e --shard=${{ matrix.shard }}/5 2>&1 | tee tmp/e2e.log
           if grep -q 'failed to exit gracefully' tmp/e2e.log; then
             echo "::warning::并行 e2e 出现 worker 强制退出(本仓已知基线,非硬失败)。若近期新增/改动了 spec,请核对 afterAll 是否 app.close();权威检测见 nightly-e2e-leaks.yml,本地复现:pnpm test:e2e:leaks"

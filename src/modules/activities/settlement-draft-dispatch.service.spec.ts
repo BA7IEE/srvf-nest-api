@@ -27,7 +27,7 @@ describe('SettlementDraftDispatchService', () => {
   };
   const auditMeta = { requestId: 'draft-dispatch-unit', ip: null, ua: null };
 
-  function harness(populationSize: number) {
+  function harness(populationSize: number, native = false) {
     const createdJob = {
       id: 'job-1',
       statusCode: populationSize > 500 ? 'pending' : 'processing',
@@ -95,13 +95,179 @@ describe('SettlementDraftDispatchService', () => {
         sessionParticipationCount: 1,
       }),
     };
+    const contributions = {
+      usesLaunchAdmission: true,
+      draftRegime: jest.fn((previous: 'legacy' | 'policy_v1' | null) => previous ?? 'policy_v1'),
+      assertNewNativeActivityInTx: jest
+        .fn<Promise<void>, [unknown, string, number]>()
+        .mockResolvedValue(undefined),
+    };
     return {
-      service: new SettlementDraftDispatchService(prisma as never, drafts as never, gateStub(true)),
+      service: new SettlementDraftDispatchService(
+        prisma as never,
+        drafts as never,
+        gateStub(true),
+        native ? (contributions as never) : undefined,
+      ),
+      contributions,
       prisma,
       tx,
       drafts,
     };
   }
+
+  it.each(['policy shape', 'policy bytes'])(
+    'rejects a new native %s before any operation job/item persists',
+    async () => {
+      const { service, tx, drafts, contributions } = harness(1, true);
+      const error = new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SCALE_LIMIT);
+      contributions.assertNewNativeActivityInTx.mockRejectedValueOnce(error);
+      await expect(
+        service.generate(
+          { activityId: 'activity-1', operationKey: 'native-invalid', requestHash: 'hash-1' },
+          actor,
+          auditMeta,
+        ),
+      ).rejects.toBe(error);
+      expect(contributions.assertNewNativeActivityInTx).toHaveBeenCalledWith(tx, 'activity-1', 0);
+      expect(tx.activityBatchJob.create).not.toHaveBeenCalled();
+      expect(tx.activityBatchJobItem.create).not.toHaveBeenCalled();
+      expect(tx.activityBatchJob.update).not.toHaveBeenCalled();
+      expect(drafts.generate).not.toHaveBeenCalled();
+    },
+  );
+
+  it('admits a valid native source before reserving its operation receipt', async () => {
+    const { service, tx, drafts, contributions } = harness(1, true);
+    await service.generate(
+      { activityId: 'activity-1', operationKey: 'native-valid', requestHash: 'hash-1' },
+      actor,
+      auditMeta,
+    );
+    expect(contributions.draftRegime).toHaveBeenCalledWith(null);
+    expect(contributions.assertNewNativeActivityInTx).toHaveBeenCalledWith(tx, 'activity-1', 0);
+    expect(contributions.assertNewNativeActivityInTx.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.activityBatchJob.create.mock.invocationCallOrder[0],
+    );
+    expect(drafts.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves an inherited legacy regime while active launch admission is configured', async () => {
+    const { service, tx, drafts, contributions } = harness(1, true);
+    tx.attendanceSettlementRun.findUnique.mockResolvedValueOnce({
+      id: 'run-1',
+      statusCode: 'drafting',
+    });
+    tx.attendanceSettlementVersion.findFirst.mockResolvedValueOnce({
+      contributionRegimeCode: 'legacy',
+    });
+    await service.generate(
+      { activityId: 'activity-1', operationKey: 'legacy-existing', requestHash: 'hash-1' },
+      actor,
+      auditMeta,
+    );
+    expect(contributions.draftRegime).toHaveBeenCalledWith('legacy');
+    expect(contributions.assertNewNativeActivityInTx).not.toHaveBeenCalled();
+    expect(drafts.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats an existing version without a regime as frozen legacy', async () => {
+    const { service, tx, contributions } = harness(1, true);
+    tx.attendanceSettlementRun.findUnique.mockResolvedValueOnce({
+      id: 'run-1',
+      statusCode: 'drafting',
+    });
+    tx.attendanceSettlementVersion.findFirst.mockResolvedValueOnce({});
+    await service.generate(
+      { activityId: 'activity-1', operationKey: 'old-version', requestHash: 'hash-1' },
+      actor,
+      auditMeta,
+    );
+    expect(contributions.draftRegime).toHaveBeenCalledWith('legacy');
+    expect(contributions.assertNewNativeActivityInTx).not.toHaveBeenCalled();
+  });
+
+  it('inherits the latest history only when no draft exists', async () => {
+    const { service, tx, contributions } = harness(1, true);
+    tx.attendanceSettlementRun.findUnique.mockResolvedValueOnce({
+      id: 'run-1',
+      statusCode: 'drafting',
+    });
+    tx.attendanceSettlementVersion.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ contributionRegimeCode: 'policy_v1' });
+    await service.generate(
+      { activityId: 'activity-1', operationKey: 'native-history', requestHash: 'hash-1' },
+      actor,
+      auditMeta,
+    );
+    expect(tx.attendanceSettlementVersion.findFirst).toHaveBeenNthCalledWith(2, {
+      where: { settlementRunId: 'run-1' },
+      orderBy: { version: 'desc' },
+      select: { contributionRegimeCode: true },
+    });
+    expect(contributions.assertNewNativeActivityInTx).toHaveBeenCalledWith(tx, 'activity-1', 0);
+  });
+
+  it('leaves fixture and off modes on their existing generation path', async () => {
+    const { service, tx, contributions } = harness(1, true);
+    contributions.usesLaunchAdmission = false;
+    await service.generate(
+      { activityId: 'activity-1', operationKey: 'not-active', requestHash: 'hash-1' },
+      actor,
+      auditMeta,
+    );
+    expect(contributions.draftRegime).not.toHaveBeenCalled();
+    expect(contributions.assertNewNativeActivityInTx).not.toHaveBeenCalled();
+    expect(tx.activityBatchJob.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the existing draft regime before later history and rejects without a receipt', async () => {
+    const { service, tx, contributions } = harness(1, true);
+    tx.attendanceSettlementRun.findUnique.mockResolvedValueOnce({
+      id: 'run-1',
+      statusCode: 'drafting',
+    });
+    tx.attendanceSettlementVersion.findFirst
+      .mockResolvedValueOnce({ contributionRegimeCode: 'policy_v1' })
+      .mockResolvedValueOnce({ contributionRegimeCode: 'legacy' });
+    const error = new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SCALE_LIMIT);
+    contributions.assertNewNativeActivityInTx.mockRejectedValueOnce(error);
+    await expect(
+      service.generate(
+        { activityId: 'activity-1', operationKey: 'draft-native', requestHash: 'hash-1' },
+        actor,
+        auditMeta,
+      ),
+    ).rejects.toBe(error);
+    expect(contributions.draftRegime).toHaveBeenCalledWith('policy_v1');
+    expect(tx.attendanceSettlementVersion.findFirst).toHaveBeenCalledTimes(1);
+    expect(tx.activityBatchJob.create).not.toHaveBeenCalled();
+  });
+
+  it('replays an existing receipt before new native admission even if the new gate would reject', async () => {
+    const { service, tx, contributions } = harness(1, true);
+    contributions.assertNewNativeActivityInTx.mockRejectedValueOnce(
+      new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SCALE_LIMIT),
+    );
+    tx.activityBatchJob.findUnique.mockResolvedValueOnce({
+      id: 'job-1',
+      activityId: 'activity-1',
+      jobTypeCode: 'bulk_proxy',
+      statusCode: 'succeeded',
+      requestHash: 'hash-1',
+      total: 1,
+      payload: { action: 'settlement_draft_generate', executionMode: 'sync' },
+    });
+    const replayed = await service.generate(
+      { activityId: 'activity-1', operationKey: 'existing-receipt', requestHash: 'hash-1' },
+      actor,
+      auditMeta,
+    );
+    expect(replayed.replayed).toBe(true);
+    expect(contributions.assertNewNativeActivityInTx).not.toHaveBeenCalled();
+    expect(tx.activityBatchJob.create).not.toHaveBeenCalled();
+  });
 
   it('>500 使用具名阈值创建 bulk job 并返回 job,不调用同步生成器', async () => {
     const { service, tx, drafts } = harness(501);

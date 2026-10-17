@@ -43,6 +43,7 @@ export async function runNativeLaunchSmallAdmission(
       createNativeLaunchSealedSource(f, 1, stage, { contributionDefinition: definition }),
     );
     const before = await nativeLaunchBusinessFingerprint(observer, stage);
+    stage.snapshot?.('GENERATE_REJECT_' + dimension + '_BEFORE', before);
     const original = queries.assertLaunchFrozenPolicyInTx.bind(queries);
     let originalStack = '';
     const observe = jest
@@ -83,6 +84,7 @@ export async function runNativeLaunchSmallAdmission(
       observe.mockRestore();
     }
     const after = await nativeLaunchBusinessFingerprint(observer, stage);
+    stage.snapshot?.('GENERATE_REJECT_' + dimension + '_AFTER', after);
     assert.equal(after.hash, before.hash);
     emit({
       label: dimension + ' first native generate rejects20225 and all196 rollback',

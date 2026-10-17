@@ -75,10 +75,6 @@ on:
         default: 'off'
         type: choice
         options: ['off', ordinary-1, ordinary-500, maximum]
-  push:
-    branches: [codex/activity-os-r5-e4-github-validation]
-    paths: [.github/workflows/activity-os-r5-e4-validation.yml]
-
 permissions:
   contents: read
 

@@ -19,8 +19,14 @@ export type NativeLaunchObservation = {
   status: number | null;
   bizCode: number | null;
 };
+export type NativeLaunchFingerprint = {
+  tables: number;
+  hash: string;
+  rows: { name: string; hash: string }[];
+};
 export type NativeLaunchStage = (<T>(label: string, work: () => Promise<T>) => Promise<T>) & {
   observe?: (event: NativeLaunchObservation) => void;
+  snapshot?: (label: string, fingerprint: NativeLaunchFingerprint) => void;
 };
 export function observeNativeLaunchHttp(
   stage: NativeLaunchStage,

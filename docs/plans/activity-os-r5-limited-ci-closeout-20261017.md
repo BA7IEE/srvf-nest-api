@@ -1,52 +1,38 @@
-# PR1380 受限 CI 收尾与维护者动作
+# PR1380 受限 CI 实证与收口
 
-本轮代码和可审补丁已准备，PR 仍为 Draft／BLOCKED。旧 `9c5c60d6` 的500全链通过不回退；本轮新小夹具失败，不用静态修复倒签。只在 srvf-nest-api 云环境工作，Mac 无需动作。
+PR1380 仍为 Draft／BLOCKED。旧 `9c5c60d6` 的500全链通过证据保留；两个新增小夹具窗口均失败，静态修复不倒签。只在 srvf-nest-api 云环境工作，Mac 无需动作。
 
-## 实证结果
+## 实际数据库结果
 
-| 项目 | 结果与限制 |
+| 窗口 | 实际结果 |
 | --- | --- |
-| 冷 lint 原因 | 原脚本直接启动 Node ESLint CLI，300秒在脚本内计时，不能归因于 pnpm 依赖校验。准备约6秒；原串行src真实CLI178.128秒通过，test在总300.314秒SIGTERM，prisma NOT_RUN。三个typed CLI的分析／格式化耗时累加超过原窗口 |
-| 失败候选 | 单CLI合并全部globs仍在300.649秒超时。采样显示GC、synckit／structuredClone、TS AST等成本；不把采样推断成单一规则归因。失败保留 |
-| lint 修复候选 | 最多两个原CLI并发，保留原globs、规则、projects、每进程6144MiB、共享300秒及64MiB报告上限，等待所有已启动子进程终止。2007文件0错误0警告，272.441秒，外层273.949秒，峰值11.53GiB；36项自检通过。交付候选与实测版规范化AST相同，虚拟替换正式脚本的类型检查零诊断 |
-| 当前静态 | 修正后的test项目typecheck通过；5个相关文件定向lint通过；原8项离线夹具及新增3项合法输入反例共11项通过。以上不冒充当前完整冷lint或DB验收 |
-| 唯一新DB窗口 | 测试SHA `f6324dc12a1a47e924729cb327b092724e3a0261`；100.705秒，外层102.925秒。restore0、新库1、actor fixture1、实际活动1、性能0、prepare0、retry0。8个计划语义组只尝试3组：schema／catalog及cleanup通过，policyShape失败；其余5组NOT_RUN。连原32组为35／40次尝试，不能称35项通过 |
-| 新窗口失败 | 在REAL_GENERATE要求HTTP成功的夹具断言失败；实际HTTP status／业务码未被旧safe日志保存，不能事后补写20225。源码`settlement-draft.service.ts`在generate已做冻结政策准入，夹具误要求它先通过再到prepare测拒绝。现改为真实seal后直接测generate的409／20225、原异常来源及196表回滚，无伪造draft；该修复尚待普通CI实跑 |
-| 清理 | app／observer关闭，正常DROP本人库，lease释放；独立databases／clients／leaseBackends／leaseLocks全0，pending0、UNKNOWN=false，进程组消失。没有重复启动数据库测试 |
+| 旧500全链 `9c5c60d6` | 原业务源码 `8385d67b`；461.561秒／600，容量prepare4／4，语义32组，冻结root／day oracle零差异，账本实际COMMIT，正常清理。此后HTTP生成调度源码发生变化，不能把旧结果冒充当前SHA全链证明 |
+| 首次小夹具 `f6324dc1` | 100.705秒，外层102.925秒；1库／1活动、restore0、prepare0、性能0、retry0。schema/catalog及cleanup通过，policyShape失败，其余5组NOT_RUN；累计35／40次尝试。旧safe日志未保存HTTP码，不能事后补写20225 |
+| 新批准小夹具 `bb17bbce` | 81.424807874秒（清理标记81.423732889秒），外层82.076196424秒；1库／1活动、restore0，generate1／2、prepare0／5、性能0、retry0。首个真实generate HTTP409／Biz20225、data=null及原冻结政策异常来源断言通过，随后196表指纹相等断言失败。schema/catalog及cleanup通过，policyShape失败，另5组NOT_RUN；累计38／43次尝试，不是38项通过 |
+| 最新清理 | app／observer关闭，正常DROP本人库，lease释放；独立databases／clients／leaseBackends／leaseLocks全0，pending0、UNKNOWN=false，进程组消失。没有重试；剩余5个组额度不构成再次建库授权 |
 
-新增业务spec默认由普通E2E收集：500／500／2500／2000及501／501／2501边界、原30秒事务、196表回滚、冻结root／day oracle、实际账本配对／金额／分类／日状态；另覆盖单人policy／bytes、真实unchanged-time复制和resumable、V3变时长，以及已批准纠错意图的完整长段＋短manual slice拒绝。后者不代表合法COMMIT过长current段。本轮没有实跑新增500函数或修正后的现场反例，不能据spec存在填绿。
+最新窗口未保存逐表before/after，不能声称精确变化表数或哈希。静态调用链显示 `SettlementDraftDispatchService` 在独立事务先创建job/item，底层generate拒绝后再持久化failed；这解释了政策码正确而全表指纹失败的路径。
 
-## 普通 CI 的最小修复
+当前最小修复把现有active准入放在Activity锁内、operation重放与原seal/run状态检查之后、首次job/item写之前；沿用draft优先、history回退及旧字段undefined→legacy冻结规则，fixture/off和既有回执路径保持，生成器原准入不删。改编排前2套15项characterization通过，修复后2套24项回归通过。仍是两事务，不能宣称并发变化或所有后续失败都零持久写。未来CI在断言前保存逐表名称及hash，不输出原始行或凭证，也不排除任何表。当前修复的真实HTTP／196表验收仍待普通CI。
 
-[CI／lint可审补丁](activity-os-r5-limited-ci.proposed.patch)尚未应用。默认配置只排除原满额用例的**完整标题**，同文件所有其他断言仍收集；Jest真实`--showConfig`确认手动正向CLI pattern可覆盖默认pattern，邻近标题不被过滤；真实`--listTests`收集441文件，包含新增业务／离线spec和原scale文件，数据库调用0。原scale文件字节不变，SHA256 `5408651f58567fe8b9468f93326686ede1b6ac4da1d15028784fd0c3e3e51d87`。
+## 已执行的明确委托与 CI 修复
 
-原2000身份／10000段／50000slice容量用例标为 **NOT_VALIDATED_FOR_LIMITED_LAUNCH**；专用workflow仅保留`workflow_dispatch`历史／手动容量入口，移除标记push触发。普通required CI和夜间leaks继续通过共享配置运行全部仍适用测试，新增受限边界spec自动收集。required job名称与依赖不变，没有删改旧业务断言、放宽预算或生产SQL。
+用户 `Sentinel_3b0058ac228881919495d8a2fe269c77` 批准上述一个新尝试及累计43组上限。用户 `Sentinel_6d3c627808a481919c555c52c1cbdddc` 又明确委托执行既列五个精确grant。仓库[默认规则](../../AGENTS.md#1-机器执法清单违反--物理拦截或-ci-红不必背)要求“由维护者”运行并禁止AI自主发放；本次按更高优先级用户的具体执行指令处理，正常CLI逐个记录“用户授权、AI代执行”，不冒称维护者身份，不解释成默认规则放开。没有修改grant工具、令牌路径、Trusted或SQL签字。
 
-[权限生成物候选](activity-os-r5-limited-ci-authz.proposed.patch)只改ROUTE_AUTHZ两处inputDigest，663条entries及其余字节不变。正式lint／配置／workflow及ROUTE_AUTHZ目前都仍为原文件，不能把外部候选通过当作正式入口绿。验证汇总见[机器记录](activity-os-r5-limited-ci-validation.json)。
+五个目标：`scripts/check-cold-lint.ts`、`test/jest-e2e.config.ts`、`.github/workflows/ci.yml`、`.github/workflows/activity-os-r5-e4-validation.yml`、`docs/ai-harness/ROUTE_AUTHZ.md`。四份既审候选按原文件／候选SHA核对后正式应用；权限文档用 `pnpm docs:authz` 正式生成，独立核对仅两处inputDigest变化、663条entries与其余字节不变。旧[CI补丁](activity-os-r5-limited-ci.proposed.patch)及[权限候选](activity-os-r5-limited-ci-authz.proposed.patch)保留为历史审查材料，后者摘要已被当前源码生成值取代，不再是待执行指令。
 
-## 维护者最少动作
+默认配置仅排除原2000身份／10000段／50000slice用例的完整标题，同文件其他安全断言继续收集；手动正向CLI pattern可覆盖默认pattern。当前正式配置的真实 `--showConfig`／`--listTests` 核验441文件，包含原scale、新业务和纯输入spec，数据库调用0；原scale字节SHA256仍为 `5408651f58567fe8b9468f93326686ede1b6ac4da1d15028784fd0c3e3e51d87`。原满额标为 **NOT_VALIDATED_FOR_LIMITED_LAUNCH**，专用workflow只保留原 `workflow_dispatch` 历史／手动入口，移除push自动触发。required job名称、依赖、规则与其余业务断言保留。
 
-1. 打开选定 **srvf-nest-api 云环境的仓库终端**，确认当前分支，再由维护者本人执行下面五个精确grant。无需在Mac执行任何`/workspace`命令。限制来自[AGENTS.md §1](../../AGENTS.md)：“AI 不得自行发放授权。” 用户已授权修复范围，此处只缺维护者实际写权限令牌。
+普通CI按已授权范围收集受限500回归和新增小语义spec；独立实验不再手动重跑500或满额。spec被收集不等于已通过，结果按最终SHA记录。
 
-```bash
-export pnpm_config_verify_deps_before_run=false
-git branch --show-current
-for r5_grant_path in \
-  'scripts/check-cold-lint.ts' \
-  'test/jest-e2e.config.ts' \
-  '.github/workflows/ci.yml' \
-  '.github/workflows/activity-os-r5-e4-validation.yml' \
-  'docs/ai-harness/ROUTE_AUTHZ.md'
-do
-  pnpm harness:grant "$r5_grant_path" --reason 'PR1380续令：冷lint、500受限CI及两处权限生成摘要；3b与Trusted仍由维护者处理'
-done
-```
+## 正式非 DB 验证与剩余门禁
 
-grant到位后AI可继续应用已审候选、重新生成并独立核两处权限摘要、正式冷lint及正常受限CI；修正后DB反例交由该普通CI验证，不追加本地手动窗口。当前本地35／40计数不因CI尚未运行而补齐。若另要求重新跑独立现场窗口，须明确新尝试：最小为1个新库、3个单人活动、最多600秒含90秒清理、2次generate负例及5次prepare、8个语义组、性能0；相对现有35／40至少增加3组额度，不能默认为原无重试授权。
+当前完整root／test／scripts `pnpm typecheck` 已通过；纯输入两套11项通过，不冒充live验收。冷lint脚本36项自检、权限生成物检查及边界元数据检查通过。新增源码与spec使CODEMAP计数过期，已用正式生成器刷新；3b仍因签字migration-total136、实际146失败。
 
-2. 维护者实际审查[137–146 SQL逐条目录／SHA](activity-os-r5-limited-ci-migrations-137-146.json)，然后按既有[3b登记位置](https://github.com/BA7IEE/srvf-nest-api/blob/codex/activity-os-r5-e4-github-validation/docs/ai-harness/CUTOVER_SIGNOFF.md#L222)确认。当前签字覆盖136、实际146；AI不机械改数、不代签，也不要求无漂移的4b额外重签。
-3. 所有变更提交后，维护者仅对最终SHA在[Trusted工作流](https://github.com/BA7IEE/srvf-nest-api/actions/workflows/redzone-trusted.yml)批准。当前required CI及Trusted人工门均未关闭，PR不得据本文件Ready／合并。
+冷lint旧串行原入口在300.314秒失败，单CLI候选在300.649秒失败，均保留。两原CLI并发候选覆盖2007文件、0诊断、272.441秒，峰值11.53GiB；正式入口保留共享300秒、每进程6144MiB、原globs／projects／规则及累计64MiB报告上限，所有已启动子进程结束才返回。当前正式冷lint通过：2011文件0错误0警告、内层290.146秒、外层291.482秒，峰值11.86GiB，子进程全退出；完整单元461套／10264项／8快照通过，保留5个原todo。记录在[机器记录](activity-os-r5-limited-ci-validation.json)；最终SHA的GitHub结果在PR checks及补充包，不以外部候选替代正式结果。
 
-断连接续可直接使用同一保存云环境：未执行补丁均已仓内可审；完整新窗口journal／cleanup、实测版源文件与runner、失败预检、lint采样与候选结果保存在Library补充包`srvf-r5-limited-ci-admission-followup-20261017.zip`。无需转本机重跑，旧500证据包保持不变。
+维护者剩余动作仅限实质门禁：实际审查[137–146 SQL目录及SHA](activity-os-r5-limited-ci-migrations-137-146.json)，按既有[3b位置](https://github.com/BA7IEE/srvf-nest-api/blob/codex/activity-os-r5-e4-github-validation/docs/ai-harness/CUTOVER_SIGNOFF.md#L222)确认；最终SHA在[Trusted](https://github.com/BA7IEE/srvf-nest-api/actions/workflows/redzone-trusted.yml)批准。AI未机械改数、代签或批准；未发现4b漂移，不另要求重签。普通required CI和Trusted未闭合前，不Ready／合并。
 
-**本次未做：** 未重跑A／B、500或原满额，未重启同一数据库测试、未改变原30秒／300秒／600秒预算、未改生产SQL／guard／schema／migration／默认开关、未操作生产或用户Mac、未自发grant或代签3b／Trusted、未Ready／合并／部署。
+旧结果包Library `libfile_51b7d5b89ba48191b92d1a17d635898e`（SHA256 `a2ac5e4924f5dfcb227a9f8c0e014f200cc2639a2598722d012d604e63f5e8d1`）与上一补充包 `libfile_9f7083a83b208191801a422aa632a8bf`（SHA256 `18e2a076f7370bb8acbed1d21c247a28856c36409d960b4b6979f2c000a14ccf`）保持不变。最新窗口的journal／HTTP观测／清理、实测源码及委托grant记录另出补充包，不覆盖旧失败。
+
+**本次未做：** 未重跑A/B、500独立窗口或原满额，未重启同一DB尝试，未放宽30／300／600秒、guard或既有断言；未改生产SQL／schema／migration／默认开关、未读写生产或用户Mac；未自主决定grant、未代签3b／Trusted、未Ready／合并／部署。
