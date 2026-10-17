@@ -2279,6 +2279,9 @@ function spawnWorkerChild(args: string[]) {
       env: {
         ...process.env,
         TS_NODE_PROJECT: join(process.cwd(), 'test', 'tsconfig.test.json'),
+        // ts-node10's SWC mapping ends at ES2022; root ES2023 falls back to ES3.
+        // This child-only target retains Nest decorator metadata and native getters.
+        TS_NODE_COMPILER_OPTIONS: JSON.stringify({ target: 'ES2022' }),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     },

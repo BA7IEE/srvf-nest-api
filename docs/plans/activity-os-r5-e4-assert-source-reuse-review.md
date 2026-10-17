@@ -481,3 +481,12 @@ GitHub当前普通CI没有新SHA结果；仓内声明required为`Lint / Typechec
 用户另以`Sentinel_6d3c627808a481919c555c52c1cbdddc`明确委托执行既列五个精确grant。仓库默认要求“由维护者”运行且禁止AI自主发放；本次作为更高优先级用户的具体执行例外，正常CLI逐个登记“用户授权、AI代执行”，不冒称维护者身份或改默认规则。四份既审CI/lint候选已按原SHA核对后应用，权限文档正式生成并独立核对仅两处摘要、663条声明不变。3b实质SQL审查和Trusted批准没有被该委托替代。正式冷lint2011文件零诊断、内层290.146秒／原300秒、外层291.482秒通过，完整类型与461套10264项单元／8快照通过，5个todo保留。最终GitHub状态以[当前收口](activity-os-r5-limited-ci-closeout-20261017.md)和[机器记录](activity-os-r5-limited-ci-validation.json)为准。
 
 **本次未做：** 未重跑500／原满额、A/B或同一DB尝试，未把失败倒签为通过；未改原30/300/600秒、生产SQL／guard／schema／migration／默认开关；未触及生产或Mac、未代签3b／Trusted、未Ready／合并／部署。
+
+
+### 2026-10-17 普通CI前置与child编译兼容修复
+
+6cd414c2／merge6622b136的普通CI39039566624整体FAIL，head与merge tree相同。新增两例在审批409／20030失败，generate／prepare与196表反例NOT_RUN；责任工作流在独立runner中已启用，新普通spec遗漏配置。当前仅在fixture创建期间临时启用并精确恢复，不伪造published状态。Dispatch去除Optional，使缺少contributions时装配失败；ActivitiesModule已提供真实服务，26项定向回归包含真实服务DI＋查询替身，未冒充DB证明。前移仅约束新native操作在reservation已可识别的超界；failSync、旧失败回执重试／成功重放、原生成器检查保留，不宣称所有失败回执都是脏写、消除TOCTOU或解决等待后撤权。
+
+CI outbox十例被ts-node10缺ES2023映射→SWC回退ES3/getter错误阻断；D6两例仅有ready前退出，旧stderr被忽略，不能倒填原因。两个测试child显式ES2022，保持preload／元数据／IPC／断言；无DB真实源码编译探针旧错误复现、新target通过，真实worker验收待普通CI。该增量未增加独立数据库窗口或性能预算。两处权限摘要重新正式生成，663条声明不变；当前增量校验、普通CI和Library以后续最终记录为准，不用旧6cd的完整冷lint倒签新源码。
+
+**本次未做：** 未追加独立DB、500手动窗口／原满额或A/B；未改生产SQL／guard／默认开关／30秒／300秒／600秒，未跳过旧用例／放宽断言；未代签3b／Trusted，未Ready／合并／部署。

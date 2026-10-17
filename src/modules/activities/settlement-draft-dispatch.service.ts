@@ -1,4 +1,4 @@
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Prisma } from '@prisma/client';
 
@@ -55,7 +55,7 @@ export class SettlementDraftDispatchService {
     private readonly drafts: SettlementDraftService,
     // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
-    @Optional() private readonly contributions?: ActivityContributionSettlementService,
+    private readonly contributions: ActivityContributionSettlementService,
   ) {}
 
   async generate(
@@ -133,7 +133,7 @@ export class SettlementDraftDispatchService {
       // A new native operation must pass admission before its receipt can commit.
       // Preserve replay priority and the generator's draft-first frozen regime.
       // The generator still rechecks admission in its own transaction.
-      if (this.contributions?.usesLaunchAdmission) {
+      if (this.contributions.usesLaunchAdmission) {
         const draft =
           run === null
             ? null

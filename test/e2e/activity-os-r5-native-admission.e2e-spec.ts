@@ -65,7 +65,22 @@ describe('active native limited launch: applicable business boundaries, original
     started = performance.now();
     pending++;
     try {
-      f = await createE4Fixture();
+      // Publishing creates an owner through the real responsibility workflow.
+      // Match the native runner's fixture setting, then restore the caller exactly.
+      const previousResponsibility = process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
+      process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED = 'true';
+      try {
+        f = await createE4Fixture();
+      } finally {
+        if (previousResponsibility === undefined)
+          delete process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
+        else process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED = previousResponsibility;
+      }
+      assert.equal(
+        f.app.get<ReturnType<typeof appConfig>>(appConfig.KEY).activityResponsibilityWorkflow
+          .enabled,
+        true,
+      );
       assert.equal(
         f.app.get<ReturnType<typeof appConfig>>(appConfig.KEY).contributionSettlementMode,
         'active',

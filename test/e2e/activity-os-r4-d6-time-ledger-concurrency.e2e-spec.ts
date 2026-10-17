@@ -103,7 +103,12 @@ function spawnProbe() {
     ],
     {
       cwd: process.cwd(),
-      env: { ...process.env, TS_NODE_PROJECT: join(process.cwd(), 'test/tsconfig.test.json') },
+      env: {
+        ...process.env,
+        TS_NODE_PROJECT: join(process.cwd(), 'test/tsconfig.test.json'),
+        // ts-node10's SWC target map must not silently fall back from ES2023 to ES3.
+        TS_NODE_COMPILER_OPTIONS: JSON.stringify({ target: 'ES2022' }),
+      },
       // Never relay a child's raw error/SQL/environment output.
       stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
     },

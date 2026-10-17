@@ -2,6 +2,14 @@
 
 PR1380 仍为 Draft／BLOCKED。旧 `9c5c60d6` 的500全链通过证据保留；两个新增小夹具窗口均失败，静态修复不倒签。只在 srvf-nest-api 云环境工作，Mac 无需动作。
 
+## 普通 CI 失败与兼容修复增量
+
+`6cd414c2` 的普通CI [39039566624](https://github.com/BA7IEE/srvf-nest-api/actions/runs/39039566624) 已结束FAIL；实际merge SHA `6622b1361a57c7389647929aac8579317fd69bea`与head tree相同。Fast checks（含正式冷lint／完整类型／全单元／构建）、Harness、Incident replay、Docker build／smoke和Golden journeys通过，E2E2／4通过，1／3／5失败。E2E1新增两例都在审批返回409／20030，尚未到generate，196表验收NOT_RUN；E2E3十例被SWC target/getter编译错误阻断；E2E5两例child在ready前退出，旧stderr未保存，不能倒填为相同根因。
+
+当前增量完整类型、461套10266项单元／8快照（5个原todo）、五文件定向lint及权限／CODEMAP检查通过；完整冷lint／Harness交由新普通CI，旧6cd结果不倒签。当前增量将dispatcher的contributions改为必需DI：ActivitiesModule已有真实provider，缺失时Nest拒绝装配，26项定向回归通过，含真实ContributionService＋查询替身；这不是数据库验收。新spec只在createE4Fixture期间临时启用责任工作流并finally精确恢复，匹配已实测runner：审批createOwnerForPublish需要该测试配置，未造业务状态或改默认开关。两个测试child仅指定ES2022编译target，保留原ts-node／SWC preload和Nest元数据：根ES2023不在已安装ts-node10映射中，会回退ES3。无DB探针复现旧getter错误、新target编译实际provider并保留构造参数元数据；实际child/IPC及业务回归仍待下一次普通CI，不启动独立DB窗口。
+
+准入前移只保证首次新native操作在reservation可识别的超界不创建operation receipt。后续生成失败仍可合理持久化failed job/item；failSync、旧失败回执重试和成功重放保留。两事务仍有间隔，不宣称解决等待后撤权或替代纠错实测。旧窗口实测只有整体196表指纹不等；`ActivityBatchJob`／`ActivityBatchJobItem`提交副作用属于执行链推断，不能说实测仅两表变化或排除背景写。
+
 ## 实际数据库结果
 
 | 窗口 | 实际结果 |

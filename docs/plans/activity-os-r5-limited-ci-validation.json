@@ -155,36 +155,7 @@
   },
   "protectedFilesApplied": true,
   "maintainerGrantPresent": false,
-  "currentFullColdLint": {
-    "command": [
-      "pnpm",
-      "lint"
-    ],
-    "exitCode": 0,
-    "wallSeconds": 291.4819794140021,
-    "wholeProcessGroupPeakRssBytes": 12733943808,
-    "resourceGuardBytes": 15032385536,
-    "resourceFailure": false,
-    "outerWatchdogFailure": false,
-    "scriptWindowSeconds": 300,
-    "maxConcurrentOriginalCLIs": 2,
-    "eachHeapMiB": 6144,
-    "candidateOnly": false,
-    "groupAbsent": true,
-    "remainingBeforeDefensiveCleanupPids": [],
-    "complete": {
-      "files": 2011,
-      "batches": 7,
-      "errors": 0,
-      "warnings": 0,
-      "elapsedMs": 290146,
-      "inputSeal": "c38933128fedda094d8cc03629513e4a3d2c33bdab193da347f632d7b102cbcb",
-      "configSeal": "ee2374149ab3469cc1dea836c7f071a60829cba74bfe56281bd268eb0f876e45"
-    },
-    "scriptSha256": "dfa9cc836eef3a6b515d0f640f487fec44ec82a9e063948c56e0fe0a8c4f93ed",
-    "scope": "Official pnpm lint, no cache, current source, original300-second inner window"
-  },
-  "currentRequiredCI": "NOT_YET_TRIGGERED_AT_THIS_RECORD; final exact-SHA run will be recorded externally after push without changing source SHA",
+  "currentRequiredCI": "Prior6cd CI39039566624 FAILURE; followup ordinary CI not yet triggered at this pre-push record",
   "originalMaximum": "NOT_VALIDATED_FOR_LIMITED_LAUNCH",
   "trusted": "MAINTAINER_APPROVAL_REQUIRED",
   "production": "NOT_RUN",
@@ -545,6 +516,197 @@
     }
   ],
   "currentRequiredCIWorkflow": ".github/workflows/ci.yml",
-  "recordScope": "State before the one ordinary CI push; post-push result is in the evidence addendum and PR checks",
-  "staticChecksAtRecord": "PASS: complete typecheck, full unit, official cold lint,36 selfchecks, pure inputs, authz and refreshedCODEMAP/boundary checks; SQL3b stillFAIL"
+  "recordScope": "State before compatibility followup push; final exact-source CI results are in PR checks and the external evidence addendum",
+  "staticChecksAtRecord": "PASS for current increment: full typecheck,461 suites/10266 unit assertions/8 snapshots/5 todo,26 targeted DI regressions,5-file lint,authz,CODEMAP. New complete cold lint/harness and actual DB/IPC acceptance await ordinary CI; previous6cd full passes stay historical.",
+  "precedingCI": {
+    "head": "6cd414c2f3d96ebcbba16e03a88f2e52d21c8e57",
+    "mergeSha": "6622b1361a57c7389647929aac8579317fd69bea",
+    "mergeTreeEqualsHead": true,
+    "run": 39039566624,
+    "status": "completed",
+    "conclusion": "failure",
+    "nativeCase": {
+      "tests": 2,
+      "status": "FAIL_BEFORE_GENERATE",
+      "phase": "PUBLISH_APPROVE",
+      "httpStatus": 409,
+      "bizCode": 20030,
+      "generateCalls": 0,
+      "prepareCalls": 0,
+      "fingerprintChecks": "NOT_RUN"
+    },
+    "outbox": {
+      "failedTests": 10,
+      "failure": "SWC target defaults to ES3 because ts-node10 lacks ES2023 map; getter compilation fails"
+    },
+    "d6": {
+      "failedTests": 2,
+      "observed": "worker closed before ready",
+      "oldStderrCaptured": false,
+      "inference": "Shares the exact ts-node/SWC config/import path that reproduces getter error without executing modules; actual historical cause is not backfilled"
+    },
+    "staticFixReview": "No blocking finding from existing read-only reviewer; not actual DB/IPC acceptance"
+  },
+  "previousFormalFullColdLint": {
+    "command": [
+      "pnpm",
+      "lint"
+    ],
+    "exitCode": 0,
+    "wallSeconds": 291.4819794140021,
+    "wholeProcessGroupPeakRssBytes": 12733943808,
+    "resourceGuardBytes": 15032385536,
+    "resourceFailure": false,
+    "outerWatchdogFailure": false,
+    "scriptWindowSeconds": 300,
+    "maxConcurrentOriginalCLIs": 2,
+    "eachHeapMiB": 6144,
+    "candidateOnly": false,
+    "groupAbsent": true,
+    "remainingBeforeDefensiveCleanupPids": [],
+    "complete": {
+      "files": 2011,
+      "batches": 7,
+      "errors": 0,
+      "warnings": 0,
+      "elapsedMs": 290146,
+      "inputSeal": "c38933128fedda094d8cc03629513e4a3d2c33bdab193da347f632d7b102cbcb",
+      "configSeal": "ee2374149ab3469cc1dea836c7f071a60829cba74bfe56281bd268eb0f876e45"
+    },
+    "scriptSha256": "dfa9cc836eef3a6b515d0f640f487fec44ec82a9e063948c56e0fe0a8c4f93ed",
+    "scope": "Official pnpm lint, no cache, current source, original300-second inner window",
+    "testedSourceCommit": "6cd414c2f3d96ebcbba16e03a88f2e52d21c8e57"
+  },
+  "currentFullColdLint": "Pending ordinary CI after compatibility followup; previous full cold pass is historical and this increment uses targeted lint",
+  "compatibilityFollowup": {
+    "status": "NON_DB_PASS_LIVE_CI_PENDING",
+    "scope": "Mandatory dispatcher admission DI, temporary fixture responsibility workflow during app creation with exact restore, test-child-only ES2022 target; no business assertions, preload, IPC, guards or budgets removed",
+    "DIRegression": {
+      "suites": 2,
+      "passed": 26,
+      "databaseCalls": 0
+    },
+    "compilerProbe": [
+      {
+        "label": "original-resolved",
+        "exitCode": 1,
+        "seconds": 0.4064692770007241,
+        "getterTargetError": true,
+        "result": null,
+        "databaseCalls": 0,
+        "scope": "Exact test ts-node/SWC preload compiles/parses real module sources and verifies emitted DI metadata without executing app modules"
+      },
+      {
+        "label": "child-es2022-resolved",
+        "exitCode": 0,
+        "seconds": 0.4231302719999803,
+        "getterTargetError": false,
+        "result": {
+          "files": [
+            {
+              "file": "src/modules/activities/activity-contribution-settlement.service.ts",
+              "parses": true,
+              "emitsConstructorMetadata": true
+            },
+            {
+              "file": "src/modules/activities/settlement-draft-dispatch.service.ts",
+              "parses": true,
+              "emitsConstructorMetadata": true
+            },
+            {
+              "file": "src/modules/activities/activity-batch.worker.ts",
+              "parses": true,
+              "emitsConstructorMetadata": true
+            },
+            {
+              "file": "test/fixtures/notification-outbox-worker-child.ts",
+              "parses": true,
+              "emitsConstructorMetadata": false
+            }
+          ],
+          "tsTarget": 9,
+          "sourceModulesExecuted": 0,
+          "databaseCalls": 0
+        },
+        "databaseCalls": 0,
+        "scope": "Exact test ts-node/SWC preload compiles/parses real module sources and verifies emitted DI metadata without executing app modules"
+      }
+    ],
+    "review": "Read-only final diff review found no blocker; actual DB/IPC acceptance pending",
+    "independentDatabaseAttemptsAdded": 0,
+    "performanceCallsAdded": 0,
+    "formalTypecheck": {
+      "command": [
+        "pnpm",
+        "typecheck"
+      ],
+      "exitCode": 0,
+      "seconds": 246.28154171999995
+    },
+    "smallChecks": [
+      {
+        "name": "targeted-lint",
+        "command": [
+          "node",
+          "--max-old-space-size=6144",
+          "node_modules/eslint/bin/eslint.js",
+          "--max-warnings",
+          "0",
+          "src/modules/activities/settlement-draft-dispatch.service.ts",
+          "src/modules/activities/settlement-draft-dispatch.service.spec.ts",
+          "test/e2e/activity-os-r5-native-admission.e2e-spec.ts",
+          "test/e2e/notification-outbox.e2e-spec.ts",
+          "test/e2e/activity-os-r4-d6-time-ledger-concurrency.e2e-spec.ts"
+        ],
+        "exitCode": 0,
+        "seconds": 72.08314258799874
+      },
+      {
+        "name": "authz-check",
+        "command": [
+          "pnpm",
+          "docs:authz:check"
+        ],
+        "exitCode": 0,
+        "seconds": 3.2537185010005487
+      },
+      {
+        "name": "codemap-check",
+        "command": [
+          "pnpm",
+          "docs:codemap:check"
+        ],
+        "exitCode": 0,
+        "seconds": 8.209486065999954
+      }
+    ],
+    "authzVerification": {
+      "onlyInputDigestChanged": true,
+      "changedLines": 2,
+      "entriesUnchanged": true,
+      "entries": 663,
+      "beforeDigest": "sha256:9b61415b4c962827900c718b9fb271532a19ad5fbdab8a39bd5f316adb57cd4c",
+      "afterDigest": "sha256:09d480ff93ef4b602a4f6eea7a4e153237aa6510ada5defe0bab404f2cec6e91"
+    },
+    "fullUnit": {
+      "success": true,
+      "numPassedTestSuites": 461,
+      "numFailedTestSuites": 0,
+      "numPassedTests": 10266,
+      "numFailedTests": 0,
+      "numTodoTests": 5,
+      "snapshotsMatched": 8,
+      "process": {
+        "command": [
+          "pnpm",
+          "test",
+          "--runInBand",
+          "--json",
+          "--outputFile=/workspace/r5-ci-compatibility-20261017/full-unit-result.json"
+        ],
+        "exitCode": 0,
+        "seconds": 294.8006651689975
+      }
+    }
+  }
 }

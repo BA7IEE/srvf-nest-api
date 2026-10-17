@@ -1,9 +1,15 @@
 import { Role, UserStatus } from '@prisma/client';
+import { Test } from '@nestjs/testing';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { PrismaService } from '../../database/prisma.service';
+import appConfig from '../../config/app.config';
+import { ActivityContributionSettlementService } from './activity-contribution-settlement.service';
+import { ActivityContributionSettlementQueryService } from './activity-contribution-settlement-query.service';
 import { SettlementDraftDispatchService } from './settlement-draft-dispatch.service';
+import { SettlementDraftService } from './settlement-draft.service';
 
 function partial(value: Record<string, unknown>): unknown {
   return expect.objectContaining(value);
@@ -96,7 +102,7 @@ describe('SettlementDraftDispatchService', () => {
       }),
     };
     const contributions = {
-      usesLaunchAdmission: true,
+      usesLaunchAdmission: native,
       draftRegime: jest.fn((previous: 'legacy' | 'policy_v1' | null) => previous ?? 'policy_v1'),
       assertNewNativeActivityInTx: jest
         .fn<Promise<void>, [unknown, string, number]>()
@@ -107,7 +113,7 @@ describe('SettlementDraftDispatchService', () => {
         prisma as never,
         drafts as never,
         gateStub(true),
-        native ? (contributions as never) : undefined,
+        contributions as never,
       ),
       contributions,
       prisma,
@@ -115,6 +121,59 @@ describe('SettlementDraftDispatchService', () => {
       drafts,
     };
   }
+
+  it('refuses to assemble the dispatcher when its admission dependency is absent', async () => {
+    await expect(
+      Test.createTestingModule({
+        providers: [
+          SettlementDraftDispatchService,
+          { provide: PrismaService, useValue: {} },
+          { provide: SettlementDraftService, useValue: {} },
+          { provide: ActivityWorkflowGate, useValue: gateStub(true) },
+        ],
+      }).compile(),
+    ).rejects.toThrow('ActivityContributionSettlementService');
+  });
+
+  it('injects the real active admission service and rejects before reserving a receipt', async () => {
+    const { prisma, tx, drafts } = harness(1);
+    const error = new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SCALE_LIMIT);
+    const frozenPolicy = jest.fn().mockRejectedValue(error);
+    const module = await Test.createTestingModule({
+      providers: [
+        SettlementDraftDispatchService,
+        ActivityContributionSettlementService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: SettlementDraftService, useValue: drafts },
+        { provide: ActivityWorkflowGate, useValue: gateStub(true) },
+        { provide: appConfig.KEY, useValue: { contributionSettlementMode: 'active', env: 'test' } },
+        {
+          provide: ActivityContributionSettlementQueryService,
+          useValue: {
+            assertLaunchActivityInTx: jest.fn().mockResolvedValue(undefined),
+            assertLaunchFrozenPolicyInTx: frozenPolicy,
+          },
+        },
+      ],
+    }).compile();
+    try {
+      expect(module.get(ActivityContributionSettlementService).usesLaunchAdmission).toBe(true);
+      await expect(
+        module
+          .get(SettlementDraftDispatchService)
+          .generate(
+            { activityId: 'activity-1', operationKey: 'di-native', requestHash: 'hash-1' },
+            actor,
+            auditMeta,
+          ),
+      ).rejects.toBe(error);
+      expect(frozenPolicy).toHaveBeenCalledWith(tx, 'activity-1', 0);
+      expect(tx.activityBatchJob.create).not.toHaveBeenCalled();
+      expect(tx.activityBatchJobItem.create).not.toHaveBeenCalled();
+    } finally {
+      await module.close();
+    }
+  });
 
   it.each(['policy shape', 'policy bytes'])(
     'rejects a new native %s before any operation job/item persists',
