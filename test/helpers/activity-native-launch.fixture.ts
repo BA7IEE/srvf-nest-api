@@ -92,9 +92,21 @@ export function nativeLaunchRawInput(
 
 /** Detect the original 20043 defect before sending the real seal command. */
 export function assertNativeLaunchProjection(input: {
-  identities: readonly Prisma.ActivityParticipationIdentityCreateManyInput[];
-  events: readonly Prisma.AttendancePunchEventCreateManyInput[];
-  segments: readonly Prisma.ParticipantServiceSegmentRevisionCreateManyInput[];
+  identities: readonly Pick<Prisma.ActivityParticipationIdentityCreateManyInput, 'id'>[];
+  events: readonly Pick<
+    Prisma.AttendancePunchEventCreateManyInput,
+    'id' | 'eventTypeCode' | 'participationIdentityId' | 'occurredAt'
+  >[];
+  segments: readonly Pick<
+    Prisma.ParticipantServiceSegmentRevisionCreateManyInput,
+    | 'participationIdentityId'
+    | 'resultCode'
+    | 'statusCode'
+    | 'sourceCheckInEventId'
+    | 'sourceCloseEventId'
+    | 'checkInAt'
+    | 'checkOutAt'
+  >[];
 }) {
   assert.equal(input.events.length, input.identities.length * 2);
   assert.equal(input.segments.length, input.identities.length);
