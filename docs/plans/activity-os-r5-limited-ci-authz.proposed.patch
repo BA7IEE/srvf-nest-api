@@ -1,0 +1,20 @@
+--- a/docs/ai-harness/ROUTE_AUTHZ.md
++++ b/docs/ai-harness/ROUTE_AUTHZ.md
+@@ -16,7 +16,7 @@
+ |---|---|
+ | schemaVersion | 1.0.0 |
+ | generatorVersion | 2.1.0 |
+-| inputDigest | sha256:e884e9440d158cde6e1ffd842de4e9d6cd9f6a41df7db8a90265e86e9e59ad18 |
++| inputDigest | sha256:01eb12c434fbc04763c50ed8640ce8b41cb340c9b844d98bca5ae08b9309ea37 |
+ | endpoint count | 663 |
+ | legacy [auth] count | 183 |
+ | source of truth | normalized controller declarations |
+@@ -113,7 +113,7 @@
+ {
+   "schemaVersion": "1.0.0",
+   "generatorVersion": "2.1.0",
+-  "inputDigest": "sha256:e884e9440d158cde6e1ffd842de4e9d6cd9f6a41df7db8a90265e86e9e59ad18",
++  "inputDigest": "sha256:01eb12c434fbc04763c50ed8640ce8b41cb340c9b844d98bca5ae08b9309ea37",
+   "entries": [
+     {
+       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",

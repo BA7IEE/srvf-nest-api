@@ -464,3 +464,9 @@ GitHub当前普通CI没有新SHA结果；仓内声明required为`Lint / Typechec
 收尾补充目录/workspace/r5-release5-closure-20261017。原结果ZIP SHA256 `a2ac5e4924f5dfcb227a9f8c0e014f200cc2639a2598722d012d604e63f5e8d1`与Library `libfile_51b7d5b89ba48191b92d1a17d635898e`保持不变，旧满额失败及B REJECTED不改判。
 
 **本次未做：** 未追加数据库实验／A／B／原满额，未运行包含原最大例的整套CI；未改生产SQL／guard／预算／workflow／旧断言；未读写生产或用户Mac、未Ready／合并／部署／开关、未自行grant或代签3b／Trusted。
+
+### 2026-10-17 冷lint与受限普通CI续行收口
+
+最新状态见[受限CI收尾与维护者动作](activity-os-r5-limited-ci-closeout-20261017.md)：两CLI候选在原300秒内完成2007文件，272.441秒、零诊断；正式受保护入口尚待本人grant。唯一新小夹具窗口在REAL_GENERATE失败，prepare0，2组通过／1组失败／5组NOT_RUN，正常清理四零；未重试。首个政策门原已在generate，夹具已修正到首次准入，离线11项、类型及定向lint通过，实际修复后DB验证待普通CI。新增原生业务及全部仍适用测试保留；原满额仅拟精确隔离为历史／手动入口，不将其填绿。旧9c5c60d6的500通过证据及旧满额失败均保持。五个精确grant、137–146条SQL本人3b与最终SHA Trusted的位置及命令见该文档；无需用户在Mac运行云路径。
+
+**本次未做：** 未应用尚无grant的CI／lint／权限生成物候选，未重复数据库或500／满额，未改生产SQL／guard／既有断言，未代签3b／Trusted、Ready／合并／部署。

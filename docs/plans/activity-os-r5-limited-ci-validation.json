@@ -1,0 +1,215 @@
+{
+  "status": "BLOCKED",
+  "staticTestSourceCommit": "fc38089a508f7265731914386fd008d10fe93e9d",
+  "businessSourceUnchangedFrom": "8385d67b8d0a2d1e1b143eb4383b7e0d6b206835",
+  "previous500ValidationCommit": "9c5c60d6b0d0d86f0e4a7c178026756bf674a6f2",
+  "newWindow": {
+    "windowStatus": "FAILED",
+    "testedHead": "f6324dc12a1a47e924729cb327b092724e3a0261",
+    "businessSourceCommit": "8385d67b8d0a2d1e1b143eb4383b7e0d6b206835",
+    "innerElapsedSeconds": 100.705001173,
+    "process": {
+      "exitCode": 1,
+      "outerWallSeconds": 102.92456752699945,
+      "businessStopAt510sSent": false,
+      "sigtermAt598sSent": false,
+      "hardKillAt600sSent": false,
+      "hardWindowSeconds": 600,
+      "cleanupReserveSeconds": 90,
+      "retry": 0,
+      "capacityRuns": 0,
+      "groupAbsent": true,
+      "unknown": false
+    },
+    "restores": 0,
+    "newDatabases": 1,
+    "actorFixtureGroups": 1,
+    "sourceActivitiesAttempted": 1,
+    "capacityPrepareCalls": 0,
+    "semanticPrepareCalls": 0,
+    "semanticGroupCeiling": 8,
+    "semanticGroupsAttempted": 3,
+    "semanticGroupsPassed": 2,
+    "semanticGroupsFailed": 1,
+    "semanticGroupsNotRun": 5,
+    "semanticGroups": [
+      {
+        "key": "schemaCatalog",
+        "status": "PASS"
+      },
+      {
+        "key": "policyShape",
+        "status": "FAIL"
+      },
+      {
+        "key": "policyBytes",
+        "status": "NOT_RUN"
+      },
+      {
+        "key": "base",
+        "status": "NOT_RUN"
+      },
+      {
+        "key": "unchanged",
+        "status": "NOT_RUN"
+      },
+      {
+        "key": "v3",
+        "status": "NOT_RUN"
+      },
+      {
+        "key": "longFullSource",
+        "status": "NOT_RUN"
+      },
+      {
+        "key": "cleanup",
+        "status": "PASS"
+      }
+    ],
+    "previousCompletedSemanticGroups": 32,
+    "cumulativeAttemptedGroups": 35,
+    "cumulativeCeiling": 40,
+    "remainingUnassignedGroupSlots": 5,
+    "actualHttpStatusAndBizCode": "NOT_CAPTURED",
+    "failureObservedAt": "REAL_GENERATE",
+    "sourceInferenceOnly": "Fresh native generate already checks frozen policy; fixture incorrectly required success before testing prepare. Actual HTTP status/biz code were not captured, so no rejection pass may be inferred.",
+    "cleanup": {
+      "pending": 0,
+      "unknown": false,
+      "appClosed": true,
+      "observerClosed": true,
+      "databaseDropped": true,
+      "leaseReleased": true,
+      "fourZero": {
+        "databases": 0,
+        "clients": 0,
+        "leaseBackends": 0,
+        "leaseLocks": 0
+      },
+      "elapsedMs": 100705.001173,
+      "within600": true,
+      "pendingAfterCleanup": 0
+    },
+    "retry": 0,
+    "notRun": [
+      "waitingRevocation",
+      "nativeDeferredNegativeCommit",
+      "originalMaximum2000",
+      "new500CapacityRerun",
+      "freshCurrentLongSegmentBeforePrepare",
+      "production"
+    ]
+  },
+  "externalLintCandidate": {
+    "exitCode": 0,
+    "wallSeconds": 273.949,
+    "wholeProcessGroupPeakRssBytes": 12375891968,
+    "resourceGuardBytes": 15032385536,
+    "resourceFailure": false,
+    "candidateOnly": true,
+    "protectedScriptModified": false,
+    "maxConcurrentOriginalCLIs": 2,
+    "eachHeapMiB": 6144,
+    "windowMs": 300000,
+    "executedCandidateSha256": "4acada82005674fea7d90973b58ab55f47b2d54c29340641604c5a6b79e22637",
+    "selfChecksPassed": 36
+  },
+  "candidateEquivalentToExecuted": {
+    "normalizedAstEqual": true,
+    "differences": "comment/format only",
+    "executedCandidateSha256": "4acada82005674fea7d90973b58ab55f47b2d54c29340641604c5a6b79e22637",
+    "deliverableCandidateSha256": "dfa9cc836eef3a6b515d0f640f487fec44ec82a9e063948c56e0fe0a8c4f93ed"
+  },
+  "staticChecks": [
+    {
+      "name": "final-test-typecheck",
+      "exitCode": 0,
+      "wallSeconds": 25.315765293998993
+    },
+    {
+      "name": "final-targeted-lint",
+      "exitCode": 0,
+      "wallSeconds": 33.98596677099704
+    }
+  ],
+  "offline": {
+    "success": true,
+    "numPassedTestSuites": 2,
+    "numPassedTests": 11,
+    "numFailedTests": 0
+  },
+  "ciScopeProof": {
+    "defaultPattern": "^(?!E4 maximum real sources with unchanged transaction and query budgets 2,000 identities / 10,000 segments / 50,000 slices yield 8,000 policy units without repeated awards$)[\\s\\S]*$",
+    "manualPattern": "^E4\\ maximum\\ real\\ sources\\ with\\ unchanged\\ transaction\\ and\\ query\\ budgets\\ 2,000\\ identities\\ /\\ 10,000\\ segments\\ /\\ 50,000\\ slices\\ yield\\ 8,000\\ policy\\ units\\ without\\ repeated\\ awards$",
+    "cliOverridesDefault": true,
+    "exactMaximumDefaultExcluded": true,
+    "neighborsRemainIncluded": true,
+    "databaseCalls": 0,
+    "scaleFileSha256": "5408651f58567fe8b9468f93326686ede1b6ac4da1d15028784fd0c3e3e51d87"
+  },
+  "protectedCandidate": {
+    "files": [
+      {
+        "target": "scripts/check-cold-lint.ts",
+        "originalSha256": "2fdfb21b81e030e6e5865142038fc8096cf025c2dcd8e55d22527f8ec22f08de",
+        "candidate": "candidate-parallel-cold-lint.ts",
+        "candidateSha256": "dfa9cc836eef3a6b515d0f640f487fec44ec82a9e063948c56e0fe0a8c4f93ed",
+        "applied": false
+      },
+      {
+        "target": "test/jest-e2e.config.ts",
+        "originalSha256": "595e5dec439c25e8c02a7ce7dbed49e1b360c112cdae1aacf110b5ba2290520f",
+        "candidate": "candidate-jest-e2e.config.ts",
+        "candidateSha256": "1f11745fd11d37d253cf230d27c7057a886646ec1e8cbba7768707af9c572cbd",
+        "applied": false
+      },
+      {
+        "target": ".github/workflows/ci.yml",
+        "originalSha256": "36ad2e1074d8ad089ebb190623b5d6b577c7add73a83bc4f28686e2830d9615b",
+        "candidate": "candidate-ci.yml",
+        "candidateSha256": "67d5ffa4eb887632b2221046e6accdb8c6469e4807ef3fc32c8aa20b1924121a",
+        "applied": false
+      },
+      {
+        "target": ".github/workflows/activity-os-r5-e4-validation.yml",
+        "originalSha256": "29af5a903469afd424fc1cb36d9821610192eea752a258a7407e3377c766ee25",
+        "candidate": "candidate-activity-os-r5-e4-validation.yml",
+        "candidateSha256": "3f52739ecba14d1963c8f0fd08a7463515cdaf1fba929e29c69d71a71c34d515",
+        "applied": false
+      }
+    ],
+    "patchSha256": "d2ecdd59ffbd037625fdce07991e40d94fc42dbef58872a1dec4426ed01a1ee8",
+    "patchLines": 114,
+    "grantIssuedByAI": false
+  },
+  "protectedFilesApplied": false,
+  "maintainerGrantPresent": false,
+  "currentFullColdLint": "NOT_RUN",
+  "currentRequiredCI": "NOT_RUN",
+  "originalMaximum": "NOT_VALIDATED_FOR_LIMITED_LAUNCH",
+  "trusted": "MAINTAINER_APPROVAL_REQUIRED",
+  "production": "NOT_RUN",
+  "ciFileCollection": {
+    "exitCode": 0,
+    "collectedFileCount": 441,
+    "expectedFilesRetained": [
+      "test/e2e/activity-os-r5-native-admission.e2e-spec.ts",
+      "test/e2e/activity-os-r5-native-policy-input.e2e-spec.ts",
+      "test/e2e/activity-os-r5-native-limited-launch.e2e-spec.ts",
+      "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts"
+    ],
+    "maximumFileRetained": true,
+    "databaseCalls": 0,
+    "scope": "listTests verifies file collection; exact maximum case filtering is proved separately by effective testNamePattern"
+  },
+  "candidateScriptTypecheck": {
+    "status": "PASS",
+    "diagnosticCount": 0,
+    "wallMs": 1604,
+    "scope": "virtual protected-script replacement; actual protected file unmodified"
+  },
+  "businessSourceComparison": {
+    "commit": "8385d67b8d0a2d1e1b143eb4383b7e0d6b206835",
+    "srcPrismaDiffExitCode": 0
+  }
+}
