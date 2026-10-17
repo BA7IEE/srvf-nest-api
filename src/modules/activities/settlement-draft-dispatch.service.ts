@@ -8,6 +8,10 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
+  ActivityContributionSettlementService,
+  frozenContributionRegime,
+} from './activity-contribution-settlement.service';
+import {
   SETTLEMENT_DRAFT_SYNC_MAX_POPULATION,
   SettlementDraftService,
   type SettlementDraftResult,
@@ -51,6 +55,7 @@ export class SettlementDraftDispatchService {
     private readonly drafts: SettlementDraftService,
     // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
+    private readonly contributions: ActivityContributionSettlementService,
   ) {}
 
   async generate(
@@ -119,10 +124,42 @@ export class SettlementDraftDispatchService {
       const seal = await this.requireActiveSeal(tx, input.activityId, activity.workflowRevision);
       const run = await tx.attendanceSettlementRun.findUnique({
         where: { activityId: input.activityId },
-        select: { statusCode: true },
+        select: { id: true, statusCode: true },
       });
       if (run !== null && run.statusCode !== 'not_started' && run.statusCode !== 'drafting') {
         throw new BizException(BizCode.SETTLEMENT_DRAFT_RUN_STATUS_INVALID);
+      }
+
+      // A new native operation must pass admission before its receipt can commit.
+      // Preserve replay priority and the generator's draft-first frozen regime.
+      // The generator still rechecks admission in its own transaction.
+      if (this.contributions.usesLaunchAdmission) {
+        const draft =
+          run === null
+            ? null
+            : await tx.attendanceSettlementVersion.findFirst({
+                where: { settlementRunId: run.id, statusCode: 'draft' },
+                orderBy: { version: 'desc' },
+                select: { contributionRegimeCode: true },
+              });
+        const history =
+          draft ??
+          (run === null
+            ? null
+            : await tx.attendanceSettlementVersion.findFirst({
+                where: { settlementRunId: run.id },
+                orderBy: { version: 'desc' },
+                select: { contributionRegimeCode: true },
+              }));
+        const regime = this.contributions.draftRegime(
+          history === null ? null : frozenContributionRegime(history.contributionRegimeCode),
+        );
+        if (regime === 'policy_v1')
+          await this.contributions.assertNewNativeActivityInTx(
+            tx,
+            input.activityId,
+            activity.workflowRevision,
+          );
       }
 
       const population = await tx.activityParticipationIdentity.findMany({

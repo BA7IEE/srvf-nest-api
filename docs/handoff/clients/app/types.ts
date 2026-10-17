@@ -3,7 +3,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:e9c5f72f503c583fa81411c35bdbc02799b1a3cee0ba897a74eeef960cfc6b65
+// inputDigest: sha256:74110e7633751e7535dfe2caffc1cbfc24775834fac2250aa541431cc462bf95
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -975,6 +975,33 @@ export interface AppConfirmActivityOutcomeDto {
   "candidateId"?: string | null;
   "manualDraftId"?: string | null;
   "values": AppOutcomeFinalizationSelectionDto[];
+}
+
+export interface AppContributionProofDto {
+  "regimeCode": "policy_v1";
+  "pending": boolean;
+  "revisionId": string | null;
+  "sourceKindCode": string | null;
+  "selectionHash": string | null;
+  "sourceSetHash": string | null;
+  "evaluationSetHash": string | null;
+  "recognizedPointsTotal": string | null;
+  "evaluationCount": number | null;
+  "hasMore": boolean;
+  "evaluations": AppContributionProofEvaluationDto[];
+}
+
+export interface AppContributionProofEvaluationDto {
+  "participationIdentityId": string;
+  "policyVersionId": string;
+  "definitionHash": string;
+  "evaluatorVersion": number;
+  "attendanceRoleCode": string;
+  "timeCategoryCode": string;
+  "durationSeconds": number;
+  "calculatedPoints": string;
+  "recognizedPoints": string;
+  "explanationCode": string;
 }
 
 export interface AppCreationContributionPolicyPositionOverrideDto {
@@ -2333,6 +2360,7 @@ export interface AppSettlementVersionDetailHeaderDto {
 }
 
 export interface AppSettlementVersionDetailResponseDto {
+  "contributionProof"?: AppContributionProofDto;
   "version": AppSettlementVersionDetailHeaderDto;
   "diff": AppSettlementVersionDiffDto;
   "sealRevisions": AppSettlementSealRevisionDto[];
@@ -2354,6 +2382,7 @@ export interface AppSettlementVersionPointerDto {
 }
 
 export interface AppSettlementWorkbenchResponseDto {
+  "contributionProof"?: AppContributionProofDto;
   "activityId": string;
   "run"?: AppSettlementRunSummaryDto;
   "seal"?: AppSettlementSealSummaryDto;
@@ -2675,6 +2704,7 @@ export interface AppTimeSettlementSpecialIntervalsDto {
 }
 
 export interface AppTimeSettlementWorkbenchDto {
+  "contributionProof"?: AppContributionProofDto;
   "activityId": string;
   "run": AppTimeSettlementRunDto;
   "draft": AppTimeSettlementDraftDto;

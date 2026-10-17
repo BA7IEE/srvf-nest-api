@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
-import { Role, UserStatus } from '@prisma/client';
+import { Prisma, Role, UserStatus } from '@prisma/client';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -131,7 +131,7 @@ describe('pending segment nonempty legacy upgrade', () => {
       sql(readFileSync(join('prisma/migrations', name, 'migration.sql'), 'utf8'));
     }
     // This replay intentionally stops before migration 115, while the checked-in
-    // Prisma client is generated from migration 131. Keep the real services on
+    // Prisma client includes the current migrations. Keep the real services on
     // the legacy fixture with readback-only columns/tables. The empty classified
     // tables reject every INSERT: this is not a D4/D6 migration or classified fixture.
     sql(`
@@ -142,6 +142,10 @@ describe('pending segment nonempty legacy upgrade', () => {
         ADD COLUMN "currentContributionPolicySelectionRevisionId" TEXT;
       ALTER TABLE "AttendanceCorrectionRequest"
         ADD COLUMN "resubmittedFromRequestId" TEXT;
+      -- Current-client readback only: this historical fixture remains strictly legacy.
+      ALTER TABLE "AttendanceSettlementVersion"
+        ADD COLUMN "contributionRegimeCode" TEXT NOT NULL DEFAULT 'legacy'
+          CHECK ("contributionRegimeCode" = 'legacy');
       -- Current-client readback only: historical audits cannot request shadow proof.
       ALTER TABLE "audit_logs"
         ADD COLUMN "shadowProofRequired" BOOLEAN NOT NULL DEFAULT FALSE
@@ -176,6 +180,19 @@ describe('pending segment nonempty legacy upgrade', () => {
         "contentHash" TEXT NOT NULL, "expectedEntryCount" INTEGER NOT NULL,
         "recognizedSecondsTotal" BIGINT NOT NULL, "formatVersion" INTEGER NOT NULL,
         "createdAt" TIMESTAMP(3) NOT NULL, CHECK (false)
+      );
+      -- Current classification reads this relation even for legacy applications.
+      -- It stays empty: every INSERT is rejected, so native E4 proof is impossible.
+      CREATE TABLE "ActivitySettlementContributionRevision" (
+        "id" TEXT PRIMARY KEY, "activityId" TEXT NOT NULL,
+        "settlementRunId" TEXT NOT NULL, "settlementVersionId" TEXT NOT NULL,
+        "effectiveTimeSettlementVersionId" TEXT NOT NULL,
+        "kindCode" TEXT NOT NULL, "sourceKindCode" TEXT NOT NULL,
+        "regimeCode" TEXT NOT NULL, "previousContributionRevisionId" TEXT,
+        "correctionApplicationId" TEXT, "correctionPostingBatchId" TEXT,
+        "baseSettlementVersionId" TEXT, "timeRevisionId" TEXT,
+        "correctionManifestId" TEXT, "correctionTimeSourceProofId" TEXT,
+        "rootTimeManifestId" TEXT, "correctionSourceSetHash" TEXT, CHECK (false)
       );
       CREATE TABLE "ActivityTimeCutoverReceipt" (
         "id" TEXT PRIMARY KEY, "operationKey" TEXT NOT NULL UNIQUE,
@@ -337,28 +354,23 @@ describe('pending segment nonempty legacy upgrade', () => {
       select: { id: true },
     });
 
-    const version = await prisma.attendanceSettlementVersion.create({
-      data: {
-        settlementRunId: run.id,
-        version: 1,
-        evidenceSealId: seal.id,
-        evidenceRevision: 0,
-        populationRevision: 0,
-        workflowRevision: 0,
-        contentHash: `content-hash-${tag}`,
-        personCount: memberCount,
-        sessionParticipationCount: memberCount,
-        serviceSegmentCount: memberCount,
-        // ⭐ 提交人 = `submitter` —— §7.5 后半句「若更正由**原结算提交人**提出仍适用」
-        //    那条 red-first 就靠它成立。
-        createdByUserId: submitter.id,
-        submittedAt: SEAL_AT,
-        statusCode: 'approved',
-        operationKey: `${tag}-submit-key`,
-        requestHash: `${tag}-submit-hash`,
-      },
-      select: { id: true },
-    });
+    // ⭐ 提交人 = `submitter` —— §7.5 后半句「若更正由**原结算提交人**提出仍适用」
+    //    那条 red-first 就靠它成立。
+    const [version] = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+INSERT INTO "AttendanceSettlementVersion" (
+  "updatedAt", "id", "settlementRunId", "version",
+  "evidenceSealId", "evidenceRevision", "populationRevision", "workflowRevision",
+  "contentHash", "personCount", "sessionParticipationCount", "serviceSegmentCount",
+  "createdByUserId", "submittedAt", "statusCode", "operationKey",
+  "requestHash"
+) VALUES (
+  CURRENT_TIMESTAMP, ${`legacy-pending-${tag}`}, ${run.id}, ${1},
+  ${seal.id}, ${0}, ${0}, ${0},
+  ${`content-hash-${tag}`}, ${memberCount}, ${memberCount}, ${memberCount},
+  ${submitter.id}, ${SEAL_AT}, ${'approved'}, ${`${tag}-submit-key`},
+  ${`${tag}-submit-hash`}
+) RETURNING "id"
+`);
 
     const identityIds: string[] = [];
     const resultRevisionIds: string[] = [];

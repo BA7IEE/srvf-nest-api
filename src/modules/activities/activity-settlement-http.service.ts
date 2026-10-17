@@ -1,6 +1,11 @@
 import { createHash } from 'node:crypto';
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import { ActivityContributionSettlementQueryService } from './activity-contribution-settlement-query.service';
+import {
+  presentContributionProof,
+  type ContributionProofSummary,
+} from './activity-contribution-settlement-presenter';
 import { Prisma } from '@prisma/client';
 import { toMemberLabelFields } from '../../common/identity/member-label.util';
 
@@ -12,6 +17,7 @@ import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { AuthzService } from '../authz/authz.service';
 import { RbacService } from '../permissions/rbac.service';
+import { loadActiveUserIdentityInTx } from '../users/user-active-identity.query';
 import { ActivityClosureService } from './activity-closure.service';
 import { SettlementDraftDispatchService } from './settlement-draft-dispatch.service';
 import {
@@ -148,6 +154,7 @@ export interface SettlementHttpVersionPointer {
 }
 
 export interface SettlementHttpWorkbenchResult {
+  contributionProof?: ContributionProofSummary;
   activityId: string;
   run: {
     id: string;
@@ -209,6 +216,7 @@ export interface SettlementHttpItemsResult {
 }
 
 export interface SettlementHttpVersionDetailResult {
+  contributionProof?: ContributionProofSummary;
   version: SettlementHttpVersionPointer & {
     contentHash: string;
     evidenceRevision: number;
@@ -311,6 +319,7 @@ export class ActivitySettlementHttpService {
     private readonly submitter: SettlementSubmitService,
     private readonly reviews: SettlementReviewService,
     private readonly closure: ActivityClosureService,
+    @Optional() private readonly contributions?: ActivityContributionSettlementQueryService,
   ) {}
 
   async generate(
@@ -430,6 +439,8 @@ export class ActivitySettlementHttpService {
               populationRevision: true,
               workflowRevision: true,
               submittedAt: true,
+              contributionRegimeCode: true,
+              contentHash: true,
             },
           });
     const versionAt = (version: number | null | undefined) =>
@@ -500,6 +511,15 @@ export class ActivitySettlementHttpService {
       }
     }
 
+    const contributionProof =
+      draft?.contributionRegimeCode === 'policy_v1'
+        ? this.contributions
+          ? await this.contributions.readSummaryInTx(this.prisma, draft.id, {
+              draftContentHash: draft.contentHash,
+            })
+          : presentContributionProof(null, [])
+        : undefined;
+    if (contributionProof?.pending) gaps.push({ gapCode: 'contribution_pending', count: 1 });
     return {
       activityId,
       run: activity.settlementRun,
@@ -509,6 +529,7 @@ export class ActivitySettlementHttpService {
       posted: posted === null ? null : this.toVersionPointer(posted),
       closure,
       gaps,
+      ...(contributionProof ? { contributionProof } : {}),
     };
   }
 
@@ -652,6 +673,7 @@ export class ActivitySettlementHttpService {
         populationRevision: true,
         workflowRevision: true,
         contentHash: true,
+        contributionRegimeCode: true,
         personCount: true,
         sessionParticipationCount: true,
         serviceSegmentCount: true,
@@ -711,6 +733,19 @@ export class ActivitySettlementHttpService {
     ]);
 
     return {
+      ...(version.contributionRegimeCode === 'policy_v1'
+        ? {
+            contributionProof: this.contributions
+              ? await this.contributions.readSummaryInTx(
+                  this.prisma,
+                  version.id,
+                  version.statusCode === 'draft'
+                    ? { draftContentHash: version.contentHash }
+                    : undefined,
+                )
+              : presentContributionProof(null, []),
+          }
+        : {}),
       version: {
         ...this.toVersionPointer(version),
         contentHash: version.contentHash,
@@ -926,9 +961,22 @@ export class ActivitySettlementHttpService {
       expectation: command.expectation,
       expectedSettlementVersionId: settlementVersionId,
     };
+    const reauthorizeInTx = async (tx: Prisma.TransactionClient) => {
+      const actor = await loadActiveUserIdentityInTx(tx, currentUser.id);
+      if (!actor) throw new BizException(BizCode.UNAUTHORIZED);
+      await this.assertCanSettlementReview(
+        actor,
+        stageCode === 'first'
+          ? ACTIVITY_SETTLEMENT_ACTION.firstReview
+          : ACTIVITY_SETTLEMENT_ACTION.finalReview,
+        settlementVersionId,
+        tx,
+      );
+      return actor;
+    };
     return stageCode === 'first'
-      ? await this.reviews.firstReview(input, currentUser, auditMeta)
-      : await this.reviews.finalReview(input, currentUser, auditMeta);
+      ? await this.reviews.firstReview(input, currentUser, auditMeta, reauthorizeInTx)
+      : await this.reviews.finalReview(input, currentUser, auditMeta, reauthorizeInTx);
   }
 
   async close(
@@ -1193,11 +1241,17 @@ export class ActivitySettlementHttpService {
     currentUser: CurrentUserPayload,
     action: string,
     settlementVersionId: string,
+    tx?: Prisma.TransactionClient,
   ): Promise<void> {
-    const decision = await this.authz.explain(currentUser, action, {
-      type: 'attendance_settlement_version',
-      id: settlementVersionId,
-    });
+    const decision = await this.authz.explain(
+      currentUser,
+      action,
+      {
+        type: 'attendance_settlement_version',
+        id: settlementVersionId,
+      },
+      tx,
+    );
     if (decision.allow) return;
 
     if (decision.reason === 'self_approval_forbidden') {
@@ -1216,7 +1270,10 @@ export class ActivitySettlementHttpService {
 
     // 与既有 activity 写面同口径：解析失败时只有已持该 action 的主体才交由 service
     // 给出真实业务错误；无码者始终 30100，避免版本存在性成为枚举面。
-    if (decision.reason === 'resource_not_found' && (await this.rbac.can(currentUser, action))) {
+    if (
+      decision.reason === 'resource_not_found' &&
+      (await this.rbac.can(currentUser, action, undefined, tx))
+    ) {
       return;
     }
     throw new BizException(BizCode.RBAC_FORBIDDEN);

@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import {
+  ActivityContributionSettlementService,
+  frozenContributionRegime,
+} from './activity-contribution-settlement.service';
 import { ParticipationTimeLedgerService } from './participation-time-ledger.service';
 import {
   ParticipationTimeCorrectionService,
@@ -179,6 +183,7 @@ export class LedgerPostingService {
     private readonly timeLedger: ParticipationTimeLedgerService,
     private readonly timeCorrection: ParticipationTimeCorrectionService,
     private readonly timeLedgerAccess: ParticipationTimeLedgerAccessService,
+    @Optional() private readonly contributions?: ActivityContributionSettlementService,
   ) {}
 
   async commitBatch(
@@ -281,6 +286,10 @@ export class LedgerPostingService {
       const batch = await this.lockBatch(tx, input.postingBatchId);
       const correctionFact = await this.timeCorrection.classifyBatch(tx, batch.id);
       const correction = correctionFact.required;
+      if (correctionFact.nativeUnchanged) {
+        if (options.conversion) throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_SOURCE_INVALID);
+        await this.timeLedgerAccess.authorizeCorrection(tx, currentUser.id);
+      }
       if (correction) {
         if (options.conversion) throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_SOURCE_INVALID);
         await this.timeLedgerAccess.authorizeCorrection(tx, currentUser.id);
@@ -312,6 +321,13 @@ export class LedgerPostingService {
       // 幂等:批次已生效 ⇒ 原样返回上一次的结论(不是错误,也不再写第二遍)。
       if (batch.statusCode === 'committed') {
         return await this.replayResult(tx, activityId, run, version, batch);
+      }
+
+      const native = frozenContributionRegime(version.contributionRegimeCode) === 'policy_v1';
+      if (native) {
+        if (options.conversion || !this.contributions)
+          throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+        this.contributions.assertNativeWriteAllowed();
       }
 
       // ===== 状态闸(三条各判各的)=====
@@ -368,6 +384,8 @@ export class LedgerPostingService {
       this.assertDailyCapRespected(deltas, current);
 
       // ===== ⑩ 原子切换:以下全部在同一事务内 =====
+      if (correctionFact.nativeUnchanged)
+        await this.timeLedgerAccess.authorizeCorrection(tx, currentUser.id);
       if (correction) {
         await this.timeLedgerAccess.authorizeCorrection(tx, currentUser.id);
         // The exact fresh-V3 receipt anchor was validated before the member/day
@@ -389,6 +407,8 @@ export class LedgerPostingService {
         );
         await this.timeLedger.assertComplete(tx, batch);
       }
+      // Native evidence is independent of the D7 receipt shortcut: check under the existing member/day locks.
+      if (native) await this.contributions!.assertVersionInTx(tx, version.id, batch.id);
       const now = new Date();
       await this.advanceDayStates(tx, batch.id, deltas);
       const entryCount = deltas.reduce((sum, row) => sum + row.entryCount, 0);
@@ -420,15 +440,20 @@ export class LedgerPostingService {
       // Materialize logical primary keys once inside PostgreSQL.  The final
       // UPDATE has no unkeyed CTE join to rescan; CASE still rechecks the current
       // row's draft status after any concurrent row-lock wait (including EPQ).
+      // Apply draft status after the keyed identity scan, not inside that scan.
       await tx.$executeRaw`
         WITH target AS MATERIALIZED (
           SELECT candidate.id
           FROM "ActivityParticipationIdentity" i
           CROSS JOIN LATERAL (
             SELECT draft.id
-            FROM "ParticipantServiceSegmentRevision" draft
-            WHERE draft."participationIdentityId" = i.id
-              AND draft."statusCode" = 'draft'
+            FROM (
+              SELECT draft.id, draft."statusCode"
+              FROM "ParticipantServiceSegmentRevision" draft
+              WHERE draft."participationIdentityId" = i.id
+              OFFSET 0
+            ) draft
+            WHERE draft."statusCode" = 'draft'
             OFFSET 0
           ) candidate
           WHERE i."activityId" = ${activityId}
@@ -526,9 +551,11 @@ export class LedgerPostingService {
   private async lockVersion(
     tx: PrismaTx,
     settlementRunId: string,
-  ): Promise<{ id: string; version: number; statusCode: string }> {
-    const rows = await tx.$queryRaw<Array<{ id: string; version: number; statusCode: string }>>`
-      SELECT v.id, v.version, v."statusCode"
+  ): Promise<{ id: string; version: number; statusCode: string; contributionRegimeCode?: string }> {
+    const rows = await tx.$queryRaw<
+      Array<{ id: string; version: number; statusCode: string; contributionRegimeCode?: string }>
+    >`
+      SELECT v.id, v.version, v."statusCode", v."contributionRegimeCode"
       FROM "AttendanceSettlementVersion" v
       JOIN "AttendanceSettlementRun" r
         ON r.id = v."settlementRunId" AND r."currentSubmittedVersion" = v.version
@@ -567,16 +594,23 @@ export class LedgerPostingService {
 
   // ===== 分录集合 =========================================================
 
-  /** 本次 commit 会从 draft 切到 committed 的所有闭合服务段成员,包含零分录成员。 */
+  /** 本次 commit 会从 draft 切到 committed 的所有闭合服务段成员,包含零分录成员。
+   * Keep status/result predicates outside the inner boundary: each keyed scan
+   * is keyed only by identity, even when fresh-table estimates prefer status.
+   */
   private async readDraftSegmentMemberIds(tx: PrismaTx, activityId: string): Promise<string[]> {
     const rows = await tx.$queryRaw<Array<{ memberId: string }>>`
       SELECT DISTINCT i."memberId"
       FROM "ActivityParticipationIdentity" i
       CROSS JOIN LATERAL (
         SELECT s.id
-        FROM "ParticipantServiceSegmentRevision" s
-        WHERE s."participationIdentityId" = i.id
-          AND s."statusCode" = 'draft'
+        FROM (
+          SELECT s.id, s."statusCode", s."resultCode", s."checkOutAt"
+          FROM "ParticipantServiceSegmentRevision" s
+          WHERE s."participationIdentityId" = i.id
+          OFFSET 0
+        ) s
+        WHERE s."statusCode" = 'draft'
           AND s."resultCode" NOT IN ('voided', 'replaced')
           AND s."checkOutAt" IS NOT NULL
         OFFSET 0

@@ -1,3 +1,5 @@
+import * as historicalRolePolicy from './activity-time-allocation-policy';
+import * as timeSettlementPolicy from './activity-time-settlement-policy';
 import { Prisma, Role, UserStatus, type ParticipantTimeAllocationRevision } from '@prisma/client';
 import type { PrismaService } from '../../database/prisma.service';
 import type { ParticipationSegmentFacade } from '../attendances/participation-segment.facade';
@@ -5,6 +7,8 @@ import type { ActivityTimeSettlementAccessService } from './activity-time-settle
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { CurrentParticipationSegment } from '../attendances/participation-segment.facade';
+import type { ActivityContributionSettlementQueryService } from './activity-contribution-settlement-query.service';
+import type { ContributionProofSummary } from './activity-contribution-settlement-presenter';
 import {
   allocationMatchesTimeSettlementSource,
   ActivityTimeSettlementQueryService,
@@ -522,6 +526,416 @@ describe('D4 declared error mapping', () => {
   it('does not mask authorization errors or unexpected failures as readiness', () => {
     for (const error of [new BizException(BizCode.FORBIDDEN), new Error('storage failure')]) {
       expect(() => timeSettlementError(error)).toThrow(error);
+    }
+  });
+});
+
+describe('E4 time workbench contribution proof wiring', () => {
+  const actor = {
+    id: 'actor',
+    memberId: 'member',
+    username: 'actor',
+    role: Role.USER,
+    status: UserStatus.ACTIVE,
+  };
+
+  function summary(pending = false): ContributionProofSummary {
+    return {
+      regimeCode: 'policy_v1',
+      pending,
+      revisionId: pending ? null : 'contribution-revision',
+      sourceKindCode: pending ? null : 'time_revision',
+      selectionHash: pending ? null : 'e'.repeat(64),
+      sourceSetHash: pending ? null : 'd'.repeat(64),
+      evaluationSetHash: pending ? null : 'f'.repeat(64),
+      recognizedPointsTotal: pending ? null : '7.25',
+      evaluationCount: pending ? null : 1,
+      hasMore: false,
+      evaluations: pending
+        ? []
+        : [
+            {
+              participationIdentityId: 'identity',
+              policyVersionId: 'contribution-policy-version',
+              definitionHash: 'b'.repeat(64),
+              evaluatorVersion: 1,
+              attendanceRoleCode: 'participant',
+              timeCategoryCode: 'volunteer_service',
+              durationSeconds: 3600,
+              calculatedPoints: '7.25',
+              recognizedPoints: '7.25',
+              explanationCode: 'policy_rate',
+            },
+          ],
+    };
+  }
+
+  // This characterizes orchestration only: no real DB, permission implementation or
+  // contribution evaluator is replaced by a claim of full-chain acceptance.
+  function setup(withContributions = true) {
+    const db = { activitySettlementTimeRevision: { findFirst: jest.fn().mockResolvedValue(null) } };
+    const tx = db as unknown as Prisma.TransactionClient;
+    const prisma = {
+      $transaction: jest.fn(
+        async (work: (client: Prisma.TransactionClient) => Promise<unknown>) => await work(tx),
+      ),
+    };
+    const access = { authorize: jest.fn().mockResolvedValue(undefined) };
+    const contributions = { readSummaryInTx: jest.fn().mockResolvedValue(summary()) };
+    const service = new ActivityTimeSettlementQueryService(
+      prisma as unknown as PrismaService,
+      access as unknown as ActivityTimeSettlementAccessService,
+      {} as ParticipationSegmentFacade,
+      withContributions
+        ? (contributions as unknown as ActivityContributionSettlementQueryService)
+        : undefined,
+    );
+    const draftContext = jest
+      .spyOn(service, 'readDraftContextInTx')
+      .mockResolvedValue({ ...context, contributionRegimeCode: 'policy_v1' });
+    const sources = jest.spyOn(service, 'readSourceSetInTx').mockResolvedValue(sourceSet());
+    const evaluate = jest.spyOn(service, 'evaluateInTx').mockResolvedValue({
+      buckets: [],
+      bucketCount: 0,
+      sourceCount: 0,
+      bucketContentHash: 'c'.repeat(64),
+    });
+    return { db, tx, prisma, access, contributions, service, draftContext, sources, evaluate };
+  }
+
+  it('preserves the legacy workbench shape without reading native contribution evidence', async () => {
+    const f = setup();
+    f.draftContext.mockResolvedValue({ ...context, contributionRegimeCode: 'legacy' });
+    const result = await f.service.workbench('activity', actor);
+    expect(result).toEqual({
+      activityId: 'activity',
+      run: {
+        settlementRunId: 'run',
+        statusCode: 'drafting',
+        currentDraftVersion: 1,
+        currentSubmittedVersion: null,
+      },
+      draft: {
+        settlementVersionId: 'draft',
+        version: 1,
+        evidenceSealId: 'seal',
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        sealCurrent: true,
+      },
+      latestRevision: null,
+      ready: true,
+      blockers: [],
+    });
+    expect(result).not.toHaveProperty('contributionProof');
+    expect(f.contributions.readSummaryInTx).not.toHaveBeenCalled();
+  });
+
+  it('passes the current draft and source anchors in the same read transaction', async () => {
+    const f = setup();
+    const result = await f.service.workbench('activity', actor);
+    expect(f.contributions.readSummaryInTx).toHaveBeenCalledTimes(1);
+    expect(f.contributions.readSummaryInTx).toHaveBeenCalledWith(f.tx, 'draft', {
+      draftContentHash: 'a'.repeat(64),
+      sourceSetHash: 'd'.repeat(64),
+    });
+    expect(result.contributionProof).toEqual(summary());
+    expect(result).toMatchObject({ ready: true, blockers: [] });
+    expect(f.access.authorize).toHaveBeenCalledTimes(2);
+    for (const call of [1, 2])
+      expect(f.access.authorize).toHaveBeenNthCalledWith(
+        call,
+        f.tx,
+        actor,
+        'activity',
+        'read',
+        undefined,
+      );
+    expect(f.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+      timeout: 30000,
+    });
+  });
+
+  it('blocks pending or mismatched contribution evidence without presenting zero points', async () => {
+    const f = setup();
+    f.contributions.readSummaryInTx.mockResolvedValue(summary(true));
+    const result = await f.service.workbench('activity', actor);
+    expect(result).toMatchObject({
+      ready: false,
+      blockers: [{ code: 'contribution_pending', count: 1 }],
+      contributionProof: summary(true),
+    });
+    expect(result.contributionProof?.recognizedPointsTotal).toBeNull();
+    expect(result.contributionProof?.evaluationCount).toBeNull();
+  });
+
+  it('fails closed when the optional native proof collaborator is absent', async () => {
+    const f = setup(false);
+    const result = await f.service.workbench('activity', actor);
+    expect(result).toMatchObject({
+      ready: false,
+      blockers: [{ code: 'contribution_pending', count: 1 }],
+      contributionProof: summary(true),
+    });
+    expect(f.contributions.readSummaryInTx).not.toHaveBeenCalled();
+  });
+
+  it.each<Partial<TimeSettlementDraftContext>>([{ draftId: null }, { draftContentHash: null }])(
+    'does not load an older formal proof when the native draft anchor is incomplete: %j',
+    async (patch) => {
+      const f = setup();
+      f.draftContext.mockResolvedValue({
+        ...context,
+        contributionRegimeCode: 'policy_v1',
+        ...patch,
+      });
+      const result = await f.service.workbench('activity', actor);
+      expect(result).toMatchObject({
+        ready: false,
+        blockers: [
+          { code: 'source_not_ready', count: 1 },
+          { code: 'contribution_pending', count: 1 },
+        ],
+        contributionProof: summary(true),
+      });
+      expect(f.contributions.readSummaryInTx).not.toHaveBeenCalled();
+      expect(f.sources).not.toHaveBeenCalled();
+      expect(f.evaluate).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not query evidence before the first current-eligibility check succeeds', async () => {
+    const f = setup();
+    f.access.authorize.mockRejectedValue(new BizException(BizCode.FORBIDDEN));
+    await expect(f.service.workbench('activity', actor)).rejects.toThrow(
+      new BizException(BizCode.FORBIDDEN),
+    );
+    expect(f.draftContext).not.toHaveBeenCalled();
+    expect(f.db.activitySettlementTimeRevision.findFirst).not.toHaveBeenCalled();
+    expect(f.contributions.readSummaryInTx).not.toHaveBeenCalled();
+  });
+
+  it('withholds an already loaded proof if current eligibility is lost before return', async () => {
+    const f = setup();
+    f.access.authorize
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new BizException(BizCode.FORBIDDEN));
+    await expect(f.service.workbench('activity', actor)).rejects.toThrow(
+      new BizException(BizCode.FORBIDDEN),
+    );
+    expect(f.contributions.readSummaryInTx).toHaveBeenCalledTimes(1);
+    expect(f.access.authorize).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not hide a proof query failure as pending readiness or zero points', async () => {
+    const f = setup();
+    const failure = new Error('bounded proof query failure');
+    f.contributions.readSummaryInTx.mockRejectedValue(failure);
+    await expect(f.service.workbench('activity', actor)).rejects.toThrow(failure);
+    expect(f.access.authorize).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('D4 historical-role reuse stays inside one evaluation', () => {
+  function roleFixture() {
+    const first = { ...segment('first'), sourcePositionId: 'position' };
+    const second = { ...segment('second'), sourcePositionId: 'position' };
+    const snapshots = [
+      {
+        id: 'snapshot',
+        snapshotHash: 'b'.repeat(64),
+        resolvedConfig: {
+          sessions: [
+            {
+              sessionId: 'session',
+              positions: [{ positionId: 'position', attendanceRoleCode: 'service' }],
+            },
+          ],
+        },
+      },
+    ];
+    const rows: Array<Omit<ParticipantTimeAllocationRevision, 'allocationJson'>> = [
+      first,
+      second,
+    ].map((source) => ({ ...allocation(source), sourcePositionId: 'position' }));
+    const tx = {
+      participantTimeAllocationSlice: {
+        findMany: jest.fn().mockResolvedValue(
+          rows.map((row) => ({
+            allocationRevisionId: row.id,
+            ordinal: 0,
+            activityId: 'activity',
+            categoryCode: 'volunteer_service',
+            intervalKindCode: 'service_segment',
+            startAt: first.checkInAt,
+            endAt: first.checkOutAt,
+          })),
+        ),
+      },
+      timePolicyVersion: { findMany: jest.fn().mockResolvedValue([]) },
+      activityRuleSnapshot: { findMany: jest.fn().mockResolvedValue(snapshots) },
+    };
+    const access = { authorize: jest.fn() };
+    const service = new ActivityTimeSettlementQueryService(
+      {} as PrismaService,
+      access as unknown as ActivityTimeSettlementAccessService,
+      {} as ParticipationSegmentFacade,
+    );
+    const set = sourceSet({ segments: [first, second], latest: rows });
+    return { tx, access, service, set, snapshots, rows };
+  }
+  it('checks pending/zero-source population before reading any physical slices', async () => {
+    const f = roleFixture();
+    f.set.population = Array.from({ length: 501 }, (_, i) => ({
+      participationIdentityId: String(i),
+      memberId: String(i),
+      pending: true,
+    }));
+    await expect(
+      f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set, true),
+    ).rejects.toThrow('scale_limit');
+    expect(f.tx.participantTimeAllocationSlice.findMany).not.toHaveBeenCalled();
+  });
+  it('rejects a long complete service segment even when its manual allocation slice is short', async () => {
+    const f = roleFixture();
+    f.set.segments = f.set.segments.map((row, i) =>
+      i === 0 ? { ...row, checkOutAt: new Date('2099-01-01T00:00:00.000Z') } : row,
+    );
+    f.rows[0].recognitionModeCode = 'manual';
+    f.rows[0].manualReason = 'split coverage';
+    await expect(
+      f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set, true),
+    ).rejects.toThrow('scale_limit');
+    expect(f.tx.participantTimeAllocationSlice.findMany).not.toHaveBeenCalled();
+  });
+  it('counts manifests belonging to invalid/excluded segments before result filtering', async () => {
+    const f = roleFixture();
+    f.set.population = [];
+    f.rows[0].sliceCount = 2501;
+    await expect(
+      f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set, true),
+    ).rejects.toThrow('scale_limit');
+    expect(f.tx.participantTimeAllocationSlice.findMany).not.toHaveBeenCalled();
+  });
+  it('checks actual physical slices independently of an understated manifest and empty population', async () => {
+    const f = roleFixture();
+    f.set.population = [];
+    f.rows.forEach((row) => {
+      row.sliceCount = 1;
+    });
+    const slice = {
+      allocationRevisionId: f.rows[0].id,
+      ordinal: 0,
+      activityId: 'activity',
+      categoryCode: 'training',
+      intervalKindCode: 'service_segment',
+      startAt: new Date('2026-01-01'),
+      endAt: new Date('2026-01-02'),
+    };
+    f.tx.participantTimeAllocationSlice.findMany.mockResolvedValue(
+      Array.from({ length: 2501 }, () => slice),
+    );
+    await expect(
+      f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set, true),
+    ).rejects.toThrow('scale_limit');
+    expect(f.tx.participantTimeAllocationSlice.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { allocationRevisionId: { in: f.rows.map((row) => row.id) } },
+      }),
+    );
+    expect(f.tx.timePolicyVersion.findMany).not.toHaveBeenCalled();
+  });
+  it('reuses a successful role while retaining all reads and full builder input', async () => {
+    const f = roleFixture();
+    const resolver = jest.spyOn(historicalRolePolicy, 'historicalAttendanceRoleFromRuleSnapshot');
+    const builder = jest.spyOn(timeSettlementPolicy, 'buildTimeSettlementBuckets').mockReturnValue({
+      buckets: [],
+      bucketCount: 0,
+      sourceCount: 0,
+      bucketContentHash: 'f'.repeat(64),
+    });
+    try {
+      await f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set);
+      expect(resolver).toHaveBeenCalledTimes(1);
+      expect(builder.mock.calls[0][0].allocations.map((row) => row.attendanceRoleCode)).toEqual([
+        'service',
+        'service',
+      ]);
+      expect(f.tx.participantTimeAllocationSlice.findMany).toHaveBeenCalledTimes(1);
+      expect(f.tx.timePolicyVersion.findMany).toHaveBeenCalledTimes(1);
+      expect(f.tx.activityRuleSnapshot.findMany).toHaveBeenCalledTimes(1);
+      expect(f.access.authorize).not.toHaveBeenCalled();
+      await f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set);
+      expect(resolver).toHaveBeenCalledTimes(2);
+      expect(f.tx.activityRuleSnapshot.findMany).toHaveBeenCalledTimes(2);
+    } finally {
+      resolver.mockRestore();
+      builder.mockRestore();
+    }
+  });
+  it('does not borrow a role from another snapshot or hide a later malformed snapshot', async () => {
+    const f = roleFixture();
+    f.rows[1].ruleSnapshotId = 'other-snapshot';
+    f.snapshots.push({
+      id: 'other-snapshot',
+      snapshotHash: 'b'.repeat(64),
+      resolvedConfig: {
+        sessions: [
+          {
+            sessionId: 'session',
+            positions: [{ positionId: 'position', attendanceRoleCode: 'other-role' }],
+          },
+        ],
+      },
+    });
+    const resolver = jest.spyOn(historicalRolePolicy, 'historicalAttendanceRoleFromRuleSnapshot');
+    const builder = jest.spyOn(timeSettlementPolicy, 'buildTimeSettlementBuckets').mockReturnValue({
+      buckets: [],
+      bucketCount: 0,
+      sourceCount: 0,
+      bucketContentHash: 'f'.repeat(64),
+    });
+    try {
+      await f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set);
+      expect(resolver).toHaveBeenCalledTimes(2);
+      expect(builder.mock.calls[0][0].allocations.map((row) => row.attendanceRoleCode)).toEqual([
+        'service',
+        'other-role',
+      ]);
+      f.snapshots[0].resolvedConfig.sessions[0].positions = [];
+      await expect(
+        f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set),
+      ).rejects.toBeInstanceOf(BizException);
+      expect(builder).toHaveBeenCalledTimes(1);
+    } finally {
+      resolver.mockRestore();
+      builder.mockRestore();
+    }
+  });
+  it('retains the null-position branch without parsing or reusing historical roles', async () => {
+    const f = roleFixture();
+    f.rows.forEach((row) => {
+      row.sourcePositionId = null;
+    });
+    const resolver = jest.spyOn(historicalRolePolicy, 'historicalAttendanceRoleFromRuleSnapshot');
+    const builder = jest.spyOn(timeSettlementPolicy, 'buildTimeSettlementBuckets').mockReturnValue({
+      buckets: [],
+      bucketCount: 0,
+      sourceCount: 0,
+      bucketContentHash: 'f'.repeat(64),
+    });
+    try {
+      await f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set);
+      expect(resolver).toHaveBeenCalledTimes(2);
+      expect(builder.mock.calls[0][0].allocations.map((row) => row.attendanceRoleCode)).toEqual([
+        null,
+        null,
+      ]);
+    } finally {
+      resolver.mockRestore();
+      builder.mockRestore();
     }
   });
 });

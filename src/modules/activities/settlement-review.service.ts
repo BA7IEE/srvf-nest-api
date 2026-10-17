@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import {
+  ActivityContributionSettlementService,
+  frozenContributionRegime,
+} from './activity-contribution-settlement.service';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -132,6 +136,7 @@ interface LockedVersion {
   workflowRevision: number;
   contentHash: string;
   personCount: number;
+  contributionRegimeCode?: string;
 }
 
 /** 三条分离判据 → 具名码。**一一对应,没有一条落到兜底码上**(那等于没具名)。 */
@@ -178,6 +183,7 @@ export class SettlementReviewService {
     private readonly notifications: SettlementNotificationProducer,
     // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
+    @Optional() private readonly contributions?: ActivityContributionSettlementService,
   ) {}
 
   /** §5.11 一审。approve ⇒ 推进 `pending_final_review`;return ⇒ 版本转 `returned`。 */
@@ -185,11 +191,12 @@ export class SettlementReviewService {
     input: SettlementReviewInput,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    reauthorizeInTx?: (tx: PrismaTx) => Promise<CurrentUserPayload>,
   ): Promise<SettlementReviewResult> {
     // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
     // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
     this.activityWorkflowGate.assertV11WriteAllowed();
-    return await this.review('first', input, currentUser, auditMeta);
+    return await this.review('first', input, currentUser, auditMeta, reauthorizeInTx);
   }
 
   /**
@@ -202,11 +209,12 @@ export class SettlementReviewService {
     input: SettlementReviewInput,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    reauthorizeInTx?: (tx: PrismaTx) => Promise<CurrentUserPayload>,
   ): Promise<SettlementReviewResult> {
     // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
     // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
     this.activityWorkflowGate.assertV11WriteAllowed();
-    return await this.review('final', input, currentUser, auditMeta);
+    return await this.review('final', input, currentUser, auditMeta, reauthorizeInTx);
   }
 
   // ===== ① Activity FOR UPDATE(锁序第一层)=====
@@ -252,7 +260,7 @@ export class SettlementReviewService {
       SELECT
         id, version, "statusCode", "createdByUserId",
         "evidenceSealId", "evidenceRevision", "populationRevision", "workflowRevision",
-        "contentHash", "personCount"
+        "contentHash", "personCount", "contributionRegimeCode"
       FROM "AttendanceSettlementVersion"
       WHERE "settlementRunId" = ${run.id} AND version = ${run.currentSubmittedVersion}
       FOR UPDATE
@@ -510,6 +518,7 @@ export class SettlementReviewService {
     input: SettlementReviewInput,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    reauthorizeInTx?: (tx: PrismaTx) => Promise<CurrentUserPayload>,
   ): Promise<SettlementReviewResult> {
     const { activityId, actionCode, operationKey, requestHash } = input;
 
@@ -534,6 +543,9 @@ export class SettlementReviewService {
         //    这里要先拿到版本 id 才能判"是不是同一条决定",所以版本行必须先锁上 ——
         //    锁序不变(版本本来就是第三把)。
         const version = await this.lockSubmittedVersion(tx, run);
+        // HTTP authorization observed before a lock wait is stale. Reuse its exact
+        // action/resource policy in this transaction before replay or business writes.
+        let actor = reauthorizeInTx ? await reauthorizeInTx(tx) : currentUser;
 
         // §6.11 路径 `:settlementVersionId` 的 HTTP 锚点。此处已经持有 Activity → Run
         // → Version 三把既有锁；锁外“看过 v1”不能替代对当前指针实际锁到版本的复核。
@@ -580,8 +592,8 @@ export class SettlementReviewService {
             contentHash: version.contentHash,
             operationKey,
             requestHash,
-            actorUserId: currentUser.id,
-            actorRoleSnap: currentUser.role,
+            actorUserId: actor.id,
+            actorRoleSnap: actor.role,
             auditMeta,
             tx,
           });
@@ -608,7 +620,7 @@ export class SettlementReviewService {
             submittedByUserId: version.createdByUserId,
             firstReviewerUserId,
           },
-          currentUser.id,
+          actor.id,
         );
         if (violation !== null) throw new BizException(SEPARATION_TO_BIZ_CODE[violation]);
 
@@ -628,6 +640,36 @@ export class SettlementReviewService {
         });
         if (mismatch !== null) throw new BizException(MISMATCH_TO_BIZ_CODE[mismatch]);
 
+        let versionUpdatedAtFirstReviewBarrier = false;
+        if (frozenContributionRegime(version.contributionRegimeCode) === 'policy_v1') {
+          if (!this.contributions)
+            throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+          this.contributions.assertNativeWriteAllowed();
+          const anchor = {
+            activityId,
+            settlementRunId: run.id,
+            settlementVersionId: version.id,
+            evidenceSealId: version.evidenceSealId,
+            evidenceRevision: version.evidenceRevision,
+            populationRevision: version.populationRevision,
+            workflowRevision: version.workflowRevision,
+          };
+          const candidate =
+            stageCode === 'first' && actionCode === 'approve'
+              ? await this.contributions.readFirstReviewBarrierCandidateInTx(tx, anchor)
+              : null;
+          if (candidate !== null) {
+            // Preserve the original Prisma UPDATE/@updatedAt, but consume its real full guard here.
+            await tx.attendanceSettlementVersion.update({
+              where: { id: version.id },
+              data: { statusCode: 'submitted', returnFromStage: null, returnReason: null },
+            });
+            await this.contributions.assertFirstReviewBarrierInTx(tx, anchor, candidate);
+            versionUpdatedAtFirstReviewBarrier = true;
+          } else await this.contributions.assertVersionInTx(tx, version.id);
+        }
+
+        if (reauthorizeInTx) actor = await reauthorizeInTx(tx);
         const actedAt = new Date();
 
         // ⑩ 状态推进 + 批次准备。
@@ -648,7 +690,7 @@ export class SettlementReviewService {
               settlementVersionId: version.id,
               operationKey,
               requestHash,
-              actorUserId: currentUser.id,
+              actorUserId: actor.id,
               totalCount: version.personCount,
             });
             runStatusAfter = 'posting';
@@ -673,7 +715,7 @@ export class SettlementReviewService {
           settlementVersionId: version.id,
           stageCode,
           actionCode,
-          actorUserId: currentUser.id,
+          actorUserId: actor.id,
           actedAt,
           // 退回时缺省把原因也落进 append-only 的动作行 —— 否则单看审核流水
           // 说不清为什么退。
@@ -685,14 +727,16 @@ export class SettlementReviewService {
         // 版本行:只写审核结论相关的三列。**append-only 的是 ReviewAction,不是 Version**
         // ——版本的 `statusCode / returnFromStage / returnReason` 本就是 §3.19 给版本行
         // 定义的审核结论列(第三刀提交时写 `submitted`,本刀写审核结果)。
-        await tx.attendanceSettlementVersion.update({
-          where: { id: version.id },
-          data: {
-            statusCode: versionStatusAfter,
-            returnFromStage: actionCode === 'return' ? stageCode : null,
-            returnReason: actionCode === 'return' ? returnReason : null,
-          },
-        });
+        if (!versionUpdatedAtFirstReviewBarrier) {
+          await tx.attendanceSettlementVersion.update({
+            where: { id: version.id },
+            data: {
+              statusCode: versionStatusAfter,
+              returnFromStage: actionCode === 'return' ? stageCode : null,
+              returnReason: actionCode === 'return' ? returnReason : null,
+            },
+          });
+        }
 
         // ⚠️ `currentSubmittedVersion` **退回时也不清空**。这一条写反过一次,是实测
         //    推翻的:清空之后,approve/return 真并发里 return 先赢的那一半,败者会在
@@ -749,8 +793,8 @@ export class SettlementReviewService {
           contentHash: version.contentHash,
           operationKey,
           requestHash,
-          actorUserId: currentUser.id,
-          actorRoleSnap: currentUser.role,
+          actorUserId: actor.id,
+          actorRoleSnap: actor.role,
           auditMeta,
           tx,
         });

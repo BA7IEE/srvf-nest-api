@@ -52,8 +52,17 @@ export async function truncateAuditLogsTestOnly(app: INestApplication): Promise<
         ['ContributionShadowWindowRegistrationReceipt', 'cswr_no_truncate'],
         ['ContributionShadowDispositionApprovalReceipt', 'csda_no_truncate'],
       ] as const;
+      const nativeTriggers = [
+        ['ParticipantContributionEvaluation', 'e4_evaluation_no_truncate'],
+        ['ActivitySettlementContributionRevision', 'e4_revision_no_truncate'],
+      ] as const;
       const previous: Array<{ table: string; trigger: string; enabled: string }> = [];
-      for (const [table, trigger] of [...triggers, ...mappingTriggers, ...reconciliationTriggers]) {
+      for (const [table, trigger] of [
+        ...triggers,
+        ...mappingTriggers,
+        ...reconciliationTriggers,
+        ...nativeTriggers,
+      ]) {
         const rows = await tx.$queryRawUnsafe<Array<{ enabled: string | null }>>(
           `SELECT t.tgenabled::text AS enabled FROM pg_class c
              JOIN pg_namespace n ON n.oid=c.relnamespace AND n.nspname='public'
@@ -77,8 +86,21 @@ export async function truncateAuditLogsTestOnly(app: INestApplication): Promise<
         reconciliationTriggers.some(([, name]) => name === trigger),
       );
       const basePrevious = previous.filter(
-        (row) => !mappingPrevious.includes(row) && !reconciliationPrevious.includes(row),
+        (row) =>
+          !mappingPrevious.includes(row) &&
+          !reconciliationPrevious.includes(row) &&
+          !nativeTriggers.some(([, name]) => name === row.trigger),
       );
+      const nativePrevious = previous.filter(({ trigger }) =>
+        nativeTriggers.some(([, name]) => name === trigger),
+      );
+      if (nativePrevious.length !== 0) {
+        if (nativePrevious.length !== 2)
+          throw new Error('Incomplete native contribution fixture tables');
+        await tx.$executeRawUnsafe(
+          'TRUNCATE TABLE "ParticipantContributionEvaluation", "ActivitySettlementContributionRevision" RESTART IDENTITY',
+        );
+      }
       const legacyFive =
         basePrevious.length === triggers.length - 1 &&
         !basePrevious.some(({ table }) => table === 'ContributionShadowLegacySourceAnchor');

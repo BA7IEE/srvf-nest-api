@@ -15,6 +15,9 @@ import {
   describeRenumberingLeak,
   describeViolation,
   droppedUpdateLockControl,
+  e4SelectionExemptionExpiryControl,
+  e4SelectionMutationControl,
+  e4SelectionScopeIsNarrow,
   futureFrozenTableControl,
   futureTableControl,
   immutabilityTriggerCount,
@@ -99,6 +102,46 @@ describe('business composite anchor closure', () => {
 
   it('requires every exemption to carry a substantive reason', () => {
     expect(thinExemptionReasons()).toEqual([]);
+  });
+
+  it('limits E4 activity-level selection inheritance to the exact session scope difference', () => {
+    expect(e4SelectionScopeIsNarrow()).toBe(true);
+  });
+
+  it('still rejects an E4 selection FK reduced to a single ID', () => {
+    const control = e4SelectionMutationControl('single-id');
+    expect(control.changed).toBe(true);
+    expect(control.violations).not.toEqual([]);
+  });
+
+  it('does not transfer the E4 selection exception to another target', () => {
+    const control = e4SelectionMutationControl('target');
+    expect(control.changed).toBe(true);
+    expect(control.violations).not.toEqual([]);
+  });
+
+  it('does not transfer the E4 selection exception to another model', () => {
+    const control = e4SelectionMutationControl('model');
+    expect(control.changed).toBe(true);
+    expect(control.violations).not.toEqual([]);
+  });
+
+  it('does not transfer the E4 selection exception to another relation', () => {
+    const control = e4SelectionMutationControl('relation');
+    expect(control.changed).toBe(true);
+    expect(control.violations).not.toEqual([]);
+  });
+
+  it('keeps E4 participation identity activity/session/member anchors mandatory', () => {
+    const control = e4SelectionMutationControl('identity');
+    expect(control.changed).toBe(true);
+    expect(control.violations).not.toEqual([]);
+  });
+
+  it('expires the E4 exception when the selection relation becomes fully closed', () => {
+    const control = e4SelectionExemptionExpiryControl();
+    expect(control.changed).toBe(true);
+    expect(control.stale).toContain('ParticipantContributionEvaluation.selectionItem');
   });
 
   // ===========================================================================

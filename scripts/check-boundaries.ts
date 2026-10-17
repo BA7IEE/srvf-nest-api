@@ -376,12 +376,18 @@ function schemaModels(): SchemaModel[] {
         const d7CorrectionConfiguration =
           model.name === 'ParticipationTimeCorrectionEntry' &&
           (field.name === 'categoryCode' || field.name === 'entryTypeCode');
+        // E4 exact immutable configurations. This is inventory, not lifecycle discovery.
+        const e4ContributionConfiguration =
+          (model.name === 'ActivitySettlementContributionRevision' &&
+            ['kindCode', 'sourceKindCode', 'regimeCode'].includes(field.name)) ||
+          (model.name === 'AttendanceSettlementVersion' && field.name === 'contributionRegimeCode');
         if (
           field.type === 'String' &&
           (stateLikeString(field.name) ||
             d4RevisionKind ||
             d6LedgerCategory ||
-            d7CorrectionConfiguration)
+            d7CorrectionConfiguration ||
+            e4ContributionConfiguration)
         ) {
           stateFields.push(field.name);
         }
@@ -640,8 +646,11 @@ function decisionPendingErrors(map: DomainMap): string[] {
  * CHECK 认到 `X` 头上(报告 §1.1 缺陷 1)。按 `;` 切开再逐条判目标表,这一整类
  * 跨语句串味在结构上就不可能发生。
  */
-let migrationStatementCache: Array<{ migration: string; table: string | null; sql: string }> | null =
-  null;
+let migrationStatementCache: Array<{
+  migration: string;
+  table: string | null;
+  sql: string;
+}> | null = null;
 
 function migrationStatements(): Array<{ migration: string; table: string | null; sql: string }> {
   if (migrationStatementCache !== null) return migrationStatementCache;
@@ -782,8 +791,7 @@ function declaredSymbols(rel: string): Set<string> {
       out.add(name.text);
       return;
     }
-    for (const element of name.elements)
-      if (ts.isBindingElement(element)) addBinding(element.name);
+    for (const element of name.elements) if (ts.isBindingElement(element)) addBinding(element.name);
   };
   for (const statement of source.statements) {
     if (
@@ -797,7 +805,8 @@ function declaredSymbols(rel: string): Set<string> {
       continue;
     }
     if (ts.isVariableStatement(statement))
-      for (const declaration of statement.declarationList.declarations) addBinding(declaration.name);
+      for (const declaration of statement.declarationList.declarations)
+        addBinding(declaration.name);
   }
   return out;
 }
@@ -913,7 +922,9 @@ function flowGovernedErrors(entry: StateEntry, label: string): string[] {
   const errors: string[] = [];
   const evidence = entry.governedEvidence as GovernedEvidence;
   if (evidence.edgeModel !== 'enumerated') {
-    errors.push(label + ': ' + entry.layer + ' governed requires governedEvidence.edgeModel "enumerated"');
+    errors.push(
+      label + ': ' + entry.layer + ' governed requires governedEvidence.edgeModel "enumerated"',
+    );
     return errors;
   }
   const file = evidence.implementationFile;
@@ -989,7 +1000,8 @@ function flowGovernedErrors(entry: StateEntry, label: string): string[] {
   }
   const known = bizCodeMembers();
   for (const code of evidence.wrongStateBizCodes) {
-    if (!known.has(code)) errors.push(label + ': wrongStateBizCodes contains unknown BizCode "' + code + '"');
+    if (!known.has(code))
+      errors.push(label + ': wrongStateBizCodes contains unknown BizCode "' + code + '"');
   }
   return errors;
 }
@@ -1021,7 +1033,10 @@ function parseStateEntry(raw: JsonRecord, label: string, errors: string[]): Stat
     // `values: null` 是 4-1a 刻意的「没有已声明闭集」标记(5 条 closed-set-undeclared),
     // 不是缺字段 —— 但它结构上永远升不了 governed。
     if (record.values === null) values = null;
-    else if (Array.isArray(record.values) && record.values.every((item) => typeof item === 'string'))
+    else if (
+      Array.isArray(record.values) &&
+      record.values.every((item) => typeof item === 'string')
+    )
       values = record.values as string[];
     else errors.push(label + ': stateSet.values must be a string array or null');
     if (typeof record.source !== 'string' || record.source.length === 0)
@@ -1124,7 +1139,10 @@ function governedGateErrors(entry: StateEntry, table: string | null): string[] {
   const errors: string[] = [];
   if (entry.governedBlockers.length > 0) {
     errors.push(
-      label + ': governed requires empty governedBlockers (got ' + entry.governedBlockers.join(', ') + ')',
+      label +
+        ': governed requires empty governedBlockers (got ' +
+        entry.governedBlockers.join(', ') +
+        ')',
     );
   }
   if (entry.stateSet.values === null)
@@ -1149,7 +1167,11 @@ function stateRegistryErrors(errors: string[]): void {
   } catch (error) {
     // 解析不了 = 判不了 ⇒ fail-closed。转成 error 而不是让它抛穿 runMetadata,
     // 这样退出码仍是 1,但消息是可读、可断言的一行。
-    errors.push(STATE_MACHINES + ' is unreadable: ' + (error instanceof Error ? error.message : String(error)));
+    errors.push(
+      STATE_MACHINES +
+        ' is unreadable: ' +
+        (error instanceof Error ? error.message : String(error)),
+    );
     return;
   }
   if (raw.schemaVersion !== VERSION)
@@ -1214,7 +1236,9 @@ function stateGovernanceReport(): JsonRecord {
     const status = String(entry.governanceStatus);
     byStatus[status] = (byStatus[status] ?? 0) + 1;
     byLayer[String(entry.layer)] = (byLayer[String(entry.layer)] ?? 0) + 1;
-    const blockers = Array.isArray(entry.governedBlockers) ? (entry.governedBlockers as string[]) : [];
+    const blockers = Array.isArray(entry.governedBlockers)
+      ? (entry.governedBlockers as string[])
+      : [];
     for (const blocker of blockers)
       blockerHistogram[blocker] = (blockerHistogram[blocker] ?? 0) + 1;
     const stateSet = entry.stateSet as JsonRecord | undefined;
@@ -1297,7 +1321,8 @@ function kernelOwnershipErrors(map: DomainMap, domains: Set<string>): string[] {
       primitivePaths.add(rel);
       // 登记的是**文件**不是名字:路径不存在时这张表就是假话,而假话的登记表
       // 比没有登记表更糟 —— 它让人以为归属问题已经被想过了。
-      if (!exists(rel)) errors.push('kernel.primitives path does not exist: ' + name + ' -> ' + rel);
+      if (!exists(rel))
+        errors.push('kernel.primitives path does not exist: ' + name + ' -> ' + rel);
     }
     const owner = typeof primitive.ownerDomain === 'string' ? primitive.ownerDomain : '';
     if (!domains.has(owner))
@@ -1981,7 +2006,8 @@ function allowedRead(map: DomainMap, candidate: ReadCandidate): ReadAllowlistEnt
 
 /** Name a single step of the syntactic spine, preferring a declaration's own name. */
 function pathStep(node: ts.Node, parent: ts.Node): string {
-  if (ts.isClassDeclaration(node) && node.name !== undefined) return 'Class(' + node.name.text + ')';
+  if (ts.isClassDeclaration(node) && node.name !== undefined)
+    return 'Class(' + node.name.text + ')';
   if (ts.isFunctionDeclaration(node) && node.name !== undefined)
     return 'Function(' + node.name.text + ')';
   if (
@@ -2686,14 +2712,19 @@ function scanCommon(
     };
 
     // ── 判据①(raw 形态):common 内的 raw SQL 打到业务物理表 ──
-    const raw = (node: ts.Expression | ts.TaggedTemplateExpression, expression: ts.Expression): void => {
+    const raw = (
+      node: ts.Expression | ts.TaggedTemplateExpression,
+      expression: ts.Expression,
+    ): void => {
       const operation = propertyOf(expression);
       if (
         operation === null ||
         (!operation.startsWith('$queryRaw') && !operation.startsWith('$executeRaw'))
       )
         return;
-      const receiver = ts.isPropertyAccessExpression(expression) ? expression.expression : expression;
+      const receiver = ts.isPropertyAccessExpression(expression)
+        ? expression.expression
+        : expression;
       if (!rawCapableClient(typed, receiver)) return;
       const sql = literalSql(node);
       if (sql === null) {
@@ -2768,7 +2799,8 @@ function scanCommon(
             'groupBy',
           ]);
           const first = node.arguments[0];
-          const argument = first !== undefined && ts.isObjectLiteralExpression(first) ? first : undefined;
+          const argument =
+            first !== undefined && ts.isObjectLiteralExpression(first) ? first : undefined;
           const base: JsonRecord = {
             form: 'delegate',
             accessPath: model.name,
@@ -2776,22 +2808,36 @@ function scanCommon(
           };
           if (reads.has(operation)) {
             const predicates =
-              argument === undefined ? { ...predicateAnalysis(), dynamic: true } : analyzePredicates(argument, model);
+              argument === undefined
+                ? { ...predicateAnalysis(), dynamic: true }
+                : analyzePredicates(argument, model);
             // ── 判据②:内联业务状态 + 时间窗谓词组合(复用 R6 三档读口径)──
             if (predicates.statusFields.length > 0 && predicates.timeWindowFields.length > 0) {
-              emit('common-business-predicate', 'report', owner.domain, model.name, operation, node, {
-                ...base,
-                statusPredicateFields: predicates.statusFields,
-                timeWindowFields: predicates.timeWindowFields,
-                requiredExit:
-                  '应消费属主导出的业务谓词;common 内不得内联时间窗与状态组合。',
-              });
+              emit(
+                'common-business-predicate',
+                'report',
+                owner.domain,
+                model.name,
+                operation,
+                node,
+                {
+                  ...base,
+                  statusPredicateFields: predicates.statusFields,
+                  timeWindowFields: predicates.timeWindowFields,
+                  requiredExit: '应消费属主导出的业务谓词;common 内不得内联时间窗与状态组合。',
+                },
+              );
               node.forEachChild(visit);
               return;
             }
             const selection =
               argument === undefined
-                ? { explicitSelect: false, scalarFields: null, hasOmit: false, relationAccesses: [] }
+                ? {
+                    explicitSelect: false,
+                    scalarFields: null,
+                    hasOmit: false,
+                    relationAccesses: [],
+                  }
                 : analyzeSelection(argument, model, modelsByName, model.name);
             const kernelFields = map.kernel.kernelReadFields?.fields?.[model.name] ?? [];
             const selected = selection.scalarFields;
@@ -2814,10 +2860,18 @@ function scanCommon(
               return;
             }
           }
-          emit('common-business-table-access', 'report', owner.domain, model.name, operation, node, {
-            ...base,
-            requiredExit: '表名参数化,common 不留业务表知识。',
-          });
+          emit(
+            'common-business-table-access',
+            'report',
+            owner.domain,
+            model.name,
+            operation,
+            node,
+            {
+              ...base,
+              requiredExit: '表名参数化,common 不留业务表知识。',
+            },
+          );
         }
       }
       node.forEachChild(visit);
@@ -2905,7 +2959,8 @@ function edgeUsage(
   for (const edge of imports) observe(edge.from, edge.to).importCount += 1;
   for (const finding of findings) {
     if (finding.kind === 'cross-domain-import' || finding.kind === 'cross-domain-cycle') continue;
-    if (finding.sourceDomain === finding.targetDomain || finding.targetDomain === 'unknown') continue;
+    if (finding.sourceDomain === finding.targetDomain || finding.targetDomain === 'unknown')
+      continue;
     observe(finding.sourceDomain, finding.targetDomain).crossDomainAccessCount += 1;
   }
 

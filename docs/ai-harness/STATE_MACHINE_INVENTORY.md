@@ -1,5 +1,14 @@
 # STATE_MACHINE_INVENTORY.md — 状态机登记现状(Phase 4-1a)
 
+## E4 当前实施增量（本地候选，未提交）
+
+新增五项不可变配置登记：`ActivitySettlementContributionRevision.kindCode`、
+`sourceKindCode`、`regimeCode`，`AttendanceSettlementVersion.contributionRegimeCode`，
+以及被既有通用发现规则识别的 `ParticipantContributionEvaluation.mode=policy`。
+全部为 L1 inventory、not-derived；不新增状态边或提升 governed。
+当前登记83项，其中8项governed、75项inventory。第137条SQL仍待最终3b签字，
+本地小链通过不代表完整业务验收；下面各阶段计数保留历史时点。
+
 ## E3-2 D1 当前实施增量（本地候选，未提交）
 
 新增 `ContributionShadowTerminalReceipt.statusCode` 为 L1 inventory，闭集仅 `complete` /
@@ -431,21 +440,24 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > 引用本表前先看时点;要当前值请直接跑 `pnpm docs:boundaries`(`--violations`)读
 > `stateGovernance` 块,或数 `harness/state-machines.json` 的 `entries`。
 
-**取数时点:2026-09-28(Activity OS R5 / E3-2 D1 本地候选，未提交)**
+**取数时点:2026-10-04(Activity OS R5 / E4 本地候选，未提交、未合并)**
+
+上一时点 E3-2 D1 为78条、8 governed / 70 inventory、inventory L1/L2/L3为17/27/26，
+not-derived为33；保留为历史证据。本轮五项只登记不可变配置，不提升governed。
 
 | 项                                    |                                值 |
 | ------------------------------------- | --------------------------------: |
-| 总条目                                |                            **78** |
-| `governed` / `inventory`              |                        **8 / 70** |
-| 70 条 inventory 的分层                | L1 **17** · L2 **27** · L3 **26** |
+| 总条目                                |                            **83** |
+| `governed` / `inventory`              |                        **8 / 75** |
+| 75 条 inventory 的分层                | L1 **22** · L2 **27** · L3 **26** |
 | 已有机器可读边(`transitions` 是数组)※ |                                32 |
-| `transitions: "not-derived"` ※        |                                33 |
+| `transitions: "not-derived"` ※        |                                38 |
 | `transitions: "unconstrained"` ※      |                                13 |
 
-> ※ 这三行按**全部 78 条**统计(32+33+13=78),不是按上一行那 70 条 inventory。
+> ※ 这三行按**全部 83 条**统计(32+38+13=83),不是按上一行那 75 条 inventory。
 > 原表未标口径,而两种口径下 `unconstrained` 分别是 13 与 5 —— 差 8 条,
 > 正是 L1 配置列升 `governed` 的那批。复核本表时先确认口径再比数字。
-> | **`vacuousGreenIfClosedSetOnly`** | **31** |
+> | **`vacuousGreenIfClosedSetOnly`** | **36** |
 > | 零 blocker 但仍 inventory 的升格候选 | **3** |
 
 > 🔴 **历史 true-up、A2 增补、A3 与本次 A7 落地要分开读**:

@@ -331,4 +331,47 @@ describe('D7 correction source and commit ownership', () => {
       biz: { code: 20229 },
     });
   });
+  it('recognizes only the native own unchanged proof while keeping V2/V3 classification separate', async () => {
+    const db = makeDb();
+    db.$queryRaw.mockResolvedValue([
+      {
+        required: false,
+        hasApplication: true,
+        classifiedBase: true,
+        nativeApplication: true,
+        nativeUnchanged: true,
+      },
+    ]);
+    await expect(service.classifyBatch(db as never, 'batch')).resolves.toEqual({
+      required: false,
+      hasApplication: true,
+      nativeUnchanged: true,
+    });
+    expect(db.$queryRaw).toHaveBeenCalledTimes(1);
+    const sql = db.$queryRaw.mock.calls[0][0].join('?');
+    for (const field of [
+      'correctionApplicationId',
+      'correctionPostingBatchId',
+      'baseSettlementVersionId',
+      'newSettlementVersionId',
+      'previousContributionRevisionId',
+      'effectiveTimeSettlementVersionId',
+    ])
+      expect(sql).toContain(field);
+  });
+  it('refuses a native non-time application with missing own evidence even if the direct base has no manifest', async () => {
+    const db = makeDb();
+    db.$queryRaw.mockResolvedValue([
+      {
+        required: false,
+        hasApplication: true,
+        classifiedBase: false,
+        nativeApplication: true,
+        nativeUnchanged: false,
+      },
+    ]);
+    await expect(service.classifyBatch(db as never, 'batch')).rejects.toMatchObject({
+      biz: { code: 20229 },
+    });
+  });
 });

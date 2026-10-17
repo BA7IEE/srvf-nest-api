@@ -21,7 +21,11 @@
 > 正式证明入口 fail-closed。生产 Gate 仍是 NO-GO；v1.1 独立稳定窗、exact deployed SHA／fleet、证据包、
 > 结算只读、worker 排空及 D8-OPS 两次现场授权仍须另行完成，AI 不得自行运行 `--execute`。
 
-> **E3 当前边界（2026-10-03）**：不可变来源／映射证明、影子对账复核读面、受控窗口与逐项签字已仓内交付，当前主干验收通过；证据见[既有评审稿 §32](plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md#32-e3-当前状态收口2026-10-03)。仍未部署、真实业务未验收，31 类真实映射继续 hold，shadow／Gate 关闭、D8-OPS 未执行。历史未复现性能／隔离根因不因一次 CI 绿而关闭。[E4](plans/activity-os-r5-e4-contribution-settlement-review-and-plan.md)仅评审与精确计划，E4/E5 未实施。操作入口及缺口计数见[对账说明](ops/contribution-shadow-reconciliation.md)；生成契约不代表外部端回执或生产批准。
+> **E3 当前边界（2026-10-03）**：不可变来源／映射证明、影子对账复核读面、受控窗口与逐项签字已仓内交付，当前主干验收通过；证据见[既有评审稿 §32](plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md#32-e3-当前状态收口2026-10-03)。仍未部署、真实业务未验收，31 类真实映射继续 hold，shadow／Gate 关闭、D8-OPS 未执行。历史未复现性能／隔离根因不因一次 CI 绿而关闭。操作入口及缺口计数见[对账说明](ops/contribution-shadow-reconciliation.md)；生成契约不代表外部端回执或生产批准。
+
+> **E4 当前边界（2026-10-15）**：候选145（C来源+JOIN key携带）在Draft PR1380，未合入或部署。32343421真实small/500五阶段及冻结oracle通过，500 prepare6.219秒；同夹具完整guard计划的documents规范化聚合4000→2000。旧C唯一专用满额run38721554302为35.708秒/P2028，原30秒未过；该run失败后独立业务七零、资源四零，后续链未跑，SQL_LENGTH漏5事件、纯SQL归因未知。145专用满额未派发；常规CI最大例prepare29.271秒、含fixture整例600秒超时，其后续卡点及业务/资源状态UNKNOWN。旧143显式JIT-off整组30项通过、默认性能仍hold；off准备回执单人隔离通过。常规CI及SQL/trusted/人工签字仍hold。E5 active解析／原全活动来源链准入和旧规则管理写门已作工程扩展，仍默认off；复用原规模限制不等于生产容量已验收，fixture不能上线。active→off恢复旧规则管理写，本刀无永久cutover latch，生产Gate不变。见[来源复用评审记录](plans/activity-os-r5-e4-assert-source-reuse-review.md)。
+
+[146本地](plans/e4-146-validation.json)
 
 <!-- counts:begin -->
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->
@@ -30,8 +34,8 @@
 | 模块 | 43 |
 | Controller | 128 |
 | Endpoint | 663 |
-| Migration | 136 |
-| BizCode | 581 |
+| Migration | 146 |
+| BizCode | 582 |
 | 权限码 | 273 |
 | AuditLogEvent | 178 |
 | 内建角色 | 15 |

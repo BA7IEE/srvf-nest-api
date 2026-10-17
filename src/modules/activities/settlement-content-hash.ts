@@ -166,3 +166,85 @@ export function computeTimeSettlementContentHash(input: {
     )
     .digest('hex');
 }
+
+/** E4 is an explicit V3 domain; no reinterpretation of historical V1/V2 fingerprints. */
+export function computeContributionSettlementContentHash(input: {
+  originalContentHash: string;
+  bucketContentHash: string;
+  sourceSetHash: string;
+  contributionSelectionHash: string;
+  contributionSourceSetHash: string;
+  contributionEvaluationSetHash: string;
+  contributionRegimeCode: 'policy_v1';
+}): string {
+  const { contributionRegimeCode, ...anchors } = input;
+  if (
+    contributionRegimeCode !== 'policy_v1' ||
+    Object.values(anchors).some((value) => !/^[0-9a-f]{64}$/u.test(value))
+  )
+    throw new TypeError('native settlement content hash requires canonical policy/time anchors');
+  return createHash('sha256')
+    .update(
+      canonicalize({
+        domain: 'activity-contribution-settlement-content-v3',
+        schemaVersion: 3,
+        ...anchors,
+        contributionRegimeCode,
+      }),
+      'utf8',
+    )
+    .digest('hex');
+}
+
+/** A native correction has its own source domain, never a synthetic D4 time revision. */
+export function computeContributionCorrectionContentHash(input: {
+  originalContentHash: string;
+  sourceKindCode: 'correction_time_proof' | 'unchanged_time';
+  effectiveTimeSettlementVersionId: string;
+  correctionApplicationId: string;
+  postingBatchId: string;
+  baseSettlementVersionId: string;
+  settlementVersionId: string;
+  previousContributionRevisionId: string;
+  correctionSourceSetHash: string | null;
+  contributionSelectionHash: string;
+  contributionSourceSetHash: string;
+  contributionEvaluationSetHash: string;
+}) {
+  const hashes = [
+    input.originalContentHash,
+    input.contributionSelectionHash,
+    input.contributionSourceSetHash,
+    input.contributionEvaluationSetHash,
+  ];
+  if (input.correctionSourceSetHash !== null) hashes.push(input.correctionSourceSetHash);
+  if (
+    hashes.some((value) => !/^[0-9a-f]{64}$/u.test(value)) ||
+    (input.sourceKindCode === 'unchanged_time'
+      ? input.correctionSourceSetHash !== null
+      : input.sourceKindCode !== 'correction_time_proof' ||
+        input.correctionSourceSetHash === null) ||
+    [
+      input.correctionApplicationId,
+      input.postingBatchId,
+      input.baseSettlementVersionId,
+      input.settlementVersionId,
+      input.previousContributionRevisionId,
+      input.effectiveTimeSettlementVersionId,
+    ].some((value) => !value.trim())
+  )
+    throw new TypeError(
+      'native correction content hash requires current application and source anchors',
+    );
+  return createHash('sha256')
+    .update(
+      canonicalize({
+        domain: 'activity-contribution-correction-content-v3',
+        schemaVersion: 3,
+        contributionRegimeCode: 'policy_v1',
+        ...input,
+      }),
+      'utf8',
+    )
+    .digest('hex');
+}

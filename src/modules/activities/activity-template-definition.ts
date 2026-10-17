@@ -63,9 +63,10 @@ function canonicalizeArray(
     invalid(path, 'must not be sparse or carry extra enumerable properties');
   }
   const names = Object.getOwnPropertyNames(value);
+  const keySet = new Set(keys);
   if (
     names.length !== value.length + 1 ||
-    names.some((name) => name !== 'length' && !keys.includes(name))
+    names.some((name) => name !== 'length' && !keySet.has(name))
   ) {
     invalid(path, 'must not contain non-JSON properties');
   }

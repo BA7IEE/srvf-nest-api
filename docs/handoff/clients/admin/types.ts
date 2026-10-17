@@ -3,7 +3,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:e9c5f72f503c583fa81411c35bdbc02799b1a3cee0ba897a74eeef960cfc6b65
+// inputDigest: sha256:74110e7633751e7535dfe2caffc1cbfc24775834fac2250aa541431cc462bf95
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -622,6 +622,33 @@ export interface AdminAttendanceSheetListItemDto {
   "activity"?: AdminAttendanceSheetExpandedActivityDto;
 }
 
+export interface AdminContributionProofDto {
+  "regimeCode": "policy_v1";
+  "pending": boolean;
+  "revisionId": string | null;
+  "sourceKindCode": string | null;
+  "selectionHash": string | null;
+  "sourceSetHash": string | null;
+  "evaluationSetHash": string | null;
+  "recognizedPointsTotal": string | null;
+  "evaluationCount": number | null;
+  "hasMore": boolean;
+  "evaluations": AdminContributionProofEvaluationDto[];
+}
+
+export interface AdminContributionProofEvaluationDto {
+  "participationIdentityId": string;
+  "policyVersionId": string;
+  "definitionHash": string;
+  "evaluatorVersion": number;
+  "attendanceRoleCode": string;
+  "timeCategoryCode": string;
+  "durationSeconds": number;
+  "calculatedPoints": string;
+  "recognizedPoints": string;
+  "explanationCode": string;
+}
+
 export interface AdminCreateActivityMetricDefinitionDto {
   "operationKey": string;
   "definition": AdminMetricDefinitionV1Dto;
@@ -909,6 +936,7 @@ export interface AdminSettlementReturnCommandDto {
 }
 
 export interface AdminSettlementReviewDetailDto {
+  "contributionProof"?: AdminContributionProofDto;
   "version": AdminSettlementReviewVersionDto;
   "diff": AdminSettlementReviewDiffDto;
   "sealRevisions": AdminSettlementSealRevisionDto[];

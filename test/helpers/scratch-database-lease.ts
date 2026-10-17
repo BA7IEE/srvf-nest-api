@@ -7,7 +7,11 @@ import {
   dropWorkerDatabase,
 } from '../setup/test-db';
 import { assertNamedTestDatabaseScope } from '../setup/test-run-scope';
-import { deriveTemplateTestDbName, deriveWorkerTestDbName } from '../setup/worktree-db';
+import {
+  deriveTestDbName,
+  deriveTemplateTestDbName,
+  deriveWorkerTestDbName,
+} from '../setup/worktree-db';
 
 // Keep the existing instance-wide D3 key: its four fixture roles are instance-wide too.
 const W98_LEASE_KEY = 'SRVF:test:D3:app_test_w98';
@@ -182,8 +186,7 @@ export class ScratchLeaseSession {
   }
 }
 
-export function openScratchDatabaseSession(): ScratchLeaseSession {
-  const database = deriveWorkerTestDbName(98);
+function openScratchMaintenanceSession(database: string): ScratchLeaseSession {
   assertDroppableTestDbName(database);
   assertNamedTestDatabaseScope([database]);
   assertLocalPostgresServer();
@@ -244,6 +247,38 @@ export function openScratchDatabaseSession(): ScratchLeaseSession {
       }),
   });
   return session;
+}
+
+export function openScratchDatabaseSession(): ScratchLeaseSession {
+  return openScratchMaintenanceSession(deriveWorkerTestDbName(98));
+}
+
+/** A measurement-only capability; it cannot issue scratch lifecycle DDL. */
+export type ScratchReadLease = Pick<ScratchLeaseSession, 'assertHeld' | 'backendPid' | 'release'>;
+
+export async function acquireScratchDatabaseReadLease(
+  database: string,
+  timeoutMs = 110_000,
+): Promise<ScratchReadLease> {
+  const worker = process.env.JEST_WORKER_ID;
+  if (!worker || !/^[0-9]{1,2}$/u.test(worker) || database !== deriveTestDbName())
+    throw new Error('Scratch read lease assigned worker differs');
+  // The same existing instance-wide key also protects shared fixture roles.
+  // Opening postgres is maintenance only; this view exposes no DROP/CREATE/clone.
+  const session = openScratchMaintenanceSession(database);
+  try {
+    await session.acquire(timeoutMs);
+    return Object.freeze({
+      assertHeld: () => session.assertHeld(),
+      get backendPid() {
+        return session.backendPid;
+      },
+      release: () => session.release(),
+    });
+  } catch (error) {
+    await session.release();
+    throw error;
+  }
 }
 
 export async function acquireScratchDatabaseLease(

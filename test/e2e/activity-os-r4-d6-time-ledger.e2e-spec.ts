@@ -1,4 +1,8 @@
 import { BindingScopeType, PrincipalType, Role, UserStatus, Prisma } from '@prisma/client';
+import { performance } from 'node:perf_hooks';
+import appConfig, { type AppConfig } from '../../src/config/app.config';
+import { E4EngineRequestWaitDiagnostic } from '../helpers/e4-engine-request-wait-diagnostic';
+import { observeTestEngineTransactions } from '../helpers/engine-transaction-observation';
 import request from 'supertest';
 import { PrismaClient } from '@prisma/client';
 import { ActivityWorkflowGate } from '../../src/common/activity-workflow/activity-workflow.gate';
@@ -77,6 +81,7 @@ describe('D6 classified ledger through real preparation and commit', () => {
   let f: D13Fixture;
   let actor: CurrentUserPayload;
   let prepareFailure = 'none';
+  let observeMaximumPrepare = false;
   const meta = { requestId: 'd5-e2e', ip: null, ua: null };
   const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
   beforeEach(async () => {
@@ -84,9 +89,27 @@ describe('D6 classified ledger through real preparation and commit', () => {
     process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     f = await createD13Fixture();
     prepareFailure = 'none';
+    observeMaximumPrepare = false;
     const timeSettlement = f.app.get(ActivityTimeSettlementService);
     const prepare = timeSettlement.prepare.bind(timeSettlement);
     jest.spyOn(timeSettlement, 'prepare').mockImplementation(async (...args) => {
+      const observeThisPrepare = observeMaximumPrepare;
+      const startedAt = observeThisPrepare ? new Date().toISOString() : undefined;
+      const cpuBefore = observeThisPrepare ? process.cpuUsage() : undefined;
+      const loopBefore = observeThisPrepare ? performance.eventLoopUtilization() : undefined;
+      let transactions: ReturnType<typeof observeTestEngineTransactions> | undefined;
+      let waits: E4EngineRequestWaitDiagnostic | undefined;
+      let observationUnknown = false;
+      if (observeThisPrepare) {
+        try {
+          const engine = Reflect.get(f.db, '_engine') as object;
+          transactions = observeTestEngineTransactions(engine);
+          waits = new E4EngineRequestWaitDiagnostic(engine);
+          waits.begin();
+        } catch {
+          observationUnknown = true;
+        }
+      }
       try {
         return await prepare(...args);
       } catch (error) {
@@ -109,6 +132,58 @@ describe('D6 classified ledger through real preparation and commit', () => {
           unknownPrisma: error instanceof Prisma.PrismaClientUnknownRequestError,
         });
         throw error;
+      } finally {
+        if (observeThisPrepare) {
+          // Observation cannot replace the original prepare result/error or its cleanup.
+          for (const cleanup of [
+            () => waits?.finish(),
+            () => waits?.restore(),
+            () => transactions?.restore(),
+          ]) {
+            try {
+              cleanup();
+            } catch {
+              observationUnknown = true;
+            }
+          }
+          try {
+            const requests = waits?.snapshot() ?? null;
+            const transactionPhases = transactions?.snapshot() ?? null;
+            console.info(
+              'D6 maximum original prepare waits (fixed counters)',
+              JSON.stringify({
+                status:
+                  observationUnknown ||
+                  requests?.status !== 'COMPLETE' ||
+                  transactionPhases?.status !== 'COMPLETE'
+                    ? 'UNKNOWN'
+                    : 'COMPLETE',
+                population: 2000,
+                startedAt,
+                finishedAt: new Date().toISOString(),
+                contributionMode:
+                  f.app.get<AppConfig>(appConfig.KEY).contributionSettlementMode ?? 'off',
+                requests,
+                transactions: transactionPhases,
+                jestProcessCpuMicroseconds: cpuBefore ? process.cpuUsage(cpuBefore) : null,
+                jestProcessEventLoop: loopBefore
+                  ? performance.eventLoopUtilization(loopBefore)
+                  : null,
+                interpretation:
+                  'Promise in-flight union and transaction bridge calls; process CPU/event loop. No PG execution or shared-worker attribution.',
+              }),
+            );
+          } catch {
+            try {
+              console.info(
+                'D6 maximum original prepare waits (fixed counters)',
+                '{"status":"UNKNOWN"}',
+              );
+            } catch {
+              /* Diagnostic output must not replace the original prepare outcome. */
+            }
+          }
+        }
       }
     });
     actor = {
@@ -773,7 +848,13 @@ describe('D6 classified ledger through real preparation and commit', () => {
     'measures classified worker and ledger at %i identities',
     async (population) => {
       const p = await createCapacitySource(population);
-      const prepared = await post(p.url + '/prepare', prepareCommand(p));
+      let prepared: Awaited<ReturnType<typeof post>>;
+      observeMaximumPrepare = population === 2000;
+      try {
+        prepared = await post(p.url + '/prepare', prepareCommand(p));
+      } finally {
+        observeMaximumPrepare = false;
+      }
       const submitted = await post(p.url + '/submit', {
         operationKey: f.key('scale_submit'),
         expectedDraftVersion: p.proof.expectedDraftVersion,

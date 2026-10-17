@@ -1,0 +1,114 @@
+--- a/scripts/check-cold-lint.ts
++++ b/scripts/check-cold-lint.ts
+@@ -4,7 +4,7 @@
+ import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+ import { ESLint } from 'eslint';
+ 
+-// Full, uncached lint through serial original CLI calls for the three original root globs.
++// Full, uncached lint through at most two original CLI calls for the three original root globs.
+ // Reporting remains partitioned; config, projects, rules, heap and window stay fixed.
+ export const COLD_LINT_PATTERNS = ['src/**/*.ts', 'test/**/*.ts', 'prisma/**/*.ts'];
+ export const COLD_LINT_BATCH_SIZE = 300;
+@@ -303,6 +303,7 @@
+   root: string,
+   files: readonly string[],
+   deadline: number,
++  outputBudget = { bytes: 0 },
+ ): Promise<ChildResult> {
+   requireCondition(Date.now() < deadline, 'WINDOW_EXCEEDED');
+   const cli = resolve(dirname(require.resolve('eslint/package.json')), 'bin/eslint.js');
+@@ -337,7 +338,8 @@
+     process.once('SIGTERM', interrupt);
+     child.stdout.on('data', (chunk: Buffer) => {
+       bytes += chunk.length;
+-      if (bytes > OUTPUT_LIMIT) {
++      outputBudget.bytes += chunk.length;
++      if (bytes > OUTPUT_LIMIT || outputBudget.bytes > OUTPUT_LIMIT) {
+         exceeded = true;
+         stop();
+       } else chunks.push(chunk);
+@@ -392,18 +394,28 @@
+   // The original globs avoid argument limits and retain the original CLI host.
+   // Validate the complete report against the independently sealed jurisdiction.
+   const children: ChildResult[] = [];
+-  let outputBytes = 0;
+-  for (const [index, pattern] of COLD_LINT_PATTERNS.entries()) {
++  const outputBudget = { bytes: 0 };
++  // Two original CLI processes fit the existing 4-vCPU/16-GiB executor.
++  // All three roots, each 6144-MiB heap and one 300-second deadline remain fixed.
++  // Wait for every started process to terminate, including a failed sibling.
++  const scan = async (index: number) => {
+     const selected = files.filter((file) => file.startsWith(ROOTS[index] + '/'));
+     assertInputUnchanged(before, inputSeal(root));
+     phase('CLI_START', selected.length);
+-    const child = await runCli(root, [pattern], deadline);
++    const child = await runCli(root, [COLD_LINT_PATTERNS[index]], deadline, outputBudget);
+     phase('CLI_END', selected.length, child);
+-    outputBytes += Buffer.byteLength(child.stdout, 'utf8');
+-    requireCondition(outputBytes <= OUTPUT_LIMIT, 'REPORT_LIMIT');
+-    // Reject a failed/missing/duplicate root before starting the next CLI.
+     coldLintReport(root, selected, child);
+-    children.push(child);
++    return child;
++  };
++  for (let offset = 0; offset < ROOTS.length; offset += 2) {
++    const indexes = Array.from(
++      { length: Math.min(2, ROOTS.length - offset) },
++      (_, index) => offset + index,
++    );
++    const results = await Promise.allSettled(indexes.map(scan));
++    const rejected = results.find((result) => result.status === 'rejected');
++    if (rejected?.status === 'rejected') throw rejected.reason;
++    for (const result of results) if (result.status === 'fulfilled') children.push(result.value);
+   }
+   const total = coldLintRootReports(root, files, children);
+   for (const [index, batch] of batches.entries()) {
+--- a/test/jest-e2e.config.ts
++++ b/test/jest-e2e.config.ts
+@@ -6,6 +6,15 @@
+ // 越过该预算(global-setup 的 assertConnectionCapacity 会拦下并给修复指令,但不该靠它兜底)。
+ // 空串按未设处理(|| 而非 ??):CI 里未展开的 env 表达式会传空串。
+ const DEFAULT_MAX_WORKERS = Math.min(8, Math.max(1, Math.floor(os.availableParallelism() / 2)));
++
++// The active launch envelope is 500 identities. Keep the original 2000-identity
++// historical capacity case byte-for-byte, reachable only through an explicit
++// positive CLI pattern. Its safety/offline neighbours remain in the default suite.
++export const HISTORICAL_E4_MAXIMUM_TEST =
++  'E4 maximum real sources with unchanged transaction and query budgets 2,000 identities / 10,000 segments / 50,000 slices yield 8,000 policy units without repeated awards';
++const escapedHistoricalMaximum = HISTORICAL_E4_MAXIMUM_TEST.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
++export const NATIVE_LAUNCH_REGULAR_TEST_PATTERN = `^(?!${escapedHistoricalMaximum}$)[\\s\\S]*$`;
++export const HISTORICAL_E4_MAXIMUM_TEST_PATTERN = `^${escapedHistoricalMaximum}$`;
+ 
+ // E2E 专用 Jest 配置。rootDir 指向项目根,便于 ts-jest 解析 src/ 与 test/ 的相对路径。
+ //
+@@ -18,6 +27,7 @@
+ const config: Config = {
+   rootDir: '..',
+   testRegex: '.*\\.e2e-spec\\.ts$',
++  testNamePattern: NATIVE_LAUNCH_REGULAR_TEST_PATTERN,
+   testPathIgnorePatterns: [
+     '/node_modules/',
+     '/dist/',
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -534,6 +534,7 @@
+         run: |
+           set -o pipefail
+           mkdir -p tmp
++          echo '::notice::Native launch scope: 500 identities / 2500 slices / 2000 units. Historical 2000-identity E4 capacity is NOT_VALIDATED; explicit manual/diagnostic positive selection only. Default and nightly E2E keep every other applicable test.'
+           pnpm test:e2e --shard=${{ matrix.shard }}/5 2>&1 | tee tmp/e2e.log
+           if grep -q 'failed to exit gracefully' tmp/e2e.log; then
+             echo "::warning::并行 e2e 出现 worker 强制退出(本仓已知基线,非硬失败)。若近期新增/改动了 spec,请核对 afterAll 是否 app.close();权威检测见 nightly-e2e-leaks.yml,本地复现:pnpm test:e2e:leaks"
+--- a/.github/workflows/activity-os-r5-e4-validation.yml
++++ b/.github/workflows/activity-os-r5-e4-validation.yml
+@@ -75,10 +75,6 @@
+         default: 'off'
+         type: choice
+         options: ['off', ordinary-1, ordinary-500, maximum]
+-  push:
+-    branches: [codex/activity-os-r5-e4-github-validation]
+-    paths: [.github/workflows/activity-os-r5-e4-validation.yml]
+-
+ permissions:
+   contents: read
+ 

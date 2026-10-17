@@ -1,3 +1,4 @@
+import { fingerprintMetricEnvelope } from './activity-metric-definition';
 import type { CurrentParticipationSegment } from '../attendances/participation-segment.facade';
 import {
   buildActivityTimeAllocationManifest,
@@ -654,4 +655,67 @@ describe('D4 integer rounding boundaries', () => {
     expectReason(() => roundTimeSettlementMilliseconds(2147483648000n, 1), 'scale_limit');
     expectReason(() => roundTimeSettlementMilliseconds(9007199254740993n, 60), 'scale_limit');
   });
+});
+
+describe('C3 frozen full bucket and original envelope', () => {
+  it.each(['automatic', 'manual-split', 'no-valid-source', 'manual-baseline-null'] as const)(
+    'preserves all buckets and the original hash: %s',
+    (name) => {
+      let value = input([first, second]);
+      if (name === 'manual-split') {
+        const row = segment('source-救援"', '2026-09-12T08:00:00.000Z', '2026-09-12T08:02:00.000Z');
+        value = input([row]);
+        value.allocations = [
+          allocation(row, frozen, [
+            {
+              categoryCode: 'volunteer_service',
+              intervalKindCode: 'service_segment',
+              startAt: '2026-09-12T08:00:00.000Z',
+              endAt: '2026-09-12T08:00:59.000Z',
+            },
+            {
+              categoryCode: 'training',
+              intervalKindCode: 'service_segment',
+              startAt: '2026-09-12T08:00:59.000Z',
+              endAt: '2026-09-12T08:02:00.000Z',
+            },
+          ]),
+        ];
+      } else if (name === 'no-valid-source') value = input([]);
+      else if (name === 'manual-baseline-null') {
+        const approved = policy({
+          evidence: { requiredSources: ['service_segment'], requireManualRecognition: true },
+        });
+        value = input([first]);
+        value.policies = [approved];
+        value.allocations = [
+          allocation(first, approved, [
+            {
+              categoryCode: 'organization',
+              intervalKindCode: 'service_segment',
+              startAt: first.checkInAt.toISOString(),
+              endAt: first.checkOutAt!.toISOString(),
+            },
+          ]),
+        ];
+      }
+      const result = buildTimeSettlementBuckets(value);
+      expect(result).toMatchSnapshot(name);
+      expect(result.bucketContentHash).toBe(
+        fingerprintMetricEnvelope(
+          'activity-time-settlement-buckets-v1',
+          result.buckets.map((bucket) => ({
+            ...bucket,
+            rawCalculatedMilliseconds: bucket.rawCalculatedMilliseconds?.toString() ?? null,
+            rawRecognizedMilliseconds: bucket.rawRecognizedMilliseconds.toString(),
+            sources: bucket.sources.map((source) => ({
+              ...source,
+              rawCalculatedMilliseconds: source.rawCalculatedMilliseconds?.toString() ?? null,
+              rawRecognizedMilliseconds: source.rawRecognizedMilliseconds.toString(),
+            })),
+          })),
+        ).definitionHash,
+      );
+    },
+  );
 });

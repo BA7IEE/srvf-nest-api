@@ -1,7 +1,11 @@
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { CurrentParticipationSegment } from '../attendances/participation-segment.facade';
-import { fingerprintMetricEnvelope, metricText } from './activity-metric-definition';
+import { metricText } from './activity-metric-definition';
+import {
+  fingerprintLocalTimeBucketManifest,
+  fingerprintLocalTimeSourceManifest,
+} from './activity-time-settlement-canonical';
 import {
   buildActivityTimeAllocationManifest,
   type ActivityTimeAllocationSliceInput,
@@ -22,6 +26,15 @@ export const TIME_SETTLEMENT_CATEGORIES = [
   'organization',
   'non_creditable',
 ] as const;
+const nativeDateGetTime: unknown = Object.getOwnPropertyDescriptor(
+  Date.prototype,
+  'getTime',
+)?.value;
+const nativeDateToISOString: unknown = Object.getOwnPropertyDescriptor(
+  Date.prototype,
+  'toISOString',
+)?.value;
+
 export const TIME_SETTLEMENT_LIMITS = Object.freeze({
   identities: 2000,
   segments: 10000,
@@ -141,7 +154,7 @@ export function timeSettlementSourceSetHash(
     ]),
   );
   if (latest.size !== latestAllocations.length) return reject('invalid');
-  return fingerprintMetricEnvelope('activity-time-settlement-sources-v1', {
+  return fingerprintLocalTimeSourceManifest({
     ...proof,
     population: [...population].sort((a, b) =>
       compareId(a.participationIdentityId, b.participationIdentityId),
@@ -178,11 +191,12 @@ function instant(value: string): Date {
 function milliseconds(
   slices: readonly ActivityTimeAllocationSliceInput[],
   category: TimePolicyCategory,
+  resolveInstant: (value: string) => number,
 ): bigint {
   let sum = 0n;
   for (const slice of slices) {
     if (slice.categoryCode === category)
-      sum += BigInt(instant(slice.endAt).getTime()) - BigInt(instant(slice.startAt).getTime());
+      sum += BigInt(resolveInstant(slice.endAt)) - BigInt(resolveInstant(slice.startAt));
   }
   return sum;
 }
@@ -271,6 +285,17 @@ export function buildTimeSettlementBuckets(input: {
   if (input.allocations.some((row) => !sourceIds.has(row.sourceSegmentId)))
     return reject('invalid');
 
+  // Only successfully parsed primitive strings are reused inside this build.
+  // Store milliseconds, so callers cannot mutate a cached Date instance.
+  const parsedInstants = new Map<string, number>();
+  const resolveInstant = (value: string): number => {
+    const old = typeof value === 'string' ? parsedInstants.get(value) : undefined;
+    if (old !== undefined) return old;
+    const parsed = instant(value).getTime();
+    if (typeof value === 'string') parsedInstants.set(value, parsed);
+    return parsed;
+  };
+
   const policies = new Map<string, ReturnType<typeof fingerprintTimePolicyVersion>>();
   for (const row of input.policies) {
     if (policies.has(row.id)) return reject('invalid');
@@ -284,6 +309,56 @@ export function buildTimeSettlementBuckets(input: {
     if (policy.definitionHash !== row.definitionHash) return reject('invalid');
     policies.set(row.id, policy);
   }
+
+  // Successful immutable baseline arrays are reused only during this build.
+  const automaticBaselines = new WeakMap<
+    ReturnType<typeof fingerprintTimePolicyVersion>,
+    Map<string, readonly ActivityTimeAllocationSliceInput[]>
+  >();
+  const resolveAutomaticBaseline = (
+    policy: ReturnType<typeof fingerprintTimePolicyVersion>,
+    source: CurrentParticipationSegment & { checkOutAt: Date },
+    allocation: TimeSettlementAllocation,
+  ) => {
+    const start = Object.getOwnPropertyDescriptor(source, 'checkInAt');
+    const end = Object.getOwnPropertyDescriptor(source, 'checkOutAt');
+    const role = Object.getOwnPropertyDescriptor(allocation, 'attendanceRoleCode');
+    const plainDate = (value: unknown): value is Date =>
+      value instanceof Date &&
+      Object.getPrototypeOf(value) === Date.prototype &&
+      Reflect.ownKeys(value).length === 0 &&
+      Object.getOwnPropertyDescriptor(Date.prototype, 'getTime')?.value === nativeDateGetTime &&
+      Object.getOwnPropertyDescriptor(Date.prototype, 'toISOString')?.value ===
+        nativeDateToISOString;
+    if (
+      !start ||
+      !('value' in start) ||
+      !end ||
+      !('value' in end) ||
+      !role ||
+      !('value' in role) ||
+      !plainDate(start.value) ||
+      !plainDate(end.value) ||
+      !(role.value === null || typeof role.value === 'string')
+    )
+      return automaticBaseline(policy, source, allocation);
+    const key = JSON.stringify([
+      Date.prototype.getTime.call(start.value),
+      Date.prototype.getTime.call(end.value),
+      role.value,
+    ]);
+    const previous = automaticBaselines.get(policy)?.get(key);
+    if (previous !== undefined) return previous;
+    const baseline = automaticBaseline(policy, source, allocation);
+    if (baseline !== null) {
+      const values =
+        automaticBaselines.get(policy) ??
+        new Map<string, readonly ActivityTimeAllocationSliceInput[]>();
+      values.set(key, baseline);
+      automaticBaselines.set(policy, values);
+    }
+    return baseline;
+  };
 
   type Resolved = {
     source: CurrentParticipationSegment;
@@ -334,8 +409,8 @@ export function buildTimeSettlementBuckets(input: {
     for (const slice of allocation.slices) {
       if (!TIME_SETTLEMENT_CATEGORIES.some((category) => category === slice.categoryCode))
         return reject('invalid');
-      instant(slice.startAt);
-      instant(slice.endAt);
+      resolveInstant(slice.startAt);
+      resolveInstant(slice.endAt);
     }
     assertAllocationSlicesWithinSource(
       allocation.slices,
@@ -348,7 +423,7 @@ export function buildTimeSettlementBuckets(input: {
       allocation.allocationHash
     )
       return reject('invalid');
-    const automatic = automaticBaseline(policy, { ...source, checkOutAt }, allocation);
+    const automatic = resolveAutomaticBaseline(policy, { ...source, checkOutAt }, allocation);
     if (allocation.recognitionModeCode === 'automatic') {
       if (
         allocation.manualReason !== null ||
@@ -405,8 +480,8 @@ export function buildTimeSettlementBuckets(input: {
           sourceSegmentId: source.id,
           sourceSegmentRevision: source.revision,
           rawCalculatedMilliseconds:
-            automatic === null ? null : milliseconds(automatic, categoryCode),
-          rawRecognizedMilliseconds: milliseconds(allocation.slices, categoryCode),
+            automatic === null ? null : milliseconds(automatic, categoryCode, resolveInstant),
+          rawRecognizedMilliseconds: milliseconds(allocation.slices, categoryCode, resolveInstant),
         }),
       );
       const rawRecognizedMilliseconds = sources.reduce(
@@ -462,8 +537,7 @@ export function buildTimeSettlementBuckets(input: {
     sourceCount > TIME_SETTLEMENT_LIMITS.sources
   )
     return reject('scale_limit');
-  const bucketContentHash = fingerprintMetricEnvelope(
-    'activity-time-settlement-buckets-v1',
+  const bucketContentHash = fingerprintLocalTimeBucketManifest(
     buckets.map((bucket) => ({
       ...bucket,
       rawCalculatedMilliseconds: bucket.rawCalculatedMilliseconds?.toString() ?? null,

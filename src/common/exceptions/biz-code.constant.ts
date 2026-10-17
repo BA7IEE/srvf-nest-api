@@ -2655,6 +2655,7 @@ export const BizCode = {
   // - 23001:NOT_FOUND
   // - 23002:唯一约束冲突(`(activityTypeCode, attendanceRoleCode)` ACTIVE pair 维度)
   // - 23010-23012:业务级输入校验(分值组合 / 活动类型字典 / 考勤角色字典)
+  // - 23013:E5 active 下旧规则管理只读(409);提示前端停止旧规则写入
   //
   // 不开的码(D6 v1.1 §5 明确):
   // - 23004~23009:无单字段唯一约束
@@ -2686,6 +2687,11 @@ export const BizCode = {
     code: 23012,
     message: '考勤角色字典 code 不存在或已停用',
     httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  CONTRIBUTION_RULE_READONLY: {
+    code: 23013,
+    message: '旧贡献值规则在正式贡献模式下只读',
+    httpStatus: HttpStatus.CONFLICT,
   },
 
   // sms 模块业务级(240xx + 241xx)。SMS 基础设施 T3 引入(2026-06-10)。

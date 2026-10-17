@@ -671,6 +671,25 @@ function discoverAll(entry: Omit<ClockCriticalColumn, 'writeSites'>): Discovered
 }
 
 describe('统一时间权威 —— 「写用库时钟、判用应用时钟」缺陷类的执行位', () => {
+  it('E4 两张贡献证明的 createdAt 仅作数据库留痕，不承担贡献日期判断', () => {
+    const discovered = parseDatabaseClockDefaultColumns(fs.readFileSync(SCHEMA, 'utf8'));
+    for (const model of [
+      'ActivitySettlementContributionRevision',
+      'ParticipantContributionEvaluation',
+    ])
+      expect(discovered).toContainEqual({ model, column: 'createdAt' });
+    expect(AUDIT_COLUMNS.has('createdAt')).toBe(true);
+    const sql = fs.readFileSync(
+      path.join(
+        REPO_ROOT,
+        'prisma/migrations/20261003000000_activity_contribution_settlement/migration.sql',
+      ),
+      'utf8',
+    );
+    expect(sql).toContain('NEW."createdAt" := CURRENT_TIMESTAMP');
+    expect(sql).toContain('CREATE TRIGGER e4_revision_database_clock');
+    expect(sql).toContain('CREATE TRIGGER e4_evaluation_database_clock');
+  });
   it('D3两张批准收据的createdAt明确沿既有审计列登记，业务判定不引入应用时钟', () => {
     const discovered = parseDatabaseClockDefaultColumns(fs.readFileSync(SCHEMA, 'utf8'));
     for (const model of [

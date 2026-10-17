@@ -4,7 +4,11 @@ import type { Config } from 'jest';
 // 与 jest-e2e.config.ts 解耦——单元测试不启动 NestJS / 不连库,反馈秒级。
 const config: Config = {
   rootDir: '..',
-  testRegex: ['src/.*(?<!\\.e2e)\\.spec\\.ts$', '/test/setup/test-run-scope\\.spec\\.ts$'],
+  testRegex: [
+    'src/.*(?<!\\.e2e)\\.spec\\.ts$',
+    '/test/setup/test-run-scope\\.spec\\.ts$',
+    '/test/helpers/(e4-assert143-lifecycle|e4-owned-migration-process)\\.spec\\.ts$',
+  ],
   testPathIgnorePatterns: [
     '/node_modules/',
     '/dist/',

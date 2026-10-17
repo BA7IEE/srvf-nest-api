@@ -3,12 +3,145 @@ import {
   canonicalize,
   computeSettlementContentHash,
   computeTimeSettlementContentHash,
+  computeContributionSettlementContentHash,
+  computeContributionCorrectionContentHash,
   decimalToCanonicalString,
   SETTLEMENT_CONTENT_SCHEMA_VERSION,
   type SettlementContentItem,
   type SettlementContentPayload,
 } from './settlement-content-hash';
 import { createHash } from 'node:crypto';
+
+describe('E4 native correction source domain', () => {
+  const input = {
+    originalContentHash: 'a'.repeat(64),
+    sourceKindCode: 'unchanged_time' as const,
+    effectiveTimeSettlementVersionId: 'time-basis-version',
+    correctionApplicationId: 'application-one',
+    postingBatchId: 'batch-one',
+    baseSettlementVersionId: 'base-one',
+    settlementVersionId: 'new-one',
+    previousContributionRevisionId: 'previous-proof-one',
+    correctionSourceSetHash: null,
+    contributionSelectionHash: 'b'.repeat(64),
+    contributionSourceSetHash: 'c'.repeat(64),
+    contributionEvaluationSetHash: 'd'.repeat(64),
+  };
+  it('hashes the actual current application/version and the exact predecessor without a D4 revision', () => {
+    const hash = computeContributionCorrectionContentHash(input);
+    expect(hash).toBe(
+      createHash('sha256')
+        .update(
+          canonicalize({
+            domain: 'activity-contribution-correction-content-v3',
+            schemaVersion: 3,
+            contributionRegimeCode: 'policy_v1',
+            ...input,
+          }),
+        )
+        .digest('hex'),
+    );
+    expect(
+      computeContributionCorrectionContentHash({ ...input, settlementVersionId: 'new-two' }),
+    ).not.toBe(hash);
+    expect(
+      computeContributionCorrectionContentHash({
+        ...input,
+        previousContributionRevisionId: 'other-proof',
+      }),
+    ).not.toBe(hash);
+  });
+  it('requires a current D7 source hash only for a changed-time source', () => {
+    expect(() =>
+      computeContributionCorrectionContentHash({
+        ...input,
+        sourceKindCode: 'correction_time_proof',
+      }),
+    ).toThrow();
+    expect(() =>
+      computeContributionCorrectionContentHash({
+        ...input,
+        correctionSourceSetHash: 'e'.repeat(64),
+      }),
+    ).toThrow();
+    expect(
+      computeContributionCorrectionContentHash({
+        ...input,
+        sourceKindCode: 'correction_time_proof',
+        correctionSourceSetHash: 'e'.repeat(64),
+      }),
+    ).toMatch(/^[0-9a-f]{64}$/u);
+  });
+  it('rejects missing application and noncanonical hashes rather than hashing an incomplete claim', () => {
+    expect(() =>
+      computeContributionCorrectionContentHash({ ...input, correctionApplicationId: '' }),
+    ).toThrow();
+    expect(() =>
+      computeContributionCorrectionContentHash({
+        ...input,
+        contributionEvaluationSetHash: 'D'.repeat(64),
+      }),
+    ).toThrow();
+  });
+});
+
+describe('E4 native V3 separately versioned fingerprint', () => {
+  const input = {
+    originalContentHash: 'a'.repeat(64),
+    bucketContentHash: 'b'.repeat(64),
+    sourceSetHash: 'c'.repeat(64),
+    contributionSelectionHash: 'd'.repeat(64),
+    contributionSourceSetHash: 'e'.repeat(64),
+    contributionEvaluationSetHash: 'f'.repeat(64),
+    contributionRegimeCode: 'policy_v1' as const,
+  };
+  it('binds all six facts and the frozen regime, while retaining V1 and V2', () => {
+    expect(SETTLEMENT_CONTENT_SCHEMA_VERSION).toBe(1);
+    const expected = canonicalize({
+      ...input,
+      domain: 'activity-contribution-settlement-content-v3',
+      schemaVersion: 3,
+    });
+    expect(computeContributionSettlementContentHash(input)).toBe(
+      createHash('sha256').update(expected).digest('hex'),
+    );
+    expect(computeContributionSettlementContentHash(input)).not.toBe(
+      computeTimeSettlementContentHash({
+        originalContentHash: input.originalContentHash,
+        bucketContentHash: input.bucketContentHash,
+        sourceSetHash: input.sourceSetHash,
+      }),
+    );
+  });
+  it.each([
+    'originalContentHash',
+    'bucketContentHash',
+    'sourceSetHash',
+    'contributionSelectionHash',
+    'contributionSourceSetHash',
+    'contributionEvaluationSetHash',
+  ] as const)('%s independently fences content', (field) => {
+    expect(
+      computeContributionSettlementContentHash({ ...input, [field]: '0'.repeat(64) }),
+    ).not.toBe(computeContributionSettlementContentHash(input));
+    expect(() =>
+      computeContributionSettlementContentHash({ ...input, [field]: 'invalid' }),
+    ).toThrow(TypeError);
+  });
+  it('does not let a caller silently downgrade a native fingerprint', () => {
+    const invalid = { ...input };
+    Reflect.set(invalid, 'contributionRegimeCode', 'legacy');
+    expect(() => computeContributionSettlementContentHash(invalid)).toThrow(TypeError);
+  });
+  it('is independent of object insertion order, not of any source-set fact', () => {
+    const reordered = { ...input };
+    for (const key of Object.keys(input)) Reflect.deleteProperty(reordered, key);
+    for (const [key, value] of Object.entries(input).reverse()) Reflect.set(reordered, key, value);
+    expect(computeContributionSettlementContentHash(reordered)).toBe(
+      computeContributionSettlementContentHash(input),
+    );
+  });
+});
 
 describe('D4 separately versioned content fingerprint', () => {
   const input = {

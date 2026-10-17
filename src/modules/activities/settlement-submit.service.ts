@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
-import { Prisma } from '@prisma/client';
+import { Prisma, type ActivitySettlementContributionRevision } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -12,6 +12,7 @@ import { SettlementSubmitAuditRecorder } from './settlement-submit-audit-recorde
 import {
   computeSettlementContentHash,
   computeTimeSettlementContentHash,
+  computeContributionSettlementContentHash,
   decimalToCanonicalString,
   SETTLEMENT_CONTENT_SCHEMA_VERSION,
   type CanonicalValue,
@@ -22,6 +23,7 @@ import {
   type SettlementSubmissionFacts,
   type SettlementSubmissionRejection,
 } from './settlement-submission-validator';
+import { frozenContributionRegime } from './activity-contribution-settlement.service';
 
 // ===== 活动改造 v1.1 第 2 批第三刀:提交不可变 SettlementVersion(合同 §5.10)=====
 //
@@ -144,6 +146,7 @@ export interface SettlementSubmitInput {
 export interface TimeSettlementSubmissionContext {
   readonly bucketContentHash: string;
   readonly sourceSetHash: string;
+  readonly contributionProof?: ActivitySettlementContributionRevision;
   reauthorize(): Promise<CurrentUserPayload>;
   copyPrepared(
     tx: PrismaTx,
@@ -197,6 +200,8 @@ interface DraftVersionRow {
   personCount: number;
   sessionParticipationCount: number;
   serviceSegmentCount: number;
+  contributionRegimeCode?: string;
+  contentHash?: string;
 }
 
 /** 五条判据 → 具名码。**一一对应,没有一条落到兜底码上**(那等于没具名)。 */
@@ -328,6 +333,8 @@ export class SettlementSubmitService {
         personCount: true,
         sessionParticipationCount: true,
         serviceSegmentCount: true,
+        contributionRegimeCode: true,
+        contentHash: true,
       },
     });
     if (draft === null) throw new BizException(BizCode.SETTLEMENT_SUBMIT_DRAFT_MISSING);
@@ -416,6 +423,7 @@ export class SettlementSubmitService {
       evidenceSealId: string;
       sealRevision: number;
       draft: DraftVersionRow;
+      contributionProof?: ActivitySettlementContributionRevision;
     },
   ): Promise<string> {
     const rows = await tx.participantSettlementResultRevision.findMany({
@@ -436,6 +444,21 @@ export class SettlementSubmitService {
       orderBy: { participationIdentityId: 'asc' },
     });
 
+    const contributionTotals = input.contributionProof
+      ? await tx.participantContributionEvaluation.groupBy({
+          by: ['participationIdentityId'],
+          where: {
+            contributionRevisionId: input.contributionProof.id,
+            activityId: input.activityId,
+            settlementVersionId: input.draftVersionId,
+          },
+          _sum: { calculatedPoints: true, recognizedPoints: true },
+        })
+      : [];
+    const contributionByIdentity = new Map(
+      contributionTotals.map((row) => [row.participationIdentityId, row._sum]),
+    );
+
     const items: SettlementContentItem[] = rows.map((row) => ({
       participationIdentityId: row.participationIdentityId,
       resultCode: row.resultCode,
@@ -445,9 +468,23 @@ export class SettlementSubmitService {
       // 🔴 四个小数列一律经 decimalToCanonicalString 变成定标度文本 ——
       //    `Number(decimal)` 那条路被 SettlementContentItem 的 string 类型挡在门外。
       recognizedServiceHours: decimalToCanonicalString(row.recognizedServiceHours),
-      recognizedContributionPoints: decimalToCanonicalString(row.recognizedContributionPoints),
+      recognizedContributionPoints: input.contributionProof
+        ? decimalToCanonicalString(
+            row.resultCode === 'present'
+              ? (contributionByIdentity.get(row.participationIdentityId)?.recognizedPoints ??
+                  '0.00')
+              : '0.00',
+          )
+        : decimalToCanonicalString(row.recognizedContributionPoints),
       calculatedServiceHours: decimalToCanonicalString(row.calculatedServiceHours),
-      calculatedContributionPoints: decimalToCanonicalString(row.calculatedContributionPoints),
+      calculatedContributionPoints: input.contributionProof
+        ? decimalToCanonicalString(
+            row.resultCode === 'present'
+              ? (contributionByIdentity.get(row.participationIdentityId)?.calculatedPoints ??
+                  '0.00')
+              : '0.00',
+          )
+        : decimalToCanonicalString(row.calculatedContributionPoints),
       adjustmentReason: row.adjustmentReason,
     }));
 
@@ -523,8 +560,27 @@ export class SettlementSubmitService {
     tx: PrismaTx,
     draftVersionId: string,
     targetVersionId: string,
+    contributionProof?: ActivitySettlementContributionRevision,
   ): Promise<number> {
     const columns = Prisma.raw(RESULT_ROW_TARGET_COLUMNS.map((name) => `"${name}"`).join(', '));
+    if (contributionProof)
+      return await tx.$executeRaw`
+      INSERT INTO "ParticipantSettlementResultRevision" (${columns})
+      SELECT gen_random_uuid()::text, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ${targetVersionId},
+        src."participationIdentityId", src.revision + 1, src."resultCode", src."lateFlag", src."earlyLeaveFlag", src."exceptionFlagsJson",
+        src."recognizedServiceHours", CASE WHEN src."resultCode" = 'present' THEN coalesce(c.recognized, 0) ELSE 0 END,
+        src."calculatedServiceHours", CASE WHEN src."resultCode" = 'present' THEN coalesce(c.calculated, 0) ELSE 0 END,
+        src."adjustmentReason", src."statusCode", src.id, src."correctionRequestId"
+      FROM "ParticipantSettlementResultRevision" src
+      LEFT JOIN (
+        SELECT e."participationIdentityId", sum(e."recognizedPoints") AS recognized, sum(e."calculatedPoints") AS calculated
+        FROM "ParticipantContributionEvaluation" e
+        WHERE e."contributionRevisionId" = ${contributionProof.id} AND e."activityId" = ${contributionProof.activityId}
+          AND e."settlementVersionId" = ${draftVersionId}
+        GROUP BY e."participationIdentityId"
+      ) c ON c."participationIdentityId" = src."participationIdentityId"
+      WHERE src."settlementVersionId" = ${draftVersionId}
+    `;
     return await tx.$executeRaw`
       INSERT INTO "ParticipantSettlementResultRevision" (${columns})
       SELECT
@@ -683,6 +739,26 @@ export class SettlementSubmitService {
     // 不是重放 ⇒ 这是一次**真正的新提交**,状态闸在这里落下。
     this.assertRunDrafting(run);
     const draft = await this.readDraftVersion(tx, run.id);
+    const regime = frozenContributionRegime(draft.contributionRegimeCode);
+    const contribution = classified?.contributionProof;
+    if (
+      regime === 'policy_v1' &&
+      (!contribution ||
+        contribution.kindCode !== 'draft' ||
+        contribution.regimeCode !== 'policy_v1' ||
+        contribution.sourceKindCode !== 'time_revision' ||
+        contribution.activityId !== activityId ||
+        contribution.settlementRunId !== run.id ||
+        contribution.settlementVersionId !== draft.id ||
+        contribution.evidenceSealId !== draft.evidenceSealId ||
+        contribution.evidenceRevision !== draft.evidenceRevision ||
+        contribution.populationRevision !== draft.populationRevision ||
+        contribution.workflowRevision !== draft.workflowRevision ||
+        contribution.draftContentHash !== draft.contentHash)
+    )
+      throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+    if (regime === 'legacy' && contribution)
+      throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_INVALID);
 
     // ③ EvidenceSeal 复验。
     const seal = await this.recheckEvidenceSeal(tx, activityId, draft, activity.workflowRevision);
@@ -721,15 +797,27 @@ export class SettlementSubmitService {
       evidenceSealId: seal.id,
       sealRevision: seal.sealRevision,
       draft,
+      contributionProof: contribution,
     });
 
-    const contentHash = classified
-      ? computeTimeSettlementContentHash({
-          originalContentHash,
-          bucketContentHash: classified.bucketContentHash,
-          sourceSetHash: classified.sourceSetHash,
-        })
-      : originalContentHash;
+    const contentHash =
+      classified && contribution
+        ? computeContributionSettlementContentHash({
+            originalContentHash,
+            bucketContentHash: classified.bucketContentHash,
+            sourceSetHash: classified.sourceSetHash,
+            contributionSelectionHash: contribution.selectionRevisionHash,
+            contributionSourceSetHash: contribution.sourceSetHash,
+            contributionEvaluationSetHash: contribution.evaluationSetHash,
+            contributionRegimeCode: 'policy_v1',
+          })
+        : classified
+          ? computeTimeSettlementContentHash({
+              originalContentHash,
+              bucketContentHash: classified.bucketContentHash,
+              sourceSetHash: classified.sourceSetHash,
+            })
+          : originalContentHash;
     if (classified) currentUser = await classified.reauthorize();
 
     // ⑦ 写不可变版本 + 结果行快照。
@@ -761,7 +849,7 @@ export class SettlementSubmitService {
       requestHash,
     });
 
-    const resultRowCount = await this.copyResultRows(tx, draft.id, created.id);
+    const resultRowCount = await this.copyResultRows(tx, draft.id, created.id, contribution);
     // 固化的行数必须与刚刚验过的项数逐一对上 —— 对不上说明"验的"和"写的"不是
     // 同一批事实(例如有并发绕过锁改了草稿)。fail-closed,不留一个半截版本。
     if (resultRowCount !== facts.resultRowCount) {
@@ -896,6 +984,9 @@ export class SettlementSubmitService {
           createdByUserId: input.createdByUserId,
           submittedAt: new Date(),
           statusCode: 'submitted',
+          ...(input.draft.contributionRegimeCode === 'policy_v1'
+            ? { contributionRegimeCode: 'policy_v1' }
+            : {}),
           priorVersionId: input.priorVersionId,
           operationKey: input.operationKey,
           requestHash: input.requestHash,

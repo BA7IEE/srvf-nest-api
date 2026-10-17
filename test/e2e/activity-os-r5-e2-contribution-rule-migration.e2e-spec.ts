@@ -17,6 +17,8 @@ import { deriveTestDbName } from '../setup/worktree-db';
 
 import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
 
+const CURRENT_MIGRATION_COUNT = 146;
+
 const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_E2_W98 === '1');
 
 const MIGRATION = '20260924180000_activity_os_r5_e2_contribution_rule_conversion';
@@ -158,7 +160,7 @@ describe('E2 additive conversion receipt migration', () => {
     await recreate();
     deploy();
     expect(sql('SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL')).toBe(
-      '136',
+      String(CURRENT_MIGRATION_COUNT),
     );
     expect(
       sql(`SELECT EXISTS (SELECT 1 FROM information_schema.columns
@@ -174,7 +176,7 @@ describe('E2 additive conversion receipt migration', () => {
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    expect(names).toHaveLength(136);
+    expect(names).toHaveLength(CURRENT_MIGRATION_COUNT);
     expect(names[131]).toBe(MIGRATION);
     expect(
       sql(`SELECT migration_name || chr(9) || checksum FROM "_prisma_migrations"

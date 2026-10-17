@@ -118,3 +118,38 @@ describe('ActivityTemplate definition canonical/hash (Activity OS R1 / A3)', () 
     expect(() => canonicalizeActivityTemplateDefinition({ accessorArray })).toThrow(TypeError);
   });
 });
+
+describe('Canonical array membership preserves the closed JSON contract', () => {
+  it('retains the prior nested-array bytes and SHA', () => {
+    const value = {
+      schemaVersion: 1,
+      definition: { z: ['中文', { b: false, a: null }, []], a: [0, 1, 2] },
+    };
+    expect(buildActivityTemplateDefinitionCanonicalText(value)).toBe(
+      '{"definition":{"a":[0,1,2],"z":["中文",{"a":null,"b":false},[]]},"schemaVersion":1}',
+    );
+    expect(computeActivityTemplateDefinitionHash(value)).toBe(
+      'f748487722d4fad0589ed35783662c518b89b524ef7a6cb3c5f008e4e313ea8a',
+    );
+  });
+  it('rejects extra own names and array accessors without evaluating them', () => {
+    const hidden = [1, 2];
+    Object.defineProperty(hidden, 'extra', { value: 3 });
+    expect(() => canonicalizeActivityTemplateDefinition({ items: hidden })).toThrow(
+      'must not contain non-JSON properties',
+    );
+    let reads = 0;
+    const accessor: unknown[] = [];
+    Object.defineProperty(accessor, '0', {
+      enumerable: true,
+      get: () => {
+        reads++;
+        return 1;
+      },
+    });
+    expect(() => canonicalizeActivityTemplateDefinition({ items: accessor })).toThrow(
+      'must be a data property',
+    );
+    expect(reads).toBe(0);
+  });
+});

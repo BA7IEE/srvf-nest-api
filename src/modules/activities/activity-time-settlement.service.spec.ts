@@ -21,6 +21,8 @@ import {
 } from './activity-time-settlement-command';
 import { ActivityTimeSettlementQueryService } from './activity-time-settlement-query.service';
 import { ActivityTimeSettlementService } from './activity-time-settlement.service';
+import { ActivityContributionSettlementService } from './activity-contribution-settlement.service';
+import type { TimeSettlementBucket } from './activity-time-settlement-policy';
 import {
   SettlementSubmitService,
   SETTLEMENT_SUBMIT_TX_TIMEOUT_MS,
@@ -118,12 +120,19 @@ describe('D4 write orchestration and replay safety', () => {
   const allocations = { recognizeSealedDraftInTx: jest.fn() };
   const settlements = { submitTimeSettlementInTx: jest.fn() };
   const audit = { log: jest.fn() };
+  const contributions = {
+    assertNativeWriteAllowed: jest.fn(),
+    prepareTimeInTx: jest.fn(),
+    assertNewNativeActivityInTx: jest.fn(),
+    usesLaunchAdmission: false,
+  };
   const transaction = jest.fn(
     async (work: (client: Prisma.TransactionClient) => Promise<unknown>) => work(tx),
   );
 
   beforeEach(async () => {
     jest.resetAllMocks();
+    contributions.usesLaunchAdmission = false;
     config.activityV11Workflow.enabled = true;
     config.activityV11Workflow.readonlyMaintenance = false;
     // No connection is opened. All reachable delegates are mocked; the actual generated client
@@ -148,6 +157,7 @@ describe('D4 write orchestration and replay safety', () => {
         { provide: ActivityTimeAllocationService, useValue: allocations },
         { provide: SettlementSubmitService, useValue: settlements },
         { provide: ActivityTimeSettlementAuditRecorder, useValue: audit },
+        { provide: ActivityContributionSettlementService, useValue: contributions },
       ],
     }).compile();
     service = module.get(ActivityTimeSettlementService);
@@ -384,5 +394,423 @@ describe('D4 write orchestration and replay safety', () => {
     const failure = new Error('connection unavailable');
     transaction.mockRejectedValueOnce(failure);
     await expect(service.prepare(activityId, prepare, actor, meta)).rejects.toBe(failure);
+  });
+
+  function freshPrepare(regime = 'policy_v1') {
+    const revision = { ...parent, bucketCount: 0 };
+    const response = { ...result, bucketCount: 0 };
+    queries.readDraftContextInTx.mockResolvedValue({
+      runId: 'run',
+      runStatusCode: 'drafting',
+      currentDraftVersion: 1,
+      currentSubmittedVersion: null,
+      draftId: 'version',
+      draftVersion: 1,
+      evidenceSealId: 'seal',
+      evidenceRevision: 0,
+      populationRevision: 0,
+      workflowRevision: 0,
+      draftContentHash: 'a'.repeat(64),
+      sealCurrent: true,
+      contributionRegimeCode: regime,
+    });
+    queries.readSourceSetInTx.mockResolvedValue({
+      population: [],
+      segments: [],
+      latest: [],
+      sourceSetHash: 'c'.repeat(64),
+    });
+    queries.evaluateInTx.mockResolvedValue({
+      bucketContentHash: 'b'.repeat(64),
+      bucketCount: 0,
+      sourceCount: 0,
+      buckets: [],
+    });
+    jest.spyOn(tx.activitySettlementTimeRevision, 'findFirst').mockResolvedValue(null);
+    const createRevision = jest
+      .spyOn(tx.activitySettlementTimeRevision, 'create')
+      .mockResolvedValue(revision);
+    const createReceipt = jest
+      .spyOn(tx.activitySettlementTimeCommandReceipt, 'create')
+      .mockResolvedValue({
+        id: 'fresh-receipt',
+        actorUserId: actor.id,
+        activityId,
+        operationCode: TIME_SETTLEMENT_PREPARE_OPERATION,
+        operationKey: prepare.operationKey,
+        requestHash: timeSettlementPrepareRequestHash(
+          activityId,
+          actor.id,
+          parseTimeSettlementPrepareCommand(prepare),
+        ),
+        timeRevisionId: revision.id,
+        resultJson: response,
+        createdAt: revision.createdAt,
+      });
+    const executeRaw = jest.spyOn(tx, '$executeRaw').mockResolvedValue(0);
+    const proof = { id: 'contribution-revision' };
+    contributions.prepareTimeInTx.mockResolvedValue(regime === 'policy_v1' ? proof : null);
+    return { response, revision, createRevision, createReceipt, executeRaw, proof };
+  }
+
+  const nativeBarrier =
+    'SET CONSTRAINTS public.astr_parent_complete_guard, public.e4_revision_complete_guard IMMEDIATE';
+  function statement(query: TemplateStringsArray | Prisma.Sql) {
+    return ('sql' in query ? query.sql : query.join('')).replace(/\s+/gu, ' ').trim();
+  }
+
+  it('keeps all SQL-selected bucket/source values and shared IDs while projecting each JSON payload', async () => {
+    const sources = [
+      {
+        allocationRevisionId: 'allocation-a',
+        sourceSegmentId: 'segment-a',
+        sourceSegmentRevision: 2,
+        rawCalculatedMilliseconds: null,
+        rawRecognizedMilliseconds: 9007199254740993n,
+      },
+      {
+        allocationRevisionId: 'allocation-b',
+        sourceSegmentId: 'segment-b',
+        sourceSegmentRevision: 1,
+        rawCalculatedMilliseconds: 3000n,
+        rawRecognizedMilliseconds: 2000n,
+      },
+    ];
+    const buckets: TimeSettlementBucket[] = [
+      {
+        participationIdentityId: 'identity-a',
+        categoryCode: 'volunteer_service',
+        calculatedSeconds: null,
+        recognizedSeconds: 3,
+        rawCalculatedMilliseconds: null,
+        rawRecognizedMilliseconds: 9007199254742993n,
+        timePolicyVersionId: 'policy',
+        definitionHash: 'd'.repeat(64),
+        evaluatorVersion: 1,
+        quantumSeconds: 1,
+        adjustmentReason: [{ allocationRevisionId: 'allocation-a', manualReason: 'approved' }],
+        emptyReasonCode: null,
+        sources,
+      },
+      {
+        participationIdentityId: 'identity-b',
+        categoryCode: 'training',
+        calculatedSeconds: 0,
+        recognizedSeconds: 0,
+        rawCalculatedMilliseconds: 0n,
+        rawRecognizedMilliseconds: 0n,
+        timePolicyVersionId: null,
+        definitionHash: null,
+        evaluatorVersion: null,
+        quantumSeconds: null,
+        adjustmentReason: null,
+        emptyReasonCode: 'no_valid_segment',
+        sources: [],
+      },
+    ];
+    const execute = jest.spyOn(tx, '$executeRaw').mockResolvedValueOnce(2).mockResolvedValueOnce(2);
+    const insert = Reflect.get(service, 'insertBuckets') as (
+      client: Prisma.TransactionClient,
+      revision: ActivitySettlementTimeRevision,
+      rows: readonly TimeSettlementBucket[],
+    ) => Promise<void>;
+    await insert.call(service, tx, { ...parent, bucketCount: 2, sourceCount: 2 }, buckets);
+    expect(execute).toHaveBeenCalledTimes(2);
+    const first = JSON.parse(execute.mock.calls[0].at(-1) as string) as Record<string, unknown>[];
+    const second = JSON.parse(execute.mock.calls[1].at(-1) as string) as {
+      id: string;
+      sources: Record<string, unknown>[];
+    }[];
+    expect(new Set(first.map((row) => row.id)).size).toBe(2);
+    expect(first).toEqual(
+      buckets.map(({ sources: _sources, ...row }, index) => {
+        void _sources;
+        return {
+          ...row,
+          id: first[index].id,
+          rawCalculatedMilliseconds: row.rawCalculatedMilliseconds?.toString() ?? null,
+          rawRecognizedMilliseconds: row.rawRecognizedMilliseconds.toString(),
+        };
+      }),
+    );
+    expect(second).toEqual(
+      buckets.map((row, index) => ({
+        id: first[index].id,
+        sources: row.sources.map((source) => ({
+          ...source,
+          rawCalculatedMilliseconds: source.rawCalculatedMilliseconds?.toString() ?? null,
+          rawRecognizedMilliseconds: source.rawRecognizedMilliseconds.toString(),
+        })),
+      })),
+    );
+    expect(statement(execute.mock.calls[0][0])).toContain(
+      'INSERT INTO "ParticipantSettlementTimeBucket"',
+    );
+    expect(statement(execute.mock.calls[1][0])).toContain(
+      'INSERT INTO "ParticipantSettlementTimeBucketSource"',
+    );
+    expect(buckets[0].sources).toBe(sources);
+    expect(sources[0].rawRecognizedMilliseconds).toBe(9007199254740993n);
+  });
+
+  it('still rejects inconsistent inserted bucket/source counts after both original statements', async () => {
+    const execute = jest.spyOn(tx, '$executeRaw').mockResolvedValueOnce(0).mockResolvedValueOnce(0);
+    const insert = Reflect.get(service, 'insertBuckets') as (
+      client: Prisma.TransactionClient,
+      revision: ActivitySettlementTimeRevision,
+      rows: readonly TimeSettlementBucket[],
+    ) => Promise<void>;
+    await expect(
+      insert.call(service, tx, { ...parent, bucketCount: 1, sourceCount: 0 }, []),
+    ).rejects.toThrow(new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_INVALID));
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('still completes serialization before any write when a source cannot be encoded', async () => {
+    const source = {
+      allocationRevisionId: 'allocation',
+      sourceSegmentId: 'segment',
+      sourceSegmentRevision: 1,
+      rawCalculatedMilliseconds: 1n,
+      rawRecognizedMilliseconds: 1n,
+      unsupported: 1n,
+    };
+    const bucket: TimeSettlementBucket = {
+      participationIdentityId: 'identity',
+      categoryCode: 'training',
+      calculatedSeconds: 0,
+      recognizedSeconds: 0,
+      rawCalculatedMilliseconds: 1n,
+      rawRecognizedMilliseconds: 1n,
+      timePolicyVersionId: null,
+      definitionHash: null,
+      evaluatorVersion: null,
+      quantumSeconds: null,
+      adjustmentReason: null,
+      emptyReasonCode: null,
+      sources: [source],
+    };
+    const execute = jest.spyOn(tx, '$executeRaw').mockResolvedValue(1);
+    const insert = Reflect.get(service, 'insertBuckets') as (
+      client: Prisma.TransactionClient,
+      revision: ActivitySettlementTimeRevision,
+      rows: readonly TimeSettlementBucket[],
+    ) => Promise<void>;
+    await expect(
+      insert.call(service, tx, { ...parent, bucketCount: 1, sourceCount: 1 }, [bucket]),
+    ).rejects.toThrow(TypeError);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('fresh native prepare writes facts, current receipt and audit before its two-name barrier and final authorization', async () => {
+    const f = freshPrepare();
+    await expect(service.prepare(activityId, prepare, actor, meta)).resolves.toEqual(f.response);
+    expect(f.executeRaw).toHaveBeenCalledTimes(3);
+    expect(statement(f.executeRaw.mock.calls[2][0])).toBe(nativeBarrier);
+    const barrierOrder = f.executeRaw.mock.invocationCallOrder[2];
+    expect(f.createRevision.mock.invocationCallOrder[0]).toBeLessThan(barrierOrder);
+    expect(contributions.prepareTimeInTx.mock.invocationCallOrder[0]).toBeLessThan(barrierOrder);
+    expect(contributions.prepareTimeInTx).toHaveBeenCalledWith(
+      tx,
+      f.revision,
+      'policy_v1',
+      expect.objectContaining({ operationKey: prepare.operationKey }),
+      expect.any(Function),
+    );
+    expect(f.createReceipt.mock.invocationCallOrder[0]).toBeLessThan(barrierOrder);
+    expect(audit.log).toHaveBeenCalledWith(
+      tx,
+      actor,
+      meta,
+      TIME_SETTLEMENT_PREPARE_OPERATION,
+      f.response,
+      false,
+      f.proof,
+    );
+    expect(audit.log.mock.invocationCallOrder[0]).toBeLessThan(barrierOrder);
+    expect(access.authorize.mock.invocationCallOrder.at(-1)).toBeGreaterThan(barrierOrder);
+    expect(access.authorize.mock.calls.every((args) => args[0] === tx)).toBe(true);
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+      maxWait: 2000,
+      timeout: 30000,
+    });
+  });
+
+  it('legacy fresh prepare preserves its existing writes without a native barrier', async () => {
+    const f = freshPrepare('legacy');
+    await expect(service.prepare(activityId, prepare, actor, meta)).resolves.toEqual(f.response);
+    expect(f.executeRaw).toHaveBeenCalledTimes(2);
+    expect(
+      f.executeRaw.mock.calls.some((args) => statement(args[0]).startsWith('SET CONSTRAINTS')),
+    ).toBe(false);
+    expect(contributions.assertNativeWriteAllowed).not.toHaveBeenCalled();
+  });
+
+  it('replay returns early without a barrier, contribution recalculation or new receipt', async () => {
+    const f = freshPrepare();
+    const saved = receipt();
+    await expect(service.prepare(activityId, prepare, actor, meta)).resolves.toEqual(
+      saved.resultJson,
+    );
+    expect(f.executeRaw).not.toHaveBeenCalled();
+    expect(f.createReceipt).not.toHaveBeenCalled();
+    expect(contributions.prepareTimeInTx).not.toHaveBeenCalled();
+  });
+
+  it('equal contribution proof reuse still writes this request receipt and audit before the barrier', async () => {
+    const f = freshPrepare();
+    const reused = { id: 'existing-equivalent-contribution-root' };
+    contributions.prepareTimeInTx.mockResolvedValue(reused);
+    await expect(service.prepare(activityId, prepare, actor, meta)).resolves.toEqual(f.response);
+    expect(f.createReceipt).toHaveBeenCalledTimes(1);
+    expect(audit.log).toHaveBeenCalledWith(
+      tx,
+      actor,
+      meta,
+      TIME_SETTLEMENT_PREPARE_OPERATION,
+      f.response,
+      false,
+      reused,
+    );
+    expect(statement(f.executeRaw.mock.calls[2][0])).toBe(nativeBarrier);
+  });
+
+  it('propagates the original barrier failure without authorizing or returning success afterwards', async () => {
+    const f = freshPrepare();
+    const failure = new Error('fixed native barrier rejection');
+    f.executeRaw.mockResolvedValueOnce(0).mockResolvedValueOnce(0).mockRejectedValueOnce(failure);
+    await expect(service.prepare(activityId, prepare, actor, meta)).rejects.toBe(failure);
+    expect(access.authorize.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      f.executeRaw.mock.invocationCallOrder[2],
+    );
+    expect(f.executeRaw).toHaveBeenCalledTimes(3);
+  });
+
+  it('retains the final qualification check after the native barrier', async () => {
+    const f = freshPrepare();
+    let crossed = false;
+    f.executeRaw.mockImplementation((query) => {
+      if (statement(query) === nativeBarrier) crossed = true;
+      return Promise.resolve(0) as Prisma.PrismaPromise<number>;
+    });
+    access.authorize.mockImplementation(() => {
+      if (crossed) return Promise.reject(new BizException(BizCode.FORBIDDEN));
+      return Promise.resolve({ actor });
+    });
+    await expect(service.prepare(activityId, prepare, actor, meta)).rejects.toThrow(
+      new BizException(BizCode.FORBIDDEN),
+    );
+    expect(crossed).toBe(true);
+    expect(access.authorize.mock.invocationCallOrder.at(-1)).toBeGreaterThan(
+      f.executeRaw.mock.invocationCallOrder[2],
+    );
+    expect(f.createReceipt).toHaveBeenCalledTimes(1);
+    expect(audit.log).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not resolve prepare until the transaction owner has completed its actual commit await', async () => {
+    const f = freshPrepare();
+    let callbackFinished = () => {};
+    let finishCommit = () => {};
+    const callbackReady = new Promise<void>((resolve) => {
+      callbackFinished = resolve;
+    });
+    const commitReady = new Promise<void>((resolve) => {
+      finishCommit = resolve;
+    });
+    transaction.mockImplementation(async (work) => {
+      const response = await work(tx);
+      callbackFinished();
+      await commitReady;
+      return response;
+    });
+    const pending = service.prepare(activityId, prepare, actor, meta);
+    let resolved = false;
+    void pending.then(() => {
+      resolved = true;
+    });
+    await callbackReady;
+    try {
+      expect(resolved).toBe(false);
+      expect(statement(f.executeRaw.mock.calls[2][0])).toBe(nativeBarrier);
+    } finally {
+      finishCommit();
+    }
+    await expect(pending).resolves.toEqual(f.response);
+  });
+
+  it('does not convert an error from transaction commit into a saved receipt success', async () => {
+    const f = freshPrepare();
+    const failure = new Error('fixed commit acknowledgement failure');
+    transaction.mockImplementation(async (work) => {
+      await work(tx);
+      throw failure;
+    });
+    await expect(service.prepare(activityId, prepare, actor, meta)).rejects.toBe(failure);
+    expect(f.createReceipt).toHaveBeenCalledTimes(1);
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(f.executeRaw).toHaveBeenCalledTimes(3);
+  });
+
+  it('rejects a new active operation before source evaluation, facts, receipt or audit', async () => {
+    const f = freshPrepare();
+    contributions.usesLaunchAdmission = true;
+    contributions.assertNewNativeActivityInTx.mockRejectedValue(
+      new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SCALE_LIMIT),
+    );
+    await expect(service.prepare(activityId, prepare, actor, meta)).rejects.toMatchObject({
+      biz: BizCode.ACTIVITY_TIME_SETTLEMENT_SCALE_LIMIT,
+    });
+    expect(queries.readSourceSetInTx).not.toHaveBeenCalled();
+    expect(queries.evaluateInTx).not.toHaveBeenCalled();
+    expect(f.createRevision).not.toHaveBeenCalled();
+    expect(f.createReceipt).not.toHaveBeenCalled();
+    expect(f.executeRaw).not.toHaveBeenCalled();
+    expect(audit.log).not.toHaveBeenCalled();
+  });
+
+  it('counts all locked identities even when the included population and sources are empty', async () => {
+    const f = freshPrepare();
+    contributions.usesLaunchAdmission = true;
+    const raw = jest.spyOn(tx, '$queryRaw');
+    for (let index = 0; index < 5; index++) raw.mockResolvedValueOnce([{ id: 'run' }]);
+    raw.mockResolvedValueOnce(
+      Array.from({ length: 501 }, (_, index) => ({ id: `excluded-${index}` })),
+    );
+    await expect(service.prepare(activityId, prepare, actor, meta)).rejects.toMatchObject({
+      biz: BizCode.ACTIVITY_TIME_SETTLEMENT_SCALE_LIMIT,
+    });
+    expect(queries.evaluateInTx).not.toHaveBeenCalled();
+    expect(f.createRevision).not.toHaveBeenCalled();
+    expect(f.createReceipt).not.toHaveBeenCalled();
+    expect(statement(raw.mock.calls[5][0])).toContain('FROM "ActivityParticipationIdentity"');
+  });
+
+  it('passes active admission to the full source evaluator while preserving the two complete guards', async () => {
+    const f = freshPrepare();
+    contributions.usesLaunchAdmission = true;
+    await expect(service.prepare(activityId, prepare, actor, meta)).resolves.toEqual(f.response);
+    expect(contributions.assertNewNativeActivityInTx).toHaveBeenCalledWith(tx, activityId, 0);
+    expect(queries.evaluateInTx).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ population: [], segments: [], latest: [] }),
+      true,
+    );
+    expect(statement(f.executeRaw.mock.calls[2][0])).toBe(nativeBarrier);
+  });
+
+  it('replays an existing authorized receipt before new capacity admission', async () => {
+    contributions.usesLaunchAdmission = true;
+    contributions.assertNewNativeActivityInTx.mockRejectedValue(
+      new Error('must not re-admit replay'),
+    );
+    const saved = receipt();
+    await expect(service.prepare(activityId, prepare, actor, meta)).resolves.toEqual(
+      saved.resultJson,
+    );
+    expect(contributions.assertNewNativeActivityInTx).not.toHaveBeenCalled();
+    expect(queries.evaluateInTx).not.toHaveBeenCalled();
+    expect(access.authorize).toHaveBeenCalledTimes(7);
   });
 });
