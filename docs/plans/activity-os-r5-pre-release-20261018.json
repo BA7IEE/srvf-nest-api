@@ -52,19 +52,11 @@
       "signoffConflicts": [],
       "machinePassed": 12,
       "machineTotal": 13,
-      "machineFailed": [
-        "9a"
-      ],
+      "machineFailed": ["9a"],
       "acceptancePassed": 107,
       "acceptanceTodo": 5,
       "acceptanceFailed": 0,
-      "todoIds": [
-        "AC-013",
-        "AC-017",
-        "AC-020",
-        "AC-025",
-        "ADV-010"
-      ],
+      "todoIds": ["AC-013", "AC-017", "AC-020", "AC-025", "ADV-010"],
       "note": "The generic v1.1 ledger 9c scale register is distinct from the unvalidated R5 native original maximum."
     },
     "localSerialQuick": {
@@ -73,11 +65,7 @@
       "coldLintErrors": 0,
       "coldLintWarnings": 0,
       "coldLintElapsedMs": 142339,
-      "typecheckProjects": [
-        "root",
-        "test",
-        "scripts"
-      ],
+      "typecheckProjects": ["root", "test", "scripts"],
       "unitSuites": 461,
       "unitPassed": 10275,
       "unitTodo": 5,
