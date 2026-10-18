@@ -1,3 +1,5 @@
+import { LedgerQueryService } from '../../src/modules/activities/ledger-query.service';
+import { ActivityWorkflowGate } from '../../src/common/activity-workflow/activity-workflow.gate';
 import type { INestApplication } from '@nestjs/common';
 import { MemberStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
@@ -309,7 +311,13 @@ describe('markGate / evaluate × 贡献值写方并发(M1 · member-first 锁序
     });
     const offenders: string[] = [];
     for (const row of approved) {
-      const contribution = await computeContribution(prismaA, row.memberId, row.cycle.year);
+      const contribution = await computeContribution(
+        prismaA,
+        row.memberId,
+        row.cycle.year,
+        appA.get(ActivityWorkflowGate),
+        LedgerQueryService,
+      );
       if (!contribution.satisfied) {
         offenders.push(
           `${row.id} (member=${row.memberId}, points=${contribution.points.toString()})`,
@@ -507,9 +515,17 @@ describe('markGate / evaluate × 贡献值写方并发(M1 · member-first 锁序
         GENERAL_GATES,
       );
       // 前提自证:此刻确实满足 5 分,否则下面证明的是一个不成立的前提。
-      expect((await computeContribution(prismaA, memberId, CYCLE_YEAR)).points.toString()).toBe(
-        '5',
-      );
+      expect(
+        (
+          await computeContribution(
+            prismaA,
+            memberId,
+            CYCLE_YEAR,
+            appA.get(ActivityWorkflowGate),
+            LedgerQueryService,
+          )
+        ).points.toString(),
+      ).toBe('5');
 
       // reopen 先出发,被钉在「已取 member 键 + 已把 Sheet 撤回 pending + 尚未提交」的位置。
       const barrier = holdAuditLogInserts();
@@ -539,9 +555,17 @@ describe('markGate / evaluate × 贡献值写方并发(M1 · member-first 锁序
       expect(reopenResult.status).toBe('fulfilled');
 
       // 撤回后总分 3 < 5。修复前 evaluate 基于「撤回尚未提交」的快照通过,留下 approved 欠贡献行。
-      expect((await computeContribution(prismaA, memberId, CYCLE_YEAR)).points.toString()).toBe(
-        '3',
-      );
+      expect(
+        (
+          await computeContribution(
+            prismaA,
+            memberId,
+            CYCLE_YEAR,
+            appA.get(ActivityWorkflowGate),
+            LedgerQueryService,
+          )
+        ).points.toString(),
+      ).toBe('3');
       expect(evaluateResult.status).toBe('rejected');
       const reason = evaluateResult.status === 'rejected' ? evaluateResult.reason : undefined;
       expect(reason).toBeInstanceOf(BizException);
@@ -566,9 +590,17 @@ describe('markGate / evaluate × 贡献值写方并发(M1 · member-first 锁序
         'joining',
         GENERAL_GATES.slice(0, GENERAL_GATES.length - 1),
       );
-      expect((await computeContribution(prismaA, memberId, CYCLE_YEAR)).points.toString()).toBe(
-        '4',
-      );
+      expect(
+        (
+          await computeContribution(
+            prismaA,
+            memberId,
+            CYCLE_YEAR,
+            appA.get(ActivityWorkflowGate),
+            LedgerQueryService,
+          )
+        ).points.toString(),
+      ).toBe('4');
 
       // finalApprove 先出发,被钉在「已取 member 键 + 已把 Sheet 置 approved + 尚未提交」。
       const barrier = holdAuditLogInserts();
@@ -595,9 +627,17 @@ describe('markGate / evaluate × 贡献值写方并发(M1 · member-first 锁序
       expect(approveResult.status).toBe('fulfilled');
       expect(markResult.status).toBe('fulfilled');
 
-      expect((await computeContribution(prismaA, memberId, CYCLE_YEAR)).points.toString()).toBe(
-        '5',
-      );
+      expect(
+        (
+          await computeContribution(
+            prismaA,
+            memberId,
+            CYCLE_YEAR,
+            appA.get(ActivityWorkflowGate),
+            LedgerQueryService,
+          )
+        ).points.toString(),
+      ).toBe('5');
       // 修复前:markGate 读到尚未提交的 4 分 → nextStatus=joining,门槛全齐却卡住。
       expect((await readApplication(applicationId)).statusCode).toBe('pending_evaluation');
     },

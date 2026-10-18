@@ -1069,6 +1069,7 @@ function makeService(
         rbac,
         appIdentity as unknown as AppIdentityResolver,
       ),
+      gateStub(false),
     ),
     recorder as unknown as AttendanceAuditRecorder,
     contributionCalculator as unknown as ContributionCalculator,

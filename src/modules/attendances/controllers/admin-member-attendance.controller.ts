@@ -22,8 +22,8 @@ import { RequiresPermission } from '../../../common/decorators/route-authz.decor
 // admin/v1/members/:memberId 轴下的三个 attendance 派生只读端点(队员 360):
 //   1. GET attendance-records:某队员跨 sheet 考勤记录(仅 approved;复用 attendance-presenter;
 //      item 带 activity 上下文);
-//   2. GET contribution-summary:某队员贡献值生涯累计 capped 总分(实时算,复用 team-join 封顶核 3)。
-//   3. GET participation-summary:approved 时长/distinct 活动数/记录数 + 同一生涯封顶贡献核。
+//   2. GET contribution-summary:生涯贡献随单闸选源；闸关旧考勤封顶，闸开 committed credited。
+//   3. GET participation-summary:时长/活动数/记录数 + 同一生涯贡献核，不叠加旧分与账本。
 //
 // 落 admin member 轴(贡献汇总是 attendance 派生读,非 contribution-rules 的 System surface 规则面;
 // 沿 api-surface-policy §9.1)。入口仅全局 JwtAuthGuard,判权下沉 service 层 rbac.can('attendance.read.sheet')
@@ -64,7 +64,7 @@ export class AdminMemberAttendanceController {
   @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
-      '某队员贡献值生涯累计 capped 总分(队员 360;实时算不落库;approved sheet + 北京日封顶 3;不存在/软删 → MEMBER_NOT_FOUND) [rbac: attendance.read.sheet]',
+      '某队员生涯贡献汇总(队员 360；闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff；不存在/软删 → MEMBER_NOT_FOUND) [rbac: attendance.read.sheet]',
   })
   @ApiWrappedOkResponse(MemberContributionSummaryDto)
   @ApiBizErrorResponse(
@@ -84,7 +84,7 @@ export class AdminMemberAttendanceController {
   @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
-      '某队员参与累计(approved 时长/活动次数/记录数/生涯封顶贡献；member ref 点判) [rbac: attendance.read.sheet]',
+      '某队员参与累计(时长/活动次数/记录数；生涯贡献：闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff；member ref 点判) [rbac: attendance.read.sheet]',
   })
   @ApiWrappedOkResponse(MemberParticipationSummaryDto)
   @ApiBizErrorResponse(

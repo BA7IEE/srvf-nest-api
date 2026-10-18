@@ -255,7 +255,8 @@ export class TeamJoinApplicationAdminDto {
   @ApiProperty({ description: '8 通用门槛是否全满足(contribution 另算)' })
   generalGatesSatisfied!: boolean;
   @ApiPropertyOptional({
-    description: '贡献值汇总(approved sheet,截至入队年 3-31;仅详情计算,列表为 null)',
+    description:
+      '贡献值汇总（截至入队年 3-31；闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加；仅详情计算，列表为 null）',
     nullable: true,
   })
   contributionPoints!: string | null;

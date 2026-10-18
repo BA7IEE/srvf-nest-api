@@ -1,4 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import {
+  CONTRIBUTION_LEDGER_READER,
+  type ContributionLedgerReader,
+} from './contribution-ledger-reader';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
+import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -42,7 +47,8 @@ import type {
 
 // 招新三期(入队)T2(2026-06-19):入队申请 admin surface 逻辑(评审稿 §3.2 / §4)。
 // 标 gate(幂等;末次全过 + 贡献值≥5 自动推进 pending_evaluation)/ 综合评估(单一人工闸)/
-// list+detail / 贡献值只读汇总(approved sheet,checkInAt < cutoff)。一键入队(joined)在 T4。
+// list+detail / 贡献值只读汇总(off: approved 考勤封顶；on: committed credited；均按入队 cutoff)。
+// 一键入队(joined)在 T4。
 // 行查询 include + admin presenter(buildAdminDto)抽至 team-join-progress.ts,admin/enrollment 共用。
 
 const AUDIT_RESOURCE_TYPE = 'team_join_application';
@@ -53,6 +59,9 @@ export class TeamJoinApplicationsService {
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
     private readonly auditLogs: AuditLogsService,
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
+    @Inject(CONTRIBUTION_LEDGER_READER)
+    private readonly contributionLedgerReader: ContributionLedgerReader,
   ) {}
 
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
@@ -154,7 +163,13 @@ export class TeamJoinApplicationsService {
   async detailForAdmin(id: string, user: CurrentUserPayload): Promise<TeamJoinApplicationAdminDto> {
     await this.assertCanOrThrow(user, 'team-join-application.read.record');
     const row = await this.findOrThrow(id, this.prisma);
-    const contribution = await computeContribution(this.prisma, row.memberId, row.cycle.year);
+    const contribution = await computeContribution(
+      this.prisma,
+      row.memberId,
+      row.cycle.year,
+      this.activityWorkflowGate,
+      this.contributionLedgerReader,
+    );
     return buildAdminDto(row, contribution, new Date());
   }
 
@@ -200,7 +215,13 @@ export class TeamJoinApplicationsService {
 
       // 单一真相源自动推进:8 通用全满足 + 贡献值≥5 → pending_evaluation;否则回退 joining
       const generalSatisfied = allGeneralGatesSatisfied(marks, row.cycle.openedAt, now);
-      const contribution = await computeContribution(tx, row.memberId, row.cycle.year);
+      const contribution = await computeContribution(
+        tx,
+        row.memberId,
+        row.cycle.year,
+        this.activityWorkflowGate,
+        this.contributionLedgerReader,
+      );
       const nextStatus =
         generalSatisfied && contribution.satisfied
           ? APP_STATUS_PENDING_EVALUATION
@@ -274,6 +295,8 @@ export class TeamJoinApplicationsService {
             tx,
             lockedRow.memberId,
             lockedRow.cycle.year,
+            this.activityWorkflowGate,
+            this.contributionLedgerReader,
           );
           if (!generalSatisfied || !contribution.satisfied) {
             throw new BizException(BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);

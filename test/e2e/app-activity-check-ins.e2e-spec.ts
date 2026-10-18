@@ -1,3 +1,5 @@
+import { LedgerQueryService } from '../../src/modules/activities/ledger-query.service';
+import { ActivityWorkflowGate } from '../../src/common/activity-workflow/activity-workflow.gate';
 import type { INestApplication } from '@nestjs/common';
 import { MemberStatus, Role } from '@prisma/client';
 import request from 'supertest';
@@ -703,6 +705,8 @@ describe('App activity GPS self check-in (F2)', () => {
       prisma,
       isolated.memberId,
       new Date().getUTCFullYear() + 1,
+      app.get(ActivityWorkflowGate),
+      LedgerQueryService,
     );
     expect(contribution.points.toString()).toBe('0');
     expect(contribution.satisfied).toBe(false);

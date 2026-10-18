@@ -1,4 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import {
+  CONTRIBUTION_LEDGER_READER,
+  type ContributionLedgerReader,
+} from './contribution-ledger-reader';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
+import { Inject, Injectable } from '@nestjs/common';
 import {
   DictItemStatus,
   DictTypeStatus,
@@ -84,6 +89,9 @@ export class TeamJoinEnrollmentService {
     private readonly auditLogs: AuditLogsService,
     private readonly notificationOutbox: NotificationOutboxService,
     private readonly insuranceRequirement: InsuranceRequirementService,
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
+    @Inject(CONTRIBUTION_LEDGER_READER)
+    private readonly contributionLedgerReader: ContributionLedgerReader,
   ) {}
 
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
@@ -203,7 +211,13 @@ export class TeamJoinEnrollmentService {
 
       // 5. 兜底重校验:8 通用门槛 + 贡献值仍满足(防 approved 后过期;否则 28241)
       const generalSatisfied = allGeneralGatesSatisfied(marks, app.cycle.openedAt, now);
-      const contribution = await computeContribution(tx, app.memberId, app.cycle.year);
+      const contribution = await computeContribution(
+        tx,
+        app.memberId,
+        app.cycle.year,
+        this.activityWorkflowGate,
+        this.contributionLedgerReader,
+      );
       if (!generalSatisfied || !contribution.satisfied) {
         throw new BizException(BizCode.TEAM_JOIN_GATES_NOT_SATISFIED);
       }

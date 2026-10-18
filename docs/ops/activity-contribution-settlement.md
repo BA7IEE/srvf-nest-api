@@ -72,3 +72,13 @@ E5 工程扩展仅让新 run 在原锁内来源链和冻结政策校验下选择
 3. 恢复 off 只能采用兼容已有 policy_v1 证明的代码及 schema；不执行 migration down、不删除或重算历史。核对原版本制度、根／评价／来源和正式账。active→off 也会恢复旧 ContributionRule 的管理写，需纳入运维变更范围；当前没有永久只读 latch。
 4. 再次 active 须经过发布批准，重新启动同一批准 SHA 的全部实例，独立确认 v1.1 与 maintenance 目标值。恢复原待处理命令／批次时使用既有 operationKey；先读终态，再验证没有重复正式积分、日状态增量或通知。不得用新建业务替代尚未收束的原命令。
 5. 任一实例版本／模式不一致、proof 与账本不一致、最终状态 UNKNOWN 或清理不明即停止后续切换，记录具名资源和原始失败。测试的 off→active 恢复不是生产回滚演练、Trusted审查或用户业务签字。
+
+## 6. R5受限首发与完整合同的分别核验
+
+D1生产依赖high/critical已清零，仍有原3项COS moderate及既有接受边界，见[生产审计](production-dependency-audit.md)；不称零漏洞。D2将贡献汇总/入队进度接入同一v1.1读源，真实PG覆盖在途不可见、并发一成功一20084、同日credited2+1、跨日到5并完成入队、V3冲回重记/重放、北京cutoff和真实旧分转换对账。最终SHA CI/独立评审、6b人签和Trusted仍须逐版本核验。
+
+- `pnpm cutover:check`：完整合同原文及9a保持严格，四项TODO仍导致失败，不能把首发决定伪装成全合同完成。
+- `pnpm cutover:check --profile r5-limited500`：显式首发机器口径，仅承接原AC013/017/020/025延期；真实Jest逐项95编号+17守护、计数/退出异常、未知/缺失/重复/skip/新TODO/失败均拒。其他A项与签字缺陷仍阻断，B/C待确认不转绿，生产结论仍NO_GO。验收登记检查源码去向，不代替同SHA真实PG/CI回执。
+- 本轮不改500身份/current段/current allocation、2500物理slice、2000评价等native限制；原2000/10000/50000规模NOT_VALIDATED，原超时/UNKNOWN不因小链通过而关闭。
+
+生产启用前须按[转换SOP](legacy-attendance-ledger-conversion.md)完成旧分账本化及逐人总分/cutoff对账；真实服务器身份/访问别名、服务器compose、镜像digest/SHA与fleet、迁移实际校验、旧数据/转换及shadow适用性、worker在飞/排空/稳定观察、10a/10b均NOT_RUN。仓库只有历史域名/路径，尚无经确认的部署连接；不向未知目标部署。需要止血时使用既有readonly并保留v1.1账本读源，直接关闸会读回旧考勤且恢复旧规则写，不当作无损业务回退；实际恢复另行批准。

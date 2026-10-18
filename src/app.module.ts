@@ -60,6 +60,7 @@ import { RealnameModule } from './modules/realname/realname.module';
 import { RecruitmentModule } from './modules/recruitment/recruitment.module';
 import { SmsModule } from './modules/sms/sms.module';
 import { TeamJoinModule } from './modules/team-join/team-join.module';
+import { LedgerQueryService } from './modules/activities/ledger-query.service';
 import { UsersModule } from './modules/users/users.module';
 import { WechatModule } from './modules/wechat/wechat.module';
 import { WecomModule } from './modules/wecom/wecom.module';
@@ -210,7 +211,7 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     // 招新三期(入队:志愿者→队员)T2(2026-06-19):team-join 第 27 模块(入队轮 CRUD + 标 gate +
     //   综合评估 + 贡献值只读汇总;冻结评审稿 docs/archive/reviews/recruitment-phase3-review.md;
     //   R 模式判权;admin/v1 surface,app 自助 T3 / 一键入队 T4;两层身份:入队才赋部门+级别)。
-    TeamJoinModule,
+    TeamJoinModule.register(LedgerQueryService),
     // CMS 内容发布模块(第 28 模块)T2(2026-06-21):content admin surface(评审稿 content-module-review.md;
     //   path /api/admin/v1/contents;R 模式判权 content.* 5 码;附件经 AttachmentsService 写路径 RBAC +
     //   content 读取面自签;状态机 draft/published/archived 立即生效无 cron;app/open 面 T3/T4 后续追加)。

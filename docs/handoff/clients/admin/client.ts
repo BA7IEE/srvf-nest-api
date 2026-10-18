@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:74110e7633751e7535dfe2caffc1cbfc24775834fac2250aa541431cc462bf95
+// inputDigest: sha256:8c9960b779beb5297b34ca0111a065676c931c4dfbaf79f409648dafcb6503b7
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -1126,7 +1126,7 @@ export function createAdminClient(fetcher: Fetcher) {
     CertificatesControllerVerify(memberId: string, id: string, body: VerifyCertificateDto): Promise<ApiEnvelope<CertificateResponseDto>> {
       return fetcher<CertificateResponseDto>({ method: "PATCH", path: `/api/admin/v1/members/${memberId}/certificates/${id}/verify`, body });
     },
-    /** 某队员贡献值生涯累计 capped 总分(队员 360;实时算不落库;approved sheet + 北京日封顶 3;不存在/软删 → MEMBER_NOT_FOUND) [rbac: attendance.read.sheet] */
+    /** 某队员生涯贡献汇总(队员 360；闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff；不存在/软删 → MEMBER_NOT_FOUND) [rbac: attendance.read.sheet] */
     AdminMemberAttendanceControllerContributionSummary(memberId: string): Promise<ApiEnvelope<MemberContributionSummaryDto>> {
       return fetcher<MemberContributionSummaryDto>({ method: "GET", path: `/api/admin/v1/members/${memberId}/contribution-summary` });
     },
@@ -1190,7 +1190,7 @@ export function createAdminClient(fetcher: Fetcher) {
     AdminMemberParticipationLedgerControllerList(memberId: string, query?: { "page"?: number; "pageSize"?: number; "dateFrom"?: string; "dateTo"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": AdminParticipationLedgerEntryDto[] }>> {
       return fetcher<PageResultDto & { "items": AdminParticipationLedgerEntryDto[] }>({ method: "GET", path: `/api/admin/v1/members/${memberId}/participation-ledger`, query });
     },
-    /** 某队员参与累计(approved 时长/活动次数/记录数/生涯封顶贡献；member ref 点判) [rbac: attendance.read.sheet] */
+    /** 某队员参与累计(时长/活动次数/记录数；生涯贡献：闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff；member ref 点判) [rbac: attendance.read.sheet] */
     AdminMemberAttendanceControllerParticipationSummary(memberId: string): Promise<ApiEnvelope<MemberParticipationSummaryDto>> {
       return fetcher<MemberParticipationSummaryDto>({ method: "GET", path: `/api/admin/v1/members/${memberId}/participation-summary` });
     },

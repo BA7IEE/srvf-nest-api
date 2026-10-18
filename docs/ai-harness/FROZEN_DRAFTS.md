@@ -705,7 +705,7 @@ confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新�
 | P1-32 PR1:`permission-catalog*` 运行时文件数 | **2** | `src/modules/permissions/` |
 | P1-32:授码 / 撤码两侧是否复用控制面闸谓词 | **已接** | `src/modules/permissions/role-permissions.service.ts` |
 | 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **273** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
-| 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
+| 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **91 / 95(4 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
 | 治理 Phase 7:债务身份证待清偿条数 | **221** | `harness/architecture-debt.json` |
 | 治理 Phase 4:状态列 governed / 登记总数 | **8 / 83** | `harness/state-machines.json` |
 | 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |

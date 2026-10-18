@@ -148,19 +148,19 @@ export function isUnenrolledVolunteer(
 }
 
 // ===== 贡献值(评审稿 §4.3;W-J-3 / Q4)=====
-// approved-only:字面镜像 attendances `ATTENDANCE_SHEET_STATUS.APPROVED`('approved' = attendance_sheet_status
+// 闸关旧链使用：字面镜像 attendances `ATTENDANCE_SHEET_STATUS.APPROVED`('approved' = attendance_sheet_status
 // 字典稳定值,终审通过);不 import attendances 内部,保持 team-join 自洽(评审稿 §4.3)。
 export const ATTENDANCE_SHEET_STATUS_APPROVED = 'approved';
 export const CONTRIBUTION_THRESHOLD = new Prisma.Decimal(5);
 // 全局每日封顶(活动闭环硬化 2026-06-21):一个队员单个北京日历日的贡献值总分封顶在统一值。
-// 由「每条记录各自封顶」改为「全局每日上限」——封顶落在汇总处 computeContribution(不落库、
+// 闸关由旧核汇总封顶；闸开账本在写入时全局封顶，读取credited不再封顶(不在旧表落库、
 // 不在 calculator 每条钳制)。v1 常量(配置化后置);ContributionRule.dailyCap 列已 deprecated 不再读。
 export const GLOBAL_DAILY_CONTRIBUTION_CAP = new Prisma.Decimal('3');
 const BEIJING_UTC_OFFSET_HOURS = 8;
 
 /**
  * 贡献值 cutoff:入队轮 year 的 3-31 北京日界(= {year}-04-01 00:00:00 +08:00 的 UTC 瞬间,exclusive)。
- * 历史累计、approved sheet only、anchor = checkInAt(在记录上,免连表)。
+ * 闸关以checkInAt瞬间比较；闸开以对应北京civil ledgerDate比较，均exclusive。
  */
 export function contributionCutoff(cycleYear: number): Date {
   return new Date(Date.UTC(cycleYear, 3, 1, 0, 0, 0) - BEIJING_UTC_OFFSET_HOURS * 3600_000);

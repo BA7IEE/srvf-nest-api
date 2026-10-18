@@ -353,23 +353,31 @@ export function judgeSignoffReadings(
     const v = readings[k];
     if (v === undefined) continue;
     if (!/^\d+$/.test(v) || Number(v) === 0) {
-      bad.push(`读数「${k}」= ${v} —— 计数型读数为 0 / 非数字 ⇒ 采集器失真,拿它对拍等于把签字锚在坏仪器上`);
+      bad.push(
+        `读数「${k}」= ${v} —— 计数型读数为 0 / 非数字 ⇒ 采集器失真,拿它对拍等于把签字锚在坏仪器上`,
+      );
     }
   }
   for (const k of digests) {
     const v = readings[k];
     if (v === undefined) continue;
-    if (!/^[0-9a-f]{12}$/.test(v)) bad.push(`读数「${k}」= ${v} —— 不是 12 位摘要 ⇒ 被锚的文件读不到`);
+    if (!/^[0-9a-f]{12}$/.test(v))
+      bad.push(`读数「${k}」= ${v} —— 不是 12 位摘要 ⇒ 被锚的文件读不到`);
   }
   for (const k of lists) {
     const v = readings[k];
     if (v === undefined) continue;
     if (!/^\d+(,\d+)*$/.test(v)) {
-      bad.push(`读数「${k}」= ${v} —— 不是逗号分隔的十进制清单 ⇒ 采集器没读到真源(而不是「清单真的空了」)`);
+      bad.push(
+        `读数「${k}」= ${v} —— 不是逗号分隔的十进制清单 ⇒ 采集器没读到真源(而不是「清单真的空了」)`,
+      );
     }
   }
   return bad.length === 0
-    ? { ok: true, evidence: [`${allKeys.length} 个可对拍读数全部非退化(计数非 0、摘要成形、清单成形)`] }
+    ? {
+        ok: true,
+        evidence: [`${allKeys.length} 个可对拍读数全部非退化(计数非 0、摘要成形、清单成形)`],
+      }
     : { ok: false, evidence: bad };
 }
 
@@ -380,18 +388,33 @@ export function judgeSignoffReadings(
  *    加一条子判据却忘了登记进来,当场红。手写清单没有自证 = 装了个没验过的报警器。
  */
 export const ALL_SUB_IDS: readonly string[] = [
-  '1a', '1b',
-  '2a', '2b',
-  '3a', '3b',
-  '4a', '4b', '4c',
-  '5a', '5b',
-  '6a', '6b',
-  '7a', '7b', '7c', '7d', '7e',
-  '8a', '8b',
+  '1a',
+  '1b',
+  '2a',
+  '2b',
+  '3a',
+  '3b',
+  '4a',
+  '4b',
+  '4c',
+  '5a',
+  '5b',
+  '6a',
+  '6b',
+  '7a',
+  '7b',
+  '7c',
+  '7d',
+  '7e',
+  '8a',
+  '8b',
   // ⚠️ 9c 是 A 类 —— 它判「规模档登记表可不可信」(闭合 / 六要素 / 逐字镜像 / 用例由表生成),
   //    那几样机器全判得了。⑨-b「三档真的通过了」才是要人签的那一半。
-  '9a', '9b', '9c',
-  '10a', '10b',
+  '9a',
+  '9b',
+  '9c',
+  '10a',
+  '10b',
 ];
 
 /**
@@ -399,7 +422,18 @@ export const ALL_SUB_IDS: readonly string[] = [
  * 签 A 类编号 ⇒ 红,否则「用一张签字把 9a 的 13 条 todo 抹平」就成立了。
  */
 export const SIGNABLE_SUB_IDS: readonly string[] = [
-  '1b', '2a', '2b', '3b', '4b', '5b', '6b', '7c', '8b', '9b', '10a', '10b',
+  '1b',
+  '2a',
+  '2b',
+  '3b',
+  '4b',
+  '5b',
+  '6b',
+  '7c',
+  '8b',
+  '9b',
+  '10a',
+  '10b',
 ];
 
 // ── 分型与结论 ──────────────────────────────────────────────────────────
@@ -437,7 +471,10 @@ const KIND_RANK: Record<Kind, number> = { A: 0, B: 1, C: 2 };
 
 /** 一条的分型 = 子判据里最弱的那一类。见文件头「三分型」。 */
 export function weakestKind(subs: readonly { kind: Kind }[]): Kind {
-  return subs.reduce<Kind>((worst, s) => (KIND_RANK[s.kind] > KIND_RANK[worst] ? s.kind : worst), 'A');
+  return subs.reduce<Kind>(
+    (worst, s) => (KIND_RANK[s.kind] > KIND_RANK[worst] ? s.kind : worst),
+    'A',
+  );
 }
 
 /**
@@ -463,7 +500,11 @@ export function itemVerdict(subs: readonly SubCheck[]): Verdict {
 /** 一条签字的「对拍」字段。`none` = 声明无可对拍读数(必须写明为什么)。 */
 export type Crosscheck =
   | { readonly kind: 'none'; readonly raw: string; readonly note: string }
-  | { readonly kind: 'has'; readonly raw: string; readonly pairs: readonly { key: string; value: string }[] }
+  | {
+      readonly kind: 'has';
+      readonly raw: string;
+      readonly pairs: readonly { key: string; value: string }[];
+    }
   | { readonly kind: 'unknown'; readonly raw: string };
 
 export interface SignoffEntry {
@@ -493,10 +534,19 @@ export function isCalendarDate(s: string): boolean {
 /** 解析「对拍」字段。`有 —— \`key\` = \`value\`;…` / `无 —— <理由>`。 */
 export function parseCrosscheck(raw: string): Crosscheck {
   const t = raw.trim();
-  if (t.startsWith('无')) return { kind: 'none', raw, note: t.slice(1).replace(/^\s*(——|--)\s*/, '').trim() };
+  if (t.startsWith('无'))
+    return {
+      kind: 'none',
+      raw,
+      note: t
+        .slice(1)
+        .replace(/^\s*(——|--)\s*/, '')
+        .trim(),
+    };
   if (!t.startsWith('有')) return { kind: 'unknown', raw };
   const pairs: { key: string; value: string }[] = [];
-  for (const m of t.matchAll(/`([^`]+)`\s*=\s*`([^`]*)`/g)) pairs.push({ key: m[1].trim(), value: m[2].trim() });
+  for (const m of t.matchAll(/`([^`]+)`\s*=\s*`([^`]*)`/g))
+    pairs.push({ key: m[1].trim(), value: m[2].trim() });
   return { kind: 'has', raw, pairs };
 }
 
@@ -550,7 +600,9 @@ export function parseSignoffRegistry(text: string | null): SignoffRegistry | nul
       flush();
       continue;
     }
-    const field = /^-\s+\*\*(结论|理由|签字人|日期|依据|对拍)\*\*\s*[:：]\s*(.*)$/.exec(line.trim());
+    const field = /^-\s+\*\*(结论|理由|签字人|日期|依据|对拍)\*\*\s*[:：]\s*(.*)$/.exec(
+      line.trim(),
+    );
     if (field !== null && cur !== null) cur.fields[field[1]] = field[2].trim();
   }
   flush();
@@ -573,7 +625,9 @@ export function signoffEntryDefects(
   ];
   for (const [label, v] of required) if (v.trim().length === 0) out.push(`必填项「${label}」为空`);
   if (e.conclusion.trim().length > 0 && !SIGNOFF_CONCLUSIONS.includes(e.conclusion.trim())) {
-    out.push(`结论「${e.conclusion}」不在闭集(${SIGNOFF_CONCLUSIONS.join(' / ')})—— 模糊结论不是结论`);
+    out.push(
+      `结论「${e.conclusion}」不在闭集(${SIGNOFF_CONCLUSIONS.join(' / ')})—— 模糊结论不是结论`,
+    );
   }
   if (e.date.trim().length > 0 && !isCalendarDate(e.date.trim())) {
     out.push(`日期「${e.date}」不是合法日历日(YYYY-MM-DD)`);
@@ -582,7 +636,8 @@ export function signoffEntryDefects(
   if (cc.kind === 'unknown') {
     if (cc.raw.trim().length > 0) out.push(`「对拍」既不是「有」也不是「无」:${cc.raw}`);
   } else if (cc.kind === 'none') {
-    if (cc.note.length === 0) out.push('「对拍」写了「无」却没写为什么无 —— 不许静默地把对拍取消掉');
+    if (cc.note.length === 0)
+      out.push('「对拍」写了「无」却没写为什么无 —— 不许静默地把对拍取消掉');
   } else {
     if (cc.pairs.length === 0) out.push('「对拍」写了「有」却一个读数都没给');
     for (const p of cc.pairs) {
@@ -706,7 +761,8 @@ export function judgeContractIntegrity(
       continue;
     }
     const actual = createHash('sha256').update(body, 'utf8').digest('hex');
-    if (actual !== sha) bad.push(`${file}:实际 ${actual.slice(0, 12)}… ≠ 清单 ${sha.slice(0, 12)}…`);
+    if (actual !== sha)
+      bad.push(`${file}:实际 ${actual.slice(0, 12)}… ≠ 清单 ${sha.slice(0, 12)}…`);
   }
   return bad.length === 0
     ? { ok: true, evidence: [`${parsed.length} 份合同逐字节与冻结清单一致`] }
@@ -740,7 +796,9 @@ export function judgeOldMigrationsUnchanged(
   return bad.length === 0
     ? {
         ok: true,
-        evidence: [`基线 ${baseline.size} 个 migration 文件逐字节未变、未删;基线后新增 ${added.length} 个`],
+        evidence: [
+          `基线 ${baseline.size} 个 migration 文件逐字节未变、未删;基线后新增 ${added.length} 个`,
+        ],
       }
     : { ok: false, evidence: bad };
 }
@@ -750,11 +808,19 @@ export function judgeReconcile(
   results: readonly { cmd: string; covers: string; code: number; tail: string }[],
 ): Judgement {
   if (results.length !== RECONCILE_COMMANDS.length) {
-    return { ok: false, evidence: [`只跑到 ${results.length}/${RECONCILE_COMMANDS.length} 条对账命令 ⇒ 采集不全`] };
+    return {
+      ok: false,
+      evidence: [`只跑到 ${results.length}/${RECONCILE_COMMANDS.length} 条对账命令 ⇒ 采集不全`],
+    };
   }
   const bad = results.filter((r) => r.code !== 0);
   return bad.length === 0
-    ? { ok: true, evidence: [`${results.length} 条生成物新鲜度判据全绿:${results.map((r) => r.cmd).join(' / ')}`] }
+    ? {
+        ok: true,
+        evidence: [
+          `${results.length} 条生成物新鲜度判据全绿:${results.map((r) => r.cmd).join(' / ')}`,
+        ],
+      }
     : { ok: false, evidence: bad.map((r) => `${r.cmd}(${r.covers})exit ${r.code}:${r.tail}`) };
 }
 
@@ -779,7 +845,9 @@ export function judgeBackendVersionSingleValued(
   if (scan.fileCount === 0) {
     return {
       ok: false,
-      evidence: [`全仓扫描采集到 **0 个 .ts 文件**(${VERSION_SCAN_DIRS.join(' / ')})⇒ 扫描面塌了,「零第四处声明」是空绿,读数作废`],
+      evidence: [
+        `全仓扫描采集到 **0 个 .ts 文件**(${VERSION_SCAN_DIRS.join(' / ')})⇒ 扫描面塌了,「零第四处声明」是空绿,读数作废`,
+      ],
     };
   }
   const trio = [
@@ -856,7 +924,10 @@ export function parseRegistryRows(text: string): RegistryRow[] {
   for (const line of text.split('\n')) {
     const t = line.trim();
     if (!t.startsWith('|') || !t.endsWith('|')) continue;
-    const cells = t.slice(1, -1).split('|').map((c) => c.trim());
+    const cells = t
+      .slice(1, -1)
+      .split('|')
+      .map((c) => c.trim());
     if (cells.length !== 5) continue;
     if (!CONTRACT_ENDS.includes(cells[0])) continue;
     rows.push({ end: cells[0], declared: cells[1], when: cells[3], who: cells[4] });
@@ -876,13 +947,18 @@ export function judgeContractVersionRegistry(
   backendVersion: string,
 ): Judgement {
   if (registryText === null) {
-    return { ok: false, evidence: [`登记表 ${VERSION_REGISTRY} **不存在** ⇒ 四端回执无处可填,这条彻底无从取证。`] };
+    return {
+      ok: false,
+      evidence: [`登记表 ${VERSION_REGISTRY} **不存在** ⇒ 四端回执无处可填,这条彻底无从取证。`],
+    };
   }
   const rows = parseRegistryRows(registryText);
   if (rows.length === 0) {
     return {
       ok: false,
-      evidence: [`登记表 ${VERSION_REGISTRY} 解析到 **0 行** ⇒ 表被清空或表头被改坏。空表恒「零不一致」,那是空绿。`],
+      evidence: [
+        `登记表 ${VERSION_REGISTRY} 解析到 **0 行** ⇒ 表被清空或表头被改坏。空表恒「零不一致」,那是空绿。`,
+      ],
     };
   }
   const missing = CONTRACT_ENDS.filter((e) => !rows.some((r) => r.end === e));
@@ -894,14 +970,17 @@ export function judgeContractVersionRegistry(
     if (r.declared === REGISTRY_SAME_AS_BACKEND) structural.push(r.end);
     else if (r.declared === REGISTRY_NOT_REPORTED) notReported.push(r.end);
     else if (r.declared === backendVersion) aligned.push(`${r.end}(${r.when} / ${r.who})`);
-    else mismatched.push(`${r.end} 报 ${r.declared} ≠ 后端 ${backendVersion}(${r.when} / ${r.who})`);
+    else
+      mismatched.push(`${r.end} 报 ${r.declared} ≠ 后端 ${backendVersion}(${r.when} / ${r.who})`);
   }
   const evidence = [
     `后端(含 worker,同仓同构建)当前 contract version:${backendVersion}`,
     `登记表 ${VERSION_REGISTRY}:合同点名 ${CONTRACT_ENDS.length} 端,解析到 ${rows.length} 行`,
   ];
-  if (missing.length > 0) evidence.push(`⚠️ 缺行(合同点名却查无此端):${missing.join('、')} ⇒ 表被削,缺口可能已被洗掉`);
-  if (structural.length > 0) evidence.push(`结构性对齐(同仓同构建,无需回执):${structural.join('、')}`);
+  if (missing.length > 0)
+    evidence.push(`⚠️ 缺行(合同点名却查无此端):${missing.join('、')} ⇒ 表被削,缺口可能已被洗掉`);
+  if (structural.length > 0)
+    evidence.push(`结构性对齐(同仓同构建,无需回执):${structural.join('、')}`);
   if (aligned.length > 0) evidence.push(`已回执且与后端一致:${aligned.join('、')}`);
   if (mismatched.length > 0) evidence.push(`❗版本不一致:${mismatched.join(';')}`);
   if (notReported.length > 0) evidence.push(`从未回执(无从核对):${notReported.join('、')}`);
@@ -910,7 +989,7 @@ export function judgeContractVersionRegistry(
     ok
       ? '五端均已取证且一致 —— 但这仍是**证词**,不是本仓可复算的事实 ⇒ 结论由维护者拍板,判据不代劳。'
       : `需要的证据:上列各端在**自己仓里**对引入的 client 目录跑 \`grep -r contractVersion\`,` +
-        `取到其编译所用契约版本,填进 ${VERSION_REGISTRY} §4 对应行(填法见该文件 §2 / §3)。`,
+          `取到其编译所用契约版本,填进 ${VERSION_REGISTRY} §4 对应行(填法见该文件 §2 / §3)。`,
   );
   return { ok, evidence };
 }
@@ -926,7 +1005,10 @@ export function judgeV11GateCriteria(
 ): Judgement {
   const zero = Object.entries(counts).filter(([, n]) => n === 0);
   if (zero.length > 0) {
-    return { ok: false, evidence: zero.map(([k]) => `counts.${k} = 0 ⇒ 该面没被扫到,「零 finding」是空绿`) };
+    return {
+      ok: false,
+      evidence: zero.map(([k]) => `counts.${k} = 0 ⇒ 该面没被扫到,「零 finding」是空绿`),
+    };
   }
   return findings.length === 0
     ? {
@@ -950,20 +1032,24 @@ export function judgeWorkerStartCommand(
     if (m === null) continue;
     const src = entrySource(`src/${m[1]}.ts`);
     if (src === null) continue;
-    if (src.includes('ActivityBatchWorker') && /\.run\(\)/.test(src)) hits.push(`pnpm ${name} → src/${m[1]}.ts`);
+    if (src.includes('ActivityBatchWorker') && /\.run\(\)/.test(src))
+      hits.push(`pnpm ${name} → src/${m[1]}.ts`);
   }
   return hits.length > 0
     ? { ok: true, evidence: [`启动命令:${hits.join(' / ')}`] }
     : {
         ok: false,
-        evidence: ['没有任何 npm start 脚本的入口实例化 ActivityBatchWorker 并调用 run() ⇒ 没有启动命令'],
+        evidence: [
+          '没有任何 npm start 脚本的入口实例化 ActivityBatchWorker 并调用 run() ⇒ 没有启动命令',
+        ],
       };
 }
 
 /** ⑦-b lease/fencing:schema 三列齐全,且 worker 真的在用它们。 */
 export function judgeWorkerLease(schemaSrc: string, workerSrc: string): Judgement {
   const block = /model\s+ActivityBatchJob\s*\{([\s\S]*?)\n\}/.exec(schemaSrc);
-  if (block === null) return { ok: false, evidence: ['schema 里找不到 model ActivityBatchJob ⇒ 判据失效'] };
+  if (block === null)
+    return { ok: false, evidence: ['schema 里找不到 model ActivityBatchJob ⇒ 判据失效'] };
   const cols = ['leaseOwner', 'leaseGeneration', 'leaseExpiresAt'];
   const missing = cols.filter((c) => !new RegExp(`^\\s*${c}\\s`, 'm').test(block[1]));
   if (missing.length > 0) {
@@ -984,7 +1070,10 @@ export function judgeWorkerGracefulDrain(workerSrc: string): Judgement {
     hasDrain ? null : '停领并排空的关停路径(stopAndDrain)',
   ].filter((x): x is string => x !== null);
   return missing.length === 0
-    ? { ok: true, evidence: ['worker 实现 onApplicationShutdown → stopAndDrain(停领新任务并等当前轮结束)'] }
+    ? {
+        ok: true,
+        evidence: ['worker 实现 onApplicationShutdown → stopAndDrain(停领新任务并等当前轮结束)'],
+      }
     : { ok: false, evidence: [`worker 缺:${missing.join('、')}`] };
 }
 
@@ -1006,7 +1095,10 @@ export function judgeWorkerRunbook(content: string | null): Judgement {
   }
   const missing = RUNBOOK_TOPICS.filter((t) => !t.pattern.test(content));
   return missing.length === 0
-    ? { ok: true, evidence: [`${WORKER_RUNBOOK} 五要素成节齐全(仅判「有没有这五节」,不判 SOP 内容对不对)`] }
+    ? {
+        ok: true,
+        evidence: [`${WORKER_RUNBOOK} 五要素成节齐全(仅判「有没有这五节」,不判 SOP 内容对不对)`],
+      }
     : { ok: false, evidence: [`${WORKER_RUNBOOK} 缺节:${missing.map((t) => t.label).join('、')}`] };
 }
 
@@ -1022,7 +1114,11 @@ export function judgeWorkerRunbook(content: string | null): Judgement {
  *        `WECOM_*_ENABLED`,就凭空造出一个漂移面 —— 本判据当场红。
  */
 export function judgeFlagsFailFast(
-  flags: readonly { env: string; label: string; parse: (raw: string | undefined, e: ReturnType<typeof parseAppEnv>) => boolean }[],
+  flags: readonly {
+    env: string;
+    label: string;
+    parse: (raw: string | undefined, e: ReturnType<typeof parseAppEnv>) => boolean;
+  }[],
   configSrc: string,
 ): Judgement {
   if (flags.length === 0) return { ok: false, evidence: ['开关清单为空 ⇒ 判据无从执法'] };
@@ -1036,12 +1132,17 @@ export function judgeFlagsFailFast(
       } catch {
         threw = true;
       }
-      if (!threw) bad.push(`${f.env}(${f.label}):production 下 ${raw === undefined ? '缺省' : '空串'}未 fail-fast`);
+      if (!threw)
+        bad.push(
+          `${f.env}(${f.label}):production 下 ${raw === undefined ? '缺省' : '空串'}未 fail-fast`,
+        );
     }
   }
   const wecomEnv = configSrc.match(/WECOM[A-Z_]*_ENABLED/g);
   if (wecomEnv !== null) {
-    bad.push(`企业微信开关出现 per-instance env:${[...new Set(wecomEnv)].join(', ')} ⇒ 新增了实例间漂移面`);
+    bad.push(
+      `企业微信开关出现 per-instance env:${[...new Set(wecomEnv)].join(', ')} ⇒ 新增了实例间漂移面`,
+    );
   }
   return bad.length === 0
     ? {
@@ -1065,7 +1166,10 @@ export function judgeAcceptanceSuite(summary: {
   passed: number;
   todo: number;
   failed: number;
+  instrumentErrors?: readonly string[];
 }): Judgement {
+  if (summary.instrumentErrors?.length)
+    return { ok: false, evidence: [...summary.instrumentErrors] };
   if (summary.total === 0) {
     return { ok: false, evidence: ['验收套件 0 total ⇒ 套件没编译/没被选中,读数作废,按红处理'] };
   }
@@ -1076,8 +1180,217 @@ export function judgeAcceptanceSuite(summary: {
     ? { ok: true, evidence: [`验收套件 ${summary.passed}/${summary.total} 通过,零 todo 零失败`] }
     : {
         ok: false,
-        evidence: [`${summary.passed} 通 / ${summary.todo} 待 / ${summary.failed} 败 / ${summary.total} 总 —— ${bad.join('、')}`],
+        evidence: [
+          `${summary.passed} 通 / ${summary.todo} 待 / ${summary.failed} 败 / ${summary.total} 总 —— ${bad.join('、')}`,
+        ],
       };
+}
+
+export const R5_DEFERRED_ACCEPTANCE_IDS = ['AC-013', 'AC-017', 'AC-020', 'AC-025'] as const;
+export const ACCEPTANCE_GUARD_TITLES: readonly string[] = [
+  '四份合同与入仓时的 SHA256 清单逐字节一致',
+  '验收编号恰为 AC-001..072 与 ADV-001..023,无缺号无重号',
+  '355 项追踪矩阵行数为 355 且编号唯一',
+  '矩阵引用的每个验收编号都真实存在(含 `AC-001..004` 区间写法的两个端点)',
+  '第 6 批收口的 4 条对抗编号确实产出真实用例,没有静默退回 todo',
+  '每一个登记了去向的批次都真的接进了查表链(守类,不守某一批)',
+  '每一张卡点表都真的接进了卡点查表链(守类,不守某一批)',
+  '永久豁免表真的接进了查表链(守类,不守某一条)',
+  '当前豁免零腐烂:每条被豁免的编号都是合同真实定义的编号',
+  '腐烂检测有判别力:豁免一条合同里根本没有的编号 ⇒ 必须被报出来',
+  '当前豁免六项齐全:理由 / 拍板人 / 日期(合法日历日)/ 登记锚点一个不缺',
+  '字段检测有判别力:四类缺项各自被报出来,且红集精确',
+  '当前零重叠:没有任何编号既有真去向又被判定不做',
+  '互斥检测有判别力:一个既有去向又被豁免的编号 ⇒ 必须被报出来',
+  '豁免条数与登记文件声明的条数一致(删掉一条不许静默)',
+  '两把尺子:冻结稿台账的验收覆盖读数 = 本套件真实 todo 数',
+  '活文档仍指向本合同目录(指针被删则红)',
+];
+export const ACCEPTANCE_IDS: readonly string[] = [
+  ...Array.from({ length: 72 }, (_, i) => `AC-${String(i + 1).padStart(3, '0')}`),
+  ...Array.from({ length: 23 }, (_, i) => `ADV-${String(i + 1).padStart(3, '0')}`),
+];
+export type ReleaseProfile = 'full' | 'r5-limited500';
+export interface AcceptanceEvidence {
+  total: number;
+  passed: number;
+  todo: number;
+  failed: number;
+  pending: number;
+  rows: Array<{ title: string; id: string | null; status: string }>;
+  instrumentErrors: string[];
+}
+
+export function parseCutoverArgs(argv: readonly string[]) {
+  const result = {
+    json: false,
+    selftest: false,
+    signoff: false,
+    profile: 'full' as ReleaseProfile,
+  };
+  const seen = new Set<string>();
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (!['--json', '--selftest', '--signoff', '--profile'].includes(arg) || seen.has(arg))
+      throw new Error('未知或重复的cutover参数');
+    seen.add(arg);
+    if (arg === '--profile') {
+      const value = argv[++i];
+      if (value !== 'r5-limited500') throw new Error('profile必须明确为r5-limited500');
+      result.profile = value;
+    } else if (arg === '--json') result.json = true;
+    else if (arg === '--selftest') result.selftest = true;
+    else result.signoff = true;
+  }
+  if (
+    (result.selftest && result.signoff) ||
+    (result.profile !== 'full' && (result.selftest || result.signoff))
+  )
+    throw new Error('profile、selftest和signoff不可混用');
+  return result;
+}
+
+/** Decode the actual Jest report, including transport/exit evidence. A file alone never proves a run passed. */
+export function decodeAcceptanceEvidence(
+  raw: unknown,
+  execution: { status: number | null; signal?: string | null; error?: unknown },
+): AcceptanceEvidence {
+  const instrumentErrors: string[] = [];
+  const rows: AcceptanceEvidence['rows'] = [];
+  if (execution.status !== 0 || execution.signal || execution.error)
+    instrumentErrors.push('Jest子进程未正常exit0');
+  const report =
+    raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
+  const count = (key: string): number => {
+    const value = report[key];
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+      instrumentErrors.push(`Jest计数非法:${key}`);
+      return 0;
+    }
+    return value;
+  };
+  const total = count('numTotalTests'),
+    passed = count('numPassedTests'),
+    todo = count('numTodoTests');
+  const failed = count('numFailedTests'),
+    pending = count('numPendingTests');
+  if (report.success !== true || report.wasInterrupted !== false)
+    instrumentErrors.push('Jest未成功或已中断');
+  if (
+    count('numTotalTestSuites') !== 1 ||
+    count('numPassedTestSuites') !== 1 ||
+    count('numFailedTestSuites') !== 0 ||
+    count('numPendingTestSuites') !== 0 ||
+    count('numRuntimeErrorTestSuites') !== 0
+  )
+    instrumentErrors.push('Jest套件统计异常');
+  const suites = Array.isArray(report.testResults) ? report.testResults : [];
+  if (suites.length !== 1) instrumentErrors.push('验收套件数量不是1');
+  for (const value of suites) {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      instrumentErrors.push('套件结构非法');
+      continue;
+    }
+    const suite = value as Record<string, unknown>;
+    if (suite.name !== rel(ACCEPTANCE_SPEC) || suite.status !== 'passed')
+      instrumentErrors.push('验收套件路径或状态不匹配');
+    if (!Array.isArray(suite.assertionResults)) {
+      instrumentErrors.push('无逐项验收结果');
+      continue;
+    }
+    for (const value of suite.assertionResults) {
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        instrumentErrors.push('验收行结构非法');
+        continue;
+      }
+      const row = value as Record<string, unknown>;
+      if (typeof row.title !== 'string' || typeof row.status !== 'string') {
+        instrumentErrors.push('验收行缺标题或状态');
+        continue;
+      }
+      const matched = /^(AC-\d{3}|ADV-\d{3})(?:\s|$)/u.exec(row.title);
+      rows.push({ title: row.title, status: row.status, id: matched?.[1] ?? null });
+      if (!['passed', 'todo', 'failed', 'pending'].includes(row.status))
+        instrumentErrors.push('未知验收状态');
+      if (
+        row.failing === true ||
+        (Array.isArray(row.failureMessages) && row.failureMessages.length > 0)
+      )
+        instrumentErrors.push('验收行带失败信息');
+    }
+  }
+  const ids = new Set(ACCEPTANCE_IDS),
+    guards = new Set(ACCEPTANCE_GUARD_TITLES),
+    seen = new Set<string>();
+  for (const row of rows) {
+    const key = row.id ?? row.title;
+    if ((row.id !== null && !ids.has(row.id)) || (row.id === null && !guards.has(row.title)))
+      instrumentErrors.push('未知验收编号或守护标题');
+    if (seen.has(key)) instrumentErrors.push('重复验收编号或守护标题');
+    seen.add(key);
+  }
+  if (
+    ACCEPTANCE_IDS.some((id) => !seen.has(id)) ||
+    ACCEPTANCE_GUARD_TITLES.some((title) => !seen.has(title))
+  )
+    instrumentErrors.push('缺少验收编号或守护标题');
+  if (
+    total !== rows.length ||
+    total !== passed + todo + failed + pending ||
+    passed !== rows.filter((r) => r.status === 'passed').length ||
+    todo !== rows.filter((r) => r.status === 'todo').length ||
+    failed !== rows.filter((r) => r.status === 'failed').length ||
+    pending !== rows.filter((r) => r.status === 'pending').length
+  )
+    instrumentErrors.push('逐行结果与Jest计数不一致');
+  if (pending !== 0) instrumentErrors.push('验收含skip/pending');
+  return { total, passed, todo, failed, pending, rows, instrumentErrors };
+}
+
+export function judgeLimited500Acceptance(evidence: AcceptanceEvidence): Judgement {
+  const allowed = new Set<string>(R5_DEFERRED_ACCEPTANCE_IDS);
+  const bad = evidence.rows.filter(
+    (row) =>
+      row.status !== 'passed' && !(row.status === 'todo' && row.id !== null && allowed.has(row.id)),
+  );
+  const errors = [
+    ...evidence.instrumentErrors,
+    ...bad.map((r) => `${r.id ?? 'guard'}未通过且不在四项延期内`),
+  ];
+  if (evidence.total === 0) errors.push('验收空读数');
+  return {
+    ok: errors.length === 0,
+    evidence: errors.length
+      ? errors
+      : [
+          `受限500验收登记:${evidence.passed}通过/${evidence.todo}延期TODO/${evidence.total}总；真实PG执行另附同SHA回执`,
+        ],
+  };
+}
+
+export function qualifyReleaseProfile(
+  profile: ReleaseProfile,
+  acceptance: AcceptanceEvidence,
+  aFailed: readonly string[],
+  signoffOk: boolean,
+) {
+  const full9a = judgeAcceptanceSuite(acceptance);
+  const profile9a = profile === 'full' ? full9a : judgeLimited500Acceptance(acceptance);
+  const remaining = aFailed.filter(
+    (id) => !(profile === 'r5-limited500' && id === '9a' && profile9a.ok),
+  );
+  return {
+    name: profile,
+    machineOk: signoffOk && profile9a.ok && remaining.length === 0,
+    acceptanceOk: profile9a.ok,
+    fullAcceptanceOk: full9a.ok,
+    remainingMachineBlockers: remaining,
+    deferredIds: acceptance.rows.filter((r) => r.status === 'todo').map((r) => r.id),
+    productionDecision: 'NO_GO' as const,
+    realDatabaseEvidence: 'SEPARATE_SHA_BOUND_RECEIPTS_REQUIRED' as const,
+  };
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -1125,7 +1438,10 @@ function migrationBlobs(rev: string): Map<string, string> {
  * 脏文件塞一个哨兵值进去:它必然 ≠ 基线 blob sha,于是由同一个(已被正对照证明过的)判据报红。
  */
 function migrationBlobsWithWorktree(): Map<string, string> {
-  return mergeWorktreeDirt(migrationBlobs('HEAD'), git(['status', '--porcelain', '--', 'prisma/migrations']));
+  return mergeWorktreeDirt(
+    migrationBlobs('HEAD'),
+    git(['status', '--porcelain', '--', 'prisma/migrations']),
+  );
 }
 
 /**
@@ -1133,7 +1449,10 @@ function migrationBlobsWithWorktree(): Map<string, string> {
  * porcelain 行形如 ` M path` / `?? path` / `R  old -> new`;重命名取 `old` 那一侧
  * —— 老 migration 被改名同样是「旧 migration 被动过」。
  */
-export function mergeWorktreeDirt(base: Map<string, string>, porcelain: string): Map<string, string> {
+export function mergeWorktreeDirt(
+  base: Map<string, string>,
+  porcelain: string,
+): Map<string, string> {
   const out = new Map(base);
   for (const line of porcelain.split('\n')) {
     if (line.length < 4) continue;
@@ -1149,7 +1468,14 @@ export function mergeWorktreeDirt(base: Map<string, string>, porcelain: string):
  * 动态解析而不是写死 SHA:写死会在任何一次历史重写后指向虚空,且读的人无从验证它是哪一刀。
  */
 function resolveBaselineCommit(): { sha: string; date: string; subject: string } | null {
-  const lines = git(['log', '--diff-filter=A', '--format=%H\t%ad\t%s', '--date=short', '--', SHA256_MANIFEST])
+  const lines = git([
+    'log',
+    '--diff-filter=A',
+    '--format=%H\t%ad\t%s',
+    '--date=short',
+    '--',
+    SHA256_MANIFEST,
+  ])
     .split('\n')
     .filter((l) => l.trim().length > 0);
   const oldest = lines.at(-1);
@@ -1160,29 +1486,47 @@ function resolveBaselineCommit(): { sha: string; date: string; subject: string }
 
 function collectReconcile(): { cmd: string; covers: string; code: number; tail: string }[] {
   return RECONCILE_COMMANDS.map(({ cmd, covers }) => {
-    const r = spawnSync('pnpm', [cmd], { cwd: ROOT, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+    const r = spawnSync('pnpm', [cmd], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      maxBuffer: 32 * 1024 * 1024,
+    });
     const text = `${r.stdout ?? ''}${r.stderr ?? ''}`.trim().split('\n').slice(-3).join(' | ');
     return { cmd, covers, code: r.status ?? 1, tail: text.slice(0, 300) };
   });
 }
 
-function collectAcceptance(): { total: number; passed: number; todo: number; failed: number } {
+function collectAcceptance(): AcceptanceEvidence {
   const dir = mkdtempSync(join(tmpdir(), 'srvf-cutover-'));
   const out = join(dir, 'acceptance.json');
   try {
-    spawnSync(
+    const result = spawnSync(
       'pnpm',
-      ['exec', 'jest', '--config', 'test/jest-unit.config.ts', '--json', '--silent', '--outputFile', out, ACCEPTANCE_SPEC],
+      [
+        'exec',
+        'jest',
+        '--config',
+        'test/jest-unit.config.ts',
+        '--runInBand',
+        '--json',
+        '--silent',
+        '--outputFile',
+        out,
+        ACCEPTANCE_SPEC,
+      ],
       { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
     );
-    if (!existsSync(out)) return { total: 0, passed: 0, todo: 0, failed: 0 };
-    const r = JSON.parse(readFileSync(out, 'utf8')) as {
-      numTotalTests: number;
-      numPassedTests: number;
-      numTodoTests: number;
-      numFailedTests: number;
-    };
-    return { total: r.numTotalTests, passed: r.numPassedTests, todo: r.numTodoTests, failed: r.numFailedTests };
+    let report: unknown;
+    try {
+      report = existsSync(out) ? (JSON.parse(readFileSync(out, 'utf8')) as unknown) : undefined;
+    } catch {
+      report = undefined;
+    }
+    return decodeAcceptanceEvidence(report, {
+      status: result.status,
+      signal: result.signal,
+      error: result.error,
+    });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1322,7 +1666,9 @@ function collectSignoffReadings(pkgVersion: string): Record<SignoffReadingKey, s
   );
   const report = readOrNull(`${CONTRACT_DIR}/${REVIEW_REPORT}`);
   const digest12 = (body: string | null): string =>
-    body === null ? '(文件不存在)' : createHash('sha256').update(body, 'utf8').digest('hex').slice(0, 12);
+    body === null
+      ? '(文件不存在)'
+      : createHash('sha256').update(body, 'utf8').digest('hex').slice(0, 12);
 
   // ⑥-b 的两个锚:C3 / C8 的**现算**闭包大小。runCriteria() 在 buildItems 里还会再跑一次 ——
   // 刻意不共享:采集与判定分离是本文件的基本姿态,读数这一侧不该依赖那一侧的执行顺序。
@@ -1335,7 +1681,9 @@ function collectSignoffReadings(pkgVersion: string): Record<SignoffReadingKey, s
   const jobBlock = /model\s+ActivityBatchJob\s*\{([\s\S]*?)\n\}/.exec(schemaText);
   const leaseColumns = ['leaseOwner', 'leaseGeneration', 'leaseExpiresAt'].filter(
     (c) =>
-      jobBlock !== null && new RegExp(`^\\s*${c}\\s`, 'm').test(jobBlock[1]) && workerText.includes(c),
+      jobBlock !== null &&
+      new RegExp(`^\\s*${c}\\s`, 'm').test(jobBlock[1]) &&
+      workerText.includes(c),
   ).length;
 
   return {
@@ -1361,9 +1709,10 @@ function collectSignoffReadings(pkgVersion: string): Record<SignoffReadingKey, s
 
 /** ④-c 的 A 类判据:两份登记表双向对拍(字典 + 审计事件),判据本体在红区脚本里。
  *  overrides 只被正对照(control)用来喂变异输入;生产路径一律读真源。 */
-function judgeRegistryReconciliation(
-  overrides?: { dictRegistry?: string | null; auditRegistry?: string | null },
-): Judgement {
+function judgeRegistryReconciliation(overrides?: {
+  dictRegistry?: string | null;
+  auditRegistry?: string | null;
+}): Judgement {
   const dict = judgeDictionaryRegistry(
     readOrNull(DICT_SEED_PATH),
     overrides?.dictRegistry !== undefined ? overrides.dictRegistry : readOrNull(DICT_REGISTRY_PATH),
@@ -1372,7 +1721,9 @@ function judgeRegistryReconciliation(
   const srcFiles = listAuditSourceFiles(resolve(AUDIT_SRC_ROOT), [resolve(AUDIT_TYPES_PATH)]);
   const audit = judgeAuditEventRegistry(
     typesRel,
-    overrides?.auditRegistry !== undefined ? overrides.auditRegistry : readOrNull(AUDIT_REGISTRY_PATH),
+    overrides?.auditRegistry !== undefined
+      ? overrides.auditRegistry
+      : readOrNull(AUDIT_REGISTRY_PATH),
     srcFiles,
   );
   const evidence = [
@@ -1383,12 +1734,22 @@ function judgeRegistryReconciliation(
 }
 
 /** ④ 字典半读数(seed.ts + 登记表 → 判据本体)。 */
-function dictRegistryReadings(): Pick<Record<SignoffReadingKey, string>, 'dict-registry-types' | 'dict-registry-items'> {  const j = judgeDictionaryRegistry(readOrNull(DICT_SEED_PATH), readOrNull(DICT_REGISTRY_PATH));
-  return { 'dict-registry-types': String(j.counts.types), 'dict-registry-items': String(j.counts.items) };
+function dictRegistryReadings(): Pick<
+  Record<SignoffReadingKey, string>,
+  'dict-registry-types' | 'dict-registry-items'
+> {
+  const j = judgeDictionaryRegistry(readOrNull(DICT_SEED_PATH), readOrNull(DICT_REGISTRY_PATH));
+  return {
+    'dict-registry-types': String(j.counts.types),
+    'dict-registry-items': String(j.counts.items),
+  };
 }
 
 /** ④ audit 半读数(types.ts + 登记表 + 全仓扫描 → 判据本体)。 */
-function auditRegistryReadings(): Pick<Record<SignoffReadingKey, string>, 'audit-event-registry-total' | 'audit-event-registry-active'> {
+function auditRegistryReadings(): Pick<
+  Record<SignoffReadingKey, string>,
+  'audit-event-registry-total' | 'audit-event-registry-active'
+> {
   const typesRel = readOrNull(AUDIT_TYPES_PATH);
   const srcFiles = listAuditSourceFiles(resolve(AUDIT_SRC_ROOT), [resolve(AUDIT_TYPES_PATH)]);
   const j = judgeAuditEventRegistry(typesRel, readOrNull(AUDIT_REGISTRY_PATH), srcFiles);
@@ -1453,7 +1814,8 @@ export function positiveControls(): Control[] {
       id: '1a',
       desc: '把一份合同的正文改一个字符 ⇒ SHA256 对不上',
       must: 'red',
-      run: () => judgeContractIntegrity(manifest, { ...goodDocs, [firstDoc]: `${goodDocs[firstDoc]}x` }),
+      run: () =>
+        judgeContractIntegrity(manifest, { ...goodDocs, [firstDoc]: `${goodDocs[firstDoc]}x` }),
     },
     {
       id: '1a′',
@@ -1479,7 +1841,11 @@ export function positiveControls(): Control[] {
       id: '3a′',
       desc: '基线里的一个 migration 被删了 ⇒ 必红',
       must: 'red',
-      run: () => judgeOldMigrationsUnchanged(new Map([['prisma/migrations/x/migration.sql', 'aaa']]), new Map()),
+      run: () =>
+        judgeOldMigrationsUnchanged(
+          new Map([['prisma/migrations/x/migration.sql', 'aaa']]),
+          new Map(),
+        ),
     },
     {
       id: '3a″',
@@ -1505,7 +1871,10 @@ export function positiveControls(): Control[] {
       must: 'red',
       run: () => {
         const base = new Map([['prisma/migrations/20250101_x/migration.sql', 'aaa']]);
-        const head = mergeWorktreeDirt(base, 'R  prisma/migrations/20250101_x/migration.sql -> prisma/migrations/20250101_y/migration.sql\n');
+        const head = mergeWorktreeDirt(
+          base,
+          'R  prisma/migrations/20250101_x/migration.sql -> prisma/migrations/20250101_y/migration.sql\n',
+        );
         return judgeOldMigrationsUnchanged(base, head);
       },
     },
@@ -1523,7 +1892,10 @@ export function positiveControls(): Control[] {
         try {
           base = migrationBlobs('46dca8ab');
         } catch {
-          return { ok: true, evidence: ['历史提交 46dca8ab 不可达(浅克隆?)⇒ 故意判绿,让自证报失效'] };
+          return {
+            ok: true,
+            evidence: ['历史提交 46dca8ab 不可达(浅克隆?)⇒ 故意判绿,让自证报失效'],
+          };
         }
         const j = judgeOldMigrationsUnchanged(base, migrationBlobs('HEAD'));
         // 不只要求「红」,还要求红在**那一条**上 —— 否则随便哪种失真都能冒充命中。
@@ -1538,14 +1910,19 @@ export function positiveControls(): Control[] {
       must: 'red',
       run: () =>
         judgeReconcile(
-          RECONCILE_COMMANDS.map((c, i) => ({ ...c, code: i === 0 ? 1 : 0, tail: i === 0 ? '快照漂移' : '' })),
+          RECONCILE_COMMANDS.map((c, i) => ({
+            ...c,
+            code: i === 0 ? 1 : 0,
+            tail: i === 0 ? '快照漂移' : '',
+          })),
         ),
     },
     {
       id: '4a′',
       desc: '少跑了一条对账命令 ⇒ 必红(采集不全不许当全绿)',
       must: 'red',
-      run: () => judgeReconcile(RECONCILE_COMMANDS.slice(1).map((c) => ({ ...c, code: 0, tail: '' }))),
+      run: () =>
+        judgeReconcile(RECONCILE_COMMANDS.slice(1).map((c) => ({ ...c, code: 0, tail: '' }))),
     },
     // 4c 的正对照:变异只动审计登记表一个计数(攻击者改计数让总数对上)——
     // 判据本体(scripts/check-*-registry.ts)的 M1–M6 常驻变异对拍在 unit 轮全覆盖,
@@ -1559,12 +1936,18 @@ export function positiveControls(): Control[] {
         const mutated =
           registry === null
             ? null
-            : registry.replace(/^(\| `auth\.login` \| )\d+( \|)/m, (_m, p1: string, p2: string) => `${p1}99${p2}`);
+            : registry.replace(
+                /^(\| `auth\.login` \| )\d+( \|)/m,
+                (_m, p1: string, p2: string) => `${p1}99${p2}`,
+              );
         const j = judgeRegistryReconciliation({ auditRegistry: mutated });
         // 不只要求「红」,还要求红在**那一条**上 —— 换成别的失真冒充不了命中。
         return j.evidence.some((e) => e.includes('auth.login') && e.includes('99'))
           ? j
-          : { ok: true, evidence: ['红了但不是红在 auth.login 计数漂移上 ⇒ 故意判绿,让自证报失效'] };
+          : {
+              ok: true,
+              evidence: ['红了但不是红在 auth.login 计数漂移上 ⇒ 故意判绿,让自证报失效'],
+            };
       },
     },
     {
@@ -1579,13 +1962,15 @@ export function positiveControls(): Control[] {
       id: '5a',
       desc: 'swagger 里的版本字面量与 package.json 漂移 ⇒ 必红',
       must: 'red',
-      run: () => judgeBackendVersionSingleValued('7.7.7', "  .setVersion('7.7.6')\n", '7.7.7', CLEAN_SCAN),
+      run: () =>
+        judgeBackendVersionSingleValued('7.7.7', "  .setVersion('7.7.6')\n", '7.7.7', CLEAN_SCAN),
     },
     {
       id: '5a′',
       desc: '三处一致且全仓无第四处 ⇒ 必绿(证明它不是恒红)',
       must: 'green',
-      run: () => judgeBackendVersionSingleValued('7.7.7', "  .setVersion('7.7.7')\n", '7.7.7', CLEAN_SCAN),
+      run: () =>
+        judgeBackendVersionSingleValued('7.7.7', "  .setVersion('7.7.7')\n", '7.7.7', CLEAN_SCAN),
     },
     {
       id: '5a″',
@@ -1601,7 +1986,11 @@ export function positiveControls(): Control[] {
       id: '5a‴',
       desc: '扫描面塌成 0 个文件 ⇒ 必红(零命中与真干净长得一样,不许当绿)',
       must: 'red',
-      run: () => judgeBackendVersionSingleValued('7.7.7', "  .setVersion('7.7.7')\n", '7.7.7', { fileCount: 0, strays: [] }),
+      run: () =>
+        judgeBackendVersionSingleValued('7.7.7', "  .setVersion('7.7.7')\n", '7.7.7', {
+          fileCount: 0,
+          strays: [],
+        }),
     },
     {
       id: '5a⁗',
@@ -1619,7 +2008,10 @@ export function positiveControls(): Control[] {
         );
         // 只有「恰好扫出 stray 那一处」才算判据健全 ⇒ 此时 ok=false ⇒ 必红。
         const exact = hits.length === 1 && hits[0].startsWith('src/stray.ts:1');
-        return { ok: !exact, evidence: [`扫描命中 ${hits.length} 处:${hits.join(' | ') || '(无)'}`] };
+        return {
+          ok: !exact,
+          evidence: [`扫描命中 ${hits.length} 处:${hits.join(' | ') || '(无)'}`],
+        };
       },
     },
     {
@@ -1675,20 +2067,30 @@ export function positiveControls(): Control[] {
       id: '6a′',
       desc: '零 finding 但某一面 counts=0(判据没扫到东西)⇒ 必红',
       must: 'red',
-      run: () => judgeV11GateCriteria([], { v11GatedEntries: 0, legacyGatedEntries: 3, readFiles: 2, gateDependentModules: 4 }),
+      run: () =>
+        judgeV11GateCriteria([], {
+          v11GatedEntries: 0,
+          legacyGatedEntries: 3,
+          readFiles: 2,
+          gateDependentModules: 4,
+        }),
     },
     {
       id: '7a',
       desc: '没有任何入口拉起 ActivityBatchWorker ⇒ 必红',
       must: 'red',
-      run: () => judgeWorkerStartCommand({ 'start:x': 'node dist/x' }, () => 'export function noop() {}'),
+      run: () =>
+        judgeWorkerStartCommand({ 'start:x': 'node dist/x' }, () => 'export function noop() {}'),
     },
     {
       id: '7a′',
       desc: '入口里有 worker 且 run() ⇒ 必绿',
       must: 'green',
       run: () =>
-        judgeWorkerStartCommand({ 'start:x': 'node dist/x' }, () => 'new ActivityBatchWorker(); void w.run();'),
+        judgeWorkerStartCommand(
+          { 'start:x': 'node dist/x' },
+          () => 'new ActivityBatchWorker(); void w.run();',
+        ),
     },
     {
       // ⚠️ 变异必须落在 **ActivityBatchJob 那个 model 块内**:仓内另有 StorageObjectOperation
@@ -1700,9 +2102,11 @@ export function positiveControls(): Control[] {
       must: 'red',
       run: () => {
         const block = /model\s+ActivityBatchJob\s*\{([\s\S]*?)\n\}/.exec(realSchema);
-        if (block === null) return { ok: true, evidence: ['变异没打中(找不到 model 块)⇒ 故意判绿,让自证报失效'] };
+        if (block === null)
+          return { ok: true, evidence: ['变异没打中(找不到 model 块)⇒ 故意判绿,让自证报失效'] };
         const mutated = block[0].replace(/^(\s*)leaseGeneration(\s)/m, '$1leaseGenerationX$2');
-        if (mutated === block[0]) return { ok: true, evidence: ['变异没打中(列名没换)⇒ 故意判绿,让自证报失效'] };
+        if (mutated === block[0])
+          return { ok: true, evidence: ['变异没打中(列名没换)⇒ 故意判绿,让自证报失效'] };
         return judgeWorkerLease(realSchema.replace(block[0], mutated), realWorker);
       },
     },
@@ -1734,19 +2138,25 @@ export function positiveControls(): Control[] {
       id: '7e',
       desc: 'worker 没有 onApplicationShutdown ⇒ 必红',
       must: 'red',
-      run: () => judgeWorkerGracefulDrain(realWorker.replace(/onApplicationShutdown\s*\(/g, 'notAHook(')),
+      run: () =>
+        judgeWorkerGracefulDrain(realWorker.replace(/onApplicationShutdown\s*\(/g, 'notAHook(')),
     },
     {
       id: '8a',
       desc: '某个开关在 production 下缺省不 fail-fast(有默认值)⇒ 必红',
       must: 'red',
-      run: () => judgeFlagsFailFast([{ env: 'FAKE_ENABLED', label: '假开关', parse: () => false }], realConfig),
+      run: () =>
+        judgeFlagsFailFast(
+          [{ env: 'FAKE_ENABLED', label: '假开关', parse: () => false }],
+          realConfig,
+        ),
     },
     {
       id: '8a′',
       desc: '给企业微信加一个 per-instance env 开关 ⇒ 反向闸必红',
       must: 'red',
-      run: () => judgeFlagsFailFast(INSTANCE_FLAGS, `${realConfig}\nprocess.env.WECOM_LOGIN_ENABLED;\n`),
+      run: () =>
+        judgeFlagsFailFast(INSTANCE_FLAGS, `${realConfig}\nprocess.env.WECOM_LOGIN_ENABLED;\n`),
     },
     {
       id: '8a″',
@@ -1918,7 +2328,9 @@ function signoffControls(): Control[] {
       desc: '``` 围栏内的填法模板不算签字 ⇒ 必绿(条数不受模板影响)',
       must: 'green',
       run: () =>
-        runSignoff(signoffDoc([signoffBlock(), ['```md', signoffBlock(), '```', ''].join('\n')], 1)),
+        runSignoff(
+          signoffDoc([signoffBlock(), ['```md', signoffBlock(), '```', ''].join('\n')], 1),
+        ),
     },
     {
       id: 'S15″',
@@ -1938,7 +2350,13 @@ function signoffControls(): Control[] {
       desc: '渲染侧:矛盾的签字必须渲染成 ❌,不许藏进「待维护者确认」',
       must: 'red',
       run: () => {
-        const conflicted: SubCheck = { id: '5b', kind: 'B', title: 't', verdict: 'conflict', evidence: [] };
+        const conflicted: SubCheck = {
+          id: '5b',
+          kind: 'B',
+          title: 't',
+          verdict: 'conflict',
+          evidence: [],
+        };
         const okA: SubCheck = { id: '5a', kind: 'A', title: 't', verdict: 'pass', evidence: [] };
         const renderedSub = renderVerdict('B', 'conflict');
         const renderedItem = renderVerdict('B', itemVerdict([okA, conflicted]));
@@ -1976,7 +2394,10 @@ function signoffControls(): Control[] {
           subs: [{ id: '11z', kind: 'A', title: 't', verdict: 'pass', evidence: [] }],
         };
         const problems = assertSubIdsClosed([fake]);
-        return { ok: problems.length === 0, evidence: problems.length > 0 ? problems : ['(零 problem)'] };
+        return {
+          ok: problems.length === 0,
+          evidence: problems.length > 0 ? problems : ['(零 problem)'],
+        };
       },
     },
     // ── R 系列:被对拍的**机器现读**本身不能是退化值 ────────────────────────
@@ -2012,9 +2433,14 @@ function signoffControls(): Control[] {
       must: 'red',
       run: () =>
         judgeSignoffReadings({
-          ...Object.fromEntries(SIGNOFF_READING_KEYS.filter((k) => k !== 'seed-sha256-12').map((k) => [k, '1'])),
           ...Object.fromEntries(
-            SIGNOFF_DIGEST_KEYS.filter((k) => k !== 'seed-sha256-12').map((k) => [k, 'a1b2c3d4e5f6']),
+            SIGNOFF_READING_KEYS.filter((k) => k !== 'seed-sha256-12').map((k) => [k, '1']),
+          ),
+          ...Object.fromEntries(
+            SIGNOFF_DIGEST_KEYS.filter((k) => k !== 'seed-sha256-12').map((k) => [
+              k,
+              'a1b2c3d4e5f6',
+            ]),
           ),
         }),
     },
@@ -2094,7 +2520,8 @@ function signoffControls(): Control[] {
       id: 'T6',
       desc: '对拍读数退化成一句人话 ⇒ 必红(采集器没读到真源 ≠ 清单真的空了)',
       must: 'red',
-      run: () => judgeScaleTierRegistry({ ...realScaleTierInput(), tiersReading: '(用例不再由档位表生成)' }),
+      run: () =>
+        judgeScaleTierRegistry({ ...realScaleTierInput(), tiersReading: '(用例不再由档位表生成)' }),
     },
     {
       id: 'T7',
@@ -2161,7 +2588,13 @@ function assertContractTextVerbatim(): string[] {
 // ══════════════════════════════════════════════════════════════════════════
 
 function sub(id: string, kind: Kind, title: string, j: Judgement): SubCheck {
-  return { id, kind, title, verdict: kind === 'A' ? (j.ok ? 'pass' : 'fail') : 'pending', evidence: j.evidence };
+  return {
+    id,
+    kind,
+    title,
+    verdict: kind === 'A' ? (j.ok ? 'pass' : 'fail') : 'pending',
+    evidence: j.evidence,
+  };
 }
 
 /**
@@ -2201,9 +2634,12 @@ export function applySignoff(s: SubCheck, signoff: SignoffState): SubCheck {
     : { ...s, verdict: 'conflict', evidence: [...lines, ...signed.defects.map((d) => `❌ ${d}`)] };
 }
 
-function buildItems(signoff: SignoffState): ItemResult[] {
+function buildItems(signoff: SignoffState, acceptance: AcceptanceEvidence): ItemResult[] {
   // ── 采集 ──
-  const pkg = JSON.parse(read('package.json')) as { version: string; scripts: Record<string, string> };
+  const pkg = JSON.parse(read('package.json')) as {
+    version: string;
+    scripts: Record<string, string>;
+  };
   const manifest = read(SHA256_MANIFEST);
   const docs: Record<string, string> = {};
   const manifestFiles: string[] = [];
@@ -2222,9 +2658,9 @@ function buildItems(signoff: SignoffState): ItemResult[] {
     .filter((p) => !baseBlobs.has(p))
     .map((p) => p.replace('prisma/migrations/', '').replace('/migration.sql', ''));
   const criteria = runCriteria();
-  const acceptance = collectAcceptance();
   const reconcile = collectReconcile();
-  const openapiVersion = (JSON.parse(read(OPENAPI_JSON)) as { info: { version: string } }).info.version;
+  const openapiVersion = (JSON.parse(read(OPENAPI_JSON)) as { info: { version: string } }).info
+    .version;
   const grants = collectGrants();
 
   // 合同目录里不在 SHA256 清单内的 .md = 非合同附件(复核产物等),①-b 的证据面。
@@ -2238,14 +2674,21 @@ function buildItems(signoff: SignoffState): ItemResult[] {
     {
       text: CONTRACT_ITEMS[0],
       subs: [
-        sub('1a', 'A', '四份合同已入仓,且与入仓冻结的 SHA256 清单逐字节一致', judgeContractIntegrity(manifest, docs)),
+        sub(
+          '1a',
+          'A',
+          '四份合同已入仓,且与入仓冻结的 SHA256 清单逐字节一致',
+          judgeContractIntegrity(manifest, docs),
+        ),
         eviSub('1b', 'C', '「通过不同模型复核」', [
           attachments.length === 0
             ? '合同目录下没有任何非合同附件(复核产物)'
             : `合同目录下的非合同附件:${attachments.join('、')}`,
           ...attachments.flatMap((f) => {
             const head = (readOrNull(`${CONTRACT_DIR}/${f}`) ?? '').split('\n').slice(0, 12);
-            return head.filter((l) => /复核对象|复核日期/.test(l)).map((l) => `  ${f}:${l.replace(/^>\s*/, '').trim()}`);
+            return head
+              .filter((l) => /复核对象|复核日期/.test(l))
+              .map((l) => `  ${f}:${l.replace(/^>\s*/, '').trim()}`);
           }),
           '机器无从判断「不同模型」与「通过」—— 复核产物既未署模型,也不是机器可核的对象。',
           '需要的证据:针对 v1.1 **四份**文档、由**不同模型**出具的复核结论(含模型标识与结论),并说明其与上列附件的关系。',
@@ -2293,7 +2736,12 @@ function buildItems(signoff: SignoffState): ItemResult[] {
     {
       text: CONTRACT_ITEMS[3],
       subs: [
-        sub('4a', 'A', '权限与合同快照类生成物:重跑生成器与仓内产物逐字节对账', judgeReconcile(reconcile)),
+        sub(
+          '4a',
+          'A',
+          '权限与合同快照类生成物:重跑生成器与仓内产物逐字节对账',
+          judgeReconcile(reconcile),
+        ),
         sub(
           '4c',
           'A',
@@ -2338,7 +2786,10 @@ function buildItems(signoff: SignoffState): ItemResult[] {
           '6a',
           'A',
           '旧写入口已关闭(代码侧):复用 #1084 的 C1–C8 结构判据',
-          judgeV11GateCriteria(criteria.findings, criteria.counts as unknown as Record<string, number>),
+          judgeV11GateCriteria(
+            criteria.findings,
+            criteria.counts as unknown as Record<string, number>,
+          ),
         ),
         eviSub('6b', 'B', '「旧读者清单全部切新账本」', [
           `C3(文件粒度)扫到并确认接闸的读面文件:${criteria.counts.readFiles} 个(它们都经 participationReadSource() 问闸)。`,
@@ -2359,10 +2810,20 @@ function buildItems(signoff: SignoffState): ItemResult[] {
     {
       text: CONTRACT_ITEMS[6],
       subs: [
-        sub('7a', 'A', '有启动命令', judgeWorkerStartCommand(pkg.scripts, (p) => readOrNull(p))),
+        sub(
+          '7a',
+          'A',
+          '有启动命令',
+          judgeWorkerStartCommand(pkg.scripts, (p) => readOrNull(p)),
+        ),
         sub('7b', 'A', '有 lease(租约 / 围栏)', judgeWorkerLease(read(SCHEMA), read(WORKER_SRC))),
         sub('7e', 'A', '有停机排空', judgeWorkerGracefulDrain(read(WORKER_SRC))),
-        sub('7d', 'A', `有运维 SOP 文档(登记路径 ${WORKER_RUNBOOK},须五要素成节)`, judgeWorkerRunbook(readOrNull(WORKER_RUNBOOK))),
+        sub(
+          '7d',
+          'A',
+          `有运维 SOP 文档(登记路径 ${WORKER_RUNBOOK},须五要素成节)`,
+          judgeWorkerRunbook(readOrNull(WORKER_RUNBOOK)),
+        ),
         eviSub('7c', 'B', '有健康检查', [
           'src/modules/health 是 **HTTP 进程**的 /health;worker 跑在 headless application context 里,不经 HTTP ⇒ 那个端点不覆盖它。',
           'worker 侧现有的存活性代偿是 lease 过期后由下一轮重新领取(见 7b),那是**恢复**机制,不等于健康检查。',
@@ -2374,9 +2835,16 @@ function buildItems(signoff: SignoffState): ItemResult[] {
     {
       text: CONTRACT_ITEMS[7],
       subs: [
-        sub('8a', 'A', '开关具备「可一致」的执行位:production 下空值即 fail-fast + 企业微信不得新增 per-instance env', judgeFlagsFailFast(INSTANCE_FLAGS, read(CONFIG_SRC))),
+        sub(
+          '8a',
+          'A',
+          '开关具备「可一致」的执行位:production 下空值即 fail-fast + 企业微信不得新增 per-instance env',
+          judgeFlagsFailFast(INSTANCE_FLAGS, read(CONFIG_SRC)),
+        ),
         eviSub('8b', 'B', '「全实例一致」本身', [
-          ...INSTANCE_FLAGS.map((f) => `${f.env}(${f.label})本进程读到:${process.env[f.env] ?? '(未设置)'}`),
+          ...INSTANCE_FLAGS.map(
+            (f) => `${f.env}(${f.label})本进程读到:${process.env[f.env] ?? '(未设置)'}`,
+          ),
           '企业微信(wecom_settings.enabled)是 DB 单点,全实例共享同一行 ⇒ 结构上不会不一致。',
           '⚠️ 上面三行**只是本进程**。集群里别的实例设了什么,仓库看不见。',
           '需要的证据:每个实例的 env 快照(或部署配置的单一来源),证明三个开关取值相同。',
@@ -2387,7 +2855,12 @@ function buildItems(signoff: SignoffState): ItemResult[] {
     {
       text: CONTRACT_ITEMS[8],
       subs: [
-        sub('9a', 'A', 'AC / ADV 验收套件零 todo 零失败(实跑 jest,不看文本)', judgeAcceptanceSuite(acceptance)),
+        sub(
+          '9a',
+          'A',
+          'AC / ADV 验收套件零 todo 零失败(实跑 jest,不看文本)',
+          judgeAcceptanceSuite(acceptance),
+        ),
         sub(
           '9c',
           'A',
@@ -2459,7 +2932,8 @@ export function assertSubIdsClosed(items: readonly ItemResult[]): string[] {
   const actualIds = actual.map((s) => s.id);
   const actualSignable = actual.filter((s) => s.kind !== 'A').map((s) => s.id);
   const problems: string[] = [];
-  const diff = (a: readonly string[], b: readonly string[]): string[] => a.filter((x) => !b.includes(x));
+  const diff = (a: readonly string[], b: readonly string[]): string[] =>
+    a.filter((x) => !b.includes(x));
   const missing = diff(actualIds, ALL_SUB_IDS);
   const stale = diff(ALL_SUB_IDS, actualIds);
   if (missing.length > 0) problems.push(`ALL_SUB_IDS 漏登记:${missing.join('、')}`);
@@ -2467,7 +2941,8 @@ export function assertSubIdsClosed(items: readonly ItemResult[]): string[] {
   const sMissing = diff(actualSignable, SIGNABLE_SUB_IDS);
   const sStale = diff(SIGNABLE_SUB_IDS, actualSignable);
   if (sMissing.length > 0) problems.push(`SIGNABLE_SUB_IDS 漏登记 B/C 编号:${sMissing.join('、')}`);
-  if (sStale.length > 0) problems.push(`SIGNABLE_SUB_IDS 里有非 B/C 或已不存在的编号:${sStale.join('、')}`);
+  if (sStale.length > 0)
+    problems.push(`SIGNABLE_SUB_IDS 里有非 B/C 或已不存在的编号:${sStale.join('、')}`);
   return problems;
 }
 
@@ -2505,7 +2980,8 @@ function renderVerdict(kind: Kind, verdict: Verdict): string {
 
 function oneLiner(item: ItemResult): string {
   const failed = item.subs.filter((s) => s.kind === 'A' && s.verdict === 'fail');
-  if (failed.length > 0) return `${failed.map((s) => s.id).join('/')} 未过:${failed[0].evidence[0]}`;
+  if (failed.length > 0)
+    return `${failed.map((s) => s.id).join('/')} 未过:${failed[0].evidence[0]}`;
   const conflicts = item.subs.filter((s) => s.verdict === 'conflict');
   if (conflicts.length > 0) {
     const first = conflicts[0].evidence.filter((e) => e.startsWith('❌'))[0] ?? '签字有缺陷';
@@ -2514,7 +2990,8 @@ function oneLiner(item: ItemResult): string {
   const passedA = item.subs.filter((s) => s.kind === 'A');
   const signed = item.subs.filter((s) => s.verdict === 'signed');
   const pending = item.subs.filter((s) => s.kind !== 'A' && s.verdict === 'pending');
-  const left = passedA.length > 0 ? `A 类 ${passedA.map((s) => s.id).join('/')} 已过` : '无 A 类判据';
+  const left =
+    passedA.length > 0 ? `A 类 ${passedA.map((s) => s.id).join('/')} 已过` : '无 A 类判据';
   const parts = [left];
   if (signed.length > 0) {
     parts.push(`已签字:${signed.map((s) => `${s.id}(${s.kind})`).join('、')}`);
@@ -2525,15 +3002,22 @@ function oneLiner(item: ItemResult): string {
   return parts.join(';');
 }
 
-function renderControls(controls: readonly { id: string; desc: string; must: 'red' | 'green'; got: boolean }[]): string[] {
-  return controls.map((c) => `  ${c.got ? '✓' : '✗'} ${c.id.padEnd(5)} ${c.must === 'red' ? '弄假⇒必红' : '修好⇒必绿'}  ${c.desc}`);
+function renderControls(
+  controls: readonly { id: string; desc: string; must: 'red' | 'green'; got: boolean }[],
+): string[] {
+  return controls.map(
+    (c) =>
+      `  ${c.got ? '✓' : '✗'} ${c.id.padEnd(5)} ${c.must === 'red' ? '弄假⇒必红' : '修好⇒必绿'}  ${c.desc}`,
+  );
 }
 
 function renderItems(items: readonly ItemResult[]): string[] {
   const out: string[] = [];
   for (const it of items) {
     out.push('');
-    out.push(`${CIRCLED[it.no - 1]} [${KIND_LABEL[it.kind]}] ${renderVerdict(it.kind, it.verdict)}`);
+    out.push(
+      `${CIRCLED[it.no - 1]} [${KIND_LABEL[it.kind]}] ${renderVerdict(it.kind, it.verdict)}`,
+    );
     out.push(`   合同原文:${it.text}`);
     for (const s of it.subs) {
       out.push(`   ${s.kind} ${s.id.padEnd(4)} ${renderVerdict(s.kind, s.verdict)}  ${s.title}`);
@@ -2545,7 +3029,8 @@ function renderItems(items: readonly ItemResult[]): string[] {
 
 function renderSummary(items: readonly ItemResult[]): string[] {
   return items.map(
-    (it) => `${CIRCLED[it.no - 1]} ${it.kind}  ${renderVerdict(it.kind, it.verdict)}  ${oneLiner(it)}`,
+    (it) =>
+      `${CIRCLED[it.no - 1]} ${it.kind}  ${renderVerdict(it.kind, it.verdict)}  ${oneLiner(it)}`,
   );
 }
 
@@ -2554,10 +3039,18 @@ function renderSummary(items: readonly ItemResult[]): string[] {
 // ══════════════════════════════════════════════════════════════════════════
 
 function main(): void {
-  const argv = process.argv.slice(2);
-  const wantJson = argv.includes('--json');
-  const selftestOnly = argv.includes('--selftest');
-  const signoffOnly = argv.includes('--signoff');
+  let options: ReturnType<typeof parseCutoverArgs>;
+  try {
+    options = parseCutoverArgs(process.argv.slice(2));
+  } catch {
+    console.error(
+      'cutover参数非法；允许--json、--selftest、--signoff，或--profile r5-limited500（不与后两者混用）',
+    );
+    process.exit(1);
+  }
+  const wantJson = options.json;
+  const selftestOnly = options.selftest;
+  const signoffOnly = options.signoff;
   const log = (s = ''): void => {
     if (!wantJson) console.log(s);
   };
@@ -2565,7 +3058,9 @@ function main(): void {
   log('══════════════════════════════════════════════════════════════════════');
   log('SRVF 活动 v1.1 —— 切换前检查(合同 §16.1 十条)');
   log('══════════════════════════════════════════════════════════════════════');
-  log(`HEAD:${git(['rev-parse', '--short', 'HEAD']).trim()}   分支:${git(['rev-parse', '--abbrev-ref', 'HEAD']).trim()}`);
+  log(
+    `HEAD:${git(['rev-parse', '--short', 'HEAD']).trim()}   分支:${git(['rev-parse', '--abbrev-ref', 'HEAD']).trim()}`,
+  );
   log('');
   log('[自证] 报数之前先证明判据不是恒真的(正对照 + 原文回查)');
 
@@ -2579,10 +3074,14 @@ function main(): void {
   const badControls = controls.filter((c) => !c.got);
 
   for (const line of renderControls(controls)) log(line);
-  log(`  ${textErrors.length === 0 ? '✓' : '✗'} 原文    十条逐字取自合同 §16.1(${CONTRACT_ITEMS.length} 条回查)`);
+  log(
+    `  ${textErrors.length === 0 ? '✓' : '✗'} 原文    十条逐字取自合同 §16.1(${CONTRACT_ITEMS.length} 条回查)`,
+  );
   for (const e of textErrors) log(`        · ${e}`);
   log('');
-  log(`  自证结果:正对照 ${controls.length - badControls.length}/${controls.length} 按预期,原文回查 ${textErrors.length === 0 ? '通过' : '失败'}`);
+  log(
+    `  自证结果:正对照 ${controls.length - badControls.length}/${controls.length} 按预期,原文回查 ${textErrors.length === 0 ? '通过' : '失败'}`,
+  );
 
   if (badControls.length > 0 || textErrors.length > 0) {
     log('');
@@ -2610,7 +3109,10 @@ function main(): void {
     const pkgVersion = (JSON.parse(read('package.json')) as { version: string }).version;
     const readings = collectSignoffReadings(pkgVersion);
     const sane = judgeSignoffReadings(readings);
-    const state = judgeSignoffRegistry(parseSignoffRegistry(readOrNull(SIGNOFF_REGISTRY)), readings);
+    const state = judgeSignoffRegistry(
+      parseSignoffRegistry(readOrNull(SIGNOFF_REGISTRY)),
+      readings,
+    );
     const tiers = judgeScaleTierRegistry(realScaleTierInput());
 
     log('');
@@ -2640,7 +3142,14 @@ function main(): void {
     if (wantJson) {
       console.log(
         JSON.stringify(
-          { instrumentOk: true, mode: 'signoff', readings, sane, integrity: state.integrity, tiers },
+          {
+            instrumentOk: true,
+            mode: 'signoff',
+            readings,
+            sane,
+            integrity: state.integrity,
+            tiers,
+          },
           null,
           2,
         ),
@@ -2656,8 +3165,12 @@ function main(): void {
   const signoffReadings = collectSignoffReadings(pkgVersion);
   // 🔴 先验仪器:读数退化时,「签字与机器读数一致」这句话没有意义(0 == 0 是空绿)。
   const readingsSane = judgeSignoffReadings(signoffReadings);
-  const signoff = judgeSignoffRegistry(parseSignoffRegistry(readOrNull(SIGNOFF_REGISTRY)), signoffReadings);
-  const items = buildItems(signoff);
+  const signoff = judgeSignoffRegistry(
+    parseSignoffRegistry(readOrNull(SIGNOFF_REGISTRY)),
+    signoffReadings,
+  );
+  const acceptance = collectAcceptance();
+  const items = buildItems(signoff, acceptance);
   const idProblems = assertSubIdsClosed(items);
 
   log('');
@@ -2696,6 +3209,12 @@ function main(): void {
   // 退出码 = A 类判据 ∪ 签字登记表自身的缺陷。后者也是**机器完全可判**的:
   // 「签了不存在的编号」「签字与机器读数矛盾」都不需要人来下结论 ⇒ 拿它卡退出码不制造永久红。
   const signoffBad = !signoff.integrity.ok || idProblems.length > 0 || !readingsSane.ok;
+  const releaseProfile = qualifyReleaseProfile(
+    options.profile,
+    acceptance,
+    aFailed.map((s) => s.id),
+    !signoffBad,
+  );
 
   log('');
   log('══════════════════════════════════════════════════════════════════════');
@@ -2712,7 +3231,9 @@ function main(): void {
       `(${signedSubs.map((s) => s.id).join('、') || '—'});整条收口 ${signedItems.length} 条` +
       `(${signedItems.map((i) => CIRCLED[i.no - 1]).join('') || '—'})`,
   );
-  log(`⏸ 待维护者确认:${pendingItems.length} 条(${pendingItems.map((i) => CIRCLED[i.no - 1]).join('') || '—'})`);
+  log(
+    `⏸ 待维护者确认:${pendingItems.length} 条(${pendingItems.map((i) => CIRCLED[i.no - 1]).join('') || '—'})`,
+  );
   log('');
   if (aFailed.length > 0 || signoffBad) {
     log('结论:有 A 类判据未过或签字登记表有缺陷 ⇒ **尚不可开闸**。');
@@ -2723,12 +3244,27 @@ function main(): void {
   }
   log('══════════════════════════════════════════════════════════════════════');
 
+  if (options.profile === 'r5-limited500') {
+    log('');
+    log(
+      `显式受限500首发机器口径：${releaseProfile.machineOk ? 'PASS' : 'FAIL'}；延期TODO：${releaseProfile.deferredIds.join('、') || '无'}`,
+    );
+    log('上方完整合同9a判定保持原样；延期不是已实现或永久豁免。B/C待确认项不转绿，生产NO_GO。');
+    log('本命令核验验收登记；真实PG/500容量、故障及并发执行须另附同候选回执，原R5最大规模未验收。');
+  }
+
   if (wantJson) {
     console.log(
       JSON.stringify(
         {
           instrumentOk: true,
           items,
+          acceptance,
+          releaseProfile,
+          fullMachineOk: aFailed.length === 0 && !signoffBad,
+          pendingHuman: allSubs
+            .filter((s) => s.kind !== 'A' && s.verdict === 'pending')
+            .map((s) => s.id),
           aTotal: aSubs.length,
           aFailed: aFailed.map((s) => s.id),
           signoffReadings,
@@ -2741,7 +3277,7 @@ function main(): void {
       ),
     );
   }
-  process.exit(aFailed.length > 0 || signoffBad ? 1 : 0);
+  process.exit(releaseProfile.machineOk ? 0 : 1);
 }
 
-main();
+if (require.main === module) main();

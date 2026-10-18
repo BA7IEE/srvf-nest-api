@@ -28,7 +28,7 @@ export class AppMyParticipationSummaryController {
   })
   @ApiOperation({
     summary:
-      '我的参与累计(approved 时长/活动次数/记录数/生涯封顶贡献；仅正向数据；恒本人范围) [auth]',
+      '我的参与累计(时长/活动次数/记录数；生涯贡献：闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff；恒本人范围) [auth]',
   })
   @ApiWrappedOkResponse(AppMyParticipationSummaryDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)

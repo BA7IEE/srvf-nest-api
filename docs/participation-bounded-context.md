@@ -174,7 +174,7 @@ Certificate (不在 participation 图内)
 - `AttendanceRecord.contributionPoints` 字段层为历史兼容仍可空;业务写路不接受人工最终分,submit/edit 一律从 ContributionRule 计算,无规则落 0;仅 approved 时"语义生效"。
 - 当前 attendance 在 `requiresInsurance=true` 时只强制 `registrationId` 同活动/同成员且为 pass;它不能证明该报名创建时 `requiresInsurance=true`,不追溯旧报名,也不代表保险状态、有效期或活动时段经过独立核验。
 - `InsuranceEligibilityEvidence` 是 PR3 gate=true 根事务生成的最小资格事实；PR4 migration deploy 后再由 PostgreSQL 拒绝 source/owner mismatch、重复 owner 与事后改删。pending/rejected 不生成，gate=false 兼容档仍不生成 Evidence。
-- **全局每日封顶在本 context 之外**(活动闭环硬化 2026-06-21;v0.48.0 上限调整):队员单个北京日历日的贡献值总分封顶 3(`GLOBAL_DAILY_CONTRIBUTION_CAP`),封顶**只**发生在 recruitment 侧 team-join `computeContribution`(按 `checkInAt` 北京日分组 → 每日封顶 → 加总),**不**在 participation 侧落库——`AttendanceRecord.contributionPoints` 仍存原始规则分。历史记录同样按当前上限读时实时重算;`ContributionRule.dailyCap` 列保留但已 deprecated、calculator 不再读。终审贡献达标通知也必须在 approved 前后各调用该真值，禁止 `after-rawDelta` 或另造 cap。
+- **闸关旧链：全局每日封顶在本 context 之外**(活动闭环硬化 2026-06-21;v0.48.0 上限调整):队员单个北京日历日的贡献值总分封顶 3(`GLOBAL_DAILY_CONTRIBUTION_CAP`),封顶**只**发生在 recruitment 侧 team-join `computeContribution`(按 `checkInAt` 北京日分组 → 每日封顶 → 加总),**不**在 participation 侧落库——`AttendanceRecord.contributionPoints` 仍存原始规则分。历史记录同样按当前上限读时实时重算;`ContributionRule.dailyCap` 列保留但已 deprecated、calculator 不再读。终审贡献达标通知也必须在 approved 前后各调用该真值，禁止 `after-rawDelta` 或另造 cap。
 - `attendance.recorded` 事件是 participation context **向外的唯一已锁定出口语义**;其它消费方(未来 contribution 聚合 / 仪表盘 / 队员个人贡献值汇总)应当订阅它,**不应**直接读 `AttendanceSheet` / `AttendanceRecord` 表。
 - Activity → completed 的唯一通路是 activities 模块 `complete` action；attendances submit 不再执行该跨 aggregate 写。
 - **终审/撤回授权现状(2026-07-02 scoped-authz;v0.47.0 F2)**:Step 9/10/11 的 `finalApprove` / `finalReject` / `reopen` 均由 service 层 `authz.explain(...,{type:'attendance_sheet',id})` 判权;权限只来自显式 `attendance-final-reviewer` scoped RoleBinding(通常绑定有效任职并覆盖组织树)或 SUPER_ADMIN 兜底。`biz-admin` 不持这 3 个动作码;角色另含 `attendance.read.sheet`,合计 4 码。只有 finalApprove 受自审 22074 / 一级同人 22075 约束,reopen 不复用这两条终审完整性约束。
@@ -378,3 +378,11 @@ Certificate (不在 participation 图内)
 - [`docs/v2-api-contract.md`](v2-api-contract.md) — V2 第一阶段接口契约(完整字段 / 错误码 / 权限矩阵)
 - [`docs/v2-data-model.md`](v2-data-model.md) — V2 第一阶段数据模型说明
 - [`AGENTS.md`](../AGENTS.md) — 长期 AI 协作铁律主入口(命名 / 目录 / 错误码 / 软删除等)
+
+## R5贡献读源承接与受限首发
+
+账本聚合由participation公开`LedgerQueryService`的两个固定语义读原语持有，committed筛选不可关闭，使用调用方传入事务；单人aggregate、批量去重后一次groupBy。team-join仅依赖消费端口，AppModule通过`TeamJoinModule.register(LedgerQueryService)`唯一装配；属主不反向导入该端口，既有贡献核/常量不搬目录，原成员锁及事务边界不变。
+
+维护者已批准成员汇总、admin/App入队进度、评估、final join及既有考勤通知快照共用`team-join-progress`核，显式传同一ActivityWorkflowGate。off按原approved记录/checkInAt北京日封顶3；on仅累计postingBatch=committed的creditedPointsDelta（原账+冲回+重记），不使用日状态缓存、recognized或preparing/ready分录，不与旧分相加/取大值/空时回退，也不再次封顶。入队cycle cutoff仍北京4-1 exclusive，生涯无cutoff；readonly不换来源。
+
+上面的AttendanceSheet终审/reopen/通知步骤描述闸关旧链；闸开仍拒旧写。R5不新增账本提交达标通知或自动评估触发，不改变成员锁序、权限或身份边界。旧分须在现有off+readonly转换窗先进入真账本，逐人对账总分及相关cycle cutoff再谈开闸；真实数据/转换/shadow适用性未核验。四项延期AC013/017/020/025保持TODO，显式limited500机器口径不代替完整合同或生产授权；原最大规模未验，保留500所有native维度。详见[完整Goal](plans/activity-os-r5-limited500-release-readiness.md)。

@@ -17,14 +17,15 @@ export class MemberParticipationSummaryDto {
   recordCount!: number;
 
   @ApiProperty({
-    description: '生涯累计贡献值 capped 总分（computeCappedContribution cutoff=null）',
+    description:
+      '生涯累计贡献值（闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff）',
     type: String,
   })
   contributionPoints!: string;
 
   /**
    * 账本口径的「已生效 / 在途」两轴小计(第 7 批第 ②-a 刀,**纯加法**)。
-   * 上面四个数字的取数、口径、字段名一律未动;本字段是并排摆出的另一条轴。
+   * 第7批交付时未改上面四数字；R5贡献字段现随单闸换源，字段名不变，本对象仍展示两轴。
    * 恒存在、恒非 null(无数据时四个值都是 "0")。
    */
   @ApiProperty({

@@ -1,8 +1,14 @@
+import type { AppConfig } from '../../config/app.config';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Prisma } from '@prisma/client';
 
 import type { NotificationOutboxService } from '../notifications/notification-outbox.service';
 import type { NotificationOutboxEnqueueInput } from '../notifications/notification-outbox.types';
 import { AttendanceNotificationProducer } from './attendance-notification-producer';
+
+const legacyGate = new ActivityWorkflowGate({
+  activityV11Workflow: { enabled: false, readonlyMaintenance: false },
+} as AppConfig);
 
 function makeOutboxMock() {
   return {
@@ -79,6 +85,7 @@ describe('AttendanceNotificationProducer', () => {
     ]);
     const producer = new AttendanceNotificationProducer(
       outbox as unknown as NotificationOutboxService,
+      legacyGate,
     );
 
     await producer.enqueueReturned(tx as unknown as Prisma.TransactionClient, {
@@ -138,6 +145,7 @@ describe('AttendanceNotificationProducer', () => {
     const tx = makeTxMock();
     const producer = new AttendanceNotificationProducer(
       outbox as unknown as NotificationOutboxService,
+      legacyGate,
     );
 
     await producer.enqueueFinalApproved(tx as unknown as Prisma.TransactionClient, {
@@ -178,6 +186,7 @@ describe('AttendanceNotificationProducer', () => {
     ]);
     const producer = new AttendanceNotificationProducer(
       outbox as unknown as NotificationOutboxService,
+      legacyGate,
     );
 
     const snapshots = await producer.prepareContributionThresholdSnapshots(
@@ -208,6 +217,7 @@ describe('AttendanceNotificationProducer', () => {
     const tx = makeTxMock();
     const producer = new AttendanceNotificationProducer(
       outbox as unknown as NotificationOutboxService,
+      legacyGate,
     );
 
     await expect(
@@ -227,6 +237,7 @@ describe('AttendanceNotificationProducer', () => {
     ]);
     const producer = new AttendanceNotificationProducer(
       outbox as unknown as NotificationOutboxService,
+      legacyGate,
     );
 
     await producer.enqueueFinalApproved(tx as unknown as Prisma.TransactionClient, {
@@ -276,6 +287,7 @@ describe('AttendanceNotificationProducer', () => {
     ]);
     const producer = new AttendanceNotificationProducer(
       outbox as unknown as NotificationOutboxService,
+      legacyGate,
     );
 
     await producer.enqueueFinalApproved(tx as unknown as Prisma.TransactionClient, {
@@ -311,6 +323,7 @@ describe('AttendanceNotificationProducer', () => {
     ]);
     const producer = new AttendanceNotificationProducer(
       outbox as unknown as NotificationOutboxService,
+      legacyGate,
     );
     const input = {
       sheetId: 'sheet-2',

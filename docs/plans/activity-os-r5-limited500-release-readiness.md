@@ -214,3 +214,102 @@ D1 候选冻结时（2026-10-18）：package/lock 与获批摘要逐字相同，
 数据库失败原判定快照计数1、后独立分类none，连接来源仍 **UNKNOWN**，本地R3该套通过仅记未复现。候选使重建与既有清理入口一致：仅PostgreSQL明确分类的autovacuum不阻止普通DROP，client/parallel/unknown及损坏或失败观察仍阻断，普通DROP继续兜住检查后连接竞态。不得把策略一致性修正写成已确认原CI根因。
 
 上述9路径及ROUTE已按获批候选落地，10份逐文件摘要与送审候选相同；package、lock、权限断言族及CODEMAP字节未变。ROUTE仅两处inputDigest变化，663条声明不变。正本不触库范围/生命周期60项回归通过；完整应用回归、最终候选CI与合并/main核验仍以PR的版本化验证记录为准。
+
+## D2承接与集中配套授权（2026-10-19）
+
+D1已在正常合并后核验实际main CI五E2E及Smoke；D2基点为`c8c15843423418a8fe3555a644f71eb2e3fc0d12`。这不预签D2检查，也不代表部署。本节追加承接，前面的60路径/3项metadata为原冻结送审快照；连D1兼容性扩围及本次5路径，总计74唯一路径，D2涉及61路径。
+
+维护者明确回复“批准五路径及八项快照 grant 范围（推荐）”（会话`call_faf827c097f944a9af3215826fabb485`）。本次补齐以下原清单遗漏；原生成器仓外精确预览补丁SHA256为`8bdca72b719799e5780533efdf4fc9d75bb8f22808b2e73e71358d08148bf167`：
+
+- `src/modules/attendances/controllers/admin-member-attendance.controller.ts`
+- `src/modules/attendances/controllers/app-my-participation-summary.controller.ts`
+- `src/modules/team-join/team-join.dto.ts`
+- `src/modules/team-join/dto/app/app-team-join.dto.ts`
+- `src/modules/attendances/participation-ledger-totals.dto.ts`
+
+契约文本由原3条贡献description扩大为5条description+3条operation summary，共8值。snapshot委托仅原同一路径的这8值；无盲-u。13份客户端除摘要还同步admin两条、App一条方法注释。类注释明确第7批“未改四数”为历史时点；字段/type/required/nullable/route/tag/权限不变。未扩围修改已知的活动级approved metadata及另外6条时长/次数字段description旧债，不做全局替换。
+
+C8新读者使用共享where-helper后，原双向交替传播会把一核闸位传给另一核。依原批准的两个守护路径修正为从direct种子分别计算上下行独立闭包，增加实际单核/双核漏闸、共享helper菱形负例及合法单向传播正例。仍为文件内语法近似，不宣称控制流支配或跨文件完备性，不启动P2-22注册表。
+
+真实PG先已复现committed2分而进度0；接线后六项PG场景与125项核心单测通过，最终检查、独立评审、6b人签和本SHA Trusted仍后置。正式队员保留负责人/发起人资格，志愿者独立参与并申请入队；不通过改变负责人级别规避真实资格。并发从两实际Nest启动真实commit service命令，窗口内用真实admin/App HTTP刷新；没有公开commit HTTP入口，不称败方收到HTTP409，只断真实Biz20084及其409映射。
+
+实际生产数据盘点/转换与shadow适用性/worker排空/稳定窗/10a10b仍NOT_RUN；原R5最大规模仍NOT_VALIDATED，500全部native维度及生产NO_GO不变。6b只在固定实现/闭包/证据经维护者实质复核后登记；本范围批准不代签。生产/开关/转换/shadow/worker/tag/Release均不执行。
+
+### 从current-state迁入的历史9a读数（逐字保留）
+
+以下为2026-08历史事实，不作为本轮当前读数；迁入是为了保留原证据并满足原恒读预算，预算未改。
+
+**2026-08-25 实跑读数:A 类 10/11 过,唯一硬红仍是 9a** —— 验收 `84 通 / 19 待 / 0 败 / 103 总`
+(2026-08-24 分拣刀把 32 条待办判成 A 14 / B 4 / C 14 并接通 2 条 ⇒ 30 待;
+2026-08-25 实施刀写完 A 档 11 条、退回 1 条 AC-063 到 B 档 ⇒ 19 待。逐条依据见 `NEXT_TASKS` P1-28;
+**9a 仍红是预期的** —— 剩 B 档 5 + C 档 14,那些卡的是能力 / 规模方案,不是缺用例)。
+⭐ **2026-08-27 实跑读数(docs 对齐刀,`743abb5b`):A 类 12/13 过,唯一硬红仍是 9a** ——
+验收 `103 通 / 9 待 / 0 败 / 112 总`;B/C 签字已满 10 条,**①–⑧ 整条收口**,⑨ 卡 9a、
+⑩ 待 10a/10b(部署侧产物 + 演练记录,机器无从判)。19 → 9 的链:AC-063 真竞态接通(#1185)、
+AC-064/066/ADV-022 接通(#1194)、万人档 4 条转永久豁免(#1196);**剩 9 条全部 C 档能力缺口**
+(AC-009/010/013/017/020/025/047/067 + ADV-010,ADV-010 卡 P2-21 分账本合并)。
+
+## D2实施后人签与原D8数值事实订正（2026-10-19）
+
+维护者审阅实施后集中包及精确输入后明确回复「认可6b并批准D8精确更正（推荐）」（会话 `call_fba81147fb57441792b9388337fa1cfa`）。此为实际6b人类判断，区别于前面的实施范围/grant委托；已据此登记6b当前六函数/四文件并保留2026-08-26原4/3首签历史。C1–C8实际零finding；两锚分别为 `gate-settlement-read-faces=6`、`gate-read-files=4`。
+
+| 实际C8文件 | 当前发现函数 |
+|---|---|
+| `src/modules/activities/activity-participation-query.service.ts` | `reconciliation`、`participationSummary` |
+| `src/modules/attendances/participation-summary-query.service.ts` | `loadPositiveSummary` |
+| `src/modules/meta/participation-overview-query.service.ts` | `getOverview` |
+| `src/modules/team-join/team-join-progress.ts` | `computeCappedContribution`、`computeCappedContributionBatch` |
+
+认可仍限于「读旧考勤结算列并对外产出结算量」的文件内语法发现面；不证明跨文件支配、任意ActivityCheckIn/AttendanceSheet或`$queryRaw`读者，P2-22保持开放。两核的单独/全部删闸、共享helper菱形污染与单向合法调用均有反例/正例；原calculator反向保护及写闸保护保留。
+
+原送审包关于D8「无贡献账本」的说明有误：该既有case先按`pointsBelow:2`真实prepare/finalize/commit，再插入旧approved贡献1。首次14组读面PG为213通过/1失败/0skip，失败正是已批0与真实credited2不符。维护者本次明确把原1→0订正为原1→2；精确补丁SHA256 `3d7302ac25461a5b465f9a09f1750f48e642fb593ebb26b80f2a18ae568d5f1d`。已加同成员/活动/committed的SUM2及不等旧1断言，其他官方时间、人数、记录、直方图断言保留。独立astra复核了真实提交前置并纠正了其前轮未追透此链的判断；失败回执保留，不称首轮全绿。
+
+完整冷lint首次发现新增E2E五处格式差异，原ESLint修正后2018文件零错；随后完整类型检查发现profile负例参数化把数组展开为字符串，已改成具名`argv`案例，逐个实际传入数组，保留全部九项拒绝断言。上述均为本清单内修正，不扩路径/grant，不改生产行为。最终完整quick、定向PG/contract与固定候选独立复审及CI另按实际版本记录。
+
+本轮复验同一获准测试库内的真实native-admission 500/500/2500/2000及超界/长源拒绝、SQL147、E4 HTTP/并发/更正、E5 preparing/pending重启与native guard后callback回滚；常规scale套件保留原始最大规模的默认排除，不重新声明原最大规模验收。生产、Trusted及实际发布准入仍独立，10a/10b与实际目标项保持NOT_RUN。
+
+### 最终本地验证过程的台账格式修正
+
+最终完整quick的冷lint（2018文件）及三组typecheck通过后，全量单测为10347通过／1失败／4延期TODO。唯一失败是冻结稿与NEXT_TASKS交叉登记：本轮把P1-28固定`**状态**:`标签改成「历史状态」，令解析器读到零行；同样的P2-21带R5标签也一并修正。现恢复原规范标签及合法状态取值，P1-28原历史正文以引用段逐字保留，当前状态明确四项延期；P2-21登记当前实现/人签与实际部署边界。未修改解析器、判据或测试断言。原NEXT_TASKS状态CLI、冻结稿CLI及对应单测均通过，随后重跑完整quick；后续结果以本PR实际回执为准。
+
+获批D8更正已在真实PG复验通过；与六个ADV010场景共7通过、零失败/skip。实际默认严格cutover exit1且唯一A红9a（108通过／4延期TODO／112总）；显式r5-limited500 exit0，仍保留完整合同未过、10a/10b待确认与生产NO_GO。此为工作稿本地证据，不预报后续CI/Trusted/main或实际目标验证。
+
+## D2账本属主与装配补充批准（2026-10-19）
+
+完整quick已通过462套/10348项，四项既有TODO保留；Harness首次失败19项，原因是TeamJoinModule已改变domain-map的摘要输入而原写集漏列配套字段。仅刷新摘要后，原架构扫描器另查出team-join直接聚合ParticipationLedgerEntry形成两条新增跨域读取债。仓外候选A改为直接import公开LedgerQueryService，又与既有反向依赖形成新增循环；两稿均不靠baseline/allowlist或预算放宽通过。
+
+本补充采用消费端口/组合根：LedgerQueryService持有committed/credited单人及批量只读原语，team-join的四个贡献函数必传第五参数，三个service通过token注入，AppModule唯一生产组合点传公开属主类；participation调用方结构兼容传同类。属主不import/implements消费端口；调用方原client/事务、成员锁、授权及before/after快照不变，缺token拒绝装配，不默认旧核或另取全局client。北京civil DATE cutoff、负分录、缺成员0、空批次不查询和一次groupBy保持。
+
+集中新增路径唯四条：`src/modules/activities/ledger-query.service.ts`、`src/modules/team-join/contribution-ledger-reader.ts`、`src/app.module.ts`、`harness/domain-map.json`，总写集74→78、D2为61→65。AppModule原禁止域仅对公开类导入及register装配两处的例外已获批；domain-map只由原计算器更新inputDigest，属主/边/公开面/例外不改，state-machines摘要输入未变。两条新精确grant仅AppModule和domain-map；其余生成/调用/说明均在原清单。本段扩围与6b冻结新闭包已获维护者明确认可，实际回复和源码对拍见下方记录；Trusted与生产仍后置。
+
+原61稿后续11套native验证为298通过/0失败，原始最大规模与S13最大数据probe两项按既有配置未运行；preparing/pending跨真实API及worker重启、native guard后callback拒绝的196表回滚通过。该证据不替代端口候选的新Nest/PG验证。端口候选的精确源码、4项原架构门禁、三组类型、原语形态单测与生成器检查见集中送审材料；未完成项不提前写绿。新实际C8仍为6面/4文件，owner/端口/组合根调用闭包变化须经维护者实质复核后才补登6b，P2-22语法局限不关闭。
+
+本包不重开旧贡献口径、两处已批准E2E数值、四项延期、500/native限制、SQL147/函数ACL/权限/预算、生产NO_GO或两个串行PR决定。批准后在同一D2分支/PR连续完成最终验证、评审及既有条件合并，最终SHA的Trusted仍后置；实际服务器及生产操作、tag/Release均未包含。
+
+### 属主端口实际授权与6b补签记录
+
+维护者于2026-10-19北京时间，针对完整78路径、精确补丁与冻结15份源码的集中问题（call_7119aadc629d40baa00589cbe6b31882）明确回复：「批准四路径、两条精确grant并认可候选6b补签（推荐）」。该回复同时覆盖四条新路径、仅AppModule两处装配的原禁止域例外、两条正常CLI精确grant委托及候选新6b闭包认可；既有正式评审、推送、条件合并及main核验授权继续，生产/Trusted另算。
+
+已分别通过原CLI仅授权`src/app.module.ts`和`harness/domain-map.json`，应用补丁SHA256 `15aa07c66b09eca8d6e3622b830ba75a4b66c391ce329dc440b5e344a28742b2`；应用后65候选文件与冻结预览逐字相同，15份6b源码逐项对拍如下。随后仅据上述实际人判登记CUTOVER_SIGNOFF，旧签字原文保留。本次登记时，真实B版本PG、完整Harness和最终CI尚未完成，不能据本签预报通过；最终版本结果以相应PR的验证节及实际回执为准。
+
+| 6b冻结实际输入 | SHA256 |
+| --- | --- |
+| `scripts/check-activity-workflow-gate.ts` | `3479a76855bcb7048bd09f0796c1da4ea922f6fb9e93df314d036e1169a0e7b6` |
+| `src/app.module.ts` | `5292768b3f595720049947117e7ba96b77550b3e1e633e07bbbbb7a5f98aab79` |
+| `src/common/activity-workflow/activity-workflow.gate.ts` | `ab2d72cd32edb3204dc975cf9f53bd0eda97126122ff83dc0447d21343f6d9ad` |
+| `src/modules/activities/activity-participation-query.service.ts` | `fc46ef50052129dc610f1a6a50980535d63858fbc924e47f58db3cf850f904bc` |
+| `src/modules/activities/ledger-query.service.ts` | `041fa250d4bba9800f6784751d320399dbc1d78168076d59f599b1a38c0791a2` |
+| `src/modules/attendances/attendance-notification-producer.ts` | `cf8e38aac426416b96c5368f4b9c8494d0e3d9ccbedac58c7726bfbe8e9697c8` |
+| `src/modules/attendances/attendance-read.service.ts` | `5540ad8f37e34897786c417c3c2cbf09ac1e58c1867a51741962629203cef732` |
+| `src/modules/attendances/participation-summary-query.service.ts` | `315e76dc6ddb3a6c933345674a5f6f4b1c4d2d53bf4df89eb96fe7c80ad84ff4` |
+| `src/modules/meta/participation-overview-query.service.ts` | `c3ef6de79a9314df9c1275770d9c8d89c088ff273a1775a9977d057fb8cc2c93` |
+| `src/modules/team-join/contribution-ledger-reader.ts` | `7ac0bd8a7ff4c94a8883b034d42d4476339f792e623add8f8f145e93c272f5ea` |
+| `src/modules/team-join/team-join-applications.app.service.ts` | `77675b8095e29d57c9583ee1f5a2c7984ac7886b7eb9c44795496acf760484be` |
+| `src/modules/team-join/team-join-applications.service.ts` | `dffd399394ed52231a0d45cd4e28cf73c6ea298944552e96da9c6e496488db87` |
+| `src/modules/team-join/team-join-enrollment.service.ts` | `63d1a1684f6100583276f7e4856d524ba49cb096c6caaa3622430714d60a8f36` |
+| `src/modules/team-join/team-join-progress.ts` | `6d66c635f171533d489783318cd5bc1b73d82ebd78dc6f691ce1b02b1190de63` |
+| `src/modules/team-join/team-join.module.ts` | `cb9abb8c0a766318dbba89a81667280dc7c74846660ea8f90b893cae65623ab6` |
+
+preflight此次续作读取到同一任务原有61份未提交输入，global结果因非clean而exit1，记录保留；远端main经正常fetch核实仍为本轮D1基点且无open PR。维护者此次明确授权基于这些已冻结输入续作，未丢弃或重置原工作，也未把该preflight写成通过；最终提交后再按原入口核验clean及门禁。
+
+本轮总范围78个唯一路径，D2实际65路径；新源码/装配/摘要之外的后果均沿原清单。后续按同一D2 PR完成最终quick、完整Harness、原架构及生成物检查、契约和14组读面/11组native真实PG、固定SHA独立复核及CI/Smoke/Trusted；原最大规模两用例保留NOT_RUN，生产NO_GO与四项延期不变。
