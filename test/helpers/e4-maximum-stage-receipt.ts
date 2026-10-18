@@ -487,9 +487,59 @@ const HISTORICAL_CATALOG_BINDINGS: { candidate: string; opening: string; sha256:
     sha256: '1bc75334744e1e801334101d463c75a2587b00568a0e37c1d0f5906a16694ebd',
   },
 ];
+// Undo only the exact approved CI fixture/phase changes before the original catalog restore.
+const HISTORICAL_CI_FIXTURE_CANDIDATE_SHA =
+  '74087b1ba9c6d6de5c48caf4485f5ba7f545708a60d2710ab1a84dc08c8e3384';
+const HISTORICAL_CI_FIXTURE_BINDINGS: { candidate: string; opening: string; sha256: string }[] = [
+  {
+    candidate:
+      "          let fixture: E4Fixture | undefined;\n          let draftId: string;\n          let submittedId: string;\n          let thirdRootId: string;\n          const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;\n          const recordGenuinePhase = (phase: string, started: number) =>\n            console.info(\n              'E4_GENUINE_BAG_PHASE',\n              JSON.stringify({ phase, elapsedMs: performance.now() - started }),\n            );\n          const catalog = (tx: Prisma.TransactionClient) => tx.$queryRaw<\n            {\n              body: string;\n",
+    opening:
+      '          let fixture: E4Fixture | undefined;\n          let draftId: string;\n          let submittedId: string;\n          const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;\n          const catalog = (tx: Prisma.TransactionClient) => tx.$queryRaw<\n            {\n              body: string;\n',
+    sha256: 'd682efea200e92997378e85d3631ac8b3156dbcb1603c21ac56dc03bb49b9215',
+  },
+  {
+    candidate:
+      "                  },\n                });\n              submittedId = proof.id;\n              const thirdStarted = performance.now();\n              try {\n                const thirdSource = await createE4Source(fixture);\n                const third = await prepareE4Time(fixture, thirdSource);\n                const thirdRoot =\n                  await fixture.db.activitySettlementContributionRevision.findFirstOrThrow({\n                    where: { settlementVersionId: third.settlementVersionId, kindCode: 'draft' },\n                  });\n                thirdRootId = thirdRoot.id;\n              } finally {\n                recordGenuinePhase('third-fixture', thirdStarted);\n              }\n            } catch (error) {\n              terminalMigrationFailed = true;\n              firstFailure = error;\n",
+    opening:
+      '                  },\n                });\n              submittedId = proof.id;\n            } catch (error) {\n              terminalMigrationFailed = true;\n              firstFailure = error;\n',
+    sha256: '336a7e023f405fdc55c16640b04f6f5c0ed6b2146920a55928f392ea91e3c14b',
+  },
+  {
+    candidate:
+      "            prove(async () => {\n              if (!fixture) throw new Error('Terminal genuine small fixture missing');\n              const f = fixture;\n              const oracleStarted = performance.now();\n              try {\n                for (const rootId of [draftId, submittedId, thirdRootId])\n                  await assertFixedE4Oracle(f.db, rootId);\n              } finally {\n                recordGenuinePhase('three-oracles', oracleStarted);\n              }\n              const nativeStarted = performance.now();\n              await withTerminalNative(f.db, async (client, deadline, identity) => {\n                const before = await terminalNativeIdentity(client, deadline);\n                terminalAssertIdentity(before, identity);\n",
+    opening:
+      "            prove(async () => {\n              if (!fixture) throw new Error('Terminal genuine small fixture missing');\n              const f = fixture;\n              const source = await createE4Source(f);\n              const third = await prepareE4Time(f, source);\n              const thirdRoot = await f.db.activitySettlementContributionRevision.findFirstOrThrow({\n                where: { settlementVersionId: third.settlementVersionId, kindCode: 'draft' },\n              });\n              for (const rootId of [draftId, submittedId, thirdRoot.id])\n                await assertFixedE4Oracle(f.db, rootId);\n              await withTerminalNative(f.db, async (client, deadline, identity) => {\n                const before = await terminalNativeIdentity(client, deadline);\n                terminalAssertIdentity(before, identity);\n",
+    sha256: '561a492d81aebcd9b6a5ad43ba757555532c14f4361bfc36796c354c384c6b45',
+  },
+  {
+    candidate:
+      '                  terminalRemaining(deadline),\n                );\n                expect(readonly.rows).toEqual([{ readonly: true }]);\n                for (const rootId of [draftId, submittedId, thirdRootId]) {\n                  const root = await f.db.activitySettlementContributionRevision.findUniqueOrThrow({\n                    where: { id: rootId },\n                  });\n',
+    opening:
+      '                  terminalRemaining(deadline),\n                );\n                expect(readonly.rows).toEqual([{ readonly: true }]);\n                for (const rootId of [draftId, submittedId, thirdRoot.id]) {\n                  const root = await f.db.activitySettlementContributionRevision.findUniqueOrThrow({\n                    where: { id: rootId },\n                  });\n',
+    sha256: 'bb2e4675e071eff34422dd150204d7b59b29dd6dc1014867b68f40f2178c78df',
+  },
+  {
+    candidate:
+      "                expect(query).not.toHaveBeenCalled();\n                query.mockRestore();\n                await client.query('ROLLBACK', [], terminalRemaining(deadline));\n              }).finally(() => recordGenuinePhase('native-with-cleanup', nativeStarted));\n            }));\n          it('proves raw PG16 temporary/public NULL plans on the actual native session without accepting zero-row coverage', () =>\n            prove(async () => {\n",
+    opening:
+      "                expect(query).not.toHaveBeenCalled();\n                query.mockRestore();\n                await client.query('ROLLBACK', [], terminalRemaining(deadline));\n              });\n            }));\n          it('proves raw PG16 temporary/public NULL plans on the actual native session without accepting zero-row coverage', () =>\n            prove(async () => {\n",
+    sha256: '083deb3ae1420469355cece3d00cfaebcd511f52b3e28ab07e6db42b5b00ef17',
+  },
+];
 export function restoreE4HistoricalCatalogOpening(source: string): string {
   const hash = (text: string) => createHash('sha256').update(text).digest('hex');
   if (hash(source) === HISTORICAL_CATALOG_OPENING_SHA) return source;
+  if (hash(source) === HISTORICAL_CI_FIXTURE_CANDIDATE_SHA) {
+    for (const binding of HISTORICAL_CI_FIXTURE_BINDINGS) {
+      if (
+        source.split(binding.candidate).length !== 2 ||
+        hash(binding.candidate) !== binding.sha256
+      )
+        throw new Error('E4 frozen counterpart CI fixture binding refused');
+      source = source.replace(binding.candidate, () => binding.opening);
+    }
+  }
   if (hash(source) !== HISTORICAL_CATALOG_CANDIDATE_SHA)
     throw new Error('E4 frozen counterpart source refused');
   for (const binding of HISTORICAL_CATALOG_BINDINGS) {

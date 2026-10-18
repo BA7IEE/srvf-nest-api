@@ -331,6 +331,32 @@ describe('E4 frozen migration counterpart for the older scale source checker', (
     expect(opening).not.toContain('const historicalCatalogTx = frozen137FirstReviewCatalogTx(tx);');
   });
   it.each([
+    ['phase output', "'E4_GENUINE_BAG_PHASE'", "'E4_GENUINE_BAG_PHASE_CHANGED'"],
+    [
+      'third fixture',
+      'const thirdSource = await createE4Source(fixture);',
+      'const thirdSource = await createE4Source(fixture, 2);',
+    ],
+    [
+      'third oracle',
+      'for (const rootId of [draftId, submittedId, thirdRootId])',
+      'for (const rootId of [draftId, submittedId])',
+    ],
+    [
+      'native timing',
+      ".finally(() => recordGenuinePhase('native-with-cleanup', nativeStarted))",
+      '',
+    ],
+    [
+      'native deadline',
+      '\n    const deadline = performance.now() + 30_000;\n',
+      '\n    const deadline = performance.now() + 60_000;\n',
+    ],
+    [
+      'duplicate phase marker',
+      "'E4_GENUINE_BAG_PHASE'",
+      "'E4_GENUINE_BAG_PHASE', 'E4_GENUINE_BAG_PHASE'",
+    ],
     ['body', 'async function', 'async  function'],
     [
       'adapter',
