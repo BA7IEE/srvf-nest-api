@@ -1,5 +1,7 @@
 # prisma — 本地铁律
 
+> **2026-10-18 开发候选147**：当前147个migration、196个模型。147仅追加validated CHECK，要求correction_time_proof的correctionSourceSetHash非NULL；1–146、函数、ACL、schema与预算不变。原146的真实NULL写链已复现；同SQL候选的脏库升级拒绝、NULL整笔回滚及有效V3/4分录/重放通过。147正式回归与最终CI另行记录，3b仍待维护者对137–147实际审查签字；Draft未合入，生产NO_GO。详见[续推记录](../docs/plans/activity-os-r5-continuation-20261018.md)。下方为历史时点。
+
 > **2026-10-16 本地候选146**：当前146个migration、196个模型。仅将145完整函数内policy_bands改为NOT MATERIALIZED，正文MD5为40b56bac5a571c56e589cbc549419bfa；历史迁移、完整校验、双guard及原预算保留。非空升级／7项定向回归及fresh真实入口通过；归档复用与fresh结果分开，未证明普遍性能收益。未push、未跑满额／完整CI、未操作生产，人工与Trusted签字不变。见[验证证据](../docs/plans/e4-146-validation.json)。下方为历史时点。
 
 > **2026-10-15 开发候选**：当前145个 migration、196个模型。145在完整JSON/FULL JOIN/root及双guard内携带metadata.evaluationUnitKey作为JOIN key，143／144 SQL不改；complete正文MD5为b03a7298e625b703fa2f011c0fbcc6c0，144来源pin仍为19d84ee9f25b81d33f0ffdef0a800ab5。145真实small／500五阶段及冻结oracle通过；旧C唯一满额仍超30秒，145满额未跑，旧143初始化及四项回归、常规required CI仍hold。off准备任务回执兼容单人隔离通过，不代表正式active启用。原满额容量／预算、全部guard与人工签字边界不变；Draft PR1380未合入或部署。详见来源复用评审稿，下方保留历史时点。

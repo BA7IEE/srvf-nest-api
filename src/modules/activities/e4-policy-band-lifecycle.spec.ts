@@ -11,6 +11,10 @@ function suite() {
   const cases: { name: string; run: (argument?: boolean) => Promise<void> }[] = [];
   let finalize!: () => void;
   const db = {
+    $transaction: jest.fn(
+      async (work: (tx: unknown) => Promise<unknown>): Promise<unknown> => work(db),
+    ),
+    $executeRaw: jest.fn().mockResolvedValue(0),
     $queryRaw: jest.fn((parts: TemplateStringsArray): Promise<unknown[]> => {
       const sql = parts.join('?');
       if (sql.includes('SELECT relname AS name'))
@@ -31,7 +35,7 @@ function suite() {
   const close = jest.fn().mockResolvedValue(undefined);
   const owner = {
     deployEvaluationKeyMigrations: jest.fn().mockResolvedValue(undefined),
-    deployLatestMigrations: jest.fn().mockResolvedValue(undefined),
+    deployPolicyBandMigrations: jest.fn().mockResolvedValue(undefined),
   };
   const child = jest
     .fn<
@@ -154,7 +158,7 @@ describe('146 suite terminal ownership failure injection', () => {
     const harness = suite();
     await harness.before[0]();
     await harness.cases[0].run();
-    const calls = harness.owner.deployLatestMigrations.mock.calls as unknown as [number][];
+    const calls = harness.owner.deployPolicyBandMigrations.mock.calls as unknown as [number][];
     expect(calls).toHaveLength(2);
     expect(calls[0][0]).toBeGreaterThan(0);
     expect(calls[0][0]).toBeLessThanOrEqual(57000);

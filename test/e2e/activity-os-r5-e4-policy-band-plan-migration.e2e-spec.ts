@@ -25,6 +25,14 @@ import { deriveTestDbName } from '../setup/worktree-db';
 import { assertConnectedTestDatabase } from '../setup/test-db';
 
 type Database = PrismaClient | Prisma.TransactionClient;
+async function settingsSnapshot(db: PrismaClient) {
+  return db.$transaction(async (tx) => {
+    // pg_settings exposes plpgsql.* only after this backend loads the language.
+    // Normalize that session initialization, then compare every setting as before.
+    await tx.$executeRaw`DO $$ BEGIN NULL; END $$`;
+    return tx.$queryRaw`SELECT name,setting FROM pg_settings ORDER BY name`;
+  });
+}
 async function businessSnapshot(db: Database) {
   const tables = await db.$queryRaw<
     { name: string }[]
@@ -135,20 +143,21 @@ describe('E4 complete policy-band planning migration146', () => {
         verifyPolicyBandMigrationSource();
         const beforeRows = await businessSnapshot(db()),
           beforeCatalog = await catalog(db());
-        const beforeSettings = await db()
-          .$queryRaw`SELECT name,setting FROM pg_settings ORDER BY name`;
+        const beforeSettings = await settingsSnapshot(db());
         const prior = await db().$queryRaw<
           { count: number; pin: string }[]
         >`SELECT (SELECT count(*)::int FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL) AS count,(SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure) AS pin`;
         expect(prior).toEqual([{ count: 145, pin: 'b03a7298e625b703fa2f011c0fbcc6c0' }]);
-        await owner.deployLatestMigrations(Math.max(1, Math.floor(deadline - performance.now())));
+        await owner.deployPolicyBandMigrations(
+          Math.max(1, Math.floor(deadline - performance.now())),
+        );
         await verifyPolicyBandDatabase(db());
         expect((await businessSnapshot(db())) === beforeRows).toBe(true);
         expect((await catalog(db())) === beforeCatalog).toBe(true);
-        expect(await db().$queryRaw`SELECT name,setting FROM pg_settings ORDER BY name`).toEqual(
-          beforeSettings,
+        expect(await settingsSnapshot(db())).toEqual(beforeSettings);
+        await owner.deployPolicyBandMigrations(
+          Math.max(1, Math.floor(deadline - performance.now())),
         );
-        await owner.deployLatestMigrations(Math.max(1, Math.floor(deadline - performance.now())));
         await verifyPolicyBandDatabase(db());
         expect((await businessSnapshot(db())) === beforeRows).toBe(true);
         upgraded = true;

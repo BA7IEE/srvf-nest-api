@@ -2,6 +2,8 @@ import type { INestApplication, INestApplicationContext } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { PrismaClient, PrincipalType } from '@prisma/client';
 import { writeSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { join } from 'node:path';
 import request, { type Response } from 'supertest';
 import appConfig from '../../src/config/app.config';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -11,6 +13,9 @@ import { NotificationOutboxWorkerModule } from '../../src/modules/notifications/
 import { BizCode, type BizCodeEntry } from '../../src/common/exceptions/biz-code.constant';
 import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
 import { ActivityTimeSettlementService } from '../../src/modules/activities/activity-time-settlement.service';
+import { ActivityContributionSettlementService } from '../../src/modules/activities/activity-contribution-settlement.service';
+import { SettlementReviewService } from '../../src/modules/activities/settlement-review.service';
+import { nativeLaunchBusinessFingerprint } from '../helpers/native-launch-live.fixture';
 import {
   closeE13Fixture,
   createE4Fixture,
@@ -83,6 +88,63 @@ async function restart(mode: 'active' | 'off', readonly = false) {
   await assertConnectedTestDatabase(f.db);
   assertMode(app, mode);
 }
+
+async function lifecycleWorker(command: 'reserve' | 'drain', batchId: string) {
+  workerClosed = false;
+  return new Promise<{ pid: number; mode: string; status: string; result: unknown }>(
+    (resolve, reject) => {
+      execFile(
+        process.execPath,
+        [
+          '-r',
+          require.resolve('ts-node/register/transpile-only'),
+          '-r',
+          require.resolve('tsconfig-paths/register'),
+          join(process.cwd(), 'test/fixtures/activity-r5-lifecycle-worker-child.ts'),
+          command,
+          batchId,
+        ],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            TS_NODE_PROJECT: join(process.cwd(), 'test/tsconfig.test.json'),
+            TS_NODE_COMPILER_OPTIONS: JSON.stringify({ target: 'ES2022' }),
+          },
+          timeout: 60_000,
+          maxBuffer: 64 * 1024,
+        },
+        (error, stdout) => {
+          // The callback runs after the child has exited and its streams have closed.
+          workerClosed = true;
+          if (error) {
+            if (error.killed) unknown = true;
+            reject(
+              new Error(
+                `R5 lifecycle worker failed: exit=${String(error.code)}, signal=${String(error.signal)}, killed=${String(error.killed)}`,
+              ),
+            );
+            return;
+          }
+          try {
+            const value: unknown = JSON.parse(stdout);
+            if (
+              !value ||
+              typeof value !== 'object' ||
+              typeof Reflect.get(value, 'pid') !== 'number' ||
+              Reflect.get(value, 'mode') !== 'active' ||
+              typeof Reflect.get(value, 'status') !== 'string'
+            )
+              throw new Error('R5 lifecycle child result invalid');
+            resolve(value as { pid: number; mode: string; status: string; result: unknown });
+          } catch {
+            reject(new Error('R5 lifecycle child result invalid'));
+          }
+        },
+      );
+    },
+  );
+}
 installE4ValidationDatabase({
   settlementMode: 'active',
   boundMigrationProcesses: true,
@@ -109,6 +171,7 @@ describe('E5 active supplemental matrix: existing historical fixtures, no fresh 
     120_000,
   );
   afterEach(async () => {
+    jest.restoreAllMocks();
     if (pending) {
       unknown = true;
       throw new Error('E5 matrix body pending; close refused');
@@ -127,6 +190,244 @@ describe('E5 active supplemental matrix: existing historical fixtures, no fresh 
       else process.env[name] = value;
     }
   });
+
+  it(
+    'recovers a preparing batch with pending items across API and worker process restarts',
+    () =>
+      owned(async () => {
+        let current = fixture();
+        const source = await createE4Source(current);
+        const submitted = await submitE4Time(current, source, await prepareE4Time(current, source));
+        const version = await current.db.attendanceSettlementVersion.findUniqueOrThrow({
+          where: { id: submitted.settlementVersionId },
+        });
+        const expectation = {
+          evidenceSealId: version.evidenceSealId,
+          evidenceRevision: version.evidenceRevision,
+          populationRevision: version.populationRevision,
+          workflowRevision: version.workflowRevision,
+          contentHash: version.contentHash,
+        };
+        const review = current.app.get(SettlementReviewService);
+        await review.firstReview(
+          {
+            activityId: source.activityId,
+            actionCode: 'approve',
+            expectation,
+            operationKey: current.key('pending_first'),
+            requestHash: 'c'.repeat(64),
+          },
+          e4Actor(current.reviewer),
+          E4_META,
+        );
+        const final = await review.finalReview(
+          {
+            activityId: source.activityId,
+            actionCode: 'approve',
+            expectation,
+            operationKey: current.key('pending_final'),
+            requestHash: 'd'.repeat(64),
+          },
+          e4Actor(current.finalReviewer),
+          E4_META,
+        );
+        const batchId = final.ledgerPostingBatchId;
+        if (!batchId) throw new Error('Final review did not create the preparing batch');
+        expect(final.ledgerPostingBatchStatus).toBe('preparing');
+        const firstWorker = await lifecycleWorker('reserve', batchId);
+        expect(firstWorker.status).toBe('preparing');
+        const batch = await current.db.ledgerPostingBatch.findUniqueOrThrow({
+          where: { id: batchId },
+        });
+        const job = await current.db.activityBatchJob.findFirstOrThrow({
+          where: { postingBatchId: batchId },
+        });
+        const items = await current.db.activityBatchJobItem.findMany({
+          where: { jobId: job.id },
+          orderBy: { id: 'asc' },
+        });
+        expect(batch).toMatchObject({
+          statusCode: 'preparing',
+          preparedCount: 0,
+          committedAt: null,
+        });
+        expect(job).toMatchObject({ statusCode: 'pending', attempts: 0 });
+        expect(items).toHaveLength(1);
+        expect(items[0].statusCode).toBe('pending');
+        expect(
+          await current.db.participationLedgerEntry.count({ where: { postingBatchId: batchId } }),
+        ).toBe(0);
+        const proofs = await current.db.activitySettlementContributionRevision.findMany({
+          orderBy: { id: 'asc' },
+        });
+        const evaluations = await current.db.participantContributionEvaluation.findMany({
+          orderBy: { id: 'asc' },
+        });
+        await restart('active');
+        current = fixture();
+        expect(
+          await current.db.ledgerPostingBatch.findUniqueOrThrow({ where: { id: batchId } }),
+        ).toEqual(batch);
+        expect(
+          await current.db.activityBatchJob.findUniqueOrThrow({ where: { id: job.id } }),
+        ).toEqual(job);
+        expect(
+          await current.db.activityBatchJobItem.findMany({
+            where: { jobId: job.id },
+            orderBy: { id: 'asc' },
+          }),
+        ).toEqual(items);
+        const secondWorker = await lifecycleWorker('drain', batchId);
+        expect(secondWorker.pid).not.toBe(firstWorker.pid);
+        expect(secondWorker.status).toBe('committed');
+        expect(secondWorker.result).toMatchObject({
+          jobId: job.id,
+          itemsProcessed: 1,
+          itemsFailed: 0,
+          commitAttempted: true,
+          commitErrorCode: null,
+        });
+        expect(
+          await current.db.ledgerPostingBatch.findUniqueOrThrow({ where: { id: batchId } }),
+        ).toMatchObject({
+          statusCode: 'committed',
+          preparedCount: 1,
+          committedAt: expect.any(Date) as unknown,
+        });
+        expect(
+          await current.db.activityBatchJobItem.findMany({ where: { jobId: job.id } }),
+        ).toEqual([expect.objectContaining({ id: items[0].id, statusCode: 'succeeded' })]);
+        const entries = await current.db.participationLedgerEntry.findMany({
+          where: { postingBatchId: batchId },
+          orderBy: { id: 'asc' },
+        });
+        expect(entries).toHaveLength(2);
+        expect(
+          entries
+            .filter((row) => row.entryTypeCode === 'contribution_credit')
+            .map((row) => row.creditedPointsDelta.toFixed(2)),
+        ).toEqual(['1.00']);
+        const days = await current.db.memberContributionDayState.findMany({
+          orderBy: { id: 'asc' },
+        });
+        const outbox = await current.db.notificationOutboxIntent.count();
+        const replay = await current.app
+          .get(LedgerPostingService)
+          .commitBatch(
+            { postingBatchId: batchId, operationKey: current.key('pending_replay') },
+            e4Actor(current.finalReviewer),
+            E4_META,
+          );
+        expect(replay.replayed).toBe(true);
+        expect(
+          await current.db.participationLedgerEntry.findMany({
+            where: { postingBatchId: batchId },
+            orderBy: { id: 'asc' },
+          }),
+        ).toEqual(entries);
+        expect(
+          await current.db.memberContributionDayState.findMany({ orderBy: { id: 'asc' } }),
+        ).toEqual(days);
+        expect(await current.db.notificationOutboxIntent.count()).toBe(outbox);
+        expect(
+          await current.db.activitySettlementContributionRevision.findMany({
+            orderBy: { id: 'asc' },
+          }),
+        ).toEqual(proofs);
+        expect(
+          await current.db.participantContributionEvaluation.findMany({ orderBy: { id: 'asc' } }),
+        ).toEqual(evaluations);
+        writeSync(
+          2,
+          `E5_PENDING_RESTART ${JSON.stringify({ before: 'preparing/pending', after: 'committed/succeeded', distinctWorkerPids: true, entries: entries.length, replayed: true })}\n`,
+        );
+      }),
+    120_000,
+  );
+
+  it(
+    'rolls back the real version UPDATE when the authorization callback rejects after the native review guard',
+    () =>
+      owned(async () => {
+        const current = fixture();
+        const source = await createE4Source(current);
+        const submitted = await submitE4Time(current, source, await prepareE4Time(current, source));
+        const version = await current.db.attendanceSettlementVersion.findUniqueOrThrow({
+          where: { id: submitted.settlementVersionId },
+        });
+        const contributions = current.app.get(ActivityContributionSettlementService);
+        const actualBarrier = contributions.assertFirstReviewBarrierInTx.bind(contributions);
+        const observer = new PrismaClient();
+        auxiliaryClients.add(observer);
+        let guardCompleted = false;
+        let rejectedAfterGuard = false;
+        const rejection = new Error(
+          'Controlled authorization callback rejection after native guard',
+        );
+        const stage = async <T>(_label: string, work: () => Promise<T>) => work();
+        try {
+          await assertConnectedTestDatabase(observer);
+          const before = await nativeLaunchBusinessFingerprint(observer, stage);
+          jest
+            .spyOn(contributions, 'assertFirstReviewBarrierInTx')
+            .mockImplementationOnce(async (...args) => {
+              await actualBarrier(...args);
+              guardCompleted = true;
+            });
+          const outcome = current.app.get(SettlementReviewService).firstReview(
+            {
+              activityId: source.activityId,
+              actionCode: 'approve',
+              expectation: {
+                evidenceSealId: version.evidenceSealId,
+                evidenceRevision: version.evidenceRevision,
+                populationRevision: version.populationRevision,
+                workflowRevision: version.workflowRevision,
+                contentHash: version.contentHash,
+              },
+              operationKey: current.key('post_guard_reject'),
+              requestHash: 'e'.repeat(64),
+            },
+            e4Actor(current.reviewer),
+            E4_META,
+            async (tx) => {
+              // This is the actual owner-supplied callback, invoked again after the real SQL guard.
+              if (guardCompleted) {
+                const inside = await tx.attendanceSettlementVersion.findUniqueOrThrow({
+                  where: { id: version.id },
+                });
+                expect(inside.updatedAt.getTime()).toBeGreaterThan(version.updatedAt.getTime());
+                expect(
+                  await observer.attendanceSettlementVersion.findUniqueOrThrow({
+                    where: { id: version.id },
+                  }),
+                ).toEqual(version);
+                rejectedAfterGuard = true;
+                throw rejection;
+              }
+              return e4Actor(current.reviewer);
+            },
+          );
+          await expect(outcome).rejects.toBe(rejection);
+          expect(guardCompleted).toBe(true);
+          expect(rejectedAfterGuard).toBe(true);
+          expect(
+            await observer.attendanceSettlementVersion.findUniqueOrThrow({
+              where: { id: version.id },
+            }),
+          ).toEqual(version);
+          expect(await nativeLaunchBusinessFingerprint(observer, stage)).toEqual(before);
+          writeSync(
+            2,
+            `E5_POST_GUARD_CALLBACK ${JSON.stringify({ guardCompleted, rejectedAfterGuard, tables: before.tables, rollback: 'PASS' })}\n`,
+          );
+        } finally {
+          await observer.$disconnect();
+          auxiliaryClients.delete(observer);
+        }
+      }),
+    120_000,
+  );
 
   it(
     'keeps two physical sessions separate and distributes one award per unit across Beijing days',

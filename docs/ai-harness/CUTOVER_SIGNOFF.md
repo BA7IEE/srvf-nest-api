@@ -518,6 +518,16 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **依据**:维护者本轮明确确认「允许扩展 test/helpers/audit-logs-cleanup.ts，仅补两张新表及守卫的受控清理／恢复；确认评审稿§31.13列明的第136条3b及本轮4b重签」。实际第136条SQL完整SHA-256重新核对为 `184da14396cbdf7ad14b8ac654e05f0eab57809efe2b799f5b250a47d805b4b6`，与被确认评审稿一致。
 - **对拍**:有 —— `migration-total` = `136`，SQL SHA-256 = `184da14396cbdf7ad14b8ac654e05f0eab57809efe2b799f5b250a47d805b4b6`
 
+
+> **当前正式签字（2026-10-18，Release 5 E4/E5；137–147，历史签字保留）**：维护者已审阅本轮完整SQL、精确摘要与技术审查，并明确认可3b；以下由AI按维护者结论代为登记，不是AI自签。
+
+- **结论**:认可
+- **理由**:第137条建立不可变贡献证据及完整来源／评价／账本校验；138–146为规范化、来源复用与查询计划增量；147仅追加validated CHECK，要求correction_time_proof的来源hash非NULL。已确认的146 NULL缺口在真实PG复现，147非空升级／no-op、NULL整笔回滚、有效V3实际4分录提交与重放通过；历史SQL、函数、ACL、schema、权限和原预算不改。已有NULL脏行会拒绝升级，禁止自动回填或删除。本签不把受限500或小夹具证明当作原最大规模验收，不替代最终SHA CI、Trusted人工批准、Ready、合并、部署、开关或真实业务转换授权。
+- **签字人**:维护者
+- **日期**:2026-10-18
+- **依据**:维护者对[137–147逐项审查与完整SQL链接](../plans/activity-os-r5-continuation-20261018.md)及[11份完整SQL摘要](../plans/activity-os-r5-migrations-137-147.json)的明确回复：“我已审阅并认可3b，授权据此登记137–147”。137–146摘要与旧目录逐份一致；147完整SQL SHA-256为`2c68710f16c74577e39002ca078a59835e4cc819407b93dcb6188d96dc1c7d2c`。仅记录本次人类结论；此前精确grant委托与本签分别记录，均不扩展为Trusted或发布批准。
+- **对拍**:有 —— `migration-total` = `147`，SQL SHA-256 = `2c68710f16c74577e39002ca078a59835e4cc819407b93dcb6188d96dc1c7d2c`
+
 ### 4b — 「字典、Audit events」的对账
 
 > **当前重签（2026-09-25，E2 第一层隔离能力）**：维护者确认权限码仍为269，

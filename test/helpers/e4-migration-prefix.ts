@@ -18,10 +18,13 @@ export const E4_MIGRATION_145 = '20261015010000_activity_contribution_evaluation
 
 export const E4_MIGRATION_146 = '20261015221000_activity_contribution_policy_band_planning';
 
+export const E4_MIGRATION_147 =
+  '20261018000000_activity_contribution_correction_source_hash_required';
+
 export function e4HistoricalMigrationPrefix(names: readonly string[]): string[] {
   const ordered = [...names].sort();
   if (
-    ordered.length !== 146 ||
+    ordered.length !== 147 ||
     ordered[136] !== E4_MIGRATION_137 ||
     ordered[137] !== E4_MIGRATION_138 ||
     ordered[138] !== E4_MIGRATION_139 ||
@@ -31,10 +34,11 @@ export function e4HistoricalMigrationPrefix(names: readonly string[]): string[] 
     ordered[142] !== E4_MIGRATION_143 ||
     ordered[143] !== E4_MIGRATION_144 ||
     ordered[144] !== E4_MIGRATION_145 ||
-    ordered[145] !== E4_MIGRATION_146
+    ordered[145] !== E4_MIGRATION_146 ||
+    ordered[146] !== E4_MIGRATION_147
   )
     throw new Error(
-      'E4 fixed 137 prefix or explicit 138/139/140/141/142/143/144/145/146 successors changed',
+      'E4 fixed 137 prefix or explicit 138/139/140/141/142/143/144/145/146/147 successors changed',
     );
   return ordered.slice(0, 137);
 }
