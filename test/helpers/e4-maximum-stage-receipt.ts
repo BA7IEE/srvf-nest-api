@@ -487,10 +487,24 @@ const HISTORICAL_CATALOG_BINDINGS: { candidate: string; opening: string; sha256:
     sha256: '1bc75334744e1e801334101d463c75a2587b00568a0e37c1d0f5906a16694ebd',
   },
 ];
-// Undo only the exact approved CI fixture/phase changes before the original catalog restore.
+// Undo only the exact approved CI fixture/phase and reader wiring changes.
 const HISTORICAL_CI_FIXTURE_CANDIDATE_SHA =
-  '74087b1ba9c6d6de5c48caf4485f5ba7f545708a60d2710ab1a84dc08c8e3384';
+  '30a764e2b72776dd2185b97ad7e95628740acc340d3d0356fd9aa3eb2daa9fef';
 const HISTORICAL_CI_FIXTURE_BINDINGS: { candidate: string; opening: string; sha256: string }[] = [
+  {
+    candidate:
+      "  });\n});\n// E4_TERMINAL_REFS_BODY_OFFLINE_BEGIN\nimport {\n  restoreE4MaximumStageOpening,\n  restoreE4HistoricalCiFixtureOpening,\n} from '../helpers/e4-maximum-stage-receipt';\n// Only the exact migration-only catalog profile bindings may differ in shared facilities.\nfunction terminalFrozen137SharedOpening(source: string): string {\n  const opening = 'bcc4fabb397bb510355694364e64927f73119ed7f9539508ca18c8559c1410ba';\n",
+    opening:
+      "  });\n});\n// E4_TERMINAL_REFS_BODY_OFFLINE_BEGIN\nimport { restoreE4MaximumStageOpening } from '../helpers/e4-maximum-stage-receipt';\n// Only the exact migration-only catalog profile bindings may differ in shared facilities.\nfunction terminalFrozen137SharedOpening(source: string): string {\n  const opening = 'bcc4fabb397bb510355694364e64927f73119ed7f9539508ca18c8559c1410ba';\n",
+    sha256: '9ea5f30234e24963b7db6377fac74ca9d82593725a2c22b74433aa55403a7859',
+  },
+  {
+    candidate:
+      "        resolve(__dirname, 'activity-os-r5-e4-contribution-settlement-' + kind + '.e2e-spec.ts'),\n        'utf8',\n      );\n      const opening =\n        kind === 'scale'\n          ? restoreE4MaximumStageOpening(source)\n          : restoreE4HistoricalCiFixtureOpening(source);\n      expect(terminalRefsTestOpening(opening, kind)).not.toBe(opening);\n      expect(() => terminalRefsTestOpening(source + '\\n', kind)).toThrow();\n      const driver = [...source.matchAll(/^class S13ReadClient \\{[\\s\\S]*?^\\}/gmu)];\n",
+    opening:
+      "        resolve(__dirname, 'activity-os-r5-e4-contribution-settlement-' + kind + '.e2e-spec.ts'),\n        'utf8',\n      );\n      const opening = kind === 'scale' ? restoreE4MaximumStageOpening(source) : source;\n      expect(terminalRefsTestOpening(opening, kind)).not.toBe(opening);\n      expect(() => terminalRefsTestOpening(source + '\\n', kind)).toThrow();\n      const driver = [...source.matchAll(/^class S13ReadClient \\{[\\s\\S]*?^\\}/gmu)];\n",
+    sha256: 'ffc4682894ddb2bdf3c8d9972010289bb87ce91602ad71f7827b5981bedb1fc4',
+  },
   {
     candidate:
       "          let fixture: E4Fixture | undefined;\n          let draftId: string;\n          let submittedId: string;\n          let thirdRootId: string;\n          const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;\n          const recordGenuinePhase = (phase: string, started: number) =>\n            console.info(\n              'E4_GENUINE_BAG_PHASE',\n              JSON.stringify({ phase, elapsedMs: performance.now() - started }),\n            );\n          const catalog = (tx: Prisma.TransactionClient) => tx.$queryRaw<\n            {\n              body: string;\n",
@@ -527,19 +541,24 @@ const HISTORICAL_CI_FIXTURE_BINDINGS: { candidate: string; opening: string; sha2
     sha256: '083deb3ae1420469355cece3d00cfaebcd511f52b3e28ab07e6db42b5b00ef17',
   },
 ];
+export function restoreE4HistoricalCiFixtureOpening(source: string): string {
+  const hash = (text: string) => createHash('sha256').update(text).digest('hex');
+  if (hash(source) === HISTORICAL_CATALOG_CANDIDATE_SHA) return source;
+  if (hash(source) !== HISTORICAL_CI_FIXTURE_CANDIDATE_SHA)
+    throw new Error('E4 frozen counterpart CI fixture source refused');
+  for (const binding of HISTORICAL_CI_FIXTURE_BINDINGS) {
+    if (source.split(binding.candidate).length !== 2 || hash(binding.candidate) !== binding.sha256)
+      throw new Error('E4 frozen counterpart CI fixture binding refused');
+    source = source.replace(binding.candidate, () => binding.opening);
+  }
+  if (hash(source) !== HISTORICAL_CATALOG_CANDIDATE_SHA)
+    throw new Error('E4 frozen counterpart CI fixture opening refused');
+  return source;
+}
 export function restoreE4HistoricalCatalogOpening(source: string): string {
   const hash = (text: string) => createHash('sha256').update(text).digest('hex');
   if (hash(source) === HISTORICAL_CATALOG_OPENING_SHA) return source;
-  if (hash(source) === HISTORICAL_CI_FIXTURE_CANDIDATE_SHA) {
-    for (const binding of HISTORICAL_CI_FIXTURE_BINDINGS) {
-      if (
-        source.split(binding.candidate).length !== 2 ||
-        hash(binding.candidate) !== binding.sha256
-      )
-        throw new Error('E4 frozen counterpart CI fixture binding refused');
-      source = source.replace(binding.candidate, () => binding.opening);
-    }
-  }
+  source = restoreE4HistoricalCiFixtureOpening(source);
   if (hash(source) !== HISTORICAL_CATALOG_CANDIDATE_SHA)
     throw new Error('E4 frozen counterpart source refused');
   for (const binding of HISTORICAL_CATALOG_BINDINGS) {

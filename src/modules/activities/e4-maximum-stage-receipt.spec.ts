@@ -10,6 +10,7 @@ import {
   E4MaximumStageReceipt,
   restoreE4MaximumStageOpening,
   restoreE4HistoricalCatalogOpening,
+  restoreE4HistoricalCiFixtureOpening,
   restoreE4OrdinaryOracleOpening,
 } from '../../../test/helpers/e4-maximum-stage-receipt';
 
@@ -320,6 +321,18 @@ describe('E4 frozen migration counterpart for the older scale source checker', (
     __dirname,
     '../../../test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts',
   );
+  it('restores the exact prior candidate for the migration self-reader before catalog adaptation', () => {
+    const source = readFileSync(path, 'utf8');
+    const prior = restoreE4HistoricalCiFixtureOpening(source);
+    expect(prior).not.toBe(source);
+    expect(createHash('sha256').update(prior).digest('hex')).toBe(
+      '71d36ed2b3bd13b97eb54f6771f7659f03521a1586662413907dfddb6696165f',
+    );
+    expect(restoreE4HistoricalCiFixtureOpening(prior)).toBe(prior);
+    const opening = restoreE4HistoricalCatalogOpening(source);
+    expect(restoreE4HistoricalCatalogOpening(prior)).toBe(opening);
+    expect(() => restoreE4HistoricalCiFixtureOpening(opening)).toThrow('source refused');
+  });
   it('restores the complete approved counterpart instead of changing its original refs pin', () => {
     const source = readFileSync(path, 'utf8');
     const opening = restoreE4HistoricalCatalogOpening(source);
@@ -331,6 +344,28 @@ describe('E4 frozen migration counterpart for the older scale source checker', (
     expect(opening).not.toContain('const historicalCatalogTx = frozen137FirstReviewCatalogTx(tx);');
   });
   it.each([
+    ['missing CI restore import', '  restoreE4HistoricalCiFixtureOpening,\n', ''],
+    [
+      'duplicate CI restore import',
+      '  restoreE4HistoricalCiFixtureOpening,\n',
+      '  restoreE4HistoricalCiFixtureOpening,\n  restoreE4HistoricalCiFixtureOpening,\n',
+    ],
+    [
+      'changed CI restore import',
+      '  restoreE4HistoricalCiFixtureOpening,\n',
+      '  restoreE4HistoricalCiFixtureOpening as changedRestore,\n',
+    ],
+    ['missing CI restore call', 'restoreE4HistoricalCiFixtureOpening(source)', 'source'],
+    [
+      'duplicate CI restore call',
+      'restoreE4HistoricalCiFixtureOpening(source)',
+      'restoreE4HistoricalCiFixtureOpening(restoreE4HistoricalCiFixtureOpening(source))',
+    ],
+    [
+      'changed CI restore call',
+      'restoreE4HistoricalCiFixtureOpening(source)',
+      'restoreE4HistoricalCiFixtureOpening(source.trim())',
+    ],
     ['phase output', "'E4_GENUINE_BAG_PHASE'", "'E4_GENUINE_BAG_PHASE_CHANGED'"],
     [
       'third fixture',
@@ -373,6 +408,7 @@ describe('E4 frozen migration counterpart for the older scale source checker', (
     const changed = source.replace(before, after);
     expect(changed).not.toBe(source);
     expect(() => restoreE4HistoricalCatalogOpening(changed)).toThrow('source refused');
+    expect(() => restoreE4HistoricalCiFixtureOpening(changed)).toThrow('source refused');
   });
 });
 

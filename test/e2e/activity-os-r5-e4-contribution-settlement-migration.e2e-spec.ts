@@ -4823,7 +4823,10 @@ describe('E4 terminal expected source offline', () => {
   });
 });
 // E4_TERMINAL_REFS_BODY_OFFLINE_BEGIN
-import { restoreE4MaximumStageOpening } from '../helpers/e4-maximum-stage-receipt';
+import {
+  restoreE4MaximumStageOpening,
+  restoreE4HistoricalCiFixtureOpening,
+} from '../helpers/e4-maximum-stage-receipt';
 // Only the exact migration-only catalog profile bindings may differ in shared facilities.
 function terminalFrozen137SharedOpening(source: string): string {
   const opening = 'bcc4fabb397bb510355694364e64927f73119ed7f9539508ca18c8559c1410ba';
@@ -4908,7 +4911,10 @@ describe('E4 terminal source projection offline', () => {
         resolve(__dirname, 'activity-os-r5-e4-contribution-settlement-' + kind + '.e2e-spec.ts'),
         'utf8',
       );
-      const opening = kind === 'scale' ? restoreE4MaximumStageOpening(source) : source;
+      const opening =
+        kind === 'scale'
+          ? restoreE4MaximumStageOpening(source)
+          : restoreE4HistoricalCiFixtureOpening(source);
       expect(terminalRefsTestOpening(opening, kind)).not.toBe(opening);
       expect(() => terminalRefsTestOpening(source + '\n', kind)).toThrow();
       const driver = [...source.matchAll(/^class S13ReadClient \{[\s\S]*?^\}/gmu)];
