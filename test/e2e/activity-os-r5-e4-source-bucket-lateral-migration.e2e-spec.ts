@@ -23,6 +23,14 @@ import { deriveTestDbName } from '../setup/worktree-db';
 import { assertConnectedTestDatabase } from '../setup/test-db';
 
 type Database = PrismaClient | Prisma.TransactionClient;
+async function settingsSnapshot(db: PrismaClient) {
+  return db.$transaction(async (tx) => {
+    // pg_settings exposes plpgsql.* only after this backend loads the language.
+    // Initialize this backend, then compare the complete settings without filtering.
+    await tx.$executeRaw`DO $$ BEGIN NULL; END $$`;
+    return tx.$queryRaw`SELECT name,setting FROM pg_settings ORDER BY name`;
+  });
+}
 async function businessSnapshot(db: Database) {
   const tables = await db.$queryRaw<
     { name: string }[]
@@ -92,7 +100,7 @@ describe('E4 real source bucket lateral migration144', () => {
   it('upgrades nonempty143 without changing business rows, other functions, guard catalogs or settings; repeat deploy is a no-op', async () => {
     const beforeRows = await businessSnapshot(db()),
       beforeCatalog = await catalog(db());
-    const beforeSettings = await db().$queryRaw`SELECT name,setting FROM pg_settings ORDER BY name`;
+    const beforeSettings = await settingsSnapshot(db());
     const prior = await db().$queryRaw<
       { count: number; pin: string }[]
     >`SELECT (SELECT count(*)::int FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL) AS count,(SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_source_rows(text)'::regprocedure) AS pin`;
@@ -101,9 +109,7 @@ describe('E4 real source bucket lateral migration144', () => {
     await verifyRealSourceDatabase(db());
     expect((await businessSnapshot(db())) === beforeRows).toBe(true);
     expect((await catalog(db())) === beforeCatalog).toBe(true);
-    expect(await db().$queryRaw`SELECT name,setting FROM pg_settings ORDER BY name`).toEqual(
-      beforeSettings,
-    );
+    expect(await settingsSnapshot(db())).toEqual(beforeSettings);
     owner.deploySourceBucketMigrations();
     await verifyRealSourceDatabase(db());
     expect((await businessSnapshot(db())) === beforeRows).toBe(true);
