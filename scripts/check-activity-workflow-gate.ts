@@ -89,7 +89,7 @@ export const LEGACY_ASSERT = 'assertLegacyWriteAllowed';
 export const CONVERSION_ASSERT = 'assertLegacyLedgerConversionAllowed';
 export const READ_SOURCE = 'participationReadSource';
 
-/** C4 反向闸的看守范围:这些文件承载「恒按 approved 算」的口径,不得随闸切换。 */
+/** C4 保留旧 calculator 反向约束；team-join 的只读例外在裁判内单独限制。 */
 /**
  * 已登记的 jest 测试根。**每加一个 jest 配置就是加一个测试根**,必须在这里登记并写清
  * 该根的闸位姿态 —— C6 用它比对真实目录,漏登即红。
@@ -109,7 +109,7 @@ export const DECLARED_TEST_CONFIGS: Record<string, string> = {
   'jest-journeys.config.ts': 'journeys —— 考勤修正全链声明闸开,另 4 条默认闸关',
 };
 
-export const REVERSE_GATE_MARKERS = ['team-join', 'contribution-calculator'];
+export const REVERSE_GATE_MARKERS = ['contribution-calculator'];
 
 /**
  * 「结算量」列 —— C8 判「这个查询是不是对外产出工时/贡献值」的锚点。
@@ -242,6 +242,8 @@ type ReadFaceInfo = {
   writesGatedChain: boolean;
   /** 本作用域(或同一调用链上的邻居)问了闸。 */
   referencesGate: boolean;
+  /** Direct seeds never receive propagated values: shared helpers must not connect sibling readers. */
+  directReferencesGate: boolean;
   /** 是不是 class method —— C2 的判闸位只覆盖 class method,自由函数是它的盲区。 */
   isMethod: boolean;
   calls: Set<string>;
@@ -266,6 +268,7 @@ function analyzeSettlementReadFaces(fileName: string, text: string): Map<string,
       reads: [],
       writesGatedChain: false,
       referencesGate: false,
+      directReferencesGate: false,
       isMethod: false,
       calls: new Set(),
     };
@@ -338,7 +341,7 @@ function analyzeSettlementReadFaces(fileName: string, text: string): Map<string,
         }
       }
 
-      if (fnName === READ_SOURCE) scope.referencesGate = true;
+      if (fnName === READ_SOURCE) scope.directReferencesGate = true;
       if (callee.expression.kind === ts.SyntaxKind.ThisKeyword) scope.calls.add(fnName);
     }
     // 裸函数调用 foo(...) —— 自由函数之间的边
@@ -349,8 +352,8 @@ function analyzeSettlementReadFaces(fileName: string, text: string): Map<string,
   };
   ts.forEachChild(source, visit);
 
-  // 传播:写沿调用图**向上**(调了写者的也算写路径);
-  // 闸**双向**(闸位决定可以在调用方做好传下来,也可以由被调用的 helper 去问)。
+  // Writes propagate upward. Gate evidence uses separate one-direction closures seeded only
+  // by direct calls; alternating directions would connect ungated siblings through a shared helper.
   for (let i = 0; i <= scopes.size; i += 1) {
     let changed = false;
     for (const info of scopes.values()) {
@@ -361,18 +364,33 @@ function analyzeSettlementReadFaces(fileName: string, text: string): Map<string,
           info.writesGatedChain = true;
           changed = true;
         }
-        if (callee.referencesGate && !info.referencesGate) {
-          info.referencesGate = true;
+      }
+    }
+    if (!changed) break;
+  }
+  const upward = new Set(
+    [...scopes.values()].filter((s) => s.directReferencesGate).map((s) => s.name),
+  );
+  const downward = new Set(upward);
+  for (let i = 0; i <= scopes.size; i += 1) {
+    let changed = false;
+    for (const info of scopes.values()) {
+      for (const callee of info.calls) {
+        if (!scopes.has(callee)) continue;
+        if (upward.has(callee) && !upward.has(info.name)) {
+          upward.add(info.name);
           changed = true;
         }
-        if (info.referencesGate && !callee.referencesGate) {
-          callee.referencesGate = true;
+        if (downward.has(info.name) && !downward.has(callee)) {
+          downward.add(callee);
           changed = true;
         }
       }
     }
     if (!changed) break;
   }
+  for (const info of scopes.values())
+    info.referencesGate = upward.has(info.name) || downward.has(info.name);
   return scopes;
 }
 
@@ -610,16 +628,26 @@ export function runCriteria(
     }
   }
 
-  // ── C4:反向闸(刻意的不一致) ──
+  // ── C4:旧 calculator 不接闸；team-join 只允许统一读源，不控制写闸或另选配置 ──
   for (const file of files) {
     const r = rel(file);
-    if (!REVERSE_GATE_MARKERS.some((g) => r.includes(g))) continue;
+    const reverse = REVERSE_GATE_MARKERS.some((g) => r.includes(g));
+    const readonlyTeamJoin = r.includes('team-join');
+    if (!reverse && !readonlyTeamJoin) continue;
     const text = readSource(file);
-    for (const token of [V11_ASSERT, LEGACY_ASSERT, READ_SOURCE, 'ActivityWorkflowGate']) {
+    const forbidden = [
+      V11_ASSERT,
+      LEGACY_ASSERT,
+      CONVERSION_ASSERT,
+      'isV11Enabled',
+      'isReadonlyMaintenance',
+    ];
+    if (reverse) forbidden.push(READ_SOURCE, 'ActivityWorkflowGate');
+    for (const token of forbidden) {
       if (text.includes(token)) {
         findings.push({
           criterion: 'C4',
-          detail: `${r} 引用了闸(${token})—— 维护者已拍板入队门槛与 computeCappedContribution 恒按 approved 算,不随 v1.1 闸切换;这条不一致是刻意的。`,
+          detail: `${r} 引用了禁止的闸操作(${token})—— team-join 仅允许 participationReadSource 选源，旧 calculator 保持独立；不得在这些读者中操作写闸或另选开关。`,
         });
       }
     }
@@ -829,11 +857,12 @@ export function runCriteria(
 // 「读文件 / 写正则 / 造 overrides」的能力。
 // ============================================================================
 
-/** C3 三处读面 —— 变异必须**全部**摘掉才会红(见 controlAllReadFacesDetached)。 */
+/** C3 当前读面文件 —— 变异必须全部摘掉才会红；实际发现仍由 C8 动态扫描。 */
 export const READ_FACE_SUMMARY = 'src/modules/attendances/participation-summary-query.service.ts';
 export const READ_FACE_ACTIVITY_PARTICIPATION =
   'src/modules/activities/activity-participation-query.service.ts';
 export const READ_FACE_META_OVERVIEW = 'src/modules/meta/participation-overview-query.service.ts';
+export const READ_FACE_TEAM_JOIN = 'src/modules/team-join/team-join-progress.ts';
 
 /** 按仓库相对路径读源码。spec 侧唯一被允许的读取入口。 */
 export function readSource(relPath: string): string {
@@ -847,13 +876,14 @@ export interface WorkflowMutationControl {
 }
 
 /**
- * C3 正对照:**三处读面全部脱闸** ⇒ C3 必红。
+ * C3 正对照:**当前四处读面文件全部脱闸** ⇒ C3 必红。
  *
  * ⚠️ 2026-08-21(第六轮评审 B-01)起,这条变异必须**摘掉全部三处读面的闸**才会红。
  *    原因正是 C3 的粒度:它只断言「全仓至少有一个文件调过闸的读面方法」,
  *    **一处接了就绿**。当年只有一处读面接闸时,摘掉那一处就红;如今有三处,
  *    摘掉一处剩下两处仍然 >0。⇒ **C3 对「第二、第三处漏进来」结构性失明**,
  *    这正是 C8 存在的理由。两条判据粒度不同、都要留着。
+ *    R5 新增 team-join 贡献核文件后，变异同步覆盖四处；以上三处是当年的历史数量。
  */
 export function controlAllReadFacesDetached(): WorkflowMutationControl {
   let changed = true;
@@ -862,10 +892,13 @@ export function controlAllReadFacesDetached(): WorkflowMutationControl {
     READ_FACE_SUMMARY,
     READ_FACE_ACTIVITY_PARTICIPATION,
     READ_FACE_META_OVERVIEW,
+    READ_FACE_TEAM_JOIN,
   ]) {
     const original = readSource(target);
     const next = original
       .split(`this.activityWorkflowGate.${READ_SOURCE}()`)
+      .join("('approved-attendance' as const)")
+      .split(`activityWorkflowGate.${READ_SOURCE}()`)
       .join("('approved-attendance' as const)");
     if (next === original) changed = false;
     overrides[target] = next;

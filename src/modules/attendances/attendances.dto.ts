@@ -711,21 +711,21 @@ export class AdminMemberAttendanceRecordDto {
 }
 
 // 某队员贡献值生涯累计汇总(队员 360 Tier3):实时算不落库,复用 team-join computeCappedContribution
-// 封顶核(approved sheet + 全局每日封顶 3,生涯无 cutoff;**禁裸 SUM** 绕过封顶会算多)。
+// 单闸核(off: approved 考勤北京日封顶 3；on: committed credited；生涯无 cutoff，不叠加)。
 export class MemberContributionSummaryDto {
   @ApiProperty({ description: '队员 Member.id' })
   memberId!: string;
 
   @ApiProperty({
     description:
-      '生涯累计贡献值 capped 总分(Decimal;序列化为 string;approved sheet + 北京日封顶 3)',
+      '生涯累计贡献值（Decimal string；闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加）',
     type: 'string',
   })
   contributionPoints!: string;
 
   /**
    * 账本口径的「已生效 / 在途」两轴小计(第 7 批第 ②-a 刀,**纯加法**)。
-   * 上面四个数字的取数、口径、字段名一律未动;本字段是并排摆出的另一条轴。
+   * 本字段最初仅并排加轴；R5 contributionPoints 已随单闸选源，本轴定义与字段名不变。
    * 恒存在、恒非 null(无数据时四个值都是 "0")。
    */
   @ApiProperty({

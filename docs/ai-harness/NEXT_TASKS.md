@@ -864,7 +864,9 @@ C3-1 按最新“不删除”决定永久保留明细和复算能力；第 116 �
 
 ### P1-28 活动业务全流程改造(批次 0–8) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件，[#960](https://github.com/BA7IEE/srvf-nest-api/pull/960))、③ Form runtime / 一次性附件会话([#961](https://github.com/BA7IEE/srvf-nest-api/pull/961))、④ canonical 报名命令主链([#962](https://github.com/BA7IEE/srvf-nest-api/pull/962))、⑤分配/预留名额 DB guards([#963](https://github.com/BA7IEE/srvf-nest-api/pull/963))、发布审核容量桶投影([#964](https://github.com/BA7IEE/srvf-nest-api/pull/964))、三层 CapacityReservation 内核([#965](https://github.com/BA7IEE/srvf-nest-api/pull/965) 已合 main)、⑨永久报名头 DB 地基与 onsite 历史头 fail-closed([#968](https://github.com/BA7IEE/srvf-nest-api/pull/968))、⑩永久头 runtime/个人取消闭环、⑯分配与邀请 C runtime、⑰资格配置/发布激活（managed RuleSet/Rule typed configuration、V5 审核冻结/activation）、⑱活动到点 expiry（既有 worker + PG reconciliation、无新 cron）；合同已修订至 v1.1.1,缺口台账累计 #28**
 
-**状态**:进行中(第 0–3 批已收口 #952 #956;第 4 批多刀已合 #959 #965 #968;第 6 批代码面收口宣告 + 第 7 批②账本桥交付 #1211 + D11 定案(均 2026-08-28);剩余:第 8 批与 9a 的 5 条 C 档能力缺口(AC-010 改期刀已交付 2026-08-28:作废旧码重签;余 AC-013/AC-020/AC-025 大刀后议、AC-017 搁置、ADV-010 卡 P2-21;todo 6→5),合同缺口台账见正文)
+**状态**:进行中(#1211 已交付存量考勤账本化入口；R5受限500贡献读源及ADV-010已实施，六项真实PG与6b复核完成；AC-013/AC-017/AC-020/AC-025四项依既有决定延期并保留TODO，完整合同9a未完成；实际生产准入与部署尚未完成，当前范围见R5完整Goal)
+
+> **2026-08状态原文（历史，非当前剩余项）**:进行中(第 0–3 批已收口 #952 #956;第 4 批多刀已合 #959 #965 #968;第 6 批代码面收口宣告 + 第 7 批②账本桥交付 #1211 + D11 定案(均 2026-08-28);剩余:第 8 批与 9a 的 5 条 C 档能力缺口(AC-010 改期刀已交付 2026-08-28:作废旧码重签;余 AC-013/AC-020/AC-025 大刀后议、AC-017 搁置、ADV-010 卡 P2-21;todo 6→5),合同缺口台账见正文)
 
 > **需求口径变更(2026-08-04)**:**= v1.1 四份 + [`AMENDMENTS-v1.1.1`](../archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md),冲突以后者为准。**
 > 第 1 批建表过程中实测撞到**五处合同内部不一致**,维护者当日**全部接受**并发布修订件。原件与 SHA256 一字未动(校验仍过)。
@@ -3033,7 +3035,11 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 
 ### P2-21 入队进度看不见活动结算记的分 —— **目标形状:账本是唯一真相**(⚠️ **上线前必做**,不是「先不做」)
 
-**状态**:⏸ 挂起(⚠️ **这不是「不做」,是「必须在首次生产上线之前做完,现在时机不对」** —— 触发条件三条见正文「什么时候必须做」;三条齐了就立刻立项,不必再问维护者要不要做,只需拍板合并口径)
+**状态**:进行中(#1211 既有账本化入口已交付；R5受限500读源接线及六项真实PG、独立工作稿复核和6b人签已完成；固定候选CI/main以关联PR实际回执为准；实际目标盘点与生产部署仍未完成)
+
+**本轮决定覆盖旧approved-only锁**：off保留旧考勤日封顶3，on仅SUM committed credited delta；入队年3-31截止与5分门槛不变。不双算、不二次封顶、空账不回退。旧分保护在开闸前由既有只读维护窗转换并逐人核对总分/相关cutoff，生产执行未做。真实ADV-010用例为`test/e2e/activity-os-r5-adv010-contribution-progress.e2e-spec.ts`：两Nest/两pool真并发+窗口HTTP刷新，一成功一20084；串行2→3→5、最终入队、在途不可见、更正重放及真实转换样本已覆盖。四项AC延期仍TODO；验收登记与PG执行分别留证。
+
+以下为2026-08取证与立项动机；旧“恒approved/现在不做”是历史决定，当前以本段及R5完整Goal为准。
 
 > **缺陷类**:**同一个业务量(队员的贡献分)有两个来源,而下游只认其中一个。**
 > 每新增一种「能挣分的活动类型」,都要重新问一次「入队进度看不看得见」——

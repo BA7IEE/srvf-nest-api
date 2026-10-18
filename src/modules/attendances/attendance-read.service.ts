@@ -1,3 +1,4 @@
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Injectable } from '@nestjs/common';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -63,6 +64,7 @@ export class AttendanceReadService {
     private readonly attendancePresenter: AttendancePresenter,
     private readonly attendanceAuditRecorder: AttendanceAuditRecorder,
     private readonly ledgerQuery: LedgerQueryService,
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
   ) {}
 
   // v0.49:扁平考勤工作台按 activity.organizationId 下推授权范围；用户显式组织筛选
@@ -259,9 +261,9 @@ export class AttendanceReadService {
   // ============ 跨轴只读:某队员贡献值生涯累计(Tier3 队员 360)============
 
   // 2026-06-23 跨轴只读(GET admin/v1/members/:memberId/contribution-summary):某队员贡献值
-  // 生涯累计 capped 总分(队员 360「贡献值」tab)。实时算不落库,复用 team-join 封顶核
-  // computeCappedContribution(approved sheet + 全局每日封顶 3,生涯无 cutoff);**禁裸 SUM**
-  // ——绕过封顶会算多。MEMBER_NOT_FOUND 守卫;判权复用 attendance.read.sheet。
+  // 生涯累计贡献总分(队员 360「贡献值」tab)。实时算不落库,复用 team-join 单闸取数核
+  // computeCappedContribution(单闸选源,生涯无 cutoff)：off旧考勤封顶，on仅committed credited
+  // off 禁绕过日封顶，on 禁二次封顶或叠加旧分。MEMBER_NOT_FOUND 守卫;判权复用 attendance.read.sheet。
   async getMemberContributionSummary(
     memberId: string,
     currentUser: CurrentUserPayload,
@@ -274,11 +276,17 @@ export class AttendanceReadService {
       throw new BizException(BizCode.MEMBER_NOT_FOUND);
     }
 
-    // 🔴 第 7 批第 ②-a 刀:`contributionPoints` 的取数一个字没动(仍是 approved 考勤封顶核),
-    //    只是并排多给一条账本轴。四个数走 `loadMemberLedgerTotals` 这个全仓唯一入口,
-    //    与 participation-summary 两个端点必然同值。
+    // 第 7 批第 ②-a 刀最初仅并排增加账本轴；R5 的 contributionPoints 已随单闸选源。
+    // ledgerTotals 的四个数仍走 loadMemberLedgerTotals 唯一入口，
+    // 与 participation-summary 两个端点同值；不再叠加到 contributionPoints。
     const [points, ledgerTotals] = await Promise.all([
-      computeCappedContribution(this.prisma, memberId, null),
+      computeCappedContribution(
+        this.prisma,
+        memberId,
+        null,
+        this.activityWorkflowGate,
+        LedgerQueryService,
+      ),
       this.ledgerQuery.loadMemberLedgerTotals(memberId),
     ]);
     return { memberId, contributionPoints: points.toString(), ledgerTotals };

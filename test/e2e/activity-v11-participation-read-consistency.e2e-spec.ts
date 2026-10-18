@@ -347,14 +347,13 @@ describe('活动 v1.1 开闸态 —— 参与读面取自同一真相源(第六�
     );
   });
 
-  it('刻意不随闸切换的那一项:入队门槛贡献值恒按 approved 算(判据 C4 反向锁)', async () => {
-    // 维护者已拍板:入队门槛与 computeCappedContribution 恒按 approved 算,不随本闸切换。
-    // 这条把那个**刻意的不一致**也钉成行为断言 —— 免得后人看到上面几条「都切了」,
-    // 顺手把入队门槛也统一过去(那会悄悄改掉入队资格的判定口径)。
+  it('R5获批同源:贡献字段只读committed credited，不与旧approved分叠加', async () => {
+    // 维护者已明确批准本项2→0.5；旧approved分仍保留以检验不叠加/不回退。
     const summary = await get(`/api/admin/v1/members/${memberId}/participation-summary`);
     expect(summary.status).toBe(200);
-    // 服务时长已切到账本,而同一个响应里的贡献值仍是 approved 口径 —— 两者刻意不同源。
+    // 时长口径不变；贡献采用账本已记分，旧记录不加入。
     expect(summary.body.data.totalServiceHours).toBe(LEDGER_SERVICE_HOURS);
-    expect(summary.body.data.contributionPoints).toBe(APPROVED_CONTRIBUTION_POINTS);
+    expect(summary.body.data.contributionPoints).toBe('0.5');
+    expect(summary.body.data.contributionPoints).not.toBe(APPROVED_CONTRIBUTION_POINTS);
   });
 });

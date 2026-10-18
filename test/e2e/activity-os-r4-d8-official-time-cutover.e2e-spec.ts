@@ -505,6 +505,17 @@ describe('D8-2 official participation time cutover', () => {
       },
     ]);
 
+    // This classified root already committed 2 credited points; the overlapping legacy row is 1.
+    const credited = await fixture.db.participationLedgerEntry.aggregate({
+      where: {
+        memberId: fixture.creator.memberId,
+        activityId: source.draft.activityId,
+        postingBatch: { statusCode: 'committed' },
+      },
+      _sum: { creditedPointsDelta: true },
+    });
+    expect(credited._sum.creditedPointsDelta?.toString()).toBe('2');
+
     const memberSummary = await fixture.app
       .get(ParticipationSummaryQueryService)
       .forMemberAdmin(fixture.creator.memberId, actor);
@@ -512,8 +523,9 @@ describe('D8-2 official participation time cutover', () => {
       totalServiceHours: '0',
       activityCount: 1,
       recordCount: 1,
-      contributionPoints: '1',
+      contributionPoints: '2',
     });
+    expect(memberSummary.contributionPoints).not.toBe('1');
 
     const activityQuery = fixture.app.get(ActivityParticipationQueryService);
     const activitySummary = await activityQuery.participationSummary(

@@ -5,7 +5,8 @@
 ## Scope 与当前行为
 
 - 本模块负责入队轮、申请、gate/综合评估、贡献值进度与 final join；`requiresInsurance` 已进入 Cycle create/update/response，create 缺省 false。
-- `computeContribution`/`computeCappedContribution` 是 approved-only、北京时间自然日封顶 3、按 cycle.year cutoff 的唯一贡献值真值；考勤终审达标通知只允许在同一事务内分别于 approved 前后调用该真值，不得复制 cap 算法或用原始分反推。
+- R5维护者已批准：`computeContribution`/`computeCappedContribution` 显式必传同一 `ActivityWorkflowGate`；闸关保留approved考勤北京日封顶3，闸开仅SUM committed账本的credited delta（含冲回/重记），不叠加、不二次封顶、空账不回退。cycle.year截止与门槛5不变，readonly不改变来源；批量与单人同核。旧分在开闸前先转换并逐人对账总分及cutoff；实际生产转换未执行。既有考勤终审达标通知仍在同事务approved前后调用该核，不新增账本提交通知触发。
+- 贡献核的只读账本端口同样必传。`contribution-ledger-reader.ts` 仅声明固定语义；`TeamJoinModule.register(reader)` 使用唯一token注入，`AppModule`唯一组合点传公开`LedgerQueryService`类。查询和committed条件由participation属主保有，team-join不得直接聚合账本或反向导入实现；不提供旧核或全局client默认。调用方原事务、成员锁和授权不变，批量一次groupBy。
 - single gate=false 时该 flag 仅配置/回显，不查询保险、不生成 evidence；gate=true 且 cycle=true 时只在 **final join** 捕获一次 now，以北京日 `requiredFrom=requiredThrough` 校验 verified self → live Team Policy+Coverage，无来源 26031。
 - final join 根锁序固定 Application→Cycle→source(self 或 Policy→Coverage)→Member→linked User→join writes→Evidence→Audit/outbox；evidence 绑定 TeamJoinApplication 且只含最小 snapshot，任一失败全回滚。申请创建/评估阶段绝不提前生成。
 - Cycle update 固定先按 `id ASC` 锁该 cycle 全部 live Application，再锁/重读 Cycle 后 update/audit，与 final join 同向；禁止退回无锁 `findFirst`。

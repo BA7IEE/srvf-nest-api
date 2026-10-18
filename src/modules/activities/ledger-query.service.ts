@@ -133,6 +133,21 @@ export interface ActivityMemberLedgerTotalsView {
 
 type PrismaLike = Pick<Prisma.TransactionClient, '$queryRaw'>;
 
+// Public transaction primitives keep the committed predicate in the ledger owner.
+// The caller owns authorization, locks and any existing transaction; these reads never open one.
+type ContributionLedgerClient = Pick<Prisma.TransactionClient, 'participationLedgerEntry'>;
+
+function committedContributionWhere(
+  memberId: string | { in: readonly string[] },
+  ledgerDateExclusive: Date | null,
+): Prisma.ParticipationLedgerEntryWhereInput {
+  return {
+    memberId: typeof memberId === 'string' ? memberId : { in: [...memberId.in] },
+    postingBatch: { statusCode: 'committed' },
+    ...(ledgerDateExclusive ? { ledgerDate: { lt: ledgerDateExclusive } } : {}),
+  };
+}
+
 /**
  * 账本读面权限口径（维护者 2026-08-06 显式决定，**不是**合同推导）：合同 §6.11 未规定
  * 读权限码。账本由考勤数据推算，能看原始考勤即可推出账本，故 Admin 两条账本轴复用
@@ -145,6 +160,39 @@ const LEDGER_READ_ACTION = 'attendance.read.sheet';
 
 @Injectable()
 export class LedgerQueryService {
+  /** R5 public owner query: net credited points, including reversal and replacement entries. */
+  static async sumCommittedCreditedPointsForMemberInTx(
+    client: ContributionLedgerClient,
+    memberId: string,
+    ledgerDateExclusive: Date | null,
+  ): Promise<Prisma.Decimal> {
+    const total = await client.participationLedgerEntry.aggregate({
+      where: committedContributionWhere(memberId, ledgerDateExclusive),
+      _sum: { creditedPointsDelta: true },
+    });
+    return total._sum.creditedPointsDelta ?? new Prisma.Decimal(0);
+  }
+
+  /** One groupBy for all requested members; zero for absent members and no query for an empty set. */
+  static async sumCommittedCreditedPointsForMembersInTx(
+    client: ContributionLedgerClient,
+    memberIds: readonly string[],
+    ledgerDateExclusive: Date | null,
+  ): Promise<Map<string, Prisma.Decimal>> {
+    const unique = [...new Set(memberIds)];
+    const result = new Map<string, Prisma.Decimal>(unique.map((id) => [id, new Prisma.Decimal(0)]));
+    if (unique.length === 0) return result;
+    const totals = await client.participationLedgerEntry.groupBy({
+      by: ['memberId'],
+      where: committedContributionWhere({ in: unique }, ledgerDateExclusive),
+      _sum: { creditedPointsDelta: true },
+    });
+    for (const row of totals) {
+      result.set(row.memberId, row._sum.creditedPointsDelta ?? new Prisma.Decimal(0));
+    }
+    return result;
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly authz: AuthzService,

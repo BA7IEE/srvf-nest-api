@@ -1,3 +1,5 @@
+import { LedgerQueryService } from '../../src/modules/activities/ledger-query.service';
+import { ActivityWorkflowGate } from '../../src/common/activity-workflow/activity-workflow.gate';
 import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-cleanup';
 import type { INestApplication } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
@@ -1430,7 +1432,13 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
 
       expect(
         (
-          await computeContribution(prisma, alice.memberId, application.cycle.year)
+          await computeContribution(
+            prisma,
+            alice.memberId,
+            application.cycle.year,
+            app.get(ActivityWorkflowGate),
+            LedgerQueryService,
+          )
         ).points.toString(),
       ).toBe('4');
       await attendances.finalApprove(
@@ -1441,7 +1449,13 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
       );
       expect(
         (
-          await computeContribution(prisma, alice.memberId, application.cycle.year)
+          await computeContribution(
+            prisma,
+            alice.memberId,
+            application.cycle.year,
+            app.get(ActivityWorkflowGate),
+            LedgerQueryService,
+          )
         ).points.toString(),
       ).toBe('5');
 
@@ -1478,7 +1492,13 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
       );
       expect(
         (
-          await computeContribution(prisma, alice.memberId, application.cycle.year)
+          await computeContribution(
+            prisma,
+            alice.memberId,
+            application.cycle.year,
+            app.get(ActivityWorkflowGate),
+            LedgerQueryService,
+          )
         ).points.toString(),
       ).toBe('4');
       await attendances.approve(sheetId, { reviewNote: '一级复核通过' }, adminPayload, AUDIT_META);
@@ -1584,12 +1604,24 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
 
       expect(
         (
-          await computeContribution(prisma, alice.memberId, aliceApplication.cycle.year)
+          await computeContribution(
+            prisma,
+            alice.memberId,
+            aliceApplication.cycle.year,
+            app.get(ActivityWorkflowGate),
+            LedgerQueryService,
+          )
         ).points.toString(),
       ).toBe('4');
       expect(
         (
-          await computeContribution(prisma, bob.memberId, bobApplication.cycle.year)
+          await computeContribution(
+            prisma,
+            bob.memberId,
+            bobApplication.cycle.year,
+            app.get(ActivityWorkflowGate),
+            LedgerQueryService,
+          )
         ).points.toString(),
       ).toBe('5');
       await attendances.finalApprove(
@@ -1686,7 +1718,13 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
       expect(await prisma.notificationOutboxIntent.count()).toBe(0);
       expect(
         (
-          await computeContribution(prisma, alice.memberId, application.cycle.year)
+          await computeContribution(
+            prisma,
+            alice.memberId,
+            application.cycle.year,
+            app.get(ActivityWorkflowGate),
+            LedgerQueryService,
+          )
         ).points.toString(),
       ).toBe('4');
     });

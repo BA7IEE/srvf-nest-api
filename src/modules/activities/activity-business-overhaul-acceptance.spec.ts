@@ -2582,10 +2582,26 @@ export function waiverIdsAlsoBound(
  *    也就是说「已接通」在此之前只靠人记得加那一行,没有任何执行位守着。
  *    这与本仓 README 清单那次是同一个形状:**少接一条不产生坏链接,既有守护看不见它。**
  */
+// R5：维护者批准贡献单闸来源并补齐真实并发进度验收，历史卡点表保留。
+const R5_ACCEPTANCE_DESTINATIONS: Readonly<Record<string, readonly AcceptanceDestination[]>> = {
+  'ADV-010': [
+    {
+      file: 'test/e2e/activity-os-r5-adv010-contribution-progress.e2e-spec.ts',
+      needle:
+        'ADV-010 concurrently commits two same-day awards while real progress refreshes, with one stale baseline rejected',
+    },
+    {
+      file: 'test/e2e/activity-os-r5-adv010-contribution-progress.e2e-spec.ts',
+      needle: 'refreshes real admin and App progress after an actual native committed award',
+    },
+  ],
+};
+
 const ACCEPTANCE_DESTINATION_TABLES: ReadonlyArray<
   Readonly<Record<string, readonly AcceptanceDestination[]>>
 > = [
   // 分拣表排在最前:它的结论优先于各批自己的历史卡点行(去向恒优先于卡点)。
+  R5_ACCEPTANCE_DESTINATIONS,
   TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS,
   TEST_GAP_2026_08_26_ACCEPTANCE_DESTINATIONS,
   TEST_GAP_2026_08_28_ACCEPTANCE_DESTINATIONS,
@@ -2758,6 +2774,7 @@ describe('活动业务改造 v1.1 合同完整性', () => {
       name: string;
       table: Readonly<Record<string, readonly AcceptanceDestination[]>>;
     }> = [
+      { name: 'R5', table: R5_ACCEPTANCE_DESTINATIONS },
       { name: 'TRIAGE_2026_08', table: TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS },
       { name: 'TEST_GAP_2026_08_26', table: TEST_GAP_2026_08_26_ACCEPTANCE_DESTINATIONS },
       { name: 'TEST_GAP_2026_08_28', table: TEST_GAP_2026_08_28_ACCEPTANCE_DESTINATIONS },

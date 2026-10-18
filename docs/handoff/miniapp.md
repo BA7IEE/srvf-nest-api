@@ -537,3 +537,11 @@ managed 活动下的 `outcomes` 提供人工草稿录入、分页历史和指定
 ## 4. 不馊
 
 改 App surface / 契约 → 同 PR 改本文件 + `pnpm docs:openapi`(沿 [`AGENTS.md`](../../AGENTS.md) 反漂铁律);"改什么必须动哪篇哪节"的逐行对照见 [`README.md §2`](README.md)。
+
+## R5受限500贡献口径交接（后端，前端实施后置）
+
+App的贡献字段结构不变：闸关按approved考勤北京日全局封顶3，闸开只取committed账本credited净额（含真实冲回/重记），不混入在途/recognized，不二次封顶，不叠加旧分或空账回退。入队进度仍截至入队年3月31日，门槛5；成员生涯汇总没有该cutoff。readonly保留当前读源，直接关闭v1.1会读回旧考勤，不能当作无损回退。
+
+已有ledgerTotals的committed/inFlight两轴字段保持；在途不计入入队资格。真实两活动同日封顶、跨日到5及最终入队、并发刷新、更正重放和旧分转换样本已补PG验证。现有8通用门槛标记、人工综合评估及final join流程保留，不新增账本提交达标通知触发。snapshot/OpenAPI同步8项来源文本，客户端同时刷新13摘要及3个方法注释，路由/tag/权限/类型/required/nullable均不改；这不是tag-only变更。
+
+AC-013/020/025沿原决定上线后按诉求立项，AC-017仍搁置，四项保持TODO；显式r5-limited500只单列首发机器口径，默认全合同9a仍严格。保留500及全部native维度，原最大规模NOT_VALIDATED。前端页面/联调、真实服务器数据/转换/shadow/fleet/worker排空/稳定窗与10a10b均未完成，生产NO_GO。本段不是部署或开关授权。

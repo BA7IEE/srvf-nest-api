@@ -1,3 +1,4 @@
+import { LedgerQueryService } from '../activities/ledger-query.service';
 import { Injectable } from '@nestjs/common';
 import { MemberStatus, Prisma, UserStatus } from '@prisma/client';
 
@@ -12,6 +13,7 @@ import { NotificationOutboxService } from '../notifications/notification-outbox.
 import type { NotificationOutboxEnqueueInput } from '../notifications/notification-outbox.types';
 import type { ContributionResult } from '../team-join/team-join-progress';
 import { computeContributionBatch } from '../team-join/team-join-progress';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import {
   APP_STATUS_JOINING as TEAM_JOIN_APP_STATUS_JOINING,
   CONTRIBUTION_THRESHOLD,
@@ -34,7 +36,10 @@ export interface ContributionThresholdSnapshot {
 
 @Injectable()
 export class AttendanceNotificationProducer {
-  constructor(private readonly outbox: NotificationOutboxService) {}
+  constructor(
+    private readonly outbox: NotificationOutboxService,
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
+  ) {}
 
   async enqueueReturned(
     tx: PrismaTx,
@@ -124,7 +129,11 @@ export class AttendanceNotificationProducer {
     }
     if (latestByMember.size === 0) return [];
 
-    const pointsByYear = await computeContributionByCycleYear(tx, [...latestByMember.values()]);
+    const pointsByYear = await computeContributionByCycleYear(
+      tx,
+      [...latestByMember.values()],
+      this.activityWorkflowGate,
+    );
     const snapshots: ContributionThresholdSnapshot[] = [];
     // 保持与入参 memberIds 同序:快照顺序影响的只是 intent 插入顺序,但确定性便于对账。
     for (const memberId of memberIds) {
@@ -183,6 +192,7 @@ export class AttendanceNotificationProducer {
         memberId: snapshot.memberId,
         cycle: { year: snapshot.cycleYear },
       })),
+      this.activityWorkflowGate,
     );
     const milestones = input.contributionThresholdSnapshots.filter((snapshot) => {
       if (snapshot.beforePoints.gte(CONTRIBUTION_THRESHOLD)) return false;
@@ -246,6 +256,7 @@ function buildTargetedIntent(input: TargetedIntentInput): NotificationOutboxEnqu
 async function computeContributionByCycleYear(
   tx: PrismaTx,
   rows: ReadonlyArray<{ memberId: string; cycle: { year: number } }>,
+  activityWorkflowGate: ActivityWorkflowGate,
 ): Promise<Map<number, Map<string, ContributionResult>>> {
   const byYear = new Map<number, string[]>();
   for (const row of rows) {
@@ -255,7 +266,10 @@ async function computeContributionByCycleYear(
   }
   const result = new Map<number, Map<string, ContributionResult>>();
   for (const [year, memberIds] of byYear) {
-    result.set(year, await computeContributionBatch(tx, memberIds, year));
+    result.set(
+      year,
+      await computeContributionBatch(tx, memberIds, year, activityWorkflowGate, LedgerQueryService),
+    );
   }
   return result;
 }

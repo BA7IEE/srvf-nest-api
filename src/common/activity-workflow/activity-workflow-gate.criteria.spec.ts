@@ -1,5 +1,6 @@
 import {
   DECLARED_TEST_CONFIGS,
+  CONVERSION_ASSERT,
   ENV_EXAMPLE_REQUIRED_SAMPLE,
   GATE_FILE,
   SMOKE_WORKFLOW_FILE,
@@ -151,12 +152,9 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
     });
   });
 
-  describe('C4 反向闸:入队门槛恒按 approved 算,接了闸反而要红', () => {
-    it('让 team-join 引用闸 ⇒ C4 红', () => {
-      // 这一条守的是**刻意的不一致**:维护者拍板 computeCappedContribution 与入队门槛
-      // 不随 v1.1 闸切换。后人「顺手统一」会悄悄改掉入队门槛的业务口径,故上反向闸。
-      // 变异用**真代码**而不是注释:注释也能触发 C4(它按文本判,刻意从宽 ——
-      // 入队门槛文件里连提到闸都该引起复核),但正对照必须演示真实缺陷的形状。
+  describe('C4:team-join只允许统一读源，保留旧calculator反向约束', () => {
+    it('让team-join另读isV11Enabled而绕开统一读源 ⇒ C4红', () => {
+      // R5获批只读例外不允许另选开关；原isV11Enabled负例仍须拒绝。
       const original = readSource(TEAM_JOIN_PROBE);
       const mutated = original.replace(
         'export class',
@@ -168,6 +166,34 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
       const c4 = findings.filter((f) => f.criterion === 'C4');
       expect(c4.length).toBeGreaterThan(0);
       expect(c4.some((f) => f.detail.includes(TEAM_JOIN_PROBE))).toBe(true);
+    });
+  });
+
+  describe('C4只读例外的负对照', () => {
+    it.each([V11_ASSERT, LEGACY_ASSERT, CONVERSION_ASSERT])(
+      'team-join操作写闸%s仍拒绝',
+      (token) => {
+        const original = readSource(TEAM_JOIN_PROBE);
+        const mutated = original.replace(
+          'export class',
+          `const illegal = (gate: ActivityWorkflowGate) => gate.${token}();\nexport class`,
+        );
+        expect(mutated).not.toBe(original);
+        expect(
+          runCriteria({ [TEAM_JOIN_PROBE]: mutated }).findings.some(
+            (f) => f.criterion === 'C4' && f.detail.includes(token),
+          ),
+        ).toBe(true);
+      },
+    );
+    it('旧calculator引用读源仍拒绝', () => {
+      const path = 'src/modules/attendances/contribution-calculator.ts';
+      const mutated = `${readSource(path)}\nfunction illegal(gate: ActivityWorkflowGate) { return gate.participationReadSource(); }`;
+      expect(
+        runCriteria({ [path]: mutated }).findings.some(
+          (f) => f.criterion === 'C4' && f.detail.includes(path),
+        ),
+      ).toBe(true);
     });
   });
 
@@ -385,18 +411,81 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
       ).toBe(true);
     });
 
-    it('C4 与 C8 按构造不可能互相矛盾:反向闸领地被 C8 整体豁免', () => {
-      // team-join-progress 确实「读 attendanceRecord 且 select 了 contributionPoints」,
-      // 形状上完全命中 C8 的定义域 —— 但维护者已拍板入队门槛恒按 approved 算,
-      // 接了闸反而由 C4 判红。两条判据**复用同一份 REVERSE_GATE_MARKERS**,
-      // 故「C8 要求接闸、C4 禁止接闸」这种自相矛盾在结构上不可能出现。
+    it('team-join进入C8读面闭包，calculator继续反向豁免', () => {
       const text = readSource(TEAM_JOIN_PROGRESS);
       expect(text).toContain('contributionPoints');
       expect(text).toContain('attendanceRecord.findMany');
-      expect(REVERSE_GATE_MARKERS.some((marker) => TEAM_JOIN_PROGRESS.includes(marker))).toBe(true);
+      expect(REVERSE_GATE_MARKERS.some((marker) => TEAM_JOIN_PROGRESS.includes(marker))).toBe(
+        false,
+      );
+      expect(REVERSE_GATE_MARKERS).toContain('contribution-calculator');
+      expect(runCriteria().findings.some((f) => f.detail.includes(TEAM_JOIN_PROGRESS))).toBe(false);
+    });
 
-      const { findings } = runCriteria();
-      expect(findings.some((f) => f.detail.includes(TEAM_JOIN_PROGRESS))).toBe(false);
+    it.each(['computeCappedContribution', 'computeCappedContributionBatch'])(
+      '单独摘掉%s的读闸时不能从共享helper借到另一核的闸',
+      (name) => {
+        const original = readSource(TEAM_JOIN_PROGRESS);
+        const boundary = original.indexOf(`export async function ${name}(`);
+        expect(boundary).toBeGreaterThan(0);
+        const mutated =
+          original.slice(0, boundary) +
+          original
+            .slice(boundary)
+            .replace(
+              'activityWorkflowGate.participationReadSource()',
+              "('approved-attendance' as const)",
+            );
+        expect(mutated).not.toBe(original);
+        const c8 = runCriteria({ [TEAM_JOIN_PROGRESS]: mutated }).findings.filter(
+          (f) => f.criterion === 'C8',
+        );
+        expect(c8.some((f) => f.detail.includes(`${name}()`))).toBe(true);
+      },
+    );
+
+    it('两核均摘闸时两个真实读面均被点名', () => {
+      const original = readSource(TEAM_JOIN_PROGRESS);
+      const mutated = original
+        .split('activityWorkflowGate.participationReadSource()')
+        .join("('approved-attendance' as const)");
+      expect(mutated).not.toBe(original);
+      const c8 = runCriteria({ [TEAM_JOIN_PROGRESS]: mutated }).findings.filter(
+        (f) => f.criterion === 'C8',
+      );
+      expect(c8.some((f) => f.detail.includes('computeCappedContribution()'))).toBe(true);
+      expect(c8.some((f) => f.detail.includes('computeCappedContributionBatch()'))).toBe(true);
+    });
+
+    it('共享无闸helper不能把一个读者的Gate传给另一个读者', () => {
+      const mutated = `${readSource(NEUTRAL_UTIL)}
+        function sharedWhere() { return { deletedAt: null }; }
+        export function gatedReader(prisma: any, gate: any) {
+          gate.participationReadSource();
+          return prisma.attendanceRecord.findMany({ where: sharedWhere(), select: { contributionPoints: true } });
+        }
+        export function ungatedReader(prisma: any) {
+          return prisma.attendanceRecord.findMany({ where: sharedWhere(), select: { contributionPoints: true } });
+        }`;
+      const c8 = runCriteria({ [NEUTRAL_UTIL]: mutated }).findings.filter(
+        (f) => f.criterion === 'C8',
+      );
+      expect(c8.some((f) => f.detail.includes('ungatedReader()'))).toBe(true);
+      expect(c8.some((f) => f.detail.includes('的 gatedReader()'))).toBe(false);
+    });
+
+    it.each([
+      `function pick(gate: any) { return gate.participationReadSource(); }
+       export function legalReader(prisma: any, gate: any) { pick(gate); return prisma.attendanceRecord.findMany({ select: { contributionPoints: true } }); }`,
+      `export function legalReader(prisma: any) { return prisma.attendanceRecord.findMany({ select: { contributionPoints: true } }); }
+       export function legalCaller(prisma: any, gate: any) { gate.participationReadSource(); return legalReader(prisma); }`,
+    ])('合法单向caller/helper传递保留（%#）', (probe) => {
+      const mutated = `${readSource(NEUTRAL_UTIL)}\n${probe}`;
+      expect(
+        runCriteria({ [NEUTRAL_UTIL]: mutated }).findings.filter(
+          (f) => f.criterion === 'C8' && f.detail.includes(NEUTRAL_UTIL),
+        ),
+      ).toEqual([]);
     });
   });
 

@@ -150,10 +150,8 @@ export class ActivityWorkflowGate {
   /**
    * 统计读面取数源:闸开读 committed 账本,闸关读 approved 考勤(今天的行为)。
    *
-   * ⚠️ 与本方法**并存但刻意不一致**的是入队门槛(team-join)与
-   * `computeCappedContribution` —— 维护者已拍板它们恒按 approved 算,不随本闸切换。
-   * 后人见此不一致先读这条注释,别「顺手统一」:那会改掉入队门槛的业务口径。
-   * 该刻意差异由判据 C4 反向锁住(入队门槛侧不得调用本闸)。
+   * R5经维护者批准，贡献生涯汇总与team-join门槛也复用本读源；off保留旧考勤封顶，
+   * on仅committed credited。旧分须先转换并逐人核对总分与入队cutoff；不叠加或空时回退。
    *
    * 🔴 **本方法刻意不看 `isReadonlyMaintenance()`**,这不是漏写:
    * 合同 §16.5 逐字要求「已经生成的新数据模型即使应用只读,也保持可查询和可导出」,

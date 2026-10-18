@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
+import type { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
+import type { ContributionLedgerReader } from './contribution-ledger-reader';
 import {
   ALL_GATE_CODES,
   ATTENDANCE_SHEET_STATUS_APPROVED,
@@ -24,16 +26,12 @@ export interface ContributionResult {
   satisfied: boolean;
 }
 
-// 贡献值封顶核(单一真相源):approved sheet only,Decimal 精度,实时算不落库。
-// 全局每日封顶(活动闭环硬化 2026-06-21):一个队员单个北京日历日的贡献值总分封顶在
-// GLOBAL_DAILY_CONTRIBUTION_CAP(当前 3)。按记录 checkInAt 的北京日历日分组 → 每日总和封顶 →
-// 再加总。封顶在此汇总处、不落库 → 旧记录存值照旧、读取时按当前上限重算,无 migration / 无数据回填。in-memory 取数分组
-//(成员记录有界);contributionPoints 为 null(APD 未填 / 无匹配规则)按 0 计,沿旧 SQL SUM 跳 NULL 语义。
-//
-// cutoff 参数化(2026-06-23,队员 360 跨轴只读复用):
-//   - Date  → 仅计 checkInAt < cutoff 的记录(入队 gate「本轮 3-31 截至」语义,team-join 调用方传入)
-//   - null  → 不设上界,**生涯累计**(admin 队员贡献汇总,无入队年 cutoff)
-// **禁裸 SUM**:任何贡献值总分都必须走本函数的北京日分组封顶,绕过会算多(超 3/日)。
+// R5 获批单轨：闸关保留 approved 考勤的北京日封顶核；闸开仅累计 committed credited delta。
+// credited 已在写账时执行日封顶；读面不再封顶、不混入 recognized、不回退旧分。
+// 原账、冲回、重记均纳入，不能按 resultRevision 的当前状态丢掉旧分录。
+// cutoff=null 为生涯；入队传北京 4-1 exclusive 瞬间，账本转换为同一 civil DATE 边界。
+type ContributionReadGate = Pick<ActivityWorkflowGate, 'participationReadSource'>;
+
 interface ContributionRecordRow {
   checkInAt: Date;
   contributionPoints: Prisma.Decimal | null;
@@ -75,11 +73,25 @@ function approvedRecordsWhere(
   };
 }
 
+function contributionLedgerCutoff(cutoff: Date | null): Date | null {
+  // The entry DATE stores a civil day at UTC midnight, not the cutoff's UTC instant.
+  return cutoff ? new Date(beijingDayNumber(cutoff) * 86_400_000) : null;
+}
+
 export async function computeCappedContribution(
   client: PrismaService | Prisma.TransactionClient,
   memberId: string,
   cutoff: Date | null,
+  activityWorkflowGate: ContributionReadGate,
+  contributionLedgerReader: ContributionLedgerReader,
 ): Promise<Prisma.Decimal> {
+  if (activityWorkflowGate.participationReadSource() === 'committed-ledger') {
+    return contributionLedgerReader.sumCommittedCreditedPointsForMemberInTx(
+      client,
+      memberId,
+      contributionLedgerCutoff(cutoff),
+    );
+  }
   const records = await client.attendanceRecord.findMany({
     where: approvedRecordsWhere(memberId, cutoff),
     select: { checkInAt: true, contributionPoints: true },
@@ -101,10 +113,20 @@ export async function computeCappedContributionBatch(
   client: PrismaService | Prisma.TransactionClient,
   memberIds: readonly string[],
   cutoff: Date | null,
+  activityWorkflowGate: ContributionReadGate,
+  contributionLedgerReader: ContributionLedgerReader,
 ): Promise<Map<string, Prisma.Decimal>> {
   const unique = [...new Set(memberIds)];
   const result = new Map<string, Prisma.Decimal>(unique.map((id) => [id, new Prisma.Decimal(0)]));
   if (unique.length === 0) return result;
+
+  if (activityWorkflowGate.participationReadSource() === 'committed-ledger') {
+    return contributionLedgerReader.sumCommittedCreditedPointsForMembersInTx(
+      client,
+      unique,
+      contributionLedgerCutoff(cutoff),
+    );
+  }
 
   const records = await client.attendanceRecord.findMany({
     where: approvedRecordsWhere({ in: unique }, cutoff),
@@ -121,14 +143,21 @@ export async function computeCappedContributionBatch(
 }
 
 // 入队三期(招新)贡献值只读汇总:封顶核 + 入队年 3-31 cutoff + ≥5 gate 判定。
-// 行为零变化(2026-06-23 抽出封顶核后):cutoff = contributionCutoff(cycleYear),points 委托
-// computeCappedContribution,satisfied 仍按 CONTRIBUTION_THRESHOLD 判。team-join 各调用方签名不变。
+// cutoff 和门槛不变；Gate 与只读端口均显式传入，调用方保留事务和成员锁。
 export async function computeContribution(
   client: PrismaService | Prisma.TransactionClient,
   memberId: string,
   cycleYear: number,
+  activityWorkflowGate: ContributionReadGate,
+  contributionLedgerReader: ContributionLedgerReader,
 ): Promise<ContributionResult> {
-  const points = await computeCappedContribution(client, memberId, contributionCutoff(cycleYear));
+  const points = await computeCappedContribution(
+    client,
+    memberId,
+    contributionCutoff(cycleYear),
+    activityWorkflowGate,
+    contributionLedgerReader,
+  );
   return { points, satisfied: points.gte(CONTRIBUTION_THRESHOLD) };
 }
 
@@ -141,11 +170,15 @@ export async function computeContributionBatch(
   client: PrismaService | Prisma.TransactionClient,
   memberIds: readonly string[],
   cycleYear: number,
+  activityWorkflowGate: ContributionReadGate,
+  contributionLedgerReader: ContributionLedgerReader,
 ): Promise<Map<string, ContributionResult>> {
   const points = await computeCappedContributionBatch(
     client,
     memberIds,
     contributionCutoff(cycleYear),
+    activityWorkflowGate,
+    contributionLedgerReader,
   );
   return new Map(
     [...points].map(([memberId, value]) => [

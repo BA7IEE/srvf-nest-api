@@ -1,4 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import {
+  CONTRIBUTION_LEDGER_READER,
+  type ContributionLedgerReader,
+} from './contribution-ledger-reader';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
+import { Inject, Injectable } from '@nestjs/common';
 import { OrganizationStatus, Prisma } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -60,6 +65,9 @@ export class AppMeTeamJoinService {
     private readonly appIdentity: AppIdentityResolver,
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
+    @Inject(CONTRIBUTION_LEDGER_READER)
+    private readonly contributionLedgerReader: ContributionLedgerReader,
   ) {}
 
   // 准入:canUseApp=false（memberId=null / member 软删 / member 非 ACTIVE）→ 403。返回本人 memberId。
@@ -194,7 +202,13 @@ export class AppMeTeamJoinService {
         after: { statusCode: created.statusCode, cycleId: cycle.id, targetCount: targets.length },
         tx,
       });
-      const contribution = await computeContribution(tx, memberId, created.cycle.year);
+      const contribution = await computeContribution(
+        tx,
+        memberId,
+        created.cycle.year,
+        this.activityWorkflowGate,
+        this.contributionLedgerReader,
+      );
       return this.toSelfDto(created, contribution, now);
     });
   }
@@ -211,7 +225,13 @@ export class AppMeTeamJoinService {
     if (!row) {
       throw new BizException(BizCode.TEAM_JOIN_APPLICATION_NOT_FOUND);
     }
-    const contribution = await computeContribution(this.prisma, memberId, row.cycle.year);
+    const contribution = await computeContribution(
+      this.prisma,
+      memberId,
+      row.cycle.year,
+      this.activityWorkflowGate,
+      this.contributionLedgerReader,
+    );
     return this.toSelfDto(row, contribution, new Date());
   }
 
@@ -286,7 +306,13 @@ export class AppMeTeamJoinService {
         after: { targetCount: targets.length },
         tx,
       });
-      const contribution = await computeContribution(tx, memberId, updated.cycle.year);
+      const contribution = await computeContribution(
+        tx,
+        memberId,
+        updated.cycle.year,
+        this.activityWorkflowGate,
+        this.contributionLedgerReader,
+      );
       return this.toSelfDto(updated, contribution, now);
     });
   }

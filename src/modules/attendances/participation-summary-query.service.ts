@@ -25,7 +25,7 @@ interface PositiveParticipationSummary {
   activityCount: number;
   recordCount: number;
   contributionPoints: string;
-  /** 第 7 批第 ②-a 刀新增的账本轴;上面四个数字未动。 */
+  /** 第7批新增的账本轴；R5贡献字段现随单闸切换，账本轴字段不变。 */
   ledgerTotals: MemberLedgerTotalsBreakdown;
 }
 
@@ -66,8 +66,8 @@ export class ParticipationSummaryQueryService {
     //    ②-b 曾单独尝试「换源」并**实测停工** —— 因为两条流水线人群零交集,
     //    闸没开之前换源必然归零。故换源只能与新写路径同闸同轨,这正是本刀的形状。
     //
-    // ⚠️ `contributionPoints` **不随闸切换**:维护者已拍板 computeCappedContribution
-    //    与入队门槛恒按 approved 算。这条不一致是刻意的(判据 C4 反向锁住),别顺手统一。
+    // R5贡献字段与入队资格共用单闸：on仅committed credited；off保留旧考勤日封顶。
+    // 账本的冲回/重记按净额计，不与旧考勤叠加，不二次封顶。
     const [records, contribution, ledgerTotals, officialTime] = await Promise.all([
       this.prisma.attendanceRecord.findMany({
         where: {
@@ -80,7 +80,13 @@ export class ParticipationSummaryQueryService {
           sheet: { select: { activityId: true } },
         },
       }),
-      computeCappedContribution(this.prisma, memberId, null),
+      computeCappedContribution(
+        this.prisma,
+        memberId,
+        null,
+        this.activityWorkflowGate,
+        LedgerQueryService,
+      ),
       this.ledgerQuery.loadMemberLedgerTotals(memberId),
       this.prisma.$transaction(
         (tx) => this.participationTimeTruth.readOfficialTotalsInTx(tx, { memberIds: [memberId] }),

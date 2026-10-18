@@ -268,7 +268,7 @@ D4 八个新增入口全部在 Human App managed activity 面，详见 [小程�
 
 > 队员 360 跨轴查询备注:`registrations`/`attendance-records` 分页(`page`/`pageSize`)+ item 自带 activity 上下文(`activityId`/`activityTitle`);`attendance-records` **仅返 approved sheet 内 records**(已生效记录,镜像 app `/me` 口径);`contribution-summary` 返**生涯累计 capped 总分**(`{ memberId, contributionPoints }`,后端已按北京日封顶 3,**前端直接展示别再加**)。v0.48.0 起历史记录也按新上限读时实时重算,生涯累计数字可能变大;不存在/软删队员 → `MEMBER_NOT_FOUND`(15001)。
 
-> **新增 `participation-summary`** 把 approved-only 的 `totalServiceHours` / distinct `activityCount` / `recordCount` 与生涯 capped `contributionPoints` 合成一个卡片 DTO；贡献字段和旧 `contribution-summary` 都调用同一 `computeCappedContribution(memberId, null)`，可做等值迁移但旧端点保留。该个人端点刻意不返回 no-show。
+> **新增 `participation-summary`** 把 approved-only 的 `totalServiceHours` / distinct `activityCount` / `recordCount` 与生涯 capped `contributionPoints` 合成一个卡片 DTO；贡献字段和旧 `contribution-summary` 都调用同一必传Gate的 `computeCappedContribution(memberId, null, gate)`，可做等值迁移但旧端点保留。该个人端点刻意不返回 no-show。
 
 > **队员 360 统一保险概览**：保险 tab 的显示主数据源为 `GET /api/admin/v1/members/:memberId/insurances/overview`。`selfPurchased` 展示个人自购保险及审核动作；`teamProvided` 只读展示团队保险安全投影，不展示“核验通过 / 驳回”，也不返回保单号、备注、其他成员或 reviewer。UI 必须直接使用后端的 `dateStatus` 与 `summary.hasConfirmedCoverage`，不再仅以 `coverageEnd >= 当前时间` 自行推导日期状态。`summary` 只是按北京当前日的概览，不得替代某次活动审批或入队资格判定。旧 `GET /api/admin/v1/members/:memberId/insurances` 保留兼容，但队员 360 应迁移到 overview。
 >
@@ -1049,3 +1049,11 @@ E5 本地工程补验（2026-10-16）：审核 HTTP 接线在 Activity→Run→V
 
 
 E4/E5 测试尾链状态（2026-10-17）：4f4db745普通CI39048441257仍FAIL，500整例及unchanged-time复制oracle通过，重放因false→true预期标志差异被测试误断言；旧D6原2000 prepare另有P2028（原30秒，记录52.763秒），根因UNKNOWN，不能用受限500抵消。当前仅修正重放其余事实比较及V3严格请求slices、补实际COMMIT／长源拒绝证据与原D6观测，接口／业务／前端契约不改。无独立DB／性能追加，新SHA普通CI待验；3b／Trusted及生产NO_GO继续保留。
+
+## R5受限500贡献口径交接（后端，前端实施后置）
+
+管理端的贡献字段结构不变：闸关按approved考勤北京日全局封顶3，闸开只取committed账本credited净额（含真实冲回/重记），不混入在途/recognized，不二次封顶，不叠加旧分或空账回退。入队进度仍截至入队年3月31日，门槛5；成员生涯汇总没有该cutoff。readonly保留当前读源，直接关闭v1.1会读回旧考勤，不能当作无损回退。
+
+已有ledgerTotals的committed/inFlight两轴字段保持；在途不计入入队资格。真实两活动同日封顶、跨日到5及最终入队、并发刷新、更正重放和旧分转换样本已补PG验证。现有8通用门槛标记、人工综合评估及final join流程保留，不新增账本提交达标通知触发。snapshot/OpenAPI同步8项来源文本，客户端同时刷新13摘要及3个方法注释，路由/tag/权限/类型/required/nullable均不改；这不是tag-only变更。
+
+AC-013/020/025沿原决定上线后按诉求立项，AC-017仍搁置，四项保持TODO；显式r5-limited500只单列首发机器口径，默认全合同9a仍严格。保留500及全部native维度，原最大规模NOT_VALIDATED。前端页面/联调、真实服务器数据/转换/shadow/fleet/worker排空/稳定窗与10a10b均未完成，生产NO_GO。本段不是部署或开关授权。

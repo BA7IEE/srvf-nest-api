@@ -15036,7 +15036,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "number",
       },
       "contributionPoints": {
-        "description": "本人生涯累计贡献值 capped 总分（computeCappedContribution cutoff=null）",
+        "description": "本人生涯累计贡献值（闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff）",
         "type": "string",
       },
       "ledgerTotals": {
@@ -17615,7 +17615,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   "AppTeamJoinApplicationDto": {
     "properties": {
       "contributionPoints": {
-        "description": "贡献值汇总(approved sheet,截至入队年 3-31)",
+        "description": "贡献值汇总（截至入队年 3-31；闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加）",
         "type": "string",
       },
       "contributionSatisfied": {
@@ -27495,7 +27495,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   "MemberContributionSummaryDto": {
     "properties": {
       "contributionPoints": {
-        "description": "生涯累计贡献值 capped 总分(Decimal;序列化为 string;approved sheet + 北京日封顶 3)",
+        "description": "生涯累计贡献值（Decimal string；闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加）",
         "type": "string",
       },
       "ledgerTotals": {
@@ -28277,7 +28277,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "number",
       },
       "contributionPoints": {
-        "description": "生涯累计贡献值 capped 总分（computeCappedContribution cutoff=null）",
+        "description": "生涯累计贡献值（闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff）",
         "type": "string",
       },
       "ledgerTotals": {
@@ -35856,7 +35856,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   "TeamJoinApplicationAdminDto": {
     "properties": {
       "contributionPoints": {
-        "description": "贡献值汇总(approved sheet,截至入队年 3-31;仅详情计算,列表为 null)",
+        "description": "贡献值汇总（截至入队年 3-31；闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加；仅详情计算，列表为 null）",
         "nullable": true,
         "type": "object",
       },
@@ -77791,7 +77791,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "某队员贡献值生涯累计 capped 总分(队员 360;实时算不落库;approved sheet + 北京日封顶 3;不存在/软删 → MEMBER_NOT_FOUND) [rbac: attendance.read.sheet]",
+      "summary": "某队员生涯贡献汇总(队员 360；闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff；不存在/软删 → MEMBER_NOT_FOUND) [rbac: attendance.read.sheet]",
       "tags": [
         "Admin - Attendances",
       ],
@@ -81163,7 +81163,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "某队员参与累计(approved 时长/活动次数/记录数/生涯封顶贡献；member ref 点判) [rbac: attendance.read.sheet]",
+      "summary": "某队员参与累计(时长/活动次数/记录数；生涯贡献：闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff；member ref 点判) [rbac: attendance.read.sheet]",
       "tags": [
         "Admin - Attendances",
       ],
@@ -150905,7 +150905,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "我的参与累计(approved 时长/活动次数/记录数/生涯封顶贡献；仅正向数据；恒本人范围) [auth]",
+      "summary": "我的参与累计(时长/活动次数/记录数；生涯贡献：闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff；恒本人范围) [auth]",
       "tags": [
         "Mobile - My Attendance",
       ],
