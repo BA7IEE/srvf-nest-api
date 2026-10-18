@@ -143,7 +143,11 @@ describe('E4 settlement HTTP read proof wiring', () => {
     };
     const authz = { explain: jest.fn().mockResolvedValue({ allow: true }) };
     const rbac = { can: jest.fn().mockResolvedValue(false) };
-    const contributions = { readSummaryInTx: jest.fn().mockResolvedValue(summary()) };
+    const contributions = {
+      readSummaryInTx: jest
+        .fn<Promise<ContributionProofSummary>, unknown[]>()
+        .mockResolvedValue(summary()),
+    };
     const timeQueries = {
       readDraftContributionSummaryInTx: jest
         .fn()
