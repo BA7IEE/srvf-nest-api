@@ -190,3 +190,27 @@ D1 候选冻结时（2026-10-18）：package/lock 与获批摘要逐字相同，
 首次 quick 的 typecheck/unit/harness 均 exit 0，lint 因 Node 默认约4GiB堆耗尽而 exit134，故该次 quick FAIL。按现有 CI 的 `NODE_OPTIONS=--max-old-space-size=6144` 重跑进行中；首次失败保留，不计为已全绿。最终结果附相同候选的 PR 验证节，不用后续改文档产生新代码候选来覆盖首次失败。
 
 此处是冻结时快照。独立固定SHA评审、该SHA普通CI/Trusted/Smoke、合并与main核验另看对应PR；D2、6b、部署与生产开关尚未完成。
+
+## D1 兼容修复补充批准（2026-10-19）
+
+维护者明确回复“批准9个新增路径、阶段调整及两条精确 grant（推荐）”。原60文件冻结清单保留；本节向完整目标追加下列9路径，完整目标变为69路径，D1从5变为15文件。既有 `docs/ai-harness/ROUTE_AUTHZ.md` 从D2提前在D1由原生成器刷新；D2输入变化时仍须重新生成。原package/lock精确候选、两个串行PR、四项延期和500限制不变。
+
+| 新增路径 | 本次范围 |
+|---|---|
+| `src/modules/activity-registrations/controllers/app-registration-upload-sessions.controller.ts` | 去除与Multer2.3+重复的文件大小+1补偿，保留原错误码及service前拒绝 |
+| `src/modules/users/controllers/app-me.controller.ts` | 头像同因补偿修正，行数不变 |
+| `src/modules/members/members.controller.ts` | 标准照同因补偿修正，行数不变 |
+| `src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts` | CSV导入同因补偿修正，行数不变 |
+| `test/e2e/app-me-avatar.e2e-spec.ts` | 新增精确上限正常上传及首个超额字节在service前拒绝，原断言保留 |
+| `test/e2e/member-official-portrait.e2e-spec.ts` | 新增同样两项标准照边界，原断言保留 |
+| `test/e2e/activity-batch6-staff-import-offline.e2e-spec.ts` | 新增同样两项CSV边界，原断言保留 |
+| `test/setup/test-db.ts` | 重建复用既有同快照分类器，普通DROP；不终止连接、不重试 |
+| `test/setup/test-db.lifecycle.spec.ts` | 保留并扩展同快照拒绝、脱敏、竞态及无FORCE/termination/retry检查 |
+
+新增两条精确正常CLI grant的委托仅为 `test/setup/test-db.ts`、`test/setup/test-db.lifecycle.spec.ts`；ROUTE_AUTHZ沿用原精确委托，禁止通配grant。测试库生命周期继续仅 `app_test` / `app_test_w1`。实现、清单内修复、验证、生成物与文档、同PR推送及条件合并沿既有授权推进；每个新SHA的Trusted仍后置，6b仍待D2固定代码后实际复核，生产/转换/shadow/开关/tag不包含。
+
+失败事实保留：[95c38e4f普通CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/39141830013) 分片2、3失败。注册上传10MiB+1进入service后才拒绝已在本地复现；补充的头像、标准照、CSV三个真实HTTP红例均为“精确10MiB成功，超限1字节调用了service”，共3通过/3预期失败。原注册上传断言逐字保留。官方Multer2.3也有同型语义，退回2.2会恢复high，故保持已批准依赖候选。
+
+数据库失败原判定快照计数1、后独立分类none，连接来源仍 **UNKNOWN**，本地R3该套通过仅记未复现。候选使重建与既有清理入口一致：仅PostgreSQL明确分类的autovacuum不阻止普通DROP，client/parallel/unknown及损坏或失败观察仍阻断，普通DROP继续兜住检查后连接竞态。不得把策略一致性修正写成已确认原CI根因。
+
+上述9路径及ROUTE已按获批候选落地，10份逐文件摘要与送审候选相同；package、lock、权限断言族及CODEMAP字节未变。ROUTE仅两处inputDigest变化，663条声明不变。正本不触库范围/生命周期60项回归通过；完整应用回归、最终候选CI与合并/main核验仍以PR的版本化验证记录为准。

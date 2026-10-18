@@ -4,6 +4,9 @@ import { BindingScopeType, BindingStatus, MemberStatus, PrincipalType, Role } fr
 import request from 'supertest';
 
 import { PrismaService } from '../../src/database/prisma.service';
+import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import { AttendanceImportPreviewService } from '../../src/modules/attendances/attendance-import-preview.service';
+import { expectBizError } from '../helpers/biz-code.assert';
 import type { JwtConfig } from '../../src/config/jwt.config';
 import { ActivityBatchWorker } from '../../src/modules/activities/activity-batch.worker';
 import { signAttendanceMemberCredential } from '../../src/modules/attendances/attendance-member-credential-token';
@@ -771,6 +774,60 @@ describe('activity batch6 staff/import/offline runtime', () => {
         .send({ ...base, operationKey });
 
       expect(response.status).toBe(400);
+    }
+  });
+
+  it('multipart accepts exactly 10 MiB before normal CSV import validation', async () => {
+    const scenario = await createScenario();
+    const identity = await submitApplicant(scenario);
+    const csv = Buffer.from(
+      [
+        'participationIdentityId,actionCode,occurredAt,longitude,latitude,accuracy',
+        `${identity},check_in,${new Date().toISOString()},,,`,
+      ].join('\n'),
+    );
+    const body = Buffer.concat([csv, Buffer.alloc(10 * 1024 * 1024 - csv.length, 0x20)]);
+    const service = jest.spyOn(app.get(AttendanceImportPreviewService), 'createPreview');
+    try {
+      const response = await request(httpServer(app))
+        .post(
+          `/api/app/v1/my/managed-activities/${scenario.activityId}/onsite/sessions/${scenario.sessionId}/import-previews`,
+        )
+        .set('Authorization', managerAuth)
+        .field('operationKey', `batch6-size-exact-${++sequence}`)
+        .field('reason', 'CSV exact byte boundary')
+        .attach('file', body, { filename: 'exact.csv', contentType: 'text/csv' });
+      expect(response.status).toBe(201);
+      expect(service).toHaveBeenCalledTimes(1);
+      expect(service.mock.calls[0][0].file.size).toBe(body.length);
+      expect(response.body.data).toMatchObject({ total: 1, succeeded: 1, failed: 0 });
+    } finally {
+      service.mockRestore();
+    }
+  });
+
+  it('multipart rejects the first excess byte before the CSV import service', async () => {
+    const scenario = await createScenario();
+    const service = jest.spyOn(app.get(AttendanceImportPreviewService), 'createPreview');
+    try {
+      const response = await request(httpServer(app))
+        .post(
+          `/api/app/v1/my/managed-activities/${scenario.activityId}/onsite/sessions/${scenario.sessionId}/import-previews`,
+        )
+        .set('Authorization', managerAuth)
+        .field('operationKey', `batch6-size-excess-${++sequence}`)
+        .field('reason', 'CSV first excess byte')
+        .attach('file', Buffer.alloc(10 * 1024 * 1024 + 1), {
+          filename: 'excess.csv',
+          contentType: 'text/csv',
+        });
+      expectBizError(response, BizCode.ATTACHMENT_SIZE_EXCEEDED);
+      expect(service).not.toHaveBeenCalled();
+      expect(
+        await prisma.activityBatchJob.count({ where: { activityId: scenario.activityId } }),
+      ).toBe(0);
+    } finally {
+      service.mockRestore();
     }
   });
 

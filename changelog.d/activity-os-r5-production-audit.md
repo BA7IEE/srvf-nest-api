@@ -1,2 +1,3 @@
 - 修复 Release 5 生产依赖审计的 critical/high：有界更新 sharp、multer、fast-uri、Swagger 使用的 js-yaml、qs、proxy-addr，并限定 Prisma config 的 deepmerge-ts override。Prisma/client 与 COS SDK 版本不变。
 - 沿既有策略明示三项 COS 传递 moderate，保留 high/critical 发布门槛；500 人首发限制及生产开关不变。
+- 适配 Multer 新版文件大小语义：注册上传、头像、标准照及 CSV 导入保留精确 10 MiB 可用、首个超额字节在业务服务前拒绝的边界，并补充真实 HTTP 回归；测试库重建采用既有同快照严格分类，保留客户端连接拒绝及普通 DROP 竞态保护。

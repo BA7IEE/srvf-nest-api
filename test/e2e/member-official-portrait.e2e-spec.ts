@@ -14,6 +14,7 @@ import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { MemberOfficialPortraitService } from '../../src/modules/members/member-official-portrait.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
@@ -374,6 +375,34 @@ describe('队员标准照闭环', () => {
         }),
       ).toBe(1);
     });
+  });
+
+  it('multipart accepts exactly 10 MiB before normal portrait validation', async () => {
+    const source = await portraitJpeg();
+    const body = Buffer.concat([source, Buffer.alloc(10 * 1024 * 1024 - source.length)]);
+    const service = jest.spyOn(app.get(MemberOfficialPortraitService), 'replace');
+    try {
+      const response = await upload(sectMemberId, body, globalAuth);
+      expect(response.status).toBe(200);
+      expect(service).toHaveBeenCalledTimes(1);
+      expect(service.mock.calls[0][2].size).toBe(body.length);
+    } finally {
+      service.mockRestore();
+    }
+  });
+
+  it('multipart rejects the first excess byte before the portrait service', async () => {
+    const service = jest.spyOn(app.get(MemberOfficialPortraitService), 'replace');
+    try {
+      expectBizError(
+        await upload(sectMemberId, Buffer.alloc(10 * 1024 * 1024 + 1), globalAuth),
+        BizCode.ATTACHMENT_SIZE_EXCEEDED,
+      );
+      expect(service).not.toHaveBeenCalled();
+      expect(await prisma.memberOfficialPortrait.count()).toBe(0);
+    } finally {
+      service.mockRestore();
+    }
   });
 
   describe('拒收面', () => {

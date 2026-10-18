@@ -34,6 +34,10 @@
 
 仪器区别：本次 pnpm 10.14.0 的正式 `pnpm audit:production`（文本、high 阈值）在上述候选上 exit 0；`pnpm audit --prod --audit-level high --json` 因仍列出 moderate 而 exit 1。必须同时保存计数与实际命令/退出码，不把 JSON 的非零写成正式阈值未过，也不把正式 exit 0 写成零漏洞。候选冻结后以同一 SHA 重跑，并记录 GitHub Production dependency audit 的整体结论。
 
+2026-10-19兼容补充：Multer2.3+自身将业务fileSize上限补偿为Busboy解析阈值，应用原有`+1`会叠加。注册上传、头像、标准照及CSV导入的真实HTTP红例已确认首个超额字节进入service；按维护者集中扩围批准，四入口直接配置原10MiB业务上限，保留原大小错误码及service前拒绝契约，补充三入口各两项精确边界回归。package/lock仍与上表获批摘要逐字相同，没有降回含high的旧版本或改变审计阈值。
+
+同批仅将测试库重建接入既有同快照严格分类器，原CI短暂连接来源仍UNKNOWN；该测试设施改动不代表生产数据库根因或发布条件已验证。固定修复SHA及main的完整检查仍须分别完成，生产NO_GO，受限500不变。
+
 ## 每次 release
 
 1. 在最终候选 SHA 上运行 `pnpm audit:production`。

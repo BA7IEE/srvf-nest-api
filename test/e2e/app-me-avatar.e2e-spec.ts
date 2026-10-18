@@ -5,6 +5,7 @@ import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { AppAvatarService } from '../../src/modules/users/app-avatar.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
@@ -242,6 +243,34 @@ describe('App 账号头像闭环', () => {
       'attachmentId',
       'expiresAt',
     ]);
+  });
+
+  it('multipart accepts exactly 10 MiB before normal avatar validation', async () => {
+    const source = await sourceJpeg();
+    const body = Buffer.concat([source, Buffer.alloc(10 * 1024 * 1024 - source.length)]);
+    const service = jest.spyOn(app.get(AppAvatarService), 'replaceMyAvatar');
+    try {
+      const response = await upload(body);
+      expect(response.status).toBe(200);
+      expect(service).toHaveBeenCalledTimes(1);
+      expect(service.mock.calls[0][1].size).toBe(body.length);
+    } finally {
+      service.mockRestore();
+    }
+  });
+
+  it('multipart rejects the first excess byte before the avatar service', async () => {
+    const service = jest.spyOn(app.get(AppAvatarService), 'replaceMyAvatar');
+    try {
+      expectBizError(
+        await upload(Buffer.alloc(10 * 1024 * 1024 + 1)),
+        BizCode.ATTACHMENT_SIZE_EXCEEDED,
+      );
+      expect(service).not.toHaveBeenCalled();
+      expect(await prisma.attachment.count()).toBe(0);
+    } finally {
+      service.mockRestore();
+    }
   });
 
   describe('拒收面(闸真的接在端点上,不只在单测里)', () => {
