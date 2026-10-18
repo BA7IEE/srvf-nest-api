@@ -7,6 +7,15 @@ import type { Config } from 'jest';
 // 空串按未设处理(|| 而非 ??):CI 里未展开的 env 表达式会传空串。
 const DEFAULT_MAX_WORKERS = Math.min(8, Math.max(1, Math.floor(os.availableParallelism() / 2)));
 
+// The active launch envelope is 500 identities. Keep the original 2000-identity
+// historical capacity case byte-for-byte, reachable only through an explicit
+// positive CLI pattern. Its safety/offline neighbours remain in the default suite.
+export const HISTORICAL_E4_MAXIMUM_TEST =
+  'E4 maximum real sources with unchanged transaction and query budgets 2,000 identities / 10,000 segments / 50,000 slices yield 8,000 policy units without repeated awards';
+const escapedHistoricalMaximum = HISTORICAL_E4_MAXIMUM_TEST.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export const NATIVE_LAUNCH_REGULAR_TEST_PATTERN = `^(?!${escapedHistoricalMaximum}$)[\\s\\S]*$`;
+export const HISTORICAL_E4_MAXIMUM_TEST_PATTERN = `^${escapedHistoricalMaximum}$`;
+
 // E2E 专用 Jest 配置。rootDir 指向项目根,便于 ts-jest 解析 src/ 与 test/ 的相对路径。
 //
 // 并行执行(Harness 3.0 P1):并行安全由三层隔离保证,缺一不可 ——
@@ -18,6 +27,7 @@ const DEFAULT_MAX_WORKERS = Math.min(8, Math.max(1, Math.floor(os.availableParal
 const config: Config = {
   rootDir: '..',
   testRegex: '.*\\.e2e-spec\\.ts$',
+  testNamePattern: NATIVE_LAUNCH_REGULAR_TEST_PATTERN,
   testPathIgnorePatterns: [
     '/node_modules/',
     '/dist/',

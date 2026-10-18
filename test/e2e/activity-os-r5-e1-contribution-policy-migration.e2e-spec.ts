@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -27,7 +27,7 @@ const MIGRATION = '20260922194000_activity_os_r5_e1_contribution_policy_foundati
 const LATEST_MIGRATION = '20260923190000_activity_os_r5_e1_3_contribution_policy_selection';
 const PREVIOUS_MIGRATION_COUNT = 129;
 const FOUNDATION_MIGRATION_COUNT = 130;
-const CURRENT_MIGRATION_COUNT = 136;
+const CURRENT_MIGRATION_COUNT = 147;
 const WORKER = process.env.JEST_WORKER_ID ?? '1';
 const prismaRoot = path.resolve(__dirname, '..', '..', 'prisma');
 const schema = path.join(prismaRoot, 'schema.prisma');
@@ -178,22 +178,19 @@ async function seedExistingFacts(): Promise<void> {
     const run = await db.attendanceSettlementRun.create({
       data: { id: 'e11-run', activityId: activity.id, statusCode: 'posted' },
     });
-    const version = await db.attendanceSettlementVersion.create({
-      data: {
-        id: 'e11-settlement-version',
-        settlementRunId: run.id,
-        version: 1,
-        evidenceSealId: seal.id,
-        evidenceRevision: 0,
-        populationRevision: 0,
-        workflowRevision: 0,
-        contentHash: 'e11-version-hash',
-        personCount: 1,
-        sessionParticipationCount: 1,
-        serviceSegmentCount: 1,
-        statusCode: 'approved',
-      },
-    });
+    const [version] = await db.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+INSERT INTO "AttendanceSettlementVersion" (
+  "updatedAt", "id", "settlementRunId", "version",
+  "evidenceSealId", "evidenceRevision", "populationRevision", "workflowRevision",
+  "contentHash", "personCount", "sessionParticipationCount", "serviceSegmentCount",
+  "statusCode"
+) VALUES (
+  CURRENT_TIMESTAMP, ${'e11-settlement-version'}, ${run.id}, ${1},
+  ${seal.id}, ${0}, ${0}, ${0},
+  ${'e11-version-hash'}, ${1}, ${1}, ${1},
+  ${'approved'}
+) RETURNING "id"
+`);
     const result = await db.participantSettlementResultRevision.create({
       data: {
         id: 'e11-result',

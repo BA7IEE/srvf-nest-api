@@ -1,3 +1,10 @@
+import { E4EngineRequestWaitDiagnostic } from '../helpers/e4-engine-request-wait-diagnostic';
+import { observeTestEngineTransactions } from '../helpers/engine-transaction-observation';
+import { assertConnectedTestDatabase } from '../setup/test-db';
+import {
+  TIME_SETTLEMENT_PREPARE_OPERATION,
+  timeSettlementPrepareRequestHash,
+} from '../../src/modules/activities/activity-time-settlement-command';
 // Independent real-database fixture retained locally to keep the approved write set closed.
 // The original D7-1 suite remains unchanged and is also run independently.
 import { readFileSync } from 'node:fs';
@@ -63,6 +70,8 @@ describe('D7-1 pairing index probe migration regression', () => {
   let f: D13Fixture;
   let actor: CurrentUserPayload;
   let prepareFailure = 'none';
+  let observeMaximumPrepare = false;
+  let maximumObservationUnknown = false;
   const meta = { requestId: 'd5-e2e', ip: null, ua: null };
   const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
   beforeEach(async () => {
@@ -70,9 +79,17 @@ describe('D7-1 pairing index probe migration regression', () => {
     process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     f = await createD13Fixture();
     prepareFailure = 'none';
+    observeMaximumPrepare = false;
+    maximumObservationUnknown = false;
     const timeSettlement = f.app.get(ActivityTimeSettlementService);
     const prepare = timeSettlement.prepare.bind(timeSettlement);
     jest.spyOn(timeSettlement, 'prepare').mockImplementation(async (...args) => {
+      const engine = Reflect.get(f.db, '_engine') as object;
+      const transactions = observeMaximumPrepare
+        ? observeTestEngineTransactions(engine)
+        : undefined;
+      const waits = observeMaximumPrepare ? new E4EngineRequestWaitDiagnostic(engine) : undefined;
+      waits?.begin();
       try {
         return await prepare(...args);
       } catch (error) {
@@ -95,6 +112,18 @@ describe('D7-1 pairing index probe migration regression', () => {
           unknownPrisma: error instanceof Prisma.PrismaClientUnknownRequestError,
         });
         throw error;
+      } finally {
+        if (waits && transactions) {
+          waits.finish();
+          waits.restore();
+          transactions.restore();
+          maximumObservationUnknown =
+            waits.snapshot().status !== 'COMPLETE' || transactions.snapshot().status !== 'COMPLETE';
+          console.info(
+            'D7 maximum original prepare waits (fixed counters)',
+            JSON.stringify({ requests: waits.snapshot(), transactions: transactions.snapshot() }),
+          );
+        }
       }
     });
     actor = {
@@ -400,11 +429,12 @@ describe('D7-1 pairing index probe migration regression', () => {
     };
   }
 
-  async function post(url: string, payload: object) {
+  async function post(url: string, payload: object, afterResponse?: () => Promise<void>) {
     const response = await request(httpServer(f.app))
       .post(url)
       .set('Authorization', f.creator.auth)
       .send(payload);
+    if (afterResponse) await afterResponse();
     expect({
       status: response.status,
       code: response.body.code,
@@ -412,6 +442,56 @@ describe('D7-1 pairing index probe migration regression', () => {
       prepareFailure,
     }).toEqual({ status: 200, code: 0, message: expect.any(String), prepareFailure: 'none' });
     return response.body.data;
+  }
+  async function maximumPrepareFacts(
+    monitor: PrismaClient,
+    context: {
+      activityId: string;
+      generated: { settlementRunId: string; settlementVersionId: string };
+    },
+    command: ReturnType<typeof prepareCommand>,
+  ) {
+    const hash = timeSettlementPrepareRequestHash(context.activityId, f.creator.id, command);
+    return monitor.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+        await tx.$executeRaw`SET LOCAL statement_timeout='15s'`;
+        const [facts] = await tx.$queryRaw<
+          {
+            roots: number;
+            buckets: number;
+            sources: number;
+            receipts: number;
+            audits: number;
+          }[]
+        >`
+        WITH roots AS MATERIALIZED (
+          SELECT id FROM "ActivitySettlementTimeRevision"
+          WHERE "activityId"=${context.activityId}
+            AND "settlementRunId"=${context.generated.settlementRunId}
+            AND "settlementVersionId"=${context.generated.settlementVersionId}
+            AND "createdByUserId"=${f.creator.id}
+        )
+        SELECT (SELECT count(*)::int FROM roots) AS roots,
+          (SELECT count(*)::int FROM "ParticipantSettlementTimeBucket"
+            WHERE "timeRevisionId" IN (SELECT id FROM roots)) AS buckets,
+          (SELECT count(*)::int FROM "ParticipantSettlementTimeBucketSource"
+            WHERE "timeRevisionId" IN (SELECT id FROM roots)) AS sources,
+          (SELECT count(*)::int FROM "ActivitySettlementTimeCommandReceipt"
+            WHERE "activityId"=${context.activityId} AND "actorUserId"=${f.creator.id}
+              AND "operationCode"=${TIME_SETTLEMENT_PREPARE_OPERATION}
+              AND "operationKey"=${command.operationKey} AND "requestHash"=${hash}
+              AND "timeRevisionId" IN (SELECT id FROM roots)) AS receipts,
+          (SELECT count(*)::int FROM audit_logs
+            WHERE "actorUserId"=${f.creator.id} AND "resourceId"=${context.activityId}
+              AND event='activity.time-settlement.command'
+              AND context->'extra'->>'operationCode'=${TIME_SETTLEMENT_PREPARE_OPERATION}
+              AND context->'extra'->>'timeRevisionId' IN (SELECT id FROM roots)) AS audits
+      `;
+        return facts;
+      },
+      { timeout: 15000 },
+    );
   }
   function prepareCommand(p: Awaited<ReturnType<typeof prepareSource>>, expectedTimeRevision = 0) {
     return {
@@ -760,7 +840,30 @@ describe('D7-1 pairing index probe migration regression', () => {
     async (population) => {
       const p = population === 1 ? await prepareSource() : await createCapacitySource(population);
       if (population === 1) await recognize(p);
-      const preparedTime = await post(p.url + '/prepare', prepareCommand(p));
+      const command = prepareCommand(p);
+      let preparedTime;
+      if (population === 2000) {
+        const monitor = new PrismaClient();
+        try {
+          await assertConnectedTestDatabase(monitor);
+          const before = await maximumPrepareFacts(monitor, p, command);
+          console.info('D7 maximum prepare before same-command facts', JSON.stringify(before));
+          if (before.roots !== 0) throw new Error('D7 maximum original root admission UNKNOWN');
+          observeMaximumPrepare = true;
+          try {
+            preparedTime = await post(p.url + '/prepare', command, async () => {
+              const after = await maximumPrepareFacts(monitor, p, command);
+              console.info('D7 maximum prepare after same-command facts', JSON.stringify(after));
+              if (maximumObservationUnknown)
+                throw new Error('D7 maximum prepare observation UNKNOWN; stop before next stage');
+            });
+          } finally {
+            observeMaximumPrepare = false;
+          }
+        } finally {
+          await monitor.$disconnect();
+        }
+      } else preparedTime = await post(p.url + '/prepare', command);
       const submittedTime = await post(p.url + '/submit', {
         operationKey: f.key('submit_time'),
         expectedDraftVersion: p.proof.expectedDraftVersion,

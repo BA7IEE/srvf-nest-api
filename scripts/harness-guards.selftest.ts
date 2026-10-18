@@ -1995,6 +1995,49 @@ checkEq(
     };
     const saidThat = (result: { errors: string[] }, needle: string): boolean =>
       result.errors.some((message) => message.includes(needle));
+    const e4Pairs = [
+      ['ActivitySettlementContributionRevision', 'kindCode'],
+      ['ActivitySettlementContributionRevision', 'sourceKindCode'],
+      ['ActivitySettlementContributionRevision', 'regimeCode'],
+      ['AttendanceSettlementVersion', 'contributionRegimeCode'],
+    ] as const;
+    for (const [model, field] of e4Pairs) {
+      const entry = pick(liveStateRegistry.entries, model, field);
+      const valid = runStateRegistry(() => {});
+      check(
+        `E4 ${model}.${field} 正例:精确 L1 inventory`,
+        valid.code === 0 &&
+          valid.errors.length === 0 &&
+          entry.layer === 'L1' &&
+          entry.governanceStatus === 'inventory' &&
+          entry.transitions === 'not-derived',
+        valid.out,
+      );
+      const missing = runStateRegistry((entries) => {
+        entries.splice(entries.indexOf(pick(entries, model, field)), 1);
+      });
+      check(
+        `E4 ${model}.${field} 反例:漏登记必须被发现`,
+        missing.code === 1 &&
+          JSON.stringify(missing.errors) ===
+            JSON.stringify([
+              `harness/state-machines.json coverage mismatch: expected ${liveStateRegistry.entries.length}, got ${liveStateRegistry.entries.length - 1}`,
+            ]),
+        missing.out,
+      );
+      const broadened = runStateRegistry((entries) => {
+        pick(entries, model, field).model = 'ParticipantSettlementResultRevision';
+      });
+      check(
+        `E4 ${model}.${field} 反例:其他模型同名字段不泛化`,
+        broadened.code === 1 &&
+          JSON.stringify(broadened.errors) ===
+            JSON.stringify([
+              `harness/state-machines.json coverage mismatch: expected ${liveStateRegistry.entries.length}, got ${liveStateRegistry.entries.length}`,
+            ]),
+        broadened.out,
+      );
+    }
     // D4 maintainer-approved exact model/field inventory. Every probe invokes the
     // shipped scanner in the isolated fixture; no copied discovery implementation.
     const d4Kind = pick(liveStateRegistry.entries, 'ActivitySettlementTimeRevision', 'kindCode');

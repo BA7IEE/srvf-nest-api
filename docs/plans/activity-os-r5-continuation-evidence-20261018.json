@@ -1,0 +1,290 @@
+{
+  "schemaVersion": 1,
+  "capturedAtBeijing": "2026-10-18T14:36:05.600218+08:00",
+  "baseHead": "906c78d0b8e834d35303c697d6d127124379918b",
+  "phase": "PRE_PUSH_VALIDATION",
+  "postgresVersion": "16.15",
+  "migrationCount": 147,
+  "migration147Sha256": "2c68710f16c74577e39002ca078a59835e4cc819407b93dcb6188d96dc1c7d2c",
+  "codeInputs": [
+    {
+      "path": "docs/plans/activity-os-r5-source-hash-required.proposed.sql",
+      "sha256": "2c68710f16c74577e39002ca078a59835e4cc819407b93dcb6188d96dc1c7d2c"
+    },
+    {
+      "path": "prisma/migrations/20261018000000_activity_contribution_correction_source_hash_required/migration.sql",
+      "sha256": "2c68710f16c74577e39002ca078a59835e4cc819407b93dcb6188d96dc1c7d2c"
+    },
+    {
+      "path": "src/modules/activities/e4-policy-band-lifecycle.spec.ts",
+      "sha256": "72ebdf910734a0cee4c0011779b98dbe73a503684eab1df074350037f1eaa433"
+    },
+    {
+      "path": "test/diagnostics/activity-r5-source-hash-null.diagnostic-spec.ts",
+      "sha256": "3ebcba445a7002005eac8a4dff393160ecb3157109b020d18a286989476ba105"
+    },
+    {
+      "path": "test/e2e/activity-os-r1-a3-template-definition-lifecycle-guards.e2e-spec.ts",
+      "sha256": "363c984dbe26224ad08b057fc370812c18b246aa696f427039bd83a4b3a81696"
+    },
+    {
+      "path": "test/e2e/activity-os-r1-a4-explicit-template-version-pointer.e2e-spec.ts",
+      "sha256": "392e07805e2075d401807a7060153330a57a8b8653d1334b2601f7ba8d2f3c7c"
+    },
+    {
+      "path": "test/e2e/activity-os-r2-b1-place-schema-constraints.e2e-spec.ts",
+      "sha256": "796f765a72cc85ac6881bffeb38256d3e6ccd1eefbf45861ca85b1ae85fe2279"
+    },
+    {
+      "path": "test/e2e/activity-os-r2-b2-coordinate-projection-schema-constraints.e2e-spec.ts",
+      "sha256": "4f388e7accc9465b97f82ce1fd262a49e0d988985c09615e7916f409c8bf0060"
+    },
+    {
+      "path": "test/e2e/activity-os-r2-b3-form-blueprint-governance.e2e-spec.ts",
+      "sha256": "493419b18257fd7e4548346c1480f8c84743066785f30fd180617fb89cd467fc"
+    },
+    {
+      "path": "test/e2e/activity-os-r2-b6-creation-data-foundation.e2e-spec.ts",
+      "sha256": "b66820a45b914d6e833dffa892c34e32a2dacc8ba4f17ff629734df57f8b2c56"
+    },
+    {
+      "path": "test/e2e/activity-os-r3-c1-d2a-metric-command-receipt-migration.e2e-spec.ts",
+      "sha256": "036468a1334fe8e17f81f63b59a8b716a3795f4becfe984990299eccd10bf907"
+    },
+    {
+      "path": "test/e2e/activity-os-r3-c1-d2b-selection-template-migration.e2e-spec.ts",
+      "sha256": "61b7cdfd23bbbf473105aa4f0fa2be0f4f3f681e6628994de0692f526078fbdd"
+    },
+    {
+      "path": "test/e2e/activity-os-r3-c1-metric-definition-set.e2e-spec.ts",
+      "sha256": "27ec2051b8328cbc5947b64b38de23fb55dd3e42bf1b5ed675bb903880625833"
+    },
+    {
+      "path": "test/e2e/activity-os-r3-c2-outcome-value-revision.e2e-spec.ts",
+      "sha256": "2d18050ae3f08d11d67b083954038369992e6a5ac5944e3d5bef35103501fd9e"
+    },
+    {
+      "path": "test/e2e/activity-os-r4-d1-1-time-policy-migration.e2e-spec.ts",
+      "sha256": "38777e98151777d3e1dc0c168b2c2bb719d8c7b1aba481aa791df0d445d361d7"
+    },
+    {
+      "path": "test/e2e/activity-os-r4-d1-3-selection-migration.e2e-spec.ts",
+      "sha256": "39671fa7aa0813fd209fccb0da87e37c6c3ff1db856dd0e29de2b1e31ab19ac6"
+    },
+    {
+      "path": "test/e2e/activity-os-r4-d3-time-allocation-revision-migration.e2e-spec.ts",
+      "sha256": "0e35830c1fd179047cf06748e5f1cc51979710e495d771109887c0a684c355d9"
+    },
+    {
+      "path": "test/e2e/activity-os-r4-d4-time-bucket-migration.e2e-spec.ts",
+      "sha256": "ad158ba38220ece42721e8f42f1228802a235125d98c42e41532bf5c2c816e4a"
+    },
+    {
+      "path": "test/e2e/activity-os-r4-d6-time-ledger-migration.e2e-spec.ts",
+      "sha256": "350aae0a3b3ab3c95b596daf12feacffd939e11d737bbe548afd999242e33d01"
+    },
+    {
+      "path": "test/e2e/activity-os-r4-d7-2-fact-correction-migration.e2e-spec.ts",
+      "sha256": "17e53b6c7dbc5dbacd223a01867387dc1c64c6108e5c7ae9f9cf1279a16be6d0"
+    },
+    {
+      "path": "test/e2e/activity-os-r4-d7-time-correction-migration.e2e-spec.ts",
+      "sha256": "8210b8e9b7d03ff0a52b98c68a4dee1992234398e24e4aedb1b702e351eac8a0"
+    },
+    {
+      "path": "test/e2e/activity-os-r4-d8-proof-cutover-migration.e2e-spec.ts",
+      "sha256": "06b23bdfbd141eef1e3a9fb77aca1edced07b9a3cfaed3b5fcaea8cdae545ac8"
+    },
+    {
+      "path": "test/e2e/activity-os-r5-e1-3-contribution-policy-selection-migration.e2e-spec.ts",
+      "sha256": "b12e5a506675d6e156b0e2e3a3d9d44af7cab3167e0cb0b76d22b2b3914d7386"
+    },
+    {
+      "path": "test/e2e/activity-os-r5-e1-contribution-policy-migration.e2e-spec.ts",
+      "sha256": "c42e8db9d6d1a13620ac8b0dedd23f945b9897121a41da45019dee57e0b2771b"
+    },
+    {
+      "path": "test/e2e/activity-os-r5-e2-contribution-rule-migration.e2e-spec.ts",
+      "sha256": "e8fd632c2d1815b3b997a2e20a0f0d29244df11caaf40511e150a12a11c1d0d9"
+    },
+    {
+      "path": "test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts",
+      "sha256": "013ed255751b6b1c08c44b4c366cb73082c1859ec82bb193f199f610ecf4b54f"
+    },
+    {
+      "path": "test/e2e/activity-os-r5-e3-contribution-shadow-source-proof.e2e-spec.ts",
+      "sha256": "f8b2db32c1ad9280965847bd77ea86d2870a81566f8251b617992b2d4d8704ef"
+    },
+    {
+      "path": "test/e2e/activity-os-r5-e3-d3-signature-migration.e2e-spec.ts",
+      "sha256": "38ff8ad6288174df78f3523c998b9c365a3d0d6feffc293263ecadda013345d1"
+    },
+    {
+      "path": "test/e2e/activity-os-r5-e4-correction-source-hash.e2e-spec.ts",
+      "sha256": "b3d29f5c78fb4c4ece6db02322f85881804f0914aafff3f11be6f059a012ae39"
+    },
+    {
+      "path": "test/e2e/activity-os-r5-e4-policy-band-plan-migration.e2e-spec.ts",
+      "sha256": "1bde99b7c1145fd61e05ee954ec8619c701bace3b3a7fcb4ef8584163baf5d5d"
+    },
+    {
+      "path": "test/e2e/activity-os-r5-e5-active-matrix.e2e-spec.ts",
+      "sha256": "faab040a30bdfb8eb0a036357db346fa52364e9a4ec9a8dd82f503ea858ae5a2"
+    },
+    {
+      "path": "test/e2e/activity-v11-batch4-allocation-candidate-position-anchor-migration.e2e-spec.ts",
+      "sha256": "03471559f9b5b15faea2cb8fee7ef7b19ea845a39383112a95bcc5547eb2e987"
+    },
+    {
+      "path": "test/e2e/activity-v11-batch4-allocation-command-replay-migration.e2e-spec.ts",
+      "sha256": "c04d85f1701794bb01404ee836be04e9237f3f0e72574aefbb458bb7e58e4d91"
+    },
+    {
+      "path": "test/e2e/activity-v11-batch4-allocation-determinism-migration.e2e-spec.ts",
+      "sha256": "ce65e3fca963bd7f5cc98fad9fd94ab398089010b2965985619ca385e8256486"
+    },
+    {
+      "path": "test/e2e/activity-v11-batch4-allocation-mode-migration.e2e-spec.ts",
+      "sha256": "484e6bb3bb4a4295275b97430927b7b3e50420b57e925b9b9bd4d1cca42a0c15"
+    },
+    {
+      "path": "test/e2e/activity-v11-batch4-qualification-contract-migration.e2e-spec.ts",
+      "sha256": "343c89577f4e17352af2310b61d7f6968d8c55f0d70f96b74872565f83a82a49"
+    },
+    {
+      "path": "test/e2e/insurance-evidence-registration-revision-migration.e2e-spec.ts",
+      "sha256": "43715e845be39201c758e06b2b749d3508af3b275d7bcbe36dcf41be0fa0442d"
+    },
+    {
+      "path": "test/fixtures/activity-r5-lifecycle-worker-child.ts",
+      "sha256": "08f3ff920761bd1e23ad0241b3343db89f00ab906b80c63330fa97f33e7fee89"
+    },
+    {
+      "path": "test/helpers/activity-contribution-policy.fixture.ts",
+      "sha256": "c5dcf1b8383236ac07752cd358441efe05058447ac08dd153eac36df05461ec2"
+    },
+    {
+      "path": "test/helpers/activity-r5-correction-hash.fixture.ts",
+      "sha256": "670855c556f61a96e550385e854d5fdbdef381fa0051866240302f1147b279ea"
+    },
+    {
+      "path": "test/helpers/e4-migration-prefix.spec.ts",
+      "sha256": "c1cb80b2a294c56014634790886a7ef275e9c377ba753f5d5298c1f93c512831"
+    },
+    {
+      "path": "test/helpers/e4-migration-prefix.ts",
+      "sha256": "46153d80f04af25c24e00116171d6430da9d0733bd84c37d0112110148225d13"
+    }
+  ],
+  "tests": [
+    {
+      "name": "baseline146NullProbe",
+      "passed": 2,
+      "durationSeconds": 13.512,
+      "logSha256": "e2b138b5b005d92f2b94398bb5df2f6d8127263f2690df84f8703b8216d680b5",
+      "logBytes": 1816
+    },
+    {
+      "name": "migration147",
+      "passed": 1,
+      "durationSeconds": 22.574,
+      "logSha256": "7648ae669a663e3cf03dfc369418475635ebbc3fe97af985df08045fabb7ca66",
+      "logBytes": 1970
+    },
+    {
+      "name": "fixedHistorical146",
+      "passed": 1,
+      "durationSeconds": 56.566,
+      "logSha256": "a1b6821f6e123945deb210a82eddd33366b03177bc803cba5f487fd989d41a50",
+      "logBytes": 1561
+    },
+    {
+      "name": "activeMatrix147",
+      "passed": 6,
+      "durationSeconds": 89.49,
+      "logSha256": "d6b97a2cc339fc426d05cd0bd4444a7e0944640d22ca8daa386a3a6b777a0cdf",
+      "logBytes": 1927
+    },
+    {
+      "name": "prefixAndLifecycleUnit",
+      "passed": 19,
+      "durationSeconds": 0.849,
+      "logSha256": "fe39c367411d26067162c2fc864ecb7a95369f69f92748567a70650d4c2269ae",
+      "logBytes": 143
+    }
+  ],
+  "coldLint": {
+    "files": 2015,
+    "batches": 7,
+    "errors": 0,
+    "warnings": 0,
+    "elapsedMs": 139115,
+    "inputSeal": "bc466c69237693499dd2e0d82b8902f537f85ca0faa6fdff70728b202d438d2a",
+    "configSeal": "ed7d2ef1b3a579c16b64cce2332399b99cd0a3e77d83e2c0f9863265f04f841e"
+  },
+  "quick": {
+    "wrapper": "FAIL",
+    "reason": "cached lint V8 heap OOM at default heap, then at original CI 6144MiB cap; no third cached attempt",
+    "lintExit": 134,
+    "typecheckExit": 0,
+    "unitExit": 0,
+    "harnessExit": 0,
+    "unitSuites": 461,
+    "unitPassed": 10266,
+    "unitTodo": 5,
+    "snapshots": 8,
+    "substitution": "formal pnpm lint passed under its original 300s/6144MiB bounds; remaining quick checks passed"
+  },
+  "governance": {
+    "migration147Grant": "explicit user delegation; normal CLI; cleared",
+    "routeAuthzGrant": "retained explicit delegation for same path; normal generator; byte-identical output; cleared",
+    "signoff3b": "user explicitly reviewed and accepted137-147; recorded with provenance; signoff check PASS",
+    "permissionDeclarations": 663,
+    "routeAuthzContentChanged": false
+  },
+  "cleanup": {
+    "template": "app_test",
+    "worker": "app_test_w1",
+    "workerRemaining": 0,
+    "workerConnectionsRemaining": 0,
+    "grantAbsent": true
+  },
+  "earlierFailures": [
+    {
+      "case": "new worker child startup",
+      "result": "FAIL",
+      "stderr": "NOT_CAPTURED",
+      "cause": "UNKNOWN",
+      "followup": "existing full production worker entry fixed the new fixture; actual PID recovery passed"
+    },
+    {
+      "case": "historical146 settings snapshot",
+      "result": "FAIL",
+      "difference": "five plpgsql.* rows absent on one backend",
+      "instrumentProbe": "same independent PG session0 before load /5 after load",
+      "followup": "load PL/pgSQL in the same short snapshot transaction; all settings still compared; PASS"
+    },
+    {
+      "case": "docs counts/readtax",
+      "result": "FAIL",
+      "cause": "whole-file formatter padded existing tables",
+      "followup": "restore original layout, retain factual changes, regenerate counts; PASS"
+    },
+    {
+      "case": "first route-authz stale observation",
+      "result": "FAIL",
+      "cause": "UNKNOWN; input digest was not captured",
+      "followup": "generator reads non-spec src TS and contract only; generated output byte-identical to HEAD; fresh check PASS"
+    }
+  ],
+  "notRun": [
+    "new-head CI before push",
+    "final-head Trusted human approval",
+    "original R5 maximum acceptance",
+    "frontend",
+    "Ready/merge/deploy",
+    "actual target legacy inventory/conversion/shadow applicability",
+    "fleet/worker drain/stability/production gates"
+  ],
+  "capacityBoundary": "historical500 receipts cover their exact original SHA; new lifecycle tests use small existing historical fixtures; original R5 maximum NOT_VALIDATED"
+}

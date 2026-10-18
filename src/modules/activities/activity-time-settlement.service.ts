@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { instanceToPlain } from 'class-transformer';
 import { Prisma, type ActivitySettlementTimeRevision } from '@prisma/client';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
+import { assertNativeContributionLaunchCount } from './activity-contribution-launch-policy';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -44,6 +45,11 @@ import {
   SettlementSubmitService,
   SETTLEMENT_SUBMIT_TX_TIMEOUT_MS,
 } from './settlement-submit.service';
+import {
+  ActivityContributionSettlementService,
+  frozenContributionRegime,
+} from './activity-contribution-settlement.service';
+import type { ContributionRegimeCode } from './activity-contribution-settlement-policy';
 
 type Tx = Prisma.TransactionClient;
 type Reauthorize = () => Promise<CurrentUserPayload>;
@@ -60,6 +66,7 @@ export class ActivityTimeSettlementService {
     private readonly settlements: SettlementSubmitService,
     private readonly audit: ActivityTimeSettlementAuditRecorder,
     private readonly gate: ActivityWorkflowGate,
+    @Optional() private readonly contributions?: ActivityContributionSettlementService,
   ) {}
 
   private async write<T>(
@@ -112,6 +119,7 @@ export class ActivityTimeSettlementService {
     activityId: string,
     expected: TimeSettlementDraftExpectation,
     reauthorize: Reauthorize,
+    captureRegime?: (regime: ContributionRegimeCode) => void,
   ): Promise<TimeSettlementDraftProof> {
     const initial = requireTimeSettlementDraft(
       activityId,
@@ -130,6 +138,7 @@ export class ActivityTimeSettlementService {
       proof.evidenceSealId !== expected.expectedEvidenceSealId
     )
       throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_STALE);
+    captureRegime?.(frozenContributionRegime(context?.contributionRegimeCode));
     return proof;
   }
 
@@ -137,11 +146,15 @@ export class ActivityTimeSettlementService {
     tx: Tx,
     proof: TimeSettlementDraftProof,
     reauthorize: Reauthorize,
+    launchAdmission = false,
   ): Promise<TimeSettlementSourceSet> {
     const set = await this.queries.readSourceSetInTx(tx, proof);
-    await tx.$queryRaw`SELECT id FROM "ActivityParticipationIdentity"
+    const identities = await tx.$queryRaw<
+      { id: string }[]
+    >`SELECT id FROM "ActivityParticipationIdentity"
       WHERE "activityId" = ${proof.activityId} ORDER BY id FOR SHARE`;
     await reauthorize();
+    if (launchAdmission) assertNativeContributionLaunchCount(identities.length, 'identities');
     await tx.$queryRaw`SELECT id FROM "ParticipantServiceSegmentRevision"
       WHERE id = ANY(${set.segments.map((row) => row.id)}::text[]) ORDER BY id FOR SHARE`;
     await reauthorize();
@@ -216,7 +229,21 @@ export class ActivityTimeSettlementService {
             meta,
             reauthorize,
             async () => {
-              const proof = await this.lockedProof(tx, activityId, command, reauthorize);
+              const frozen: { regime: ContributionRegimeCode } = { regime: 'legacy' };
+              const proof = await this.lockedProof(
+                tx,
+                activityId,
+                command,
+                reauthorize,
+                (value) => {
+                  frozen.regime = value;
+                },
+              );
+              if (frozen.regime === 'policy_v1') {
+                if (!this.contributions)
+                  throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+                this.contributions.assertNativeWriteAllowed();
+              }
               if (
                 proof.evidenceRevision !== command.expectedEvidenceRevision ||
                 proof.populationRevision !== command.expectedPopulationRevision ||
@@ -271,9 +298,24 @@ export class ActivityTimeSettlementService {
             reauthorize,
           );
           if (replay) return replay;
-          const proof = await this.lockedProof(tx, activityId, command, reauthorize);
-          const set = await this.lockedSources(tx, proof, reauthorize);
-          const evaluated = await this.queries.evaluateInTx(tx, set);
+          const frozen: { regime: ContributionRegimeCode } = { regime: 'legacy' };
+          const proof = await this.lockedProof(tx, activityId, command, reauthorize, (value) => {
+            frozen.regime = value;
+          });
+          if (frozen.regime === 'policy_v1') {
+            if (!this.contributions)
+              throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+            this.contributions.assertNativeWriteAllowed();
+            await this.contributions.assertNewNativeActivityInTx(
+              tx,
+              activityId,
+              proof.workflowRevision,
+            );
+          }
+          const launchAdmission =
+            frozen.regime === 'policy_v1' && this.contributions?.usesLaunchAdmission === true;
+          const set = await this.lockedSources(tx, proof, reauthorize, launchAdmission);
+          const evaluated = await this.queries.evaluateInTx(tx, set, launchAdmission);
           const previous = await tx.activitySettlementTimeRevision.findFirst({
             where: { settlementRunId: proof.settlementRunId },
             orderBy: { revision: 'desc' },
@@ -306,6 +348,13 @@ export class ActivityTimeSettlementService {
             },
           });
           await this.insertBuckets(tx, revision, evaluated.buckets);
+          const contribution = await this.contributions?.prepareTimeInTx(
+            tx,
+            revision,
+            frozen.regime,
+            { operationKey: command.operationKey, requestHash },
+            reauthorize,
+          );
           const result = this.result(
             revision,
             command.expectedDraftVersion,
@@ -328,7 +377,15 @@ export class ActivityTimeSettlementService {
             TIME_SETTLEMENT_PREPARE_OPERATION,
             result,
             false,
+            contribution,
           );
+          if (frozen.regime === 'policy_v1') {
+            // Run only these queued native-prepare checks before leaving the callback.
+            // write() still reauthorizes after this barrier and awaits the actual COMMIT.
+            // No business writes may follow the barrier.
+            await tx.$executeRaw`SET CONSTRAINTS public.astr_parent_complete_guard,
+              public.e4_revision_complete_guard IMMEDIATE`;
+          }
           return result;
         },
       );
@@ -368,7 +425,15 @@ export class ActivityTimeSettlementService {
             reauthorize,
           );
           if (replay) return replay;
-          const proof = await this.lockedProof(tx, activityId, command, reauthorize);
+          const frozen: { regime: ContributionRegimeCode } = { regime: 'legacy' };
+          const proof = await this.lockedProof(tx, activityId, command, reauthorize, (value) => {
+            frozen.regime = value;
+          });
+          if (frozen.regime === 'policy_v1') {
+            if (!this.contributions)
+              throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+            this.contributions.assertNativeWriteAllowed();
+          }
           const prepared = await tx.activitySettlementTimeRevision.findFirst({
             where: { activityId, settlementRunId: proof.settlementRunId },
             orderBy: { revision: 'desc' },
@@ -395,6 +460,11 @@ export class ActivityTimeSettlementService {
           >`SELECT astr_bucket_content_hash(${prepared.id}) AS hash`;
           if (bucketHash[0]?.hash !== prepared.bucketContentHash)
             throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_INVALID);
+          const contribution = await this.contributions?.loadPreparedTimeInTx(
+            tx,
+            prepared,
+            frozen.regime,
+          );
           const internalKey =
             'time-settlement:' +
             fingerprintMetricEnvelope('activity-time-settlement-submit-link-v1', {
@@ -416,6 +486,7 @@ export class ActivityTimeSettlementService {
             {
               bucketContentHash: prepared.bucketContentHash,
               sourceSetHash: prepared.sourceSetHash,
+              contributionProof: contribution ?? undefined,
               reauthorize,
               copyPrepared: async (submitTx, target) => {
                 if (submitTx !== tx || target.draftVersionId !== prepared.settlementVersionId)
@@ -439,6 +510,15 @@ export class ActivityTimeSettlementService {
                   },
                 });
                 await this.copyBuckets(tx, prepared, submitted);
+                const submittedContribution = contribution
+                  ? await this.contributions?.copySubmittedTimeInTx(
+                      tx,
+                      contribution,
+                      submitted,
+                      { operationKey: command.operationKey, requestHash },
+                      reauthorize,
+                    )
+                  : null;
                 result = this.result(submitted, target.settlementVersion, target.contentHash);
                 await reauthorize();
                 await this.receipt(
@@ -457,6 +537,7 @@ export class ActivityTimeSettlementService {
                   TIME_SETTLEMENT_SUBMIT_OPERATION,
                   result,
                   false,
+                  submittedContribution,
                 );
               },
             },
@@ -535,7 +616,14 @@ export class ActivityTimeSettlementService {
         rawRecognizedMilliseconds: source.rawRecognizedMilliseconds.toString(),
       })),
     }));
-    const json = JSON.stringify(rows);
+    // Each statement decodes only its own columns; do not send the full source graph twice.
+    const bucketJson = JSON.stringify(
+      rows.map(({ sources, ...bucket }) => {
+        void sources;
+        return bucket;
+      }),
+    );
+    const sourceJson = JSON.stringify(rows.map(({ id, sources }) => ({ id, sources })));
     const bucketCount = await tx.$executeRaw`
       INSERT INTO "ParticipantSettlementTimeBucket" (id, "timeRevisionId", "activityId", "participationIdentityId",
         "categoryCode", "calculatedSeconds", "recognizedSeconds", "adjustmentReason", "timePolicyVersionId",
@@ -543,7 +631,7 @@ export class ActivityTimeSettlementService {
       SELECT x.id, ${revision.id}, ${revision.activityId}, x."participationIdentityId", x."categoryCode", x."calculatedSeconds",
         x."recognizedSeconds", nullif(x."adjustmentReason", 'null'::jsonb), x."timePolicyVersionId", x."definitionHash", x."evaluatorVersion",
         x."quantumSeconds", x."rawCalculatedMilliseconds", x."rawRecognizedMilliseconds"
-      FROM jsonb_to_recordset(${json}::jsonb) AS x(id TEXT, "participationIdentityId" TEXT, "categoryCode" TEXT,
+      FROM jsonb_to_recordset(${bucketJson}::jsonb) AS x(id TEXT, "participationIdentityId" TEXT, "categoryCode" TEXT,
         "calculatedSeconds" INTEGER, "recognizedSeconds" INTEGER, "adjustmentReason" JSONB, "timePolicyVersionId" TEXT,
         "definitionHash" TEXT, "evaluatorVersion" INTEGER, "quantumSeconds" INTEGER,
         "rawCalculatedMilliseconds" BIGINT, "rawRecognizedMilliseconds" BIGINT)
@@ -553,7 +641,7 @@ export class ActivityTimeSettlementService {
         "allocationRevisionId", "sourceSegmentId", "sourceSegmentRevision", "rawCalculatedMilliseconds", "rawRecognizedMilliseconds")
       SELECT gen_random_uuid()::text, b.id, ${revision.id}, ${revision.activityId}, s."allocationRevisionId", s."sourceSegmentId",
         s."sourceSegmentRevision", s."rawCalculatedMilliseconds", s."rawRecognizedMilliseconds"
-      FROM jsonb_to_recordset(${json}::jsonb) AS b(id TEXT, sources JSONB)
+      FROM jsonb_to_recordset(${sourceJson}::jsonb) AS b(id TEXT, sources JSONB)
       CROSS JOIN LATERAL jsonb_to_recordset(b.sources) AS s("allocationRevisionId" TEXT, "sourceSegmentId" TEXT,
         "sourceSegmentRevision" INTEGER, "rawCalculatedMilliseconds" BIGINT, "rawRecognizedMilliseconds" BIGINT)
     `;

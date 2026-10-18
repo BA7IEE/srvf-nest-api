@@ -22,6 +22,14 @@ export interface TimeCorrectionAnchor {
    */
   readonly sourceProofId?: string | null;
   readonly sourceProofHash?: string | null;
+  /** Exact immutable native base, resolved and verified by the owner query. Not a client flag. */
+  readonly nativeTimeBasis?: {
+    readonly contributionRevisionId: string;
+    readonly activityId: string;
+    readonly settlementRunId: string;
+    readonly baseSettlementVersionId: string;
+    readonly effectiveTimeSettlementVersionId: string;
+  };
 }
 
 export interface TimeCorrectionRoot {
@@ -77,6 +85,7 @@ export function buildParticipationTimeCorrection(
     rootSettlementVersionId,
     sourceProofId = null,
     sourceProofHash = null,
+    nativeTimeBasis,
     ...manifestAnchor
   } = anchor;
   for (const id of [
@@ -104,7 +113,28 @@ export function buildParticipationTimeCorrection(
     invalid();
   }
   const first = anchor.predecessorManifestId === null;
-  if (first !== (anchor.baseSettlementVersionId === rootSettlementVersionId)) invalid();
+  if (
+    nativeTimeBasis &&
+    ([
+      nativeTimeBasis.contributionRevisionId,
+      nativeTimeBasis.activityId,
+      nativeTimeBasis.settlementRunId,
+      nativeTimeBasis.baseSettlementVersionId,
+      nativeTimeBasis.effectiveTimeSettlementVersionId,
+    ].some((id) => !validId(id)) ||
+      nativeTimeBasis.activityId !== anchor.activityId ||
+      nativeTimeBasis.settlementRunId !== anchor.settlementRunId ||
+      nativeTimeBasis.baseSettlementVersionId !== anchor.baseSettlementVersionId ||
+      nativeTimeBasis.effectiveTimeSettlementVersionId === anchor.baseSettlementVersionId ||
+      nativeTimeBasis.effectiveTimeSettlementVersionId === anchor.settlementVersionId)
+  )
+    invalid();
+  const timeBase =
+    nativeTimeBasis?.effectiveTimeSettlementVersionId ?? anchor.baseSettlementVersionId;
+  // Submit/resubmit previews precede the current V3 proof. Persisted manifests
+  // still require that proof in ptcm_guard_insert and the final E4 set guard;
+  // this pure builder must not pretend a preview has already frozen it.
+  if (first !== (timeBase === rootSettlementVersionId)) invalid();
   if (anchor.predecessorManifestId !== null && !validId(anchor.predecessorManifestId)) invalid();
   if (
     roots.length > TIME_SETTLEMENT_LIMITS.buckets ||

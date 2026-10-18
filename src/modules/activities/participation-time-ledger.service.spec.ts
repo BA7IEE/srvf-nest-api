@@ -60,6 +60,49 @@ describe('D6 manifest and entry replay checks', () => {
       '分类时长账本来源不完整或不一致',
     );
   });
+
+  it.each([
+    { name: 'legacy', source: null, existing: null, failure: null },
+    { name: 'matching manifest', source, existing: manifest, failure: null },
+    { name: 'missing manifest', source, existing: null, failure: '分类时长账本尚未准备完整' },
+    {
+      name: 'source disappearance',
+      source: null,
+      existing: manifest,
+      failure: '分类时长账本来源不完整或不一致',
+    },
+    {
+      name: 'different content',
+      source,
+      existing: { ...manifest, contentHash: 'c'.repeat(64) },
+      failure: '分类时长账本幂等内容冲突',
+    },
+  ])('checks $name on readonly receipt replay without repairing evidence', async (testcase) => {
+    const readSource = jest.spyOn(service, 'source').mockResolvedValue(testcase.source);
+    const readManifest = jest
+      .spyOn(db.participationTimeLedgerManifest, 'findUnique')
+      .mockResolvedValue(testcase.existing);
+    const create = jest.spyOn(db.participationTimeLedgerManifest, 'create');
+    const entries = jest.spyOn(db.participationTimeLedgerEntry, 'findMany');
+    const result = service.assertManifestForReplay(db, batch);
+    if (testcase.failure) await expect(result).rejects.toThrow(testcase.failure);
+    else await expect(result).resolves.toEqual(testcase.existing);
+    expect(readSource.mock.invocationCallOrder[0]).toBeLessThan(
+      readManifest.mock.invocationCallOrder[0],
+    );
+    expect(create).not.toHaveBeenCalled();
+    expect(entries).not.toHaveBeenCalled();
+  });
+
+  it('preserves source failure priority and the original unknown error on readonly replay', async () => {
+    const failure = new Error('source validation failed');
+    jest.spyOn(service, 'source').mockRejectedValue(failure);
+    const readManifest = jest.spyOn(db.participationTimeLedgerManifest, 'findUnique');
+    const create = jest.spyOn(db.participationTimeLedgerManifest, 'create');
+    await expect(service.assertManifestForReplay(db, batch)).rejects.toBe(failure);
+    expect(readManifest).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+  });
   it('rejects an incomplete entry set', async () => {
     jest.spyOn(service, 'source').mockResolvedValue(source);
     jest.spyOn(db.participationTimeLedgerManifest, 'findUnique').mockResolvedValue(manifest);

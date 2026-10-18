@@ -19,6 +19,8 @@ import {
 } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
 
+const CURRENT_MIGRATION_COUNT = 147;
+
 const MIGRATION = '20260913090000_activity_os_r4_d4_time_bucket_settlement';
 const D3_MIGRATION = '20260912090000_activity_os_r4_d3_time_allocation_revision';
 const D3_CHECKSUM = 'caee91d1e8f2d1dae5e79d7789cd3473e886f23693ec200fd057f6a23d71ca54';
@@ -507,7 +509,7 @@ describe('D4 time-bucket migration replay and nonempty upgrade', () => {
   it('replays all 136 migrations with exact checksums and four immutable tables', () => {
     recreate();
     deploy(schema);
-    expect(names).toHaveLength(136);
+    expect(names).toHaveLength(CURRENT_MIGRATION_COUNT);
     expect(names[120]).toBe(MIGRATION);
     expect(checksums()).toEqual(
       names.map(

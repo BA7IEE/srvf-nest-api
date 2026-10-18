@@ -1,0 +1,524 @@
+{
+  "schema": "srvf/e4-policy-band146-local-validation/v1",
+  "observedAt": "2026-10-16T03:56:14.702627+00:00",
+  "status": "LOCAL_VALIDATION_PASS",
+  "baselineHead": "4b4a4d73f5ecf397553acf9b81fd09407799b191",
+  "branch": "codex/activity-os-r5-e4-github-validation",
+  "authorization": {
+    "thread": "01a1184e-5691-7052-9009-5a5169a7b0e2",
+    "scopeApprovalMessage": "Sentinel_de64d80518a48191ae0383d9a4d0fcc1",
+    "scopeReply": "批准",
+    "delegatedGrantApprovalMessage": "Sentinel_a07a0e18de648191a1d4c88ae57de3bf",
+    "delegatedGrantReply": "确认",
+    "grantPath": "prisma/migrations/20261015221000_activity_contribution_policy_band_planning/migration.sql",
+    "grantScriptUnchanged": true,
+    "executedBy": "AI under explicit delegation, not a maintainer signature",
+    "grantRevoked": true,
+    "trustedOrHumanSignaturesChanged": false
+  },
+  "change": {
+    "migration": 146,
+    "sqlSha256": "01191936bce3e35602fb38edc57b20543bdc8b6c62f2efa225a49d87bdfdaeb0",
+    "fromFunctionMd5": "b03a7298e625b703fa2f011c0fbcc6c0",
+    "toFunctionMd5": "40b56bac5a571c56e589cbc549419bfa",
+    "onlyFunctionBodyChange": "policy_bands AS MATERIALIZED -> policy_bands AS NOT MATERIALIZED",
+    "historicalMigrationsUnchanged": true,
+    "fullFrozenValidationAndBothGuardsPreserved": true,
+    "commitBudgetMs": 7000,
+    "currentCountLiteralsUpdated": 31,
+    "legacy145FullChain": "Fails closed before installer on146 application; matching145 application required",
+    "priorAuthorizedEntryWork": "V8/V9 physical snapshot roles, deployed worker DI graph, real entry spec and transparent commit observer included"
+  },
+  "archive": {
+    "sha256": "745e9e7a5f0717a466d91dc63c5b7bcac3b94a7b740de2c3864fbd1a75ed56ba",
+    "privateArchiveCommitted": false,
+    "restoreVerified": true,
+    "all145HistoricalChecksumsVerified": true,
+    "sourceFingerprint": "28fa69d33e3d4ff39886e296ade2b971d5101663986f1a76423b01b7c4215e4e",
+    "allPolicyDefinitionsRecomputed": true,
+    "businessTables": 196,
+    "businessFingerprintBeforeAndAfterMigration": "ce18783200b2d3d94abd4a8b4b360028120588767779c13b29dffd07e456ccd5",
+    "pairedCompleteFunctionSamples": [
+      {
+        "index": 0,
+        "version": 145,
+        "durationMs": 141.312,
+        "jit": "on",
+        "workMem": "4MB",
+        "readonly": "on",
+        "fullFunction": true
+      },
+      {
+        "index": 1,
+        "version": 146,
+        "durationMs": 58.222,
+        "jit": "on",
+        "workMem": "4MB",
+        "readonly": "on",
+        "fullFunction": true
+      },
+      {
+        "index": 2,
+        "version": 146,
+        "durationMs": 80.591,
+        "jit": "on",
+        "workMem": "4MB",
+        "readonly": "on",
+        "fullFunction": true
+      },
+      {
+        "index": 3,
+        "version": 145,
+        "durationMs": 41.052,
+        "jit": "on",
+        "workMem": "4MB",
+        "readonly": "on",
+        "fullFunction": true
+      }
+    ],
+    "performanceConclusion": "Both versions are fast after restore; ABBA does not establish a146 speedup or reproduce the old multi-second JIT plan. Do not attribute restore speed to146.",
+    "worker": {
+      "outcome": "PASS",
+      "concurrentRealWorkers": 2,
+      "commitAttempts": 1,
+      "formalCredits": 1,
+      "formalPoints": "0.50",
+      "dayVersionAdvances": 1,
+      "duplicateDrainNoChanges": true,
+      "sourceFingerprintUnchanged": true,
+      "transactionBudgetMs": 7000,
+      "restoredFixture": true,
+      "freshEndToEndPass": false
+    },
+    "independentFrozenOracle": {
+      "outcome": "PASS",
+      "frozenSourceSha256": "50a090de9193d80ab659852c0420aed4e05290913be1050b5f5631da9cf17ed6",
+      "fullCanonicalQueryUnchanged": true,
+      "readOnly": true,
+      "comparisons": [
+        {
+          "version": 145,
+          "kind": "draft",
+          "durationMs": 762.0300479999969,
+          "result": [
+            {
+              "oldCount": 1,
+              "candidateCount": 1,
+              "storedCount": 1,
+              "candidateDifferences": 0,
+              "storedDifferences": 0,
+              "rootMatches": true
+            }
+          ]
+        },
+        {
+          "version": 145,
+          "kind": "submitted",
+          "durationMs": 185.91818799999965,
+          "result": [
+            {
+              "oldCount": 1,
+              "candidateCount": 1,
+              "storedCount": 1,
+              "candidateDifferences": 0,
+              "storedDifferences": 0,
+              "rootMatches": true
+            }
+          ]
+        },
+        {
+          "version": 146,
+          "kind": "draft",
+          "durationMs": 176.4452629999978,
+          "result": [
+            {
+              "oldCount": 1,
+              "candidateCount": 1,
+              "storedCount": 1,
+              "candidateDifferences": 0,
+              "storedDifferences": 0,
+              "rootMatches": true
+            }
+          ]
+        },
+        {
+          "version": 146,
+          "kind": "submitted",
+          "durationMs": 261.5314099999996,
+          "result": [
+            {
+              "oldCount": 1,
+              "candidateCount": 1,
+              "storedCount": 1,
+              "candidateDifferences": 0,
+              "storedDifferences": 0,
+              "rootMatches": true
+            }
+          ]
+        }
+      ],
+      "catalogSecurityAndBothGuardsUnchanged": true,
+      "sourceAndBusinessFingerprintsUnchanged": true
+    },
+    "oracleRunnerSummaryLabel": "The copied completion label migration146Applied:false is a retained instrumentation label, not installation acceptance. Exact146 pin/count acceptance is in restored146-nonempty-upgrade; independent comparison records all four phases after successful migrate deploy."
+  },
+  "migrationRegression": {
+    "suitesPassed": 1,
+    "testsPassed": 7,
+    "nonempty145To146AndRepeatNoOp": true,
+    "unchangedBusinessCatalogAndSettings": true,
+    "sharedPolicyRealGroups": 400,
+    "typedSmallControlGroups": 4,
+    "negativeReceipts": 14,
+    "completeFunctionRejections": 12,
+    "uniqueConstraintRejectionsBeforeCompleteFunction": 2,
+    "guards": ["e4_evaluation_guard", "e4_source_guard", "e4_complete_guard"],
+    "invalidUnselectedPolicy": "23514 without constraint, preserved for both versions",
+    "boundaries": {
+      "inclusive": 60,
+      "nextSecond": 61,
+      "timePolicyQuantumSeconds": 1,
+      "emptyRolesDefault": true,
+      "emptyCategoriesDefault": true,
+      "independentPolicyRoots": 4,
+      "mixedPoliciesInOneCompleteFunctionCall": "NOT_TESTED"
+    },
+    "nativeStatementAndDeferredCommitRollback": true,
+    "concurrentRetirementAndImmutableDefinitionRejection": "146_PASS"
+  },
+  "freshEntry": {
+    "suitesPassed": 1,
+    "testsPassed": 1,
+    "freshFixture": true,
+    "archiveReuse": false,
+    "result": {
+      "active": true,
+      "publishedSnapshotFromHttpApproval": true,
+      "managedActorRole": "USER",
+      "adminReviewsViaHttp": 2,
+      "nativeRoots": 2,
+      "nativeEvaluations": 2,
+      "workerAutoCommitted": true,
+      "workerCommitRetries": 0,
+      "contributionCredits": 1,
+      "creditedPoints": "0.50",
+      "exactReplaysAndConflicts": true
+    },
+    "stages": [
+      {
+        "stage": "PUBLISH_HTTP",
+        "outcome": "COMPLETE",
+        "durationMs": 1277.6805530000056
+      },
+      {
+        "stage": "REAL_SOURCE_WINDOW",
+        "outcome": "COMPLETE",
+        "durationMs": 48571.895147
+      },
+      {
+        "stage": "PARTICIPATION_FIXTURE",
+        "outcome": "COMPLETE",
+        "durationMs": 64.38048800000979
+      },
+      {
+        "stage": "GENERATE_HTTP",
+        "outcome": "COMPLETE",
+        "durationMs": 197.52544500000658
+      },
+      {
+        "stage": "HTTP_BOUNDARIES",
+        "outcome": "COMPLETE",
+        "durationMs": 63.84348900000623
+      },
+      {
+        "stage": "PREPARE_HTTP",
+        "outcome": "COMPLETE",
+        "durationMs": 2667.145694000006
+      },
+      {
+        "stage": "SUBMIT_HTTP",
+        "outcome": "COMPLETE",
+        "durationMs": 3119.799027000001
+      },
+      {
+        "stage": "ADMIN_HTTP_BOUNDARIES",
+        "outcome": "COMPLETE",
+        "durationMs": 121.7367949999898
+      },
+      {
+        "stage": "FIRST_HTTP",
+        "outcome": "COMPLETE",
+        "durationMs": 264.9278689999919
+      },
+      {
+        "stage": "FINAL_HTTP",
+        "outcome": "COMPLETE",
+        "durationMs": 416.05554400000256
+      },
+      {
+        "stage": "LEDGER_WORKER",
+        "outcome": "COMPLETE",
+        "durationMs": 1317.4212160000025
+      }
+    ],
+    "commitEvents": [
+      {
+        "sequence": 2,
+        "elapsedMs": 764.3677089999983,
+        "stage": "transaction.options",
+        "outcome": "ENTER",
+        "transactionOptions": {
+          "timeout": 7000,
+          "isolationLevel": "ReadCommitted"
+        }
+      },
+      {
+        "sequence": 76,
+        "elapsedMs": 1149.565002999996,
+        "stage": "contributions.assertVersionInTx",
+        "outcome": "RETURN",
+        "durationMs": 66.91647999999986
+      },
+      {
+        "sequence": 82,
+        "elapsedMs": 1209.8058909999963,
+        "stage": "tx.ledgerPostingBatch.update",
+        "outcome": "RETURN",
+        "durationMs": 55.999892000007094
+      },
+      {
+        "sequence": 96,
+        "elapsedMs": 1298.0239969999966,
+        "stage": "transaction.resolve",
+        "outcome": "RETURN",
+        "durationMs": 533.6040659999999
+      },
+      {
+        "sequence": 97,
+        "elapsedMs": 1298.0604179999937,
+        "stage": "posting.commitBatch",
+        "outcome": "RETURN",
+        "durationMs": 539.7884689999919
+      }
+    ],
+    "observerTerminal": {
+      "stage": "observer.terminal",
+      "observerIoMs": 2.6891429999668617,
+      "restorationFailures": 0
+    }
+  },
+  "cleanup": {
+    "observedAt": "2026-10-16T04:06:38.482611+00:00",
+    "database": "app_test_w98",
+    "independentCatalogRecheck": "PASS",
+    "capturedMaintenanceBackendPids": [158289, 160695, 161602, 162739],
+    "leaseBackendCountDerivedFromLocks": false,
+    "counts": {
+      "databases": 0,
+      "clients": 0,
+      "leaseBackends": 0,
+      "leaseLocks": 0
+    }
+  },
+  "failedExperimentsPreserved": [
+    {
+      "run": "migration-e2e-result.json",
+      "testsPassed": 3,
+      "testsFailed": 1,
+      "failure": "145 EXTRA negative on400 groups hit the declared20s statement limit; partial400-group positive and missing controls passed; whole suite failed.",
+      "sqlstate": "NOT_CAPTURED",
+      "resolution": "Separate400-group positive from4-group semantic negatives, analyze typed shadow tables; no budget expansion."
+    },
+    {
+      "run": "migration-e2e-result-2.json",
+      "testsPassed": 6,
+      "testsFailed": 1,
+      "failure": "Boundary expected61 seconds but received60 under the fixture default60-second rounding policy.",
+      "resolution": "Explicit legal1-second time policy for60/61 boundary, preserve assertions."
+    }
+  ],
+  "checks": {
+    "characterization": "4 suites128 PASS",
+    "currentPinAndHistoricalOracle": "4 suites137 PASS",
+    "policySemanticsAnd146Catalog": "3 suites110 PASS /4 existing snapshots unchanged",
+    "lifecycleFailureInjectionAndOwnedProcess": "3 suites22 PASS;5 execute actual146 suite callbacks with inert dependencies",
+    "latestLifecycleChanges": "Bounded145/latest deployment await plus failure-only terminal fences validated by fault injection; business fixture was not rebuilt after7/7 regression PASS",
+    "typecheck": "PASS including final default-collection paths",
+    "lint": "PASS for21 semantic files plus final deltas and both default-collection tests",
+    "finalTargetedUnit": {
+      "suites": 13,
+      "passed": 307,
+      "snapshotsUnchanged": 4
+    },
+    "staticExitCodes": [
+      {
+        "check": "format",
+        "exitCode": 0
+      },
+      {
+        "check": "counts",
+        "exitCode": 0
+      },
+      {
+        "check": "migration-count",
+        "exitCode": 0
+      },
+      {
+        "check": "readtax",
+        "exitCode": 0
+      },
+      {
+        "check": "codemap-generated",
+        "exitCode": 0
+      },
+      {
+        "check": "codemap-links",
+        "exitCode": 0
+      },
+      {
+        "check": "diff-whitespace",
+        "exitCode": 0
+      }
+    ],
+    "newTestsInDefaultCollection": {
+      "suites": 2,
+      "passed": 14,
+      "config": "test/jest-unit.config.ts without testRegex override",
+      "paths": [
+        "src/modules/activities/e4-policy-band-plan.spec.ts",
+        "src/modules/activities/e4-policy-band-lifecycle.spec.ts"
+      ]
+    }
+  },
+  "limitations": [
+    "No production, push, maximum or full CI run",
+    "No universal performance/capacity acceptance",
+    "Four separate policy roots do not prove mixed-policy full-function behavior in one call",
+    "Latest cleanup/deploy hardening was verified with offline failure injection; no additional business fixture rebuild"
+  ],
+  "localEvidenceDirectory": "tmp/e5-entry/policy-band146-approved-20261016",
+  "localArtifactSha256": {
+    "characterization.log": "32d087c3f9e5c6072925e350a8dd580b6f2155fad7f57640ef9edfbcfe019781",
+    "pin-unit-2.log": "42b13a39844e2c1040bb2ebbb8b20326cf415e465b9d4aa7355bad9ee3ad893a",
+    "semantic-unit.log": "96f17a7079c8a12a7a3135eaffcabcbb478e6e016faa9e0ad34dfd01a7a2ecf3",
+    "lifecycle-fault-unit.log": "8339ff1127a88c3416ea8bbec966e21e97a99e113d72cbfc8d931a2810a69de9",
+    "migration-e2e-result.json": "05f84d93d52f0c1f6344ff4a701ab2f08a2c2c1489a63de35de6687baae3ab4b",
+    "migration-e2e-result-2.json": "182bc6536daa3022a38015c5d767a1e9f924f1839ee4a147dbc341e4257ab2c8",
+    "migration-e2e-result-3.json": "1d569279289d6affc8b00a565300c2721ff330bf7da06fbcd1115cc43e72b45f",
+    "fresh-entry-result.json": "0752da11c838c42b94f26de2db3ae7b7868b4818666278beed88bc341f57fb6b",
+    "fresh-entry.log": "b36e42442111aa5e540c91175398e04502a8a783c05e01da150c0e6bfc4cc13a",
+    "restored146-archive-restore-verification.json": "d8f59e45b53f2ee5aa454d7e12b897bc798e7bde2e293542e55600da0803f57e",
+    "restored146-nonempty-upgrade.json": "adeba6cdaaecb06e57870e29603a399d2b44e4aad5167a3c75612ab23da8b24c",
+    "restored146-paired-samples.json": "f118a93f7f7a346f88788eca92b41cf7eee72cf477157c2d30db7573e07641c0",
+    "restored146-paired-notices.log": "89530e6a662a357f164205e1d57fe3274a5a18faff509f9a75e25c78ab91a742",
+    "restored146-worker-verification.json": "1416c209030891ed51fda75dc710472582ac33682a2518f4ff6c31a0cb35a677",
+    "restored146-commit-events.json": "b3c001c49c477a201b98aa4e139888e18934578408881e5bac729c8b3dacf7df",
+    "restored146-archive-restore-cleanup.json": "2d271199ca0250f85ee13d39fcbb315f30a50b91271950fd8ab58e9a23780c3e",
+    "final-four-zero.json": "2c5a6673511512b0a3f6a02c9e80fd0850762d2d448bce9c87d6d4cb4e30f436",
+    "approval-and-scope.json": "8b13a148096deda9cbf7209c5737c1ad50d72b0233b05a3d70aa7da9996e1ab7",
+    "final-unit-result.json": "4eb4e10569da5a86007892d9ee1a7526d475d5fbd7936023747b3213139bf783",
+    "final-unit.log": "21e575eca998970b5f39adbf723c77ac827d71e5d1829e1bf4b237350c1afb2e",
+    "typecheck-complete.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "lint-last.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "fault-unit-final.log": "2a46839ce8cdba3a17648275c9d2b95c6824def38f1bcdca80b8236178efc0f5",
+    "final-static-checks.json": "9e10a0d81d8646eb26ede9b20c124bdd9222f5edc41b6ab9840f074bbd1c755e",
+    "frozen-oracle-independent-comparison.json": "ce7ce643a8c1bf3ea0b3af7ae7d07360c541c26489a50ca46b690ea8829c6507",
+    "frozen-oracle-archive-restore-cleanup.json": "340e4e6d45d6c779ed93c28e6be11a389bc0655e065747acdca58c96dee6d528",
+    "frozen-oracle-run.log": "0383b361c58e939717f007b99cdc5c6e1637bcdfac44b527ed45f91cc62cae6f",
+    "default-collection-result.json": "5aaa6a6c852d44ccaa143290c24dba18b2745bc8cab54d800c738a600a00450f",
+    "typecheck-default-collection.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "lint-default-collection.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "default-collection.log": "1e223301724d4621aea75da5eca9d79d55d046fd87639a720975420899602ade"
+  },
+  "notDone": ["push", "maximum", "full CI", "production", "Trusted/human signoff"],
+  "crossModelReadOnlyReview": {
+    "agent": "/root/review_c_real_path",
+    "conclusion": "No remaining substantive blocker; prior lifecycle blockers closed",
+    "humanSignoff": false
+  },
+  "release5Remaining": {
+    "engineering": [
+      "Active correction/revocation/off-recovery and cross-day/multi-session/mixed-policy regression matrix on current candidate",
+      "Align enable/disable/recovery runbooks with the implemented active parser and existing compatibility behavior",
+      "Prepare finite current-SHA capacity and CI evidence collection with first-failure stopping and resource closure"
+    ],
+    "pendingSeparateApproval": [
+      "Push this local commit",
+      "Maximum and full required CI remain separately unapproved; prepare the finite current-SHA capacity plan before execution",
+      "Merge/Ready and production changes"
+    ],
+    "realBusinessAndHuman": [
+      "Applicable E2/E3 real policy/rule mapping and business acceptance; do not infer the31 held mappings from this synthetic entry",
+      "Real restricted-role/frontend and operational acceptance, exact deployed SHA/fleet, recovery exercise",
+      "SQL/Trusted/human decisions plus existing D8-OPS and production gates"
+    ],
+    "shortestOrder": [
+      "Finish current-candidate engineering matrix and runbook preparation",
+      "Obtain separate push/capacity/full-CI approval and validate the exact submitted SHA",
+      "Complete applicable real business/human acceptance",
+      "Obtain separate production approval and follow D8-OPS deployment/activation procedure"
+    ],
+    "doNotReuseOldBlockers": [
+      "The two derived readonly contract files were already closed at baseline4b4a4d73",
+      "Fresh E5 is nowPASS; old P2028 entries do not describe the current candidate",
+      "Maximum/current full CI areNOT_RUN, not a newly observed failure"
+    ]
+  },
+  "sourceFileSha256": {
+    "prisma/migrations/20261015221000_activity_contribution_policy_band_planning/migration.sql": "01191936bce3e35602fb38edc57b20543bdc8b6c62f2efa225a49d87bdfdaeb0",
+    "src/modules/activities/activity-batch-worker-native.spec.ts": "44101e1d08e8292557a95019b3e3cb3ea18779bf836b0b56af5a41e0c2467a81",
+    "src/modules/activities/activity-batch-worker.module.ts": "a5c485e03800cf2744bf6b7de48365bf1f310da9e3ec6896b5861bcc3024615b",
+    "src/modules/activities/activity-contribution-settlement.service.spec.ts": "5ea8d4215d70b56f9deabf2c73331241eb0212b6eefc07796e7b9101e4ce5be4",
+    "src/modules/activities/activity-contribution-settlement.service.ts": "de4fbcf2ae0f7858b4b89eab959f5e636ec8ed8bfa799bea973cdfd9b9495191",
+    "src/modules/activities/activity-publish-proposal-v2.service.spec.ts": "19b4c0602b041cd8e5c1cf1e03eb01be57ca90b375b7a3f96ba55c159d5145bb",
+    "src/modules/activities/activity-publish-proposal-v2.service.ts": "e0f98da5ef5846393c267c3885ea41d062e1093b428ad1406e7874bcd24c9fba",
+    "src/modules/activities/e4-maximum-stage-receipt.spec.ts": "5101adbe44c230b6773cb8ee523564280421aa09e6eaed4e5debdc6bac2d7b58",
+    "src/modules/activities/e4-policy-band-lifecycle.spec.ts": "03776aa88969101841f01d7f91cf2f591295e1ed67f89044efa85a820dcd71b1",
+    "src/modules/activities/e4-policy-band-plan.spec.ts": "4596d52a8f0c2a784a1da40f0578172671441aa4a1c19490d2b742111e65692a",
+    "src/modules/activities/e5-commit-probe.spec.ts": "6cdc1feb09291287016f6bace4f376c210cc2c022dda9a02ea6d82f8dd8129a3",
+    "test/diagnostics/e4-prepare-cost.diagnostic-spec.ts": "28eb39f386110d52ffab6d832c29fdafaaded401b626d5f8bf28465692dc5672",
+    "test/e2e/activity-os-r1-a3-template-definition-lifecycle-guards.e2e-spec.ts": "817a8dbd62252877ddb650008016508968f83562d11676337f718cf19e779512",
+    "test/e2e/activity-os-r1-a4-explicit-template-version-pointer.e2e-spec.ts": "58834208c818f0df9cec4217978d47c4f8eda48e850fde9253ef050c58d162d3",
+    "test/e2e/activity-os-r2-b1-place-schema-constraints.e2e-spec.ts": "a13de9887cd6f0f6e4364f98f61c1f7693529603bf4f801d232c64cc9cdeb5cd",
+    "test/e2e/activity-os-r2-b2-coordinate-projection-schema-constraints.e2e-spec.ts": "8e29f15881c9ccf32411d1498e6dba3626bca7bf6392765e7b0094d357f15f50",
+    "test/e2e/activity-os-r2-b3-form-blueprint-governance.e2e-spec.ts": "8a82fea119a74c12af51e23cbdf6367e5b2b783bd226afff3bc7ea536b37bbef",
+    "test/e2e/activity-os-r2-b6-creation-data-foundation.e2e-spec.ts": "32ba1c80d2e05bb4b1fa9ef37090754793bccaad0cab236065f08b5b55b6d6fb",
+    "test/e2e/activity-os-r3-c1-d2a-metric-command-receipt-migration.e2e-spec.ts": "7320381911bbaa62cc673bf89b3b93f27767039e5f8da38793eeae7a050edffc",
+    "test/e2e/activity-os-r3-c1-d2b-selection-template-migration.e2e-spec.ts": "6c5243b101015c14920af65b31094b26aeb2da40eac2c28fcb15649544df2b12",
+    "test/e2e/activity-os-r3-c1-metric-definition-set.e2e-spec.ts": "cf29c4230be923f497f0664b85d109fa79bb2b266d68126d6caeef2cdf2ae889",
+    "test/e2e/activity-os-r3-c2-outcome-value-revision.e2e-spec.ts": "4a9119c70f10d88a77a28e35517fa650eac5c8b2c92d9a3504181d240fc93c6d",
+    "test/e2e/activity-os-r4-d1-1-time-policy-migration.e2e-spec.ts": "45746fa816f0cfeb7940444a6d1ce99e7efe7a2f01432086f54b0aeca23994c2",
+    "test/e2e/activity-os-r4-d1-3-selection-migration.e2e-spec.ts": "c5a8eb8f735904824974f6c852537592fbdab30b1f14cec4508acfa264b9ea24",
+    "test/e2e/activity-os-r4-d3-time-allocation-revision-migration.e2e-spec.ts": "04201ca8167d7ce2e04924a443e7bd3642e6e0b0df0ff7fc7c976bc9e80df7f7",
+    "test/e2e/activity-os-r4-d4-time-bucket-migration.e2e-spec.ts": "b0f3b8a65f5012ffa54f94be059206c95ea3a56d09acbe01cba15fb4d251afbd",
+    "test/e2e/activity-os-r4-d6-time-ledger-migration.e2e-spec.ts": "b26134ca0ab1f7741aff711121e964a0a09e4f6016b3e965135dee6c7c443b79",
+    "test/e2e/activity-os-r4-d7-2-fact-correction-migration.e2e-spec.ts": "713d53534b09dbd57c31935f0376fd0c58c2eeaedda4ca51e413e00426febeca",
+    "test/e2e/activity-os-r4-d7-time-correction-migration.e2e-spec.ts": "8f246f2f828ef3d009b3650c75541110ec132c667e2c65d7d7a04d046768f06a",
+    "test/e2e/activity-os-r4-d8-proof-cutover-migration.e2e-spec.ts": "cd44ffc8eeded849abd45586ff72b5e783f4ecf55ab04a44600b2a888396eeed",
+    "test/e2e/activity-os-r5-e1-3-contribution-policy-selection-migration.e2e-spec.ts": "a4f44d30c9076940b49ade546e86f915b4f8cf95206608e1bbf3dcade4c0d48b",
+    "test/e2e/activity-os-r5-e1-contribution-policy-migration.e2e-spec.ts": "ddc3ee5ed61b653b5a68b73164572a9d831bf1cfa2cbc0dc8bca0b4ba76dfdc6",
+    "test/e2e/activity-os-r5-e2-contribution-rule-migration.e2e-spec.ts": "0c9a583c6cb9e7bb4986c0da45536e49a3ec4794b8e61d437c636fa9eaced363",
+    "test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts": "212d783affe76d14ecd60643a89803b764fc3a5678b528c62cd8ed420f8fcc9a",
+    "test/e2e/activity-os-r5-e3-contribution-shadow-source-proof.e2e-spec.ts": "66b61cb9d6c79250f568ede2cc56e03f7d0d7002b8c863673befba736703b118",
+    "test/e2e/activity-os-r5-e3-d3-signature-migration.e2e-spec.ts": "92bc47ea4ad3fdd80cfbe775f09f2ce512b1e7325d4f0d7ebd9548ac27802406",
+    "test/e2e/activity-os-r5-e4-contribution-settlement.e2e-spec.ts": "4285d78205ab48726173b228e43ca9669438b060327a06603cdb8e9e87e0e27e",
+    "test/e2e/activity-os-r5-e4-evaluation-join-key-migration.e2e-spec.ts": "c4253505892ba439bad4e0fa51ba42162b924347df8929bacac83e0747acd08f",
+    "test/e2e/activity-os-r5-e4-policy-band-plan-migration.e2e-spec.ts": "ec29d63ea24d58e73aae6753141fd2bda8aa538fd308a83bde6747e742389b91",
+    "test/e2e/activity-os-r5-e5-active-entry.e2e-spec.ts": "7e34ffbdca85c66a1f89297bf702be2dc29a09fd2ab7f1f0fcd37cde58536ad9",
+    "test/e2e/activity-v11-batch4-allocation-candidate-position-anchor-migration.e2e-spec.ts": "f3c8d1d1f6a03e395605f1e6591f212f991d86bfec2c4ad76f412819285b2cf0",
+    "test/e2e/activity-v11-batch4-allocation-command-replay-migration.e2e-spec.ts": "eb67ba52b65c03b8f86d789ead3425c77f893eb39be50d73f12e9c0ffb11de52",
+    "test/e2e/activity-v11-batch4-allocation-determinism-migration.e2e-spec.ts": "706132128e3bde6e119c54141f18fa8253a06c27214c28246b2458f6aaed78d9",
+    "test/e2e/activity-v11-batch4-allocation-mode-migration.e2e-spec.ts": "fe143f7a3b5fa5ee01172e59d2b698f832edea2ba4c7c66749c3a1885026b510",
+    "test/e2e/activity-v11-batch4-qualification-contract-migration.e2e-spec.ts": "39426f20d35ce86f19f412caec9d4fcb22da552435b0fca1d08431cfd266032f",
+    "test/e2e/insurance-evidence-registration-revision-migration.e2e-spec.ts": "96e846b36c87fe8304484b0e45719751e42d6da6432951fcdf9a089b98ade5ff",
+    "test/helpers/activity-contribution-policy.fixture.ts": "da837f3b57f2d74181630a9ca7a4641751c910becb0e116083b20adf28793998",
+    "test/helpers/e4-frozen137-first-review-catalog.ts": "dc13c594ae32290eb29a3a6019b2c187e7fe8164c3b0ac07253bfd3f19e9e17d",
+    "test/helpers/e4-maximum-stage-receipt.ts": "bf09514c7eba0585e71df57cf4451985e600c0c005c9daed033eb5980b480a5e",
+    "test/helpers/e4-migration-prefix.spec.ts": "72cec79fee331cb898e8a76278ba1f2801af3b74bda420622b969236a339816a",
+    "test/helpers/e4-migration-prefix.ts": "47bc2fd6cf566f749e71d3eee6c3bcc9d1af81951958f0948daebb6632de2303",
+    "test/helpers/e4-policy-band-plan.fixture.ts": "4ae1f90a2297adffb3c8f65b4bca024c47e5e0b5dfa27d9f45c7e03d8188455f",
+    "test/helpers/e5-commit-probe.ts": "37b67076e80bc194e77890467e8372cab200eb3487800ca397f58856c3767807"
+  },
+  "commitAuthorIdentity": "Codex (AI agent) <codex@local.invalid>",
+  "authorizedChangedPathCount": 57
+}

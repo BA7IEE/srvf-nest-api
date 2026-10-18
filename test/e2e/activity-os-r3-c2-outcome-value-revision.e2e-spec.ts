@@ -10,6 +10,8 @@ import {
 } from '../setup/test-db';
 import { deriveWorkerTestDbName } from '../setup/worktree-db';
 
+const CURRENT_MIGRATION_COUNT = 147;
+
 const WORKER = process.env.JEST_WORKER_ID ?? '1';
 const database = () => deriveWorkerTestDbName(WORKER);
 const hash = 'a'.repeat(64);
@@ -188,7 +190,7 @@ describe('C2 D1 outcome revision database constraints', () => {
       sql(
         'SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL',
       ),
-    ).toBe('136');
+    ).toBe(String(CURRENT_MIGRATION_COUNT));
   });
   it('accepts same-chain values and evidence, preserving the predecessor', () => {
     sql(value());

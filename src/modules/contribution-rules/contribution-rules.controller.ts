@@ -92,6 +92,7 @@ export class ContributionRulesController {
     BizCode.CONTRIBUTION_RULE_POINTS_INVALID,
     BizCode.CONTRIBUTION_RULE_ACTIVITY_TYPE_INVALID,
     BizCode.CONTRIBUTION_RULE_ROLE_CODE_INVALID,
+    BizCode.CONTRIBUTION_RULE_READONLY,
   )
   create(
     @Body() dto: CreateContributionRuleDto,
@@ -132,6 +133,7 @@ export class ContributionRulesController {
     BizCode.CONTRIBUTION_RULE_NOT_FOUND,
     BizCode.CONTRIBUTION_RULE_ACTIVE_DUPLICATE,
     BizCode.CONTRIBUTION_RULE_POINTS_INVALID,
+    BizCode.CONTRIBUTION_RULE_READONLY,
   )
   update(
     @Param() params: IdParamDto,
@@ -155,6 +157,7 @@ export class ContributionRulesController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.CONTRIBUTION_RULE_NOT_FOUND,
+    BizCode.CONTRIBUTION_RULE_READONLY,
   )
   softDelete(
     @Param() params: IdParamDto,

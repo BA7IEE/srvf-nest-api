@@ -14,6 +14,8 @@ import * as path from 'node:path';
 import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
 
+const CURRENT_MIGRATION_COUNT = 147;
+
 const MIGRATION = '20260910100000_activity_os_r4_d1_time_policy_foundation';
 const tables = [
   'User',
@@ -121,7 +123,7 @@ describe('D1-1 117 to 118 migration', () => {
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    expect(names).toHaveLength(136);
+    expect(names).toHaveLength(CURRENT_MIGRATION_COUNT);
     expect(names[117]).toBe(MIGRATION);
     const records = sql(
       'SELECT migration_name || chr(9) || checksum FROM "_prisma_migrations" WHERE finished_at IS NOT NULL ORDER BY migration_name',

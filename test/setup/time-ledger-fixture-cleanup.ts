@@ -7,6 +7,8 @@ import {
 import { deriveTestDbName } from './worktree-db';
 
 const TRUNCATE_TRIGGERS = [
+  { table: 'ParticipantContributionEvaluation', trigger: 'e4_evaluation_no_truncate' },
+  { table: 'ActivitySettlementContributionRevision', trigger: 'e4_revision_no_truncate' },
   { table: 'ContributionShadowWindowRegistrationReceipt', trigger: 'cswr_no_truncate' },
   { table: 'ContributionShadowDispositionApprovalReceipt', trigger: 'csda_no_truncate' },
   { table: 'ContributionShadowMappingApproval', trigger: 'csma_no_truncate' },
@@ -55,6 +57,10 @@ export function timeLedgerFixtureTriggerSql(expectedDatabase = deriveTestDbName(
       DECLARE item record; states jsonb := '[]'::jsonb;
       BEGIN
         IF current_database() <> ${dbLiteral} THEN RAISE EXCEPTION 'Wrong fixture database'; END IF;
+        IF (to_regclass('public."ParticipantContributionEvaluation"') IS NULL) <>
+           (to_regclass('public."ActivitySettlementContributionRevision"') IS NULL) THEN
+          RAISE EXCEPTION 'Incomplete native contribution fixture tables';
+        END IF;
         IF (to_regclass('public."ContributionShadowWindowRegistrationReceipt"') IS NULL) <>
            (to_regclass('public."ContributionShadowDispositionApprovalReceipt"') IS NULL) THEN
           RAISE EXCEPTION 'Incomplete shadow reconciliation fixture tables';
@@ -78,6 +84,9 @@ export function timeLedgerFixtureTriggerSql(expectedDatabase = deriveTestDbName(
           states := states || jsonb_build_array(jsonb_build_object('table',item.tbl,'trigger',item.trg,'enabled',item.enabled));
           EXECUTE format('ALTER TABLE %I DISABLE TRIGGER %I',item.tbl,item.trg);
         END LOOP;
+        IF to_regclass('public."ActivitySettlementContributionRevision"') IS NOT NULL THEN
+          EXECUTE 'TRUNCATE TABLE "ParticipantContributionEvaluation", "ActivitySettlementContributionRevision" RESTART IDENTITY';
+        END IF;
         IF to_regclass('public."ParticipationTimeCutoverBinding"') IS NOT NULL THEN
           IF to_regclass('public."ActivityTimeCutoverReceipt"') IS NULL THEN
             RAISE EXCEPTION 'Incomplete cutover fixture tables';
@@ -121,6 +130,8 @@ export function timeLedgerFixtureTriggerSql(expectedDatabase = deriveTestDbName(
         FOR item IN SELECT value FROM jsonb_array_elements(current_setting('srvf.d6_fixture_trigger_states')::jsonb)
         LOOP
           IF NOT ((item->>'table'='ContributionShadowObservationWindow' AND item->>'trigger'='csow_no_truncate') OR
+                  (item->>'table'='ParticipantContributionEvaluation' AND item->>'trigger'='e4_evaluation_no_truncate') OR
+                  (item->>'table'='ActivitySettlementContributionRevision' AND item->>'trigger'='e4_revision_no_truncate') OR
                   (item->>'table'='ContributionShadowWindowRegistrationReceipt' AND item->>'trigger'='cswr_no_truncate') OR
                   (item->>'table'='ContributionShadowDispositionApprovalReceipt' AND item->>'trigger'='csda_no_truncate') OR
                   (item->>'table'='ContributionShadowMappingApproval' AND item->>'trigger'='csma_no_truncate') OR
@@ -154,6 +165,11 @@ export function timeLedgerFixtureTriggerSql(expectedDatabase = deriveTestDbName(
           clause := CASE item->>'enabled' WHEN 'O' THEN 'ENABLE' WHEN 'D' THEN 'DISABLE' WHEN 'R' THEN 'ENABLE REPLICA' WHEN 'A' THEN 'ENABLE ALWAYS' ELSE NULL END;
           IF clause IS NULL THEN RAISE EXCEPTION 'Unknown fixture trigger state'; END IF;
           EXECUTE format('ALTER TABLE %I %s TRIGGER %I',item->>'table',clause,item->>'trigger');
+          IF NOT EXISTS (SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
+            JOIN pg_namespace n ON n.oid=c.relnamespace AND n.nspname='public'
+            WHERE c.relname=item->>'table' AND t.tgname=item->>'trigger' AND t.tgenabled::text=item->>'enabled') THEN
+            RAISE EXCEPTION 'Fixture trigger restoration failed';
+          END IF;
         END LOOP;
       END $d6_fixture$;`,
   };
@@ -188,6 +204,15 @@ export async function withTimeLedgerFixtureCleanup<T>(
       'ContributionShadowDispositionApprovalReceipt',
     ].includes(table),
   );
+  const nativeTables = changed.filter(({ table }) =>
+    ['ParticipantContributionEvaluation', 'ActivitySettlementContributionRevision'].includes(table),
+  );
+  if (nativeTables.length !== 0) {
+    if (nativeTables.length !== 2) throw new Error('Incomplete native contribution fixture tables');
+    await tx.$executeRawUnsafe(
+      'TRUNCATE TABLE "ParticipantContributionEvaluation", "ActivitySettlementContributionRevision" RESTART IDENTITY',
+    );
+  }
   if (reconciliationTables.length !== 0 && reconciliationTables.length !== 2) {
     throw new Error('Incomplete shadow reconciliation fixture tables');
   }
@@ -288,6 +313,13 @@ export async function withTimeLedgerFixtureCleanup<T>(
             ? 'ENABLE REPLICA'
             : 'ENABLE';
     await tx.$executeRawUnsafe(`ALTER TABLE "${table}" ${clause} TRIGGER "${trigger}"`);
+    const restored = await tx.$queryRaw<{ enabled: string }[]>`
+      SELECT t.tgenabled::text AS enabled FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
+      JOIN pg_namespace n ON n.oid=c.relnamespace AND n.nspname='public'
+      WHERE c.relname=${table} AND t.tgname=${trigger} AND NOT t.tgisinternal
+    `;
+    if (restored.length !== 1 || restored[0].enabled !== enabled)
+      throw new Error('Fixture trigger restoration failed');
   }
   // A thrown callback must escape to the owning transaction; rollback restores ALTER TABLE too.
   return result;

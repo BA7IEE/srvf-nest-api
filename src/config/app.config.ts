@@ -467,6 +467,24 @@ export interface ActivityControlPlaneConfig {
   mode: ActivityControlPlaneMode;
 }
 
+export type ContributionSettlementMode = 'off' | 'fixture' | 'active';
+
+/** Explicit E5 mode support; default remains off. Deployment/cutover is separately approved. */
+export function parseContributionSettlementMode(
+  raw: string | undefined,
+  env: AppEnv,
+): ContributionSettlementMode {
+  if (raw === undefined || raw === 'off') return 'off';
+  if (raw === 'active') return 'active';
+  if (raw !== 'fixture') {
+    throw new Error('ACTIVITY_E4_CONTRIBUTION_SETTLEMENT_MODE 必须严格为 off、fixture 或 active');
+  }
+  if (env !== 'test') {
+    throw new Error('ACTIVITY_E4_CONTRIBUTION_SETTLEMENT_MODE=fixture 仅允许 APP_ENV=test');
+  }
+  return 'fixture';
+}
+
 export type ContributionShadowMode = 'off' | 'shadow';
 
 export function parseContributionShadowMode(raw: string | undefined): ContributionShadowMode {
@@ -774,6 +792,7 @@ export interface AppConfig {
   activityOsControlPlane: ActivityControlPlaneConfig;
   // Legacy typed test fixtures omit this additive key; missing is always off.
   contributionShadowMode?: ContributionShadowMode;
+  contributionSettlementMode?: ContributionSettlementMode;
 }
 
 export default registerAs('app', (): AppConfig => {
@@ -1082,6 +1101,10 @@ export default registerAs('app', (): AppConfig => {
   const contributionShadowMode = parseContributionShadowMode(
     process.env.ACTIVITY_E3_CONTRIBUTION_SHADOW_MODE,
   );
+  const contributionSettlementMode = parseContributionSettlementMode(
+    process.env.ACTIVITY_E4_CONTRIBUTION_SETTLEMENT_MODE,
+    env,
+  );
 
   return {
     env,
@@ -1115,5 +1138,6 @@ export default registerAs('app', (): AppConfig => {
     activityV11Workflow,
     activityOsControlPlane,
     contributionShadowMode,
+    contributionSettlementMode,
   };
 });

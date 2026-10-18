@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -14,6 +14,11 @@ import {
   type ProjectedSegment,
   type ProjectorPunchEvent,
 } from './settlement-segment-projector';
+import {
+  ActivityContributionSettlementService,
+  frozenContributionRegime,
+} from './activity-contribution-settlement.service';
+import type { ContributionRegimeCode } from './activity-contribution-settlement-policy';
 
 // ===== 活动改造 v1.1 第 2 批第二刀:结算草稿生成(合同 §5.9)=====
 //
@@ -253,6 +258,7 @@ export class SettlementDraftService {
     private readonly audit: SettlementDraftAuditRecorder,
     // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
+    @Optional() private readonly contributions?: ActivityContributionSettlementService,
   ) {}
 
   // ===== ① Activity FOR UPDATE(§10.1 锁序第一层)=====
@@ -413,9 +419,16 @@ export class SettlementDraftService {
           version: run.currentDraftVersion,
           statusCode: 'draft',
         },
-        select: { id: true, version: true },
+        select: { id: true, version: true, contributionRegimeCode: true },
       });
       if (draft === null) throw new BizException(BizCode.SETTLEMENT_SUBMIT_DRAFT_MISSING);
+      if (frozenContributionRegime(draft.contributionRegimeCode) === 'policy_v1') {
+        if (!this.contributions)
+          throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+        this.contributions.assertNativeWriteAllowed();
+        if (input.recognizedContributionPoints !== 0)
+          throw new BizException(BizCode.CONTRIBUTION_RULE_POINTS_INVALID);
+      }
 
       // 身份必须属于这场活动且在当前结算人口内；用 Activity_NOT_FOUND 隐去跨活动
       // identityId，避免负责人借本端点探测其它活动的参与身份。
@@ -845,6 +858,7 @@ export class SettlementDraftService {
     sessionParticipationCount: number;
     serviceSegmentCount: number;
     items: SettlementDraftItem[];
+    contributionRegimeCode?: ContributionRegimeCode;
   }): string {
     // canonical:字段顺序写死在字面量里,items 已按 identityId 稳定排序 ⇒
     // 同样的事实必然得到同样的 hash(§5.10 / §5.11 要拿它跨阶段比对)。
@@ -870,7 +884,18 @@ export class SettlementDraftService {
         segmentCount: item.segmentCount,
       })),
     });
-    return createHash('sha256').update(canonical, 'utf8').digest('hex');
+    const original = createHash('sha256').update(canonical, 'utf8').digest('hex');
+    if (input.contributionRegimeCode !== 'policy_v1') return original;
+    return createHash('sha256')
+      .update(
+        JSON.stringify({
+          domain: 'activity-contribution-working-draft-v1',
+          original,
+          contributionRegimeCode: 'policy_v1',
+        }),
+        'utf8',
+      )
+      .digest('hex');
   }
 
   async generate(
@@ -906,6 +931,29 @@ export class SettlementDraftService {
     )
       throw new BizException(BizCode.SETTLEMENT_DRAFT_EVIDENCE_SEAL_STALE);
     const run = await this.lockOrCreateRun(tx, activityId);
+    const existingDraft = await tx.attendanceSettlementVersion.findFirst({
+      where: { settlementRunId: run.id, statusCode: 'draft' },
+      orderBy: { version: 'desc' },
+      select: { id: true, version: true, contentHash: true, contributionRegimeCode: true },
+    });
+    const history =
+      existingDraft ??
+      (await tx.attendanceSettlementVersion.findFirst({
+        where: { settlementRunId: run.id },
+        orderBy: { version: 'desc' },
+        select: { contributionRegimeCode: true },
+      }));
+    const previousRegime =
+      history === null ? null : frozenContributionRegime(history.contributionRegimeCode);
+    const regime = this.contributions?.draftRegime(previousRegime) ?? previousRegime ?? 'legacy';
+    if (regime === 'policy_v1' && !this.contributions)
+      throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+    if (regime === 'policy_v1')
+      await this.contributions?.assertNewNativeActivityInTx(
+        tx,
+        activityId,
+        activity.workflowRevision,
+      );
 
     const population = await this.readPopulation(
       tx,
@@ -969,7 +1017,8 @@ export class SettlementDraftService {
       );
     }
 
-    await this.applyContributionPoints(tx, items, roleByIdentityId, activity.activityTypeCode);
+    if (regime === 'legacy')
+      await this.applyContributionPoints(tx, items, roleByIdentityId, activity.activityTypeCode);
 
     if (
       batchProof &&
@@ -977,7 +1026,16 @@ export class SettlementDraftService {
         SETTLEMENT_DRAFT_BATCH_LIMITS.segments
     )
       throw new BizException(BizCode.SETTLEMENT_DRAFT_POPULATION_TOO_LARGE);
+    if (regime === 'policy_v1')
+      await this.contributions?.assertNewNativeDraftSizeInTx(
+        tx,
+        activityId,
+        identityIds,
+        [...projectionByIdentity.values()].flat(),
+      );
     const segmentStats = await this.persistSegments(tx, identityIds, projectionByIdentity);
+    if (regime === 'policy_v1')
+      await this.contributions?.assertNewNativeActivityInTx(tx, activityId);
 
     const personCount = new Set(population.map((row) => row.memberId)).size;
     const sessionParticipationCount = population.length;
@@ -989,6 +1047,7 @@ export class SettlementDraftService {
       sessionParticipationCount,
       serviceSegmentCount: segmentStats.currentCount,
       items,
+      contributionRegimeCode: regime,
     });
 
     // ===== working draft 版本:内容寻址,**零删除** =====
@@ -1006,12 +1065,6 @@ export class SettlementDraftService {
     //    一个内部自洽的快照,读面按 `statusCode='draft'` 一刀切干净。
     //
     // 版本号只在**内容真的变了**时才前进,所以它不会退化成"生成次数"。
-    const existingDraft = await tx.attendanceSettlementVersion.findFirst({
-      where: { settlementRunId: run.id, statusCode: 'draft' },
-      orderBy: { version: 'desc' },
-      select: { id: true, version: true, contentHash: true },
-    });
-
     let settlementVersionId: string;
     let settlementVersion: number;
     if (existingDraft !== null && existingDraft.contentHash === contentHash) {
@@ -1043,6 +1096,7 @@ export class SettlementDraftService {
           serviceSegmentCount: segmentStats.currentCount,
           createdByUserId: currentUser.id,
           statusCode: 'draft',
+          ...(regime === 'policy_v1' ? { contributionRegimeCode: 'policy_v1' } : {}),
         },
         select: { id: true },
       });

@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import {
+  ActivityContributionSettlementService,
+  frozenContributionRegime,
+} from './activity-contribution-settlement.service';
 import { ParticipationTimeLedgerService } from './participation-time-ledger.service';
 import {
   ParticipationTimeCorrectionService,
@@ -38,6 +42,8 @@ import {
   decimalToHundredths,
   fromHundredths,
   splitRecognizedIntoDays,
+  splitNativeRecognizedIntoDays,
+  type NativeContributionDay,
   type LedgerServiceSpan,
 } from './ledger-day-allocation';
 import { LedgerPostingService, type LedgerCommitResult } from './ledger-posting.service';
@@ -360,6 +366,7 @@ interface VersionRow {
   sessionParticipationCount: number;
   serviceSegmentCount: number;
   statusCode: string;
+  contributionRegimeCode?: string;
 }
 
 interface BaseResultRow {
@@ -443,6 +450,7 @@ export class CorrectionApplicationService {
     private readonly humanAccess: ActivityTimeCorrectionAccessService,
     private readonly rbac: RbacService,
     private readonly identities: AppIdentityResolver,
+    @Optional() private readonly contributions?: ActivityContributionSettlementService,
   ) {}
 
   // =========================================================================
@@ -514,6 +522,8 @@ export class CorrectionApplicationService {
       if (baseVersion === null) {
         throw new BizException(BizCode.CORRECTION_SUBMIT_BASE_VERSION_INVALID);
       }
+      this.assertContributionCorrectionWrite(baseVersion, changeSet);
+      await this.assertContributionRequestedPoints(tx, baseVersion, changeSet);
       const activeClosure = await this.readActiveClosure(tx, input.activityId);
 
       // 变更集引用的每个 identity 都必须**属于本活动且在基础版本里有结果行** ——
@@ -682,6 +692,8 @@ export class CorrectionApplicationService {
       if (baseVersion === null) {
         throw new BizException(BizCode.CORRECTION_SUBMIT_BASE_VERSION_INVALID);
       }
+      this.assertContributionCorrectionWrite(baseVersion, changeSet);
+      await this.assertContributionRequestedPoints(tx, baseVersion, changeSet);
       const activeClosure = await this.readActiveClosure(tx, input.activityId);
       await this.assertChangeSetResolvable(tx, baseVersion.id, input.activityId, changeSet);
       if (changeSet.timeCorrection) {
@@ -798,6 +810,10 @@ export class CorrectionApplicationService {
       if (request.statusCode !== 'pending') {
         throw new BizException(BizCode.CORRECTION_REVIEW_STATUS_INVALID);
       }
+      this.assertContributionCorrectionWrite(
+        await this.readVersionById(tx, request.baseSettlementVersionId),
+        parseCorrectionChangeSet(request.requestedChangeJson),
+      );
 
       // ⭐ §3.25 末句:基础版本变化 ⇒ 置 voided 并要求新申请(**不允许照旧批准**)。
       //    刻意排在人员隔离**之前**:版本都换了,谁来审都没有意义。
@@ -910,7 +926,10 @@ export class CorrectionApplicationService {
 
           // 幂等:已有 `preparing` / `committed` 的应用 ⇒ 原样返回(不再准备第二遍)。
           const changeSet = parseCorrectionChangeSet(request.requestedChangeJson);
-          if (!changeSet.timeCorrection) {
+          const baseVersion = await this.readVersionById(tx, request.baseSettlementVersionId);
+          const native =
+            frozenContributionRegime(baseVersion.contributionRegimeCode) === 'policy_v1';
+          if (!changeSet.timeCorrection && !native) {
             await this.timeLedger.assertLegacyCorrection(tx, request.baseSettlementVersionId);
           }
           const resumable = await this.findResumableApplication(
@@ -936,6 +955,14 @@ export class CorrectionApplicationService {
             }
             return resumable;
           }
+          this.assertContributionCorrectionWrite(baseVersion, changeSet);
+          if (native)
+            await this.contributions?.assertNewNativeCorrectionInTx(
+              tx,
+              anchor.activityId,
+              baseVersion.id,
+              changeSet,
+            );
 
           if (request.statusCode !== 'approved') {
             throw new BizException(BizCode.CORRECTION_APPLY_STATUS_INVALID);
@@ -946,8 +973,27 @@ export class CorrectionApplicationService {
           const drift = await this.detectBaseDrift(tx, anchor.activityId, run, request);
           if (drift !== null) throw new CorrectionBaseDriftSignal(request.id);
 
-          const baseVersion = await this.readVersionById(tx, request.baseSettlementVersionId);
           const baseResults = await this.readBaseResults(tx, baseVersion.id);
+          if (native) {
+            const byIdentity = new Map(
+              baseResults.map((row) => [row.participationIdentityId, row]),
+            );
+            for (const change of changeSet.results) {
+              const prior = byIdentity.get(change.participationIdentityId);
+              if (
+                prior?.recognizedContributionPoints.toFixed(2) !==
+                change.recognizedContributionPoints.toFixed(2)
+              )
+                throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+              if (
+                !changeSet.timeCorrection &&
+                (prior.resultCode !== change.resultCode ||
+                  prior.recognizedServiceHours.toFixed(2) !==
+                    change.recognizedServiceHours.toFixed(2))
+              )
+                throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+            }
+          }
 
           // ===== §5.14 ③ 新的 SettlementVersion + Result / Segment revisions =====
           const resolved = resolveNewResults(baseResults, changeSet);
@@ -1053,6 +1099,62 @@ export class CorrectionApplicationService {
             }
           }
 
+          let nativeDays: Map<string, NativeContributionDay[]> | undefined;
+          if (native) {
+            if (application === null) {
+              application = await this.correctionWrites.createApplication(tx, {
+                correctionRequestId: request.id,
+                newSettlementVersionId: newVersion.id,
+                newResultRevisionIds: resolved.map((row) => row.newResultRevisionId),
+                newPostingBatchId: batch.id,
+              });
+              pendingSegmentRevisionCount = await this.preparePendingSegments(
+                tx,
+                application.id,
+                anchor.activityId,
+                changeSet,
+              );
+            }
+            if (!application || !this.contributions)
+              throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+            const contribution = await this.contributions.prepareCorrectionInTx(
+              tx,
+              {
+                applicationId: application.id,
+                activityId: anchor.activityId,
+                settlementRunId: run.id,
+                settlementVersionId: newVersion.id,
+                postingBatchId: batch.id,
+                baseSettlementVersionId: baseVersion.id,
+                timeChanged: changeSet.timeCorrection !== undefined,
+              },
+              { operationKey: input.operationKey, requestHash: frozenRequestHash },
+              async () =>
+                options?.human
+                  ? await this.humanAccess.authorizePrepare(
+                      tx,
+                      currentUser,
+                      anchor.activityId,
+                      baseVersion.id,
+                    )
+                  : await this.authorizeApplication(tx, currentUser),
+            );
+            await this.contributions.freezeCorrectionResultsInTx(tx, contribution);
+            const totals = await this.contributions.contributionTotalsInTx(tx, contribution.id);
+            for (const row of resolved) {
+              row.calculatedContributionPoints =
+                row.resultCode === 'present'
+                  ? (totals.get(row.participationIdentityId) ?? '0.00')
+                  : '0.00';
+              row.recognizedContributionPoints = Number(row.calculatedContributionPoints);
+            }
+            nativeDays = await this.contributions.ledgerDaysInTx(
+              tx,
+              newVersion.id,
+              resolved.map((row) => row.participationIdentityId),
+            );
+          }
+
           // 冲回集 = 基础版本下**已生效**的全部 credit 分录。
           const originals = await this.readReversibleOriginals(tx, baseVersion.id);
           // 补记集 = 新结果行按北京日拆分 + 日上限分配(基线**扣掉本次冲回**之后)。
@@ -1061,6 +1163,7 @@ export class CorrectionApplicationService {
             resolved,
             changeSet,
             originals,
+            nativeDays,
           );
 
           // 🔴 §5.14 ④ 的**顺序**:先 reversal claims + 负数分录,再 replacement 分录。
@@ -1218,7 +1321,11 @@ export class CorrectionApplicationService {
       }
       this.assertHumanExpectedBaseVersion(options, request);
       const changeSet = parseCorrectionChangeSet(request.requestedChangeJson);
-      if (!changeSet.timeCorrection) {
+      const baseVersion = await this.readVersionById(tx, request.baseSettlementVersionId);
+      if (
+        !changeSet.timeCorrection &&
+        frozenContributionRegime(baseVersion.contributionRegimeCode) === 'legacy'
+      ) {
         await this.timeLedger.assertLegacyCorrection(tx, request.baseSettlementVersionId);
       }
       const lockedApplication = await this.lockApplication(tx, request.id, changeSet);
@@ -1264,6 +1371,7 @@ export class CorrectionApplicationService {
       if (request.statusCode !== 'applying' || application.statusCode !== 'preparing') {
         throw new BizException(BizCode.CORRECTION_APPLY_STATUS_INVALID);
       }
+      this.assertContributionCorrectionWrite(baseVersion, changeSet);
 
       // ===== §5.14 ⑤ ⭐ 第五刀的 commit 协议,**在本事务内逐字复用** =====
       //
@@ -1472,6 +1580,71 @@ export class CorrectionApplicationService {
 
   // ===== 读 ================================================================
 
+  private async assertContributionRequestedPoints(
+    tx: PrismaTx,
+    version: VersionRow,
+    changeSet: CorrectionChangeSet,
+  ): Promise<void> {
+    if (
+      frozenContributionRegime(version.contributionRegimeCode) === 'legacy' ||
+      changeSet.results.length === 0
+    )
+      return;
+    const rows = await tx.participantSettlementResultRevision.findMany({
+      where: {
+        settlementVersionId: version.id,
+        participationIdentityId: {
+          in: changeSet.results.map((row) => row.participationIdentityId),
+        },
+      },
+      select: {
+        participationIdentityId: true,
+        recognizedContributionPoints: true,
+        resultCode: true,
+        recognizedServiceHours: true,
+      },
+    });
+    const points = new Map(
+      rows.map((row) => [row.participationIdentityId, row.recognizedContributionPoints.toFixed(2)]),
+    );
+    if (
+      changeSet.results.some(
+        (row) =>
+          points.get(row.participationIdentityId) !== row.recognizedContributionPoints.toFixed(2),
+      )
+    )
+      throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+    const sourceByIdentity = new Map(rows.map((row) => [row.participationIdentityId, row]));
+    if (
+      !changeSet.timeCorrection &&
+      changeSet.results.some((row) => {
+        const previous = sourceByIdentity.get(row.participationIdentityId);
+        return (
+          previous?.resultCode !== row.resultCode ||
+          previous.recognizedServiceHours.toFixed(2) !== row.recognizedServiceHours.toFixed(2)
+        );
+      })
+    )
+      throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+  }
+
+  private assertContributionCorrectionWrite(
+    version: VersionRow,
+    changeSet: CorrectionChangeSet,
+  ): boolean {
+    if (frozenContributionRegime(version.contributionRegimeCode) === 'legacy') return false;
+    if (!this.contributions)
+      throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+    this.contributions.assertNativeWriteAllowed();
+    if (
+      (changeSet.timeCorrection && changeSet.schemaVersion !== 3) ||
+      (!changeSet.timeCorrection &&
+        (changeSet.segments.length > 0 || (changeSet.allocations?.length ?? 0) > 0))
+    )
+      throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+    return true;
+  }
+
   /** 锁序要求先锁 Activity,而 activityId 只能从申请行读出来。这一次读**不加锁、不判定**。 */
   private async readRequestAnchor(correctionRequestId: string): Promise<{ activityId: string }> {
     const row = await this.prisma.attendanceCorrectionRequest.findUnique({
@@ -1487,7 +1660,7 @@ export class CorrectionApplicationService {
     const rows = await tx.$queryRaw<VersionRow[]>`
       SELECT id, version, "evidenceSealId", "evidenceRevision", "populationRevision",
              "workflowRevision", "contentHash", "personCount", "sessionParticipationCount",
-             "serviceSegmentCount", "statusCode"
+             "serviceSegmentCount", "statusCode", "contributionRegimeCode"
       FROM "AttendanceSettlementVersion"
       WHERE "settlementRunId" = ${run.id} AND version = ${run.currentPostedVersion}
     `;
@@ -1498,7 +1671,7 @@ export class CorrectionApplicationService {
     const rows = await tx.$queryRaw<VersionRow[]>`
       SELECT id, version, "evidenceSealId", "evidenceRevision", "populationRevision",
              "workflowRevision", "contentHash", "personCount", "sessionParticipationCount",
-             "serviceSegmentCount", "statusCode"
+             "serviceSegmentCount", "statusCode", "contributionRegimeCode"
       FROM "AttendanceSettlementVersion"
       WHERE id = ${settlementVersionId}
     `;
@@ -1926,6 +2099,9 @@ export class CorrectionApplicationService {
         // 不再走一遍 §5.11 的两审(那是**提交**路径的审核,不是更正路径的)。
         // ⚠️ 这是与合同的显式偏离候选,已在报告列明。
         statusCode: 'approved',
+        ...(frozenContributionRegime(args.baseVersion.contributionRegimeCode) === 'policy_v1'
+          ? { contributionRegimeCode: 'policy_v1' }
+          : {}),
         priorVersionId: args.baseVersion.id,
         submittedAt: new Date(),
       },
@@ -2606,6 +2782,7 @@ export class CorrectionApplicationService {
     resolved: readonly ResolvedResult[],
     changeSet: CorrectionChangeSet,
     originals: readonly OriginalEntryRow[],
+    nativeDays?: Map<string, NativeContributionDay[]>,
   ): Promise<ReplacementDayRow[]> {
     const spansByIdentity = await this.readWeightBearingSpans(
       tx,
@@ -2615,12 +2792,18 @@ export class CorrectionApplicationService {
 
     const rows: ReplacementDayRow[] = [];
     for (const result of resolved) {
-      const outcome = splitRecognizedIntoDays({
+      const input = {
         spans: spansByIdentity.get(result.participationIdentityId) ?? [],
         recognizedServiceHours: result.recognizedServiceHours,
         recognizedContributionPoints: result.recognizedContributionPoints,
         stableOrderKey: `${result.sessionId}:${result.participationIdentityId}`,
-      });
+      };
+      const outcome = nativeDays
+        ? splitNativeRecognizedIntoDays({
+            ...input,
+            contributionDays: nativeDays.get(result.participationIdentityId) ?? [],
+          })
+        : splitRecognizedIntoDays(input);
       // 有认定值却一天都归不上 ⇒ 拒绝。**不猜日期**(与第五刀同一处置,复用同码)。
       if (outcome.kind === 'no_service_day') {
         throw new BizException(BizCode.LEDGER_PREPARE_DAY_SPLIT_UNRESOLVED);

@@ -1,0 +1,1188 @@
+name: R5 E4 isolated validation
+# Approved finite budget diagnostics: six isolated cases, one execution per case.
+
+# Only a newly approved candidate commit can consume this one-shot queue.
+# Current143 checksum/body pin and complete frozen oracles are checked before measurement.
+# Catalog identity uses the actual (text,boolean) signature, including its defaulted argument.
+# Ordinary fixtures use the synchronous <=500 path; oracle errors retain exact original budgets.
+# Cost-only candidates execute maximum once and probe the failed immutable canonical comparison.
+# JIT candidates compare the same frozen query in fixed ON/OFF then OFF/ON order, at30s.
+# Memory candidates isolate baseline versus local32MB once each, with JIT off and original30s.
+# First32 candidates change only the first canonical transaction's local work memory.
+# Shared-guard candidates run maximum once, retain the first frozen oracle, then profile one read-only production function call.
+# Join-key candidates use typed shadow rows and bounded one-row mutations; failures retain validated partial plans after backend cleanup.
+# Small calibration uses one legal identity/four units, the same SQL and six negatives; it never selects maximum.
+# Calibration accepts verbose NOTICE success prefixes while preserving native ERROR SQLSTATEs.
+# One maximum comparison reuses the repaired notice contract and independently observes cleanup inside the original600s.
+# Fixed-metadata calibration proves37 canonical byte/hash cases before the single four-unit fixture; maximum is excluded.
+# Explicit fixed maximum keeps20cbaf6d SQL, ABBA and two shadow controls; no extra plans or third variant consume240s.
+# Subsequent report pushes do not match this workflow path; reruns are refused.
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Approved exact commit SHA
+        required: true
+        type: string
+      transaction_wait_observation:
+        description: One current146 original maximum with bounded same-backend windows; no legacy driver
+        required: false
+        default: false
+        type: boolean
+      small_metadata_calibration:
+        description: Only one legal identity and four units; no maximum scenario
+        required: false
+        default: false
+        type: boolean
+      fixed_metadata_maximum:
+        description: One maximum source, fixed20cbaf6d metadata SQL, ABBA and all negatives within existing budgets
+        required: false
+        default: false
+        type: boolean
+      native_prepare_plan_500:
+        description: One original143 ordinary500 prepare at original30s with isolated PG16 native plans
+        required: false
+        default: false
+        type: boolean
+      real_statistics_maximum:
+        description: One real maximum full chain with test-only same-transaction statistics and original30s prepare
+        required: false
+        default: false
+        type: boolean
+      source_join_comparison:
+        description: Small equivalence proof, ordinary500 source-edge ABBA, or500 five-table statistics intervention
+        required: false
+        default: 'off'
+        type: choice
+        options: ['off', small, ordinary-500, statistics-500]
+      source_join_small_run:
+        description: Successful small proof; statistics500 reuses the fixed proof by SQL identities
+        required: false
+        type: string
+      source_join_bucket_c:
+        description: Cold bucket LATERAL OFFSET0 candidate C; only small or one ordinary500, no manual ANALYZE
+        required: false
+        default: false
+        type: boolean
+      real_key_carry:
+        description: Add exact145 key-carry to C; only ordinary1 or500, never maximum
+        required: false
+        default: false
+        type: boolean
+      real_source_c_scenario:
+        description: One real144 settlement full chain at original budgets, without ANALYZE
+        required: false
+        default: 'off'
+        type: choice
+        options: ['off', ordinary-1, ordinary-500, maximum]
+permissions:
+  contents: read
+
+concurrency:
+  group: e4-once-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  validation:
+    if: github.repository == 'BA7IEE/srvf-nest-api' && github.ref == 'refs/heads/codex/activity-os-r5-e4-github-validation' && github.run_attempt == 1 && github.event_name == 'push' && !contains(github.event.head_commit.message, '[e4-prepare-cost-once]') && contains(github.event.head_commit.message, '[e4-validation-once]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      APP_ENV: test
+      SRVF_E4_GITHUB_ISOLATED: '1'
+      SRVF_TEST_RUN_SCOPE: app_test_w98
+      SRVF_E4_W98: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma:generate
+
+      - name: Prepare private serial gate and safe NOT_RUN ledger
+        run: |
+          mkdir -p tmp/e4-github-evidence
+          node <<'NODE'
+          const fs = require('node:fs');
+          const os = require('node:os');
+          const path = require('node:path');
+          const stages = ['offline', 'install', 'd1', 'd3', 'd4', 'd5', 'd6-migration', 'd6-regression', 'd6-static'];
+          const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'srvf-e4-cloud-'));
+          fs.chmodSync(dir, 0o700);
+          fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({
+            head: process.env.GITHUB_SHA, run: process.env.GITHUB_RUN_ID,
+            attempt: process.env.GITHUB_RUN_ATTEMPT, next: 0, stopped: false,
+          }), { mode: 0o600, flag: 'wx' });
+          fs.writeFileSync('tmp/e4-github-evidence/status.json', JSON.stringify({
+            schema: 'srvf-e4-github-validation/v1', head: process.env.GITHUB_SHA,
+            stages: Object.fromEntries(stages.map(stage => [stage, { status: 'NOT_RUN' }])),
+          }, null, 2));
+          fs.appendFileSync(process.env.GITHUB_ENV, 'SRVF_E4_GITHUB_PRIVATE_DIR=' + dir + '\n');
+          NODE
+          cat > "$RUNNER_TEMP/e4-gate.cjs" <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const cp = require('node:child_process');
+          const stages = ['offline', 'install', 'd1', 'd3', 'd4', 'd5', 'd6-migration', 'd6-regression', 'd6-static'];
+          const stage = process.argv[2];
+          const dir = process.env.SRVF_E4_GITHUB_PRIVATE_DIR;
+          const ledgerFile = 'tmp/e4-github-evidence/status.json';
+          const root = process.cwd();
+          const migration = 'test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts';
+          const scale = 'test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts';
+          const config = JSON.stringify({
+            rootDir: root, testEnvironment: 'node', testRegex: '.*\\.e2e-spec\\.ts$',
+            moduleFileExtensions: ['ts', 'js', 'json'], maxWorkers: 1, testTimeout: 30000,
+            transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/test/tsconfig.test.json' }] },
+            setupFiles: ['<rootDir>/test/setup/setup-files.ts'],
+          });
+          const closedReporterSource = String.raw`
+          'use strict';
+          const fs = require('node:fs');
+          const path = require('node:path');
+          module.exports = class E4ClosedReporter {
+            onRunComplete(_contexts, result) {
+              const file = process.env.SRVF_E4_CLOSED_JEST_FILE;
+              const directory = process.env.SRVF_E4_GITHUB_PRIVATE_DIR;
+              if (typeof file !== 'string' || typeof directory !== 'string' ||
+                  path.dirname(file) !== directory) throw Error('closed reporter destination refused');
+              const keys = ['numPassedTests', 'numFailedTests', 'numPendingTests', 'numTotalTestSuites',
+                'numPassedTestSuites', 'numFailedTestSuites', 'numRuntimeErrorTestSuites'];
+              if (keys.some(key => !Number.isSafeInteger(result[key]) || result[key] < 0 || result[key] > 10000) ||
+                  !Array.isArray(result.testResults)) throw Error('closed reporter counts refused');
+              const testResults = result.testResults.map(suite => {
+                if (!Array.isArray(suite.testResults)) throw Error('closed reporter assertions refused');
+                return { assertionResults: suite.testResults.map(test => {
+                  if (typeof test.fullName !== 'string' ||
+                      !['passed', 'failed', 'pending', 'todo', 'disabled'].includes(test.status))
+                    throw Error('closed reporter selection refused');
+                  return { fullName: test.fullName, status: test.status };
+                }) };
+              });
+              const value = {
+                schema: 'srvf-e4-closed-jest/v1',
+                binding: { head: process.env.GITHUB_SHA, run: process.env.GITHUB_RUN_ID,
+                  attempt: process.env.GITHUB_RUN_ATTEMPT, stage: process.env.SRVF_E4_CLOSED_JEST_STAGE },
+                success: result.numFailedTests === 0 && result.numFailedTestSuites === 0 &&
+                  result.numRuntimeErrorTestSuites === 0 &&
+                  result.numPassedTestSuites === result.numTotalTestSuites,
+                numPassedTests: result.numPassedTests, numFailedTests: result.numFailedTests,
+                numPendingTests: result.numPendingTests, numTotalTestSuites: result.numTotalTestSuites,
+                testResults,
+              };
+              const payload = JSON.stringify(value);
+              if (Buffer.byteLength(payload) > 2097152) throw Error('closed reporter output limit');
+              fs.writeFileSync(file, payload, { mode: 0o600, flag: 'wx' });
+            }
+          };
+          `;
+          async function child(args, env, capMs, capture = false) {
+            const proc = cp.spawn('pnpm', args, {
+              env: { ...process.env, ...env }, detached: true, stdio: ['ignore', 'pipe', 'pipe'],
+            });
+            let bytes = 0, exceeded = false, timedOut = false, stdout = '';
+            let stdoutBytes = 0, stderrBytes = 0;
+            const drain = (part, keep, stream) => {
+              const size = Buffer.byteLength(part);
+              if (stream === 'stdout') stdoutBytes = Math.min(65537, stdoutBytes + size);
+              else stderrBytes = Math.min(65537, stderrBytes + size);
+              bytes += size;
+              if (bytes > 65536) exceeded = true;
+              else if (keep) stdout += part.toString();
+            };
+            proc.stdout.on('data', part => drain(part, capture, 'stdout'));
+            proc.stderr.on('data', part => drain(part, false, 'stderr'));
+            const kill = signal => {
+              try { process.kill(-proc.pid, signal); } catch { proc.kill(signal); }
+            };
+            let force;
+            const timer = setTimeout(() => {
+              timedOut = true; kill('SIGTERM'); force = setTimeout(() => kill('SIGKILL'), 2000);
+            }, capMs);
+            const outcome = await new Promise(resolve => {
+              proc.once('error', () => resolve({ exitCode: null, signaled: false, spawnError: true }));
+              proc.once('close', (exitCode, signal) => resolve({ exitCode, signaled: signal !== null, spawnError: false }));
+            });
+            clearTimeout(timer); clearTimeout(force);
+            return { ...outcome, exceeded, timedOut, stdout, stdoutBytes, stderrBytes };
+          }
+          function privateJson(file) {
+            const stat = fs.lstatSync(file);
+            if (!stat.isFile() || stat.size <= 0 || stat.size > 2097152) throw Error('private JSON unavailable');
+            return JSON.parse(fs.readFileSync(file, 'utf8'));
+          }
+          function closedJestFile(file) {
+            let stat;
+            try { stat = fs.lstatSync(file); }
+            catch (error) { return { fileState: error.code === 'ENOENT' ? 'MISSING' : 'READ_ERROR' }; }
+            if (!stat.isFile()) return { fileState: 'NON_REGULAR' };
+            if (stat.size === 0) return { fileState: 'EMPTY' };
+            if (stat.size > 2097152) return { fileState: 'TOO_LARGE' };
+            let value;
+            try { value = JSON.parse(fs.readFileSync(file, 'utf8')); }
+            catch { return { fileState: 'INVALID_JSON' }; }
+            if (value === null || value.schema !== 'srvf-e4-closed-jest/v1' ||
+                value.binding === null || typeof value.binding !== 'object' ||
+                value.binding.head !== process.env.GITHUB_SHA || value.binding.run !== process.env.GITHUB_RUN_ID ||
+                value.binding.attempt !== process.env.GITHUB_RUN_ATTEMPT || value.binding.stage !== stage)
+              return { fileState: 'BINDING_REFUSED' };
+            if (typeof value.success !== 'boolean' || !Array.isArray(value.testResults) ||
+                value.testResults.some(suite => suite === null || !Array.isArray(suite.assertionResults) ||
+                  suite.assertionResults.some(test => test === null || typeof test.fullName !== 'string' ||
+                    !['passed', 'failed', 'pending', 'todo', 'disabled'].includes(test.status))))
+              return { fileState: 'SCHEMA_REFUSED' };
+            return { fileState: 'VALID', value };
+          }
+          async function jestGate(files, pattern, target, lifecycle = '') {
+            const file = path.join(dir, 'jest-' + stage + '-' + path.basename(files[0]) + '.json');
+            const reporterFile = file + '.reporter.cjs';
+            fs.writeFileSync(reporterFile, closedReporterSource, { mode: 0o600, flag: 'wx' });
+            const closedConfig = JSON.stringify({ ...JSON.parse(config), reporters: ['default', reporterFile] });
+            const result = await child([
+              'exec', 'jest', '--runInBand', '--no-cache', '--bail', '--silent',
+              '--config', closedConfig, '--runTestsByPath', ...files,
+              '--testNamePattern', pattern,
+            ], { SRVF_E4_W98: stage === 'offline' ? '0' : '1', SRVF_E4_N1_LIFECYCLE: lifecycle,
+              SRVF_E4_CLOSED_JEST_FILE: file, SRVF_E4_CLOSED_JEST_STAGE: stage }, 600000);
+            const childFacts = {
+              exitCode: Number.isSafeInteger(result.exitCode) && result.exitCode >= 0 && result.exitCode <= 255 ? result.exitCode : null,
+              signaled: result.signaled, spawnError: result.spawnError, timedOut: result.timedOut,
+              outputLimitExceeded: result.exceeded, stdoutBytes: result.stdoutBytes, stderrBytes: result.stderrBytes,
+            };
+            const report = closedJestFile(file);
+            const evidence = { fileState: report.fileState, process: childFacts };
+            if (report.fileState !== 'VALID') return { status: 'UNKNOWN', reason: 'JEST_UNAVAILABLE', ...evidence };
+            const value = report.value;
+            const counts = {
+              passed: value.numPassedTests, failed: value.numFailedTests,
+              skipped: value.numPendingTests, suites: value.numTotalTestSuites,
+            };
+            if (Object.values(counts).some(n => !Number.isSafeInteger(n) || n < 0 || n > 10000))
+              return { status: 'UNKNOWN', reason: 'COUNTS_INVALID', ...evidence };
+            const selected = value.testResults.flatMap(suite => suite.assertionResults)
+              .filter(test => test.status !== 'pending');
+            const names = new RegExp(pattern);
+            const selection = counts.suites === files.length && selected.length > 0 &&
+              selected.filter(test => test.status === 'passed').length === counts.passed &&
+              selected.filter(test => test.status === 'failed').length === counts.failed &&
+              selected.every(test => test.status === 'passed' || test.status === 'failed') &&
+              selected.every(test => typeof test.fullName === 'string' && names.test(test.fullName)) &&
+              (target === undefined || (selected.length === 1 && selected[0].fullName === target));
+            if (result.exceeded || result.timedOut || result.signaled || result.spawnError || !selection)
+              return { status: 'UNKNOWN', reason: 'PROCESS_OR_SELECTION', counts, ...evidence };
+            return {
+              status: result.exitCode === 0 && value.success === true && counts.failed === 0 ? 'PASS' : 'FAIL',
+              reason: 'JEST', counts, exitCode: result.exitCode, ...evidence,
+            };
+          }
+          function freshEmptyRunner() {
+            const sql = "SELECT json_build_object('observer',pg_backend_pid()>0,'db',current_database()='postgres'," +
+              "'version',current_setting('server_version_num')::int/10000," +
+              "'databases',(SELECT count(*) FROM pg_database WHERE datname='app_test_w98')," +
+              "'clients',(SELECT count(*) FROM pg_stat_activity WHERE backend_type='client backend' AND pid<>pg_backend_pid())," +
+              "'locks',(SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND granted))";
+            const facts = JSON.parse(cp.execFileSync('docker', [
+              'exec', 'u-nest-api-postgres', 'psql', '--no-psqlrc', '-qtA', '-U', 'postgres',
+              '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', sql,
+            ], { encoding: 'utf8', timeout: 15000, maxBuffer: 4096, stdio: ['ignore', 'pipe', 'pipe'] }));
+            if (facts.observer !== true || facts.db !== true || facts.version !== 16 ||
+                facts.databases !== 0 || facts.clients !== 0 || facts.locks !== 0)
+              throw Error('fresh runner precondition refused');
+            return facts;
+          }
+          async function execute() {
+            if (stage === 'offline')
+              return jestGate([migration, scale], '(?: offline | offline$)');
+            if (stage === 'install') {
+              const precondition = freshEmptyRunner();
+              const name = 'E4 migration dedicated lease envelope E4 N1 install-retain stage builds the sole full synthetic root for D1 admission';
+              const result = await jestGate([migration], '^' + name + '$', name, 'install-retain');
+              return { ...result, precondition };
+            }
+            if (stage === 'd1') {
+              const args = ['exec', 'tsx', 'test/helpers/e4-d1-evidence-launcher.ts'];
+              const result = await child([...args, '--execute', '--scope', 'app_test_w98'],
+                { SRVF_E4_W98: '1', SRVF_E4_N1_LIFECYCLE: '' }, 120000, true);
+              const value = JSON.parse(result.stdout);
+              if (!['PASS', 'FAIL', 'UNKNOWN'].includes(value.status) ||
+                  result.exceeded || result.timedOut || result.signaled || result.spawnError)
+                return { status: 'UNKNOWN', reason: 'D1_TRANSPORT' };
+              fs.writeFileSync('tmp/e4-github-evidence/d1.json', JSON.stringify(value, null, 2));
+              if (value.status !== 'PASS') return { status: value.status, reason: value.reason, d1Started: value.d1Started };
+              const reader = await child([...args, '--read-latest', '--scope', 'app_test_w98'],
+                { SRVF_E4_W98: '1' }, 30000, true);
+              const readback = JSON.parse(reader.stdout);
+              fs.writeFileSync('tmp/e4-github-evidence/d1-readback.json', JSON.stringify(readback, null, 2));
+              if (reader.exitCode !== 0 || reader.exceeded || reader.timedOut ||
+                  readback.status !== 'PASS' || readback.runId !== value.runId)
+                return { status: 'UNKNOWN', reason: 'D1_READBACK' };
+              return { status: result.exitCode === 0 ? 'PASS' : 'UNKNOWN', reason: value.reason, d1Started: value.d1Started };
+            }
+            if (stage === 'd3') return jestGate([migration],
+              '^E4 migration dedicated lease envelope E4 migration real PostgreSQL cold replay and closed proof functions (E4 terminal expected small real proof |E4 terminal refs projection small real proof )');
+            if (stage === 'd4' || stage === 'd5') {
+              const suffix = stage === 'd4' ? 'E4 S13 thin-key exact full-doc probe' :
+                '2,000 identities / 10,000 segments / 50,000 slices yield 8,000 policy units without repeated awards';
+              const name = 'E4 maximum real sources with unchanged transaction and query budgets ' + suffix;
+              return jestGate([scale], '^' + name + '$', name);
+            }
+            if (stage === 'd6-migration') return jestGate([migration],
+              '^(?!E4 terminal expected retained function-body diagnostic |E4 N1 candidate admission gate )');
+            if (stage === 'd6-regression') {
+              let passed = 0;
+              for (const suffix of ['', '-http', '-correction', '-concurrency']) {
+                const file = 'test/e2e/activity-os-r5-e4-contribution-settlement' + suffix + '.e2e-spec.ts';
+                const result = await jestGate([file], '.*');
+                if (result.status !== 'PASS') return { ...result, completedSuites: passed };
+                passed++;
+              }
+              return { status: 'PASS', completedSuites: passed };
+            }
+            if (stage === 'd6-static') {
+              for (const args of [['agent:check:quick'], ['test:contract']]) {
+                const result = await child(args, { SRVF_E4_W98: '0' }, 600000);
+                if (result.timedOut || result.exceeded || result.signaled || result.spawnError)
+                  return { status: 'UNKNOWN', reason: 'STATIC_PROCESS' };
+                if (result.exitCode !== 0) return { status: 'FAIL', reason: 'STATIC_GATE' };
+              }
+              return { status: 'PASS' };
+            }
+            throw Error('stage refused');
+          }
+          async function main() {
+            let result = { status: 'UNKNOWN', reason: 'GATE_REFUSED' }, state;
+            const stateFile = path.join(dir, 'state.json');
+            const ledger = JSON.parse(fs.readFileSync(ledgerFile, 'utf8'));
+            try {
+              state = privateJson(stateFile);
+              if (process.env.GITHUB_RUN_ATTEMPT !== '1' ||
+                  state.head !== process.env.GITHUB_SHA || state.run !== process.env.GITHUB_RUN_ID ||
+                  state.attempt !== '1' || state.stopped || stages[state.next] !== stage)
+                throw Error('one-shot sequence refused');
+              // Persist consumption before starting any child. An interrupted gate cannot be retried.
+              state.next++; state.stopped = true;
+              fs.writeFileSync(stateFile, JSON.stringify(state), { mode: 0o600 });
+              result = await execute();
+              state.stopped = result.status !== 'PASS';
+              fs.writeFileSync(stateFile, JSON.stringify(state), { mode: 0o600 });
+            } catch { result = { status: 'UNKNOWN', reason: 'GATE_OR_EVIDENCE_UNKNOWN' }; }
+            if (stages.includes(stage)) ledger.stages[stage] = result;
+            fs.writeFileSync(ledgerFile, JSON.stringify(ledger, null, 2));
+            process.stdout.write(JSON.stringify({ stage, ...result }) + '\n');
+            process.exitCode = result.status === 'PASS' ? 0 : result.status === 'FAIL' ? 1 : 2;
+          }
+          void main();
+          NODE
+
+      - name: Full TypeScript check before database admission
+        run: pnpm typecheck
+      - name: D0 complete offline groups
+        run: node "$RUNNER_TEMP/e4-gate.cjs" offline
+      - name: Start isolated runner PostgreSQL 16
+        run: |
+          docker compose up -d postgres
+          for attempt in $(seq 1 60); do
+            if docker exec u-nest-api-postgres pg_isready -U postgres -d postgres >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+      - name: Fresh zero-client precondition and N1 install-retain
+        run: node "$RUNNER_TEMP/e4-gate.cjs" install
+      - name: Admission then one D1 with independent readback
+        run: node "$RUNNER_TEMP/e4-gate.cjs" d1
+      - name: D3 original small correctness
+        run: node "$RUNNER_TEMP/e4-gate.cjs" d3
+      - name: D4 one strict AB to BA S13
+        run: node "$RUNNER_TEMP/e4-gate.cjs" d4
+      - name: D5 one original maximum full chain
+        run: node "$RUNNER_TEMP/e4-gate.cjs" d5
+      - name: D6 migration excluding consumed D1
+        run: node "$RUNNER_TEMP/e4-gate.cjs" d6-migration
+      - name: D6 four direct suites in sequence
+        run: node "$RUNNER_TEMP/e4-gate.cjs" d6-regression
+      - name: D6 existing quick and contract gates
+        run: node "$RUNNER_TEMP/e4-gate.cjs" d6-static
+
+      # No raw Jest/SQL/stdout, private capture directory, fixture identifiers,
+      # token, connection URL, or Git metadata is uploaded.
+      - name: Retain closed safe gate summaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e4-safe-gates-${{ github.run_id }}
+          path: |
+            tmp/e4-github-evidence/status.json
+            tmp/e4-github-evidence/d1.json
+            tmp/e4-github-evidence/d1-readback.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  guard-plan:
+    if: github.repository == 'BA7IEE/srvf-nest-api' && github.ref == 'refs/heads/codex/activity-os-r5-e4-github-validation' && github.run_attempt == 1 && github.event_name == 'push' && !contains(github.event.head_commit.message, '[e4-prepare-cost-once]') && contains(github.event.head_commit.message, '[e4-guard-plan-once]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_ENV: test
+      SRVF_E4_GITHUB_ISOLATED: '1'
+      SRVF_TEST_RUN_SCOPE: 'app_test_w98'
+      SRVF_E4_W98: '1'
+      SRVF_E4_GUARD_PLAN_DIAGNOSTIC: '1'
+      JEST_MAX_WORKERS: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma:generate
+      - name: Start fresh PostgreSQL 16 runner
+        run: |
+          docker compose up -d postgres
+          for attempt in $(seq 1 60); do
+            if docker exec u-nest-api-postgres pg_isready -U postgres -d postgres >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+      - name: One original maximum case with non-executing guard plan
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const os = require('node:os');
+          const path = require('node:path');
+          const cp = require('node:child_process');
+          const crypto = require('node:crypto');
+          const dir = 'tmp/e4-guard-plan-evidence';
+          fs.mkdirSync(dir, { recursive: true });
+          const privateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'e4-guard-plan-'));
+          fs.chmodSync(privateDir, 0o700);
+          const report = path.join(privateDir, 'jest.json');
+          const closedReporterSource = String.raw`
+          'use strict';
+          const fs = require('node:fs');
+          const path = require('node:path');
+          module.exports = class E4ClosedReporter {
+            onRunComplete(_contexts, result) {
+              const file = process.env.SRVF_E4_CLOSED_JEST_FILE;
+              const directory = process.env.SRVF_E4_GITHUB_PRIVATE_DIR;
+              if (typeof file !== 'string' || typeof directory !== 'string' ||
+                  path.dirname(file) !== directory) throw Error('closed reporter destination refused');
+              const keys = ['numPassedTests', 'numFailedTests', 'numPendingTests', 'numTotalTestSuites',
+                'numPassedTestSuites', 'numFailedTestSuites', 'numRuntimeErrorTestSuites'];
+              if (keys.some(key => !Number.isSafeInteger(result[key]) || result[key] < 0 || result[key] > 10000) ||
+                  !Array.isArray(result.testResults)) throw Error('closed reporter counts refused');
+              const testResults = result.testResults.map(suite => {
+                if (!Array.isArray(suite.testResults)) throw Error('closed reporter assertions refused');
+                return { assertionResults: suite.testResults.map(test => {
+                  if (typeof test.fullName !== 'string' ||
+                      !['passed', 'failed', 'pending', 'todo', 'disabled'].includes(test.status))
+                    throw Error('closed reporter selection refused');
+                  return { fullName: test.fullName, status: test.status };
+                }) };
+              });
+              const value = {
+                schema: 'srvf-e4-closed-jest/v1',
+                binding: { head: process.env.GITHUB_SHA, run: process.env.GITHUB_RUN_ID,
+                  attempt: process.env.GITHUB_RUN_ATTEMPT, stage: process.env.SRVF_E4_CLOSED_JEST_STAGE },
+                success: result.numFailedTests === 0 && result.numFailedTestSuites === 0 &&
+                  result.numRuntimeErrorTestSuites === 0 &&
+                  result.numPassedTestSuites === result.numTotalTestSuites,
+                numPassedTests: result.numPassedTests, numFailedTests: result.numFailedTests,
+                numPendingTests: result.numPendingTests, numTotalTestSuites: result.numTotalTestSuites,
+                testResults,
+              };
+              const payload = JSON.stringify(value);
+              if (Buffer.byteLength(payload) > 2097152) throw Error('closed reporter output limit');
+              fs.writeFileSync(file, payload, { mode: 0o600, flag: 'wx' });
+            }
+          };
+          `;
+          const reporterFile = path.join(privateDir, 'closed-reporter.cjs');
+          fs.writeFileSync(reporterFile, closedReporterSource, { mode: 0o600, flag: 'wx' });
+          const root = process.cwd();
+          const config = JSON.stringify({
+            rootDir: root, testEnvironment: 'node', testRegex: '.*\\.e2e-spec\\.ts$',
+            moduleFileExtensions: ['ts', 'js', 'json'], maxWorkers: 1, testTimeout: 30000,
+            transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/test/tsconfig.test.json' }] },
+            setupFiles: ['<rootDir>/test/setup/setup-files.ts'],
+          });
+          const closedConfig = JSON.stringify({ ...JSON.parse(config), reporters: ['default', reporterFile] });
+          const target = 'E4 maximum real sources with unchanged transaction and query budgets 2,000 identities / 10,000 segments / 50,000 slices yield 8,000 policy units without repeated awards';
+          const binding = { head: process.env.GITHUB_SHA, run: process.env.GITHUB_RUN_ID, attempt: 1 };
+          const summary = { schema: 'e4-guard-plan-process/v1', binding, status: 'UNKNOWN', reason: 'START', acceptance: 'NOT_AN_ACCEPTANCE_RESULT', originalCase: 'UNKNOWN', counts: null };
+          const reasons = new Set(['BINDING_REFUSED', 'EVIDENCE_UNAVAILABLE', 'EVIDENCE_MISSING', 'EVIDENCE_INVALID_JSON', 'JEST_REFUSED', 'SELECTION_REFUSED', 'PLAN_REFUSED', 'NODE_REFUSED', 'DATASET_REFUSED', 'PHYSICAL_REFUSED', 'OBSERVATION_REFUSED', 'PROCESS_REFUSED']);
+          const integer = n => Number.isSafeInteger(n) && n >= 0 && n <= 10000;
+          const kinds = new Set(['Result', 'Nested Loop', 'Seq Scan', 'Index Scan', 'Index Only Scan', 'Bitmap Heap Scan', 'Bitmap Index Scan', 'Hash Join', 'Merge Join', 'Hash', 'Sort', 'Aggregate', 'Materialize', 'CTE Scan', 'Subquery Scan', 'Limit', 'OTHER']);
+          const roles = new Set(['SOURCES', 'ALLOCATIONS', 'BUCKETS', 'RESULTS', 'OTHER']);
+          function checkedJson(file, limit) {
+            let stat;
+            try { stat = fs.lstatSync(file); } catch { throw Error('EVIDENCE_MISSING'); }
+            if (!stat.isFile() || stat.size <= 0 || stat.size > limit) throw Error('EVIDENCE_UNAVAILABLE');
+            try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { throw Error('EVIDENCE_INVALID_JSON'); }
+          }
+          function checkPlan(value) {
+            if (value.schema !== 'e4-guard-plan/v1' || value.binding?.head !== binding.head || value.binding?.run !== binding.run || value.binding?.attempt !== 1 ||
+                value.bodyMd5 !== '21fe9ecf6df989a3f8fa5878df40b93c' || value.kind !== 'ESTIMATED_ONLY' || value.acceptance !== 'NOT_AN_ACCEPTANCE_RESULT' ||
+                !['OBSERVED', 'UNKNOWN', 'NOT_RUN'].includes(value.status) || !['NONE', 'CAPTURE', 'OWNERSHIP', 'OUTPUT'].includes(value.reason) ||
+                !Array.isArray(value.nodes) || value.nodes.length > 128 ||
+                !integer(value.dataset?.evaluationUnits) || !Number.isSafeInteger(value.dataset?.sourceReferences) || value.dataset.sourceReferences < 0 || value.dataset.sourceReferences > 50000) throw Error('PLAN_REFUSED');
+            if (value.mismatch !== 'NOT_MEASURED' || value.actualLoops !== 'NOT_MEASURED') throw Error('OBSERVATION_REFUSED');
+            const expectedPhysical = { sources: 40000, allocations: 10000, buckets: 8000, results: 2000 };
+            let physical = null;
+            if (value.physical !== null) {
+              if (!value.physical || Object.entries(expectedPhysical).some(([k, n]) => value.physical[k] !== n)) throw Error('PHYSICAL_REFUSED');
+              physical = { ...expectedPhysical };
+            }
+            const nodes = value.nodes.map((n, i) => {
+              if (!(n.parent === null && i === 0 || Number.isInteger(n.parent) && n.parent >= 0 && n.parent < i) ||
+                  !kinds.has(n.type) || !roles.has(n.relation) || ['rows', 'width', 'startupCost', 'totalCost'].some(k => typeof n[k] !== 'number' || !Number.isFinite(n[k]) || n[k] < 0)) throw Error('NODE_REFUSED');
+              return { parent: n.parent, type: n.type, relation: n.relation, rows: n.rows, width: n.width, startupCost: n.startupCost, totalCost: n.totalCost };
+            });
+            if (value.status === 'OBSERVED' && (value.reason !== 'NONE' || nodes.length === 0 || value.dataset.evaluationUnits !== 8000 || value.dataset.sourceReferences !== 50000 || physical === null)) throw Error('DATASET_REFUSED');
+            return { schema: value.schema, binding, status: value.status, reason: value.reason, kind: value.kind, acceptance: value.acceptance, bodyMd5: value.bodyMd5, dataset: { evaluationUnits: value.dataset.evaluationUnits, sourceReferences: value.dataset.sourceReferences }, physical, mismatch: 'NOT_MEASURED', actualLoops: 'NOT_MEASURED', nodes };
+          }
+          async function main() {
+            let code = 2;
+            try {
+              if (process.env.GITHUB_RUN_ATTEMPT !== '1' || !/^[a-f0-9]{40}$/.test(binding.head || '') || !/^[0-9]+$/.test(binding.run || '')) throw Error('BINDING_REFUSED');
+              const pattern = '^' + target.replace(/[.*+?^$()|[\]\\]/g, '\\$&') + '$';
+              const proc = cp.spawn('pnpm', ['exec', 'jest', '--config', closedConfig, '--runInBand', '--no-cache', '--bail', '--silent', '--runTestsByPath', 'test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts', '--testNamePattern', pattern], { env: { ...process.env, SRVF_E4_GITHUB_PRIVATE_DIR: privateDir, SRVF_E4_CLOSED_JEST_FILE: report, SRVF_E4_CLOSED_JEST_STAGE: 'guard-plan' }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+              let bytes = 0, timedOut = false, force;
+              const causes = new Set();
+              const causePatterns = [['HOOK_TIMEOUT', /Exceeded timeout of [0-9]+ ms for a hook/], ['PRISMA_P2028', /\bP2028\b/], ['SCOPE_REJECTED', /E4 isolated GitHub (?:scope refused|derived scope differs)/], ['NO_TESTS', /No tests found/], ['MODULE_MISSING', /Cannot find module/], ['TYPE_DIAGNOSTIC', /error TS[0-9]+/], ['HEAP_LIMIT', /heap out of memory/]];
+              const drain = b => { bytes += b.length; const text = b.toString(); for (const [code, pattern] of causePatterns) if (pattern.test(text)) causes.add(code); };
+              proc.stdout.on('data', drain); proc.stderr.on('data', drain);
+              const kill = signal => { try { process.kill(-proc.pid, signal); } catch { proc.kill(signal); } };
+              const timer = setTimeout(() => { timedOut = true; kill('SIGTERM'); force = setTimeout(() => kill('SIGKILL'), 2000); }, 600000);
+              const outcome = await new Promise(resolve => {
+                proc.once('error', () => resolve({ exitCode: null, signaled: false, spawnError: true }));
+                proc.once('close', (exitCode, signal) => resolve({ exitCode, signaled: signal !== null, spawnError: false }));
+              });
+              clearTimeout(timer); clearTimeout(force);
+              summary.process = { exitCode: Number.isInteger(outcome.exitCode) && outcome.exitCode >= 0 && outcome.exitCode <= 255 ? outcome.exitCode : null, signaled: outcome.signaled, spawnError: outcome.spawnError, timedOut, outputBytes: Math.min(bytes, 65537), outputLimitExceeded: bytes > 65536, reportedCauses: [...causes].sort() };
+              const result = checkedJson(report, 2097152);
+              const keys = ['numPassedTests', 'numFailedTests', 'numPendingTests', 'numTotalTestSuites'];
+              if (keys.some(k => !integer(result[k])) || !Array.isArray(result.testResults) || typeof result.success !== 'boolean' || result.schema !== 'srvf-e4-closed-jest/v1' || result.binding?.head !== binding.head || result.binding?.run !== binding.run || result.binding?.attempt !== '1' || result.binding?.stage !== 'guard-plan') throw Error('JEST_REFUSED');
+              summary.counts = { passed: result.numPassedTests, failed: result.numFailedTests, skipped: result.numPendingTests, suites: result.numTotalTestSuites };
+              const selected = result.testResults.flatMap(s => s.assertionResults ?? []).filter(t => !['pending', 'todo', 'disabled'].includes(t.status));
+              if (selected.length !== 1 || selected[0].fullName !== target || !['passed', 'failed'].includes(selected[0].status) || result.numPassedTests + result.numFailedTests !== 1 || result.numTotalTestSuites !== 1) throw Error('SELECTION_REFUSED');
+              summary.counts = { passed: result.numPassedTests, failed: result.numFailedTests, skipped: result.numPendingTests, suites: result.numTotalTestSuites };
+              summary.originalCase = selected[0].status === 'passed' && outcome.exitCode === 0 && result.success ? 'PASS' : 'FAIL';
+              const plan = checkPlan(checkedJson(path.join(dir, 'guard-plan.json'), 32768));
+              const migration = fs.readFileSync('prisma/migrations/20261003000000_activity_contribution_settlement/migration.sql');
+              const migrationSha256 = crypto.createHash('sha256').update(migration).digest('hex');
+              if (migrationSha256 !== '90f09f61ef65753a00b885cd960e9f85ee8d9ed9ff39f2c55c2f7d5942fb0e61' || timedOut || outcome.signaled || outcome.spawnError || bytes > 65536) throw Error('PROCESS_REFUSED');
+              summary.status = plan.status; summary.reason = plan.reason; summary.migrationSha256 = migrationSha256;
+              fs.writeFileSync(path.join(dir, 'safe-plan.json'), JSON.stringify(plan) + '\n', { flag: 'wx', mode: 0o600 });
+              process.stdout.write('E4 guard estimated plan (closed metadata) ' + JSON.stringify(plan) + '\n');
+              code = plan.status === 'OBSERVED' ? summary.originalCase === 'PASS' ? 0 : 1 : 2;
+            } catch (error) { summary.status = 'UNKNOWN'; summary.reason = reasons.has(error?.message) ? error.message : 'PROCESS_OR_EVIDENCE'; }
+            fs.writeFileSync(path.join(dir, 'summary.json'), JSON.stringify(summary) + '\n', { flag: 'wx', mode: 0o600 });
+            process.stdout.write('E4 guard diagnostic summary ' + JSON.stringify(summary) + '\n');
+            process.exitCode = code;
+          }
+          main().catch(() => { process.stdout.write('E4 guard diagnostic UNKNOWN\n'); process.exitCode = 2; });
+
+          NODE
+      - name: Retain closed diagnostic metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e4-safe-guard-plan-${{ github.run_id }}
+          path: |
+            tmp/e4-guard-plan-evidence/safe-plan.json
+            tmp/e4-guard-plan-evidence/summary.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  guard-functions:
+    if: github.repository == 'BA7IEE/srvf-nest-api' && github.ref == 'refs/heads/codex/activity-os-r5-e4-github-validation' && github.run_attempt == 1 && github.event_name == 'push' && !contains(github.event.head_commit.message, '[e4-prepare-cost-once]') && contains(github.event.head_commit.message, '[e4-guard-functions-once]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_ENV: test
+      SRVF_E4_GITHUB_ISOLATED: '1'
+      SRVF_TEST_RUN_SCOPE: 'app_test_w98'
+      SRVF_E4_W98: '1'
+      SRVF_E4_GUARD_FUNCTION_DIAGNOSTIC: '1'
+      JEST_MAX_WORKERS: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma:generate
+      - name: Start fresh PostgreSQL 16 runner
+        run: |
+          docker compose up -d postgres
+          for attempt in $(seq 1 60); do
+            if docker exec u-nest-api-postgres pg_isready -U postgres -d postgres >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+      - name: One original maximum case with local function counters
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const os = require('node:os');
+          const path = require('node:path');
+          const cp = require('node:child_process');
+          const crypto = require('node:crypto');
+          const dir = 'tmp/e4-guard-functions-evidence';
+          fs.mkdirSync(dir, { recursive: true });
+          const privateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'e4-guard-functions-'));
+          fs.chmodSync(privateDir, 0o700);
+          const report = path.join(privateDir, 'jest.json');
+          const closedReporterSource = String.raw`
+          'use strict';
+          const fs = require('node:fs');
+          const path = require('node:path');
+          module.exports = class E4ClosedReporter {
+            onRunComplete(_contexts, result) {
+              const file = process.env.SRVF_E4_CLOSED_JEST_FILE;
+              const directory = process.env.SRVF_E4_GITHUB_PRIVATE_DIR;
+              if (typeof file !== 'string' || typeof directory !== 'string' ||
+                  path.dirname(file) !== directory) throw Error('closed reporter destination refused');
+              const keys = ['numPassedTests', 'numFailedTests', 'numPendingTests', 'numTotalTestSuites',
+                'numPassedTestSuites', 'numFailedTestSuites', 'numRuntimeErrorTestSuites'];
+              if (keys.some(key => !Number.isSafeInteger(result[key]) || result[key] < 0 || result[key] > 10000) ||
+                  !Array.isArray(result.testResults)) throw Error('closed reporter counts refused');
+              const testResults = result.testResults.map(suite => {
+                if (!Array.isArray(suite.testResults)) throw Error('closed reporter assertions refused');
+                return { assertionResults: suite.testResults.map(test => {
+                  if (typeof test.fullName !== 'string' ||
+                      !['passed', 'failed', 'pending', 'todo', 'disabled'].includes(test.status))
+                    throw Error('closed reporter selection refused');
+                  return { fullName: test.fullName, status: test.status };
+                }) };
+              });
+              const value = {
+                schema: 'srvf-e4-closed-jest/v1',
+                binding: { head: process.env.GITHUB_SHA, run: process.env.GITHUB_RUN_ID,
+                  attempt: process.env.GITHUB_RUN_ATTEMPT, stage: process.env.SRVF_E4_CLOSED_JEST_STAGE },
+                success: result.numFailedTests === 0 && result.numFailedTestSuites === 0 &&
+                  result.numRuntimeErrorTestSuites === 0 &&
+                  result.numPassedTestSuites === result.numTotalTestSuites,
+                numPassedTests: result.numPassedTests, numFailedTests: result.numFailedTests,
+                numPendingTests: result.numPendingTests, numTotalTestSuites: result.numTotalTestSuites,
+                testResults,
+              };
+              const payload = JSON.stringify(value);
+              if (Buffer.byteLength(payload) > 2097152) throw Error('closed reporter output limit');
+              fs.writeFileSync(file, payload, { mode: 0o600, flag: 'wx' });
+            }
+          };
+          `;
+          const reporterFile = path.join(privateDir, 'closed-reporter.cjs');
+          fs.writeFileSync(reporterFile, closedReporterSource, { mode: 0o600, flag: 'wx' });
+          const root = process.cwd();
+          const config = JSON.stringify({
+            rootDir: root, testEnvironment: 'node', testRegex: '.*\\.e2e-spec\\.ts$',
+            moduleFileExtensions: ['ts', 'js', 'json'], maxWorkers: 1, testTimeout: 30000,
+            transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/test/tsconfig.test.json' }] },
+            setupFiles: ['<rootDir>/test/setup/setup-files.ts'],
+          });
+          const closedConfig = JSON.stringify({ ...JSON.parse(config), reporters: ['default', reporterFile] });
+          const target = 'E4 maximum real sources with unchanged transaction and query budgets 2,000 identities / 10,000 segments / 50,000 slices yield 8,000 policy units without repeated awards';
+          const binding = { head: process.env.GITHUB_SHA, run: process.env.GITHUB_RUN_ID, attempt: 1 };
+          const summary = { schema: 'e4-guard-functions-process/v1', binding, status: 'UNKNOWN', reason: 'START', acceptance: 'NOT_AN_ACCEPTANCE_RESULT', originalCase: 'UNKNOWN', counts: null };
+          const reasons = new Set(['BINDING_REFUSED', 'EVIDENCE_UNAVAILABLE', 'EVIDENCE_MISSING', 'EVIDENCE_INVALID_JSON', 'JEST_REFUSED', 'SELECTION_REFUSED', 'PLAN_REFUSED', 'NODE_REFUSED', 'DATASET_REFUSED', 'PHYSICAL_REFUSED', 'OBSERVATION_REFUSED', 'PROCESS_REFUSED']);
+          const integer = n => Number.isSafeInteger(n) && n >= 0 && n <= 10000;
+          const roles = ['BUCKET_HASH','CANONICAL','COMPLETE','DAY_POINTS','DOCUMENT','ENVELOPE_HASH','EVALUATION_GUARD','EXPECTED','FROZEN_SELECTION','HASH','REVISION_GUARD','SOURCE_ROWS','VERSION_CONTENT_HASH','VERSION_V1_HASH'];
+          function checkedJson(file, limit) {
+            let stat;
+            try { stat = fs.lstatSync(file); } catch { throw Error('EVIDENCE_MISSING'); }
+            if (!stat.isFile() || stat.size <= 0 || stat.size > limit) throw Error('EVIDENCE_UNAVAILABLE');
+            try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { throw Error('EVIDENCE_INVALID_JSON'); }
+          }
+          function checkFunctions(value) {
+            if (value.schema !== 'e4-guard-functions/v1' || value.binding?.head !== binding.head || value.binding?.run !== binding.run || value.binding?.attempt !== 1 ||
+                value.bodyMd5 !== '21fe9ecf6df989a3f8fa5878df40b93c' || value.kind !== 'CUMULATIVE_FUNCTION_DELTA_FROM_E4_WRITE_TO_TX_END' || value.acceptance !== 'NOT_AN_ACCEPTANCE_RESULT' ||
+                !['OBSERVED','UNKNOWN','NOT_RUN'].includes(value.status) || !['NONE','CAPTURE','COLLECT','OWNERSHIP','OUTPUT'].includes(value.reason) ||
+                !Array.isArray(value.counters) || value.counters.length !== 0 && value.counters.length !== roles.length ||
+                !integer(value.dataset?.evaluationUnits) || !Number.isSafeInteger(value.dataset?.sourceReferences) || value.dataset.sourceReferences < 0 || value.dataset.sourceReferences > 50000 ||
+                ![null,true,false].includes(value.sameBackend) || ![null,true,false].includes(value.settingRestored) ||
+                value.timing !== 'MILLISECONDS_NESTED_TOTALS_DO_NOT_SUM' || value.inlinedFunctions !== 'NOT_TRACKED') throw Error('PLAN_REFUSED');
+            const counters = value.counters.map((row,index) => {
+              if (row.role !== roles[index] || !Number.isSafeInteger(row.calls) || row.calls < 0 || row.calls > 5000000 ||
+                  ['totalMs','selfMs'].some(k=>typeof row[k] !== 'number' || !Number.isFinite(row[k]) || row[k] < 0 || row[k] > 600000)) throw Error('NODE_REFUSED');
+              return {role:row.role,calls:row.calls,totalMs:row.totalMs,selfMs:row.selfMs};
+            });
+            if (value.status === 'OBSERVED' && (value.reason !== 'NONE' || counters.length !== roles.length || value.sameBackend !== true || value.settingRestored !== true || value.dataset.evaluationUnits !== 8000 || value.dataset.sourceReferences !== 50000)) throw Error('DATASET_REFUSED');
+            return {schema:value.schema,binding,status:value.status,reason:value.reason,kind:value.kind,acceptance:value.acceptance,bodyMd5:value.bodyMd5,dataset:{evaluationUnits:value.dataset.evaluationUnits,sourceReferences:value.dataset.sourceReferences},sameBackend:value.sameBackend,settingRestored:value.settingRestored,timing:value.timing,inlinedFunctions:value.inlinedFunctions,counters};
+          }
+          async function main() {
+            let code = 2;
+            try {
+              if (process.env.GITHUB_RUN_ATTEMPT !== '1' || !/^[a-f0-9]{40}$/.test(binding.head || '') || !/^[0-9]+$/.test(binding.run || '')) throw Error('BINDING_REFUSED');
+              const pattern = '^' + target.replace(/[.*+?^$()|[\]\\]/g, '\\$&') + '$';
+              const proc = cp.spawn('pnpm', ['exec', 'jest', '--config', closedConfig, '--runInBand', '--no-cache', '--bail', '--silent', '--runTestsByPath', 'test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts', '--testNamePattern', pattern], { env: { ...process.env, SRVF_E4_GITHUB_PRIVATE_DIR: privateDir, SRVF_E4_CLOSED_JEST_FILE: report, SRVF_E4_CLOSED_JEST_STAGE: 'guard-functions' }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+              let bytes = 0, timedOut = false, force;
+              const causes = new Set();
+              const causePatterns = [['HOOK_TIMEOUT', /Exceeded timeout of [0-9]+ ms for a hook/], ['PRISMA_P2028', /\bP2028\b/], ['SCOPE_REJECTED', /E4 isolated GitHub (?:scope refused|derived scope differs)/], ['NO_TESTS', /No tests found/], ['MODULE_MISSING', /Cannot find module/], ['TYPE_DIAGNOSTIC', /error TS[0-9]+/], ['HEAP_LIMIT', /heap out of memory/]];
+              const drain = b => { bytes += b.length; const text = b.toString(); for (const [code, pattern] of causePatterns) if (pattern.test(text)) causes.add(code); };
+              proc.stdout.on('data', drain); proc.stderr.on('data', drain);
+              const kill = signal => { try { process.kill(-proc.pid, signal); } catch { proc.kill(signal); } };
+              const timer = setTimeout(() => { timedOut = true; kill('SIGTERM'); force = setTimeout(() => kill('SIGKILL'), 2000); }, 600000);
+              const outcome = await new Promise(resolve => {
+                proc.once('error', () => resolve({ exitCode: null, signaled: false, spawnError: true }));
+                proc.once('close', (exitCode, signal) => resolve({ exitCode, signaled: signal !== null, spawnError: false }));
+              });
+              clearTimeout(timer); clearTimeout(force);
+              summary.process = { exitCode: Number.isInteger(outcome.exitCode) && outcome.exitCode >= 0 && outcome.exitCode <= 255 ? outcome.exitCode : null, signaled: outcome.signaled, spawnError: outcome.spawnError, timedOut, outputBytes: Math.min(bytes, 65537), outputLimitExceeded: bytes > 65536, reportedCauses: [...causes].sort() };
+              const result = checkedJson(report, 2097152);
+              const keys = ['numPassedTests', 'numFailedTests', 'numPendingTests', 'numTotalTestSuites'];
+              if (keys.some(k => !integer(result[k])) || !Array.isArray(result.testResults) || typeof result.success !== 'boolean' || result.schema !== 'srvf-e4-closed-jest/v1' || result.binding?.head !== binding.head || result.binding?.run !== binding.run || result.binding?.attempt !== '1' || result.binding?.stage !== 'guard-functions') throw Error('JEST_REFUSED');
+              summary.counts = { passed: result.numPassedTests, failed: result.numFailedTests, skipped: result.numPendingTests, suites: result.numTotalTestSuites };
+              const selected = result.testResults.flatMap(s => s.assertionResults ?? []).filter(t => !['pending', 'todo', 'disabled'].includes(t.status));
+              if (selected.length !== 1 || selected[0].fullName !== target || !['passed', 'failed'].includes(selected[0].status) || result.numPassedTests + result.numFailedTests !== 1 || result.numTotalTestSuites !== 1) throw Error('SELECTION_REFUSED');
+              summary.counts = { passed: result.numPassedTests, failed: result.numFailedTests, skipped: result.numPendingTests, suites: result.numTotalTestSuites };
+              summary.originalCase = selected[0].status === 'passed' && outcome.exitCode === 0 && result.success ? 'PASS' : 'FAIL';
+              const plan = checkFunctions(checkedJson(path.join(dir, 'functions.json'), 8192));
+              const migration = fs.readFileSync('prisma/migrations/20261003000000_activity_contribution_settlement/migration.sql');
+              const migrationSha256 = crypto.createHash('sha256').update(migration).digest('hex');
+              if (migrationSha256 !== '90f09f61ef65753a00b885cd960e9f85ee8d9ed9ff39f2c55c2f7d5942fb0e61' || timedOut || outcome.signaled || outcome.spawnError || bytes > 65536) throw Error('PROCESS_REFUSED');
+              summary.status = plan.status; summary.reason = plan.reason; summary.migrationSha256 = migrationSha256;
+              fs.writeFileSync(path.join(dir, 'safe-functions.json'), JSON.stringify(plan) + '\n', { flag: 'wx', mode: 0o600 });
+              process.stdout.write('E4 guard function counters (closed metadata) ' + JSON.stringify(plan) + '\n');
+              code = plan.status === 'OBSERVED' ? summary.originalCase === 'PASS' ? 0 : 1 : 2;
+            } catch (error) { summary.status = 'UNKNOWN'; summary.reason = reasons.has(error?.message) ? error.message : 'PROCESS_OR_EVIDENCE'; }
+            fs.writeFileSync(path.join(dir, 'summary.json'), JSON.stringify(summary) + '\n', { flag: 'wx', mode: 0o600 });
+            process.stdout.write('E4 guard diagnostic summary ' + JSON.stringify(summary) + '\n');
+            process.exitCode = code;
+          }
+          main().catch(() => { process.stdout.write('E4 guard diagnostic UNKNOWN\n'); process.exitCode = 2; });
+
+          NODE
+      - name: Retain closed diagnostic metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e4-safe-guard-functions-${{ github.run_id }}
+          path: |
+            tmp/e4-guard-functions-evidence/safe-functions.json
+            tmp/e4-guard-functions-evidence/summary.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  prepare-cost:
+    if: github.repository == 'BA7IEE/srvf-nest-api' && github.ref == 'refs/heads/codex/activity-os-r5-e4-github-validation' && github.run_attempt == 1 && !inputs.transaction_wait_observation && ((github.event_name == 'workflow_dispatch' && inputs.expected_sha == github.sha) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[e4-prepare-cost-once]')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: ${{ fromJSON(inputs.real_source_c_scenario && inputs.real_source_c_scenario != 'off' && format('["{0}"]', inputs.real_source_c_scenario) || inputs.real_statistics_maximum && '["maximum"]' || inputs.source_join_comparison == 'small' && '["ordinary-1"]' || (inputs.source_join_comparison == 'ordinary-500' || inputs.source_join_comparison == 'statistics-500') && '["ordinary-500"]' || inputs.native_prepare_plan_500 && '["ordinary-500"]' || (inputs.small_metadata_calibration || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]')) && '["ordinary-1"]' || (inputs.fixed_metadata_maximum || contains(github.event.head_commit.message, '[e4-canonical-cost-once]') || contains(github.event.head_commit.message, '[e4-canonical-first32-once]') || contains(github.event.head_commit.message, '[e4-shared-guard-once]') || contains(github.event.head_commit.message, '[e4-join-key-once]')) && '["maximum"]' || '["ordinary-1","ordinary-100","ordinary-500","maximum","lock-contention","failure-retry"]') }}
+    env:
+      APP_ENV: test
+      SRVF_E4_DIAGNOSTIC_PURPOSE: DIAGNOSTIC_ONLY
+      SRVF_E4_DIAGNOSTIC_SCENARIO: ${{ matrix.scenario }}
+      SRVF_E4_NATIVE_PREPARE_PLAN: ${{ inputs.native_prepare_plan_500 && '1' || '' }}
+      SRVF_E4_REAL_SOURCE_C: ${{ inputs.real_source_c_scenario && inputs.real_source_c_scenario != 'off' && '1' || '' }}
+      SRVF_E4_REAL_KEY_CARRY: ${{ inputs.real_key_carry && '1' || '' }}
+      SRVF_E4_REAL_STATISTICS: ${{ inputs.real_statistics_maximum && '1' || '' }}
+      SRVF_E4_SOURCE_JOIN: ${{ inputs.source_join_comparison != 'off' && inputs.source_join_comparison || '' }}
+      SRVF_E4_SOURCE_JOIN_C: ${{ inputs.source_join_bucket_c && '1' || '' }}
+      SRVF_E4_SOURCE_JOIN_SMALL_RUN: ${{ inputs.source_join_small_run }}
+      SRVF_E4_CANONICAL_COST_ONLY: ${{ contains(github.event.head_commit.message, '[e4-canonical-cost-once]') && '1' || '' }}
+      SRVF_E4_CANONICAL_JIT_ABBA: ${{ contains(github.event.head_commit.message, '[e4-canonical-jit-once]') && '1' || '' }}
+      SRVF_E4_CANONICAL_MEMORY_PAIR: ${{ contains(github.event.head_commit.message, '[e4-canonical-memory-once]') && '1' || '' }}
+      SRVF_E4_CANONICAL_FIRST32: ${{ (inputs.fixed_metadata_maximum || contains(github.event.head_commit.message, '[e4-canonical-first32-once]') || contains(github.event.head_commit.message, '[e4-shared-guard-once]') || contains(github.event.head_commit.message, '[e4-join-key-once]')) && '1' || '' }}
+      SRVF_E4_JOIN_KEY_ONCE: ${{ (inputs.fixed_metadata_maximum || contains(github.event.head_commit.message, '[e4-join-key-once]')) && '1' || '' }}
+      SRVF_E4_FIXED_METADATA_MAX_ONCE: ${{ inputs.fixed_metadata_maximum && '1' || '' }}
+      SRVF_E4_JOIN_KEY_CALIBRATION: ${{ (inputs.small_metadata_calibration || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]')) && '1' || '' }}
+      SRVF_E4_SHARED_GUARD_ONCE: ${{ contains(github.event.head_commit.message, '[e4-shared-guard-once]') && '1' || '' }}
+      SRVF_E4_GITHUB_ISOLATED: '1'
+      SRVF_TEST_RUN_SCOPE: app_test_w98
+      SRVF_E4_W98: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.3
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma:generate
+      - name: Offline calibration boundary tests
+        if: "!inputs.native_prepare_plan_500 && inputs.source_join_comparison != 'small' && inputs.source_join_comparison != 'ordinary-500' && inputs.source_join_comparison != 'statistics-500' && (inputs.small_metadata_calibration || inputs.fixed_metadata_maximum || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]'))"
+        run: pnpm exec jest --config test/jest-unit.config.ts --runInBand --no-cache --runTestsByPath test/helpers/e4-prepare-cost-diagnostic.spec.ts test/helpers/e4-diagnostic-limits-client.spec.ts --testRegex 'test/helpers/(e4-prepare-cost-diagnostic|e4-diagnostic-limits-client)\.spec\.ts$'
+      - name: Native plan redaction and completeness boundary tests
+        if: (inputs.real_source_c_scenario && inputs.real_source_c_scenario != 'off') || inputs.real_statistics_maximum || inputs.native_prepare_plan_500 || inputs.source_join_comparison == 'small' || inputs.source_join_comparison == 'ordinary-500' || inputs.source_join_comparison == 'statistics-500'
+        run: pnpm exec jest --config test/jest-unit.config.ts --runInBand --no-cache --runTestsByPath test/helpers/e4-prepare-cost-diagnostic.spec.ts test/helpers/e4-diagnostic-limits-client.spec.ts test/helpers/e4-source-bucket-lateral-migration.spec.ts test/helpers/e4-migration-prefix.spec.ts test/helpers/e4-evaluation-join-key-migration.spec.ts --testRegex 'test/helpers/(e4-prepare-cost-diagnostic|e4-diagnostic-limits-client|e4-source-bucket-lateral-migration|e4-migration-prefix|e4-evaluation-join-key-migration)\.spec\.ts$'
+      - name: Start fresh PostgreSQL 16 runner
+        run: |
+          docker compose up -d postgres
+          for attempt in $(seq 1 60); do
+            if docker exec u-nest-api-postgres pg_isready -U postgres -d postgres >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+      - name: Prove PG16 native collection and redaction before any business fixture
+        if: inputs.real_key_carry || inputs.native_prepare_plan_500 || inputs.source_join_comparison == 'small' || inputs.source_join_comparison == 'ordinary-500' || inputs.source_join_comparison == 'statistics-500'
+        env:
+          TS_NODE_PROJECT: test/tsconfig.test.json
+        run: pnpm exec ts-node test/diagnostics/e4-prepare-cost.diagnostic-spec.ts --native-plan-capability
+      - name: Prove same-transaction statistics on tiny temporary tables before maximum fixture
+        if: inputs.real_statistics_maximum
+        env:
+          TS_NODE_PROJECT: test/tsconfig.test.json
+        run: pnpm exec ts-node test/diagnostics/e4-prepare-cost.diagnostic-spec.ts --real-statistics-capability
+      - name: Verify source-join small proof by exact HEAD or fixed SQL identities for statistics
+        if: inputs.source_join_comparison == 'ordinary-500' || inputs.source_join_comparison == 'statistics-500'
+        env:
+          TS_NODE_PROJECT: test/tsconfig.test.json
+          GH_TOKEN: ${{ github.token }}
+        run: pnpm exec ts-node test/diagnostics/e4-prepare-cost.diagnostic-spec.ts --source-join-calibration
+      - name: Prove fixed metadata bytes and hashes before fixture construction
+        if: inputs.small_metadata_calibration || inputs.fixed_metadata_maximum || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]')
+        env:
+          TS_NODE_PROJECT: test/tsconfig.test.json
+        run: pnpm exec ts-node test/diagnostics/e4-prepare-cost.diagnostic-spec.ts --canonical-equivalence
+      - name: Nonempty143 to144 or144 to145 and native guards before real small chain
+        if: inputs.real_source_c_scenario == 'ordinary-1'
+        run: |
+          node <<'NODE'
+          const cp = require('node:child_process');
+          const fs = require('node:fs');
+          const config = JSON.stringify({
+            rootDir: process.cwd(), testEnvironment: 'node', testRegex: '.*\\.e2e-spec\\.ts$',
+            moduleFileExtensions: ['ts','js','json'], maxWorkers: 1, testTimeout: 30000,
+            transform: {'^.+\\.ts$': ['ts-jest', {tsconfig:'<rootDir>/test/tsconfig.test.json'}]},
+            setupFiles: ['<rootDir>/test/setup/setup-files.ts'],
+          });
+          const result = cp.spawnSync('pnpm', ['exec','jest','--config',config,'--runInBand','--no-cache','--bail','--runTestsByPath',
+            process.env.SRVF_E4_REAL_KEY_CARRY === '1' ? 'test/e2e/activity-os-r5-e4-evaluation-join-key-migration.e2e-spec.ts' : 'test/e2e/activity-os-r5-e4-source-bucket-lateral-migration.e2e-spec.ts'], {env:process.env,stdio:'inherit'});
+          // Observe cleanup independently even when the migration suite failed.
+          const source = fs.readFileSync('test/diagnostics/e4-prepare-cost.diagnostic-spec.ts','utf8');
+          const sql = source.match(/export function calibrationCleanupSql\(\) \{\s*return `([\s\S]*?)`;/)?.[1];
+          let cleanup = {head:process.env.GITHUB_SHA,run:process.env.GITHUB_RUN_ID,status:'UNKNOWN'};
+          try {
+            if (!sql) throw Error('E4 cleanup SQL unavailable');
+            const raw = cp.execFileSync('docker',['exec','u-nest-api-postgres','psql','--no-psqlrc','-qtA','-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1','-c',sql],{encoding:'utf8',timeout:10000,maxBuffer:8192,stdio:['ignore','pipe','pipe']});
+            const facts = JSON.parse(raw);
+            const keys = ['databases','clients','leaseBackends','leaseLocks'];
+            if (facts.observer !== true || facts.scope !== true || facts.pg16 !== true || keys.some(k => !Number.isSafeInteger(facts[k]) || facts[k] < 0 || facts[k] > 10000)) throw Error('E4 cleanup facts refused');
+            cleanup = {...cleanup,status:keys.every(k => facts[k] === 0) ? 'OBSERVED_ABSENT' : 'REMAINS',facts};
+          } catch { /* UNKNOWN never turns a failed suite green. */ }
+          fs.mkdirSync('tmp/e4-prepare-cost-evidence',{recursive:true});
+          fs.writeFileSync('tmp/e4-prepare-cost-evidence/'+(process.env.SRVF_E4_REAL_KEY_CARRY === '1' ? 'key145-cleanup.json' : 'source144-cleanup.json'),JSON.stringify(cleanup)+'\n',{mode:0o600});
+          process.stdout.write((process.env.SRVF_E4_REAL_KEY_CARRY === '1' ? 'E4_KEY145_CLEANUP ' : 'E4_SOURCE144_CLEANUP ')+JSON.stringify(cleanup)+'\n');
+          process.exit(result.error || result.signal ? 1 : result.status !== 0 ? result.status ?? 1 : cleanup.status === 'OBSERVED_ABSENT' ? 0 : 1);
+          NODE
+      - name: One fixed scenario, exact migration pins, original later budgets and independent 600s watchdog
+        env:
+          TS_NODE_PROJECT: test/tsconfig.test.json
+        run: pnpm exec ts-node test/diagnostics/e4-prepare-cost.diagnostic-spec.ts --execute
+      - name: Summarize closed shared-guard evidence
+        if: always() && ((inputs.real_source_c_scenario && inputs.real_source_c_scenario != 'off') || inputs.real_statistics_maximum || inputs.source_join_comparison == 'statistics-500' || inputs.source_join_comparison == 'small' || inputs.source_join_comparison == 'ordinary-500' || inputs.native_prepare_plan_500 || inputs.small_metadata_calibration || inputs.fixed_metadata_maximum || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]') || contains(github.event.head_commit.message, '[e4-shared-guard-once]') || contains(github.event.head_commit.message, '[e4-join-key-once]'))
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const file = 'tmp/e4-prepare-cost-evidence/result.json';
+          if (process.env.SRVF_E4_REAL_SOURCE_C === '1' || process.env.SRVF_E4_REAL_STATISTICS === '1' || process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1' || process.env.SRVF_E4_SOURCE_JOIN) {
+            const realStatistics = process.env.SRVF_E4_REAL_STATISTICS === '1';
+            const realSource = process.env.SRVF_E4_REAL_SOURCE_C === '1';
+            const nativeFile = fs.existsSync(file) ? file : 'tmp/e4-prepare-cost-evidence/' + (realStatistics ? 'real-statistics-capability.json' : 'native-capability.json');
+            if (!fs.existsSync(nativeFile) || fs.statSync(nativeFile).size > 65536) throw Error('E4 native closed evidence unavailable');
+            const native = JSON.parse(fs.readFileSync(nativeFile, 'utf8'));
+            if (native.head !== process.env.GITHUB_SHA || native.run !== process.env.GITHUB_RUN_ID) throw Error('E4 native closed evidence binding refused');
+            const closed = fs.existsSync(file) ? native : {head:native.head,run:native.run,status:native.status === 'FAILED' ? 'FAILED' : 'INCOMPLETE',nativePreparePlan:{status:'NOT_CAPTURED',reason:'RESULT_UNAVAILABLE'},capability:native};
+            if (fs.existsSync(file) && (closed.coverage !== (realStatistics || realSource ? 'FULL_SETTLEMENT' : process.env.SRVF_E4_SOURCE_JOIN ? 'PREPARE_SOURCE_JOIN_ONLY' : 'PREPARE_NATIVE_PLAN_ONLY') || closed.scenario !== process.env.SRVF_E4_DIAGNOSTIC_SCENARIO || closed.purpose !== 'DIAGNOSTIC_ONLY')) throw Error('E4 native scenario binding refused');
+            // Numbered closed JSON chunks preserve the complete bounded evidence even if a log line is capped.
+            const emit = (artifact,value) => {
+              const json = JSON.stringify(value);
+              for (let offset = 0, index = 0; offset < json.length; offset += 12000, index++)
+                process.stdout.write('E4_NATIVE_PLAN_CHUNK ' + JSON.stringify({artifact,head:closed.head,run:closed.run,index,total:Math.ceil(json.length/12000),data:json.slice(offset,offset+12000)}) + '\n');
+            };
+            emit('result.json',closed);
+            const sidecars = realSource ? [] : realStatistics ? (closed.realStatistics?.file ? ['real-statistics.json'] : []) : process.env.SRVF_E4_SOURCE_JOIN ? (closed.sourceJoinComparison?.plans ?? []).map(p => p.file) : ['native-plan.json'];
+            if (sidecars.some((name,index) => process.env.SRVF_E4_SOURCE_JOIN && (index >= (process.env.SRVF_E4_SOURCE_JOIN === 'statistics-500' ? 5 : 4) || name !== 'source-join-plan-' + index + '.json'))) throw Error('E4 source sidecar path refused');
+            if (fs.existsSync(file)) for (const name of sidecars) {
+              const planFile = 'tmp/e4-prepare-cost-evidence/' + name;
+              if (!fs.existsSync(planFile) || fs.statSync(planFile).size > 65536) throw Error('E4 native sidecar unavailable');
+              const plan = JSON.parse(fs.readFileSync(planFile,'utf8'));
+              if (plan.head !== closed.head || plan.run !== closed.run) throw Error('E4 native sidecar binding refused');
+              emit(name,plan);
+            }
+            process.stdout.write('E4_NATIVE_PLAN_SUMMARY ' + JSON.stringify({head:closed.head,run:closed.run,status:closed.status,scenario:closed.scenario,prepareMs:closed.prepareMs,oracle:closed.oracle,nativeStatus:closed.nativePreparePlan?.status,realSourceCandidate:closed.realSourceCandidate,sourceJoinStatus:closed.sourceJoinComparison?.status,sourceVariant:closed.sourceJoinComparison?.sourceVariant,coldBucketDecision:closed.sourceJoinComparison?.coldBucketAssessment?.decision,coldBucketReasons:closed.sourceJoinComparison?.coldBucketAssessment?.reasons,probeReductionObserved:closed.sourceJoinComparison?.probeReductionObserved,missing:closed.nativePreparePlan?.missing,reason:closed.nativePreparePlan?.reason,breakdown:closed.nativePreparePlan?.breakdown,resources:closed.resources,independentCleanup:closed.independentCleanup}) + '\n');
+            if (process.env.SRVF_E4_SOURCE_JOIN_C === '1' && closed.sourceJoinComparison?.coldBucketAssessment?.decision === 'REJECTED') process.exit(3);
+            process.exit(0);
+          }
+          if (!fs.existsSync(file) || fs.statSync(file).size > 65536) throw Error('E4 closed evidence unavailable');
+          const r = JSON.parse(fs.readFileSync(file, 'utf8'));
+          if (r.head !== process.env.GITHUB_SHA || r.run !== process.env.GITHUB_RUN_ID || r.scenario !== process.env.SRVF_E4_DIAGNOSTIC_SCENARIO || r.purpose !== 'DIAGNOSTIC_ONLY') throw Error('E4 closed evidence binding refused');
+          process.stdout.write('E4_SHARED_GUARD_RESULT ' + JSON.stringify({ head:r.head, run:r.run, status:r.status, coverage:r.coverage, migration:r.migration, oracle:r.oracle, scenario:r.scenario, scenarioShape:r.scenarioShape, facts:r.facts, limits:r.limits, sourceBuildMs:r.sourceBuildMs, prepareMs:r.prepareMs, oracleMs:r.oracleMs, stages:r.stages, phase:r.phase, oracleTransactions:r.oracleTransactions, resources:r.resources, databaseCleanup:r.databaseCleanup, independentCleanup:r.independentCleanup, firstCanonical32:r.firstCanonical32, metadataPostOracle:r.metadataPostOracle, internalSqlPlan:r.internalSqlPlan, internal:r.internal, joinKeyCandidate:r.joinKeyCandidate, joinKeyPostFailureOracle:r.joinKeyPostFailureOracle, joinKeyVerificationError:r.joinKeyVerificationError, errorSubstage:r.errorSubstage, error:r.error }) + '\n');
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e4-prepare-cost-${{ github.run_id }}-${{ matrix.scenario }}
+          path: |
+            tmp/e4-prepare-cost-evidence/result.json
+            tmp/e4-prepare-cost-evidence/native-plan.json
+            tmp/e4-prepare-cost-evidence/native-capability.json
+            tmp/e4-prepare-cost-evidence/real-statistics.json
+            tmp/e4-prepare-cost-evidence/real-statistics-capability.json
+            tmp/e4-prepare-cost-evidence/source-join-plan-*.json
+            tmp/e4-prepare-cost-evidence/source-join-calibration.json
+            tmp/e4-prepare-cost-evidence/migration-failure-*.json
+            tmp/e4-prepare-cost-evidence/source144-cleanup.json
+            tmp/e4-prepare-cost-evidence/key145-cleanup.json
+          if-no-files-found: error
+      - name: Remove this job's ephemeral PostgreSQL container
+        if: always()
+        run: docker compose down
+
+  transaction-wait-observation:
+    if: github.repository == 'BA7IEE/srvf-nest-api' && github.ref == 'refs/heads/codex/activity-os-r5-e4-github-validation' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 && inputs.transaction_wait_observation && inputs.expected_sha == github.sha
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_ENV: test
+      JEST_MAX_WORKERS: '1'
+      SRVF_TEST_RUN_SCOPE: app_test,app_test_w1
+      EXPECTED_SHA: ${{ inputs.expected_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.3
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma:generate
+      - name: Pin exact current source and unchanged original maximum before any database fixture
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
+          node <<'NODE'
+          const fs = require('node:fs'), crypto = require('node:crypto');
+          const pins = {
+            'test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts': '5408651f58567fe8b9468f93326686ede1b6ac4da1d15028784fd0c3e3e51d87',
+            'test/helpers/e4-slice-read-diagnostic.ts': '9ac9b049a37e91190efbc06a881716651390d9f6b0cb46a67272abb9648bf97f',
+          };
+          for (const [file, sha] of Object.entries(pins))
+            if (crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') !== sha) throw Error('SOURCE_PIN_REFUSED');
+          if (fs.readdirSync('prisma/migrations', {withFileTypes:true}).filter(x=>x.isDirectory()).length !== 146) throw Error('CURRENT_146_REFUSED');
+          fs.mkdirSync('tmp/e4-transaction-wait-evidence', {recursive:true});
+          fs.writeFileSync('tmp/e4-transaction-wait-evidence/binding.json', JSON.stringify({
+            head:process.env.GITHUB_SHA, run:process.env.GITHUB_RUN_ID, attempt:process.env.GITHUB_RUN_ATTEMPT,
+            purpose:'DIAGNOSTIC_ONLY', acceptance:'NOT_AN_ACCEPTANCE_RESULT', pins,
+            businessTransactionMs:30000, originalCaseMs:600000, legacyDriver:'NOT_USED',
+          })+'\n');
+          NODE
+      - name: Offline observer and unchanged-opening tests
+        run: pnpm exec jest --config test/jest-unit.config.ts --runInBand --runTestsByPath src/modules/activities/e4-slice-read-diagnostic.spec.ts src/modules/activities/e4-maximum-stage-receipt.spec.ts
+      - name: Start a fresh isolated PostgreSQL 16 service
+        run: |
+          if docker inspect u-nest-api-postgres >/dev/null 2>&1; then exit 1; fi
+          touch "$RUNNER_TEMP/e4-observer-start-intent"
+          start_status=0
+          docker compose up -d postgres || start_status=$?
+          docker inspect --format '{{.Id}}' u-nest-api-postgres > "$RUNNER_TEMP/e4-observer-container-id"
+          test "$start_status" = 0
+          for attempt in $(seq 1 60); do
+            if docker exec u-nest-api-postgres pg_isready -U postgres -d postgres >/dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Run the exact original maximum once and retain bounded closed diagnostics
+        run: |
+          node <<'NODE'
+          const fs=require('node:fs'), cp=require('node:child_process'), path=require('node:path');
+          const privateDir=fs.mkdtempSync(path.join(process.env.RUNNER_TEMP,'e4-wait-private-'));
+          fs.chmodSync(privateDir,0o700);
+          const privateJest=path.join(privateDir,'jest.json');
+          const dir='tmp/e4-transaction-wait-evidence';
+          const target='E4 maximum real sources with unchanged transaction and query budgets 2,000 identities / 10,000 segments / 50,000 slices yield 8,000 policy units without repeated awards';
+          const pattern='^'+target.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$';
+          const markers=['E4_SLICE_READ ', 'E4_MAXIMUM_STAGE ',
+            'E4 maximum prepare phases (fixed counters) ',
+            'E4 maximum method boundaries (fixed counters) ',
+            'E4 maximum native request boundaries (fixed counters) ',
+            'E4 maximum engine request waits (fixed counters) ',
+            'E4 maximum prepare failure (fixed redacted counters) ',
+            'E4 maximum failure exact same-command facts '];
+          let bytes=0, records=0, discarded=0, refused=false, timedOut=false, terminationRequested=false, terminationFailed=false; const windows={}, seen=new Set(); let observerCleanup='NOT_OBSERVED';
+          function line(value) {
+            for(const marker of markers) {
+              const i=value.indexOf(marker); if(i<0) continue;
+              try {
+                const text=value.slice(i+marker.length).trim();
+                const object=JSON.parse(text);
+                if(Buffer.byteLength(text)>65536 || ++records>512) throw Error('BOUND');
+                if(marker==='E4_SLICE_READ ' && (object.schema!=='e4-slice-read/v2' || object.purpose!=='DIAGNOSTIC_ONLY' || object.acceptance!=='NOT_AN_ACCEPTANCE_RESULT')) throw Error('SCHEMA');
+                const safe=JSON.stringify({marker:marker.trim(), data:object});
+                if(bytes+Buffer.byteLength(safe)>2097152)throw Error('BOUND');
+                bytes+=Buffer.byteLength(safe); seen.add(marker.trim());
+                if(marker==='E4_SLICE_READ ' && object.stage==='INDEPENDENT_CLEANUP') observerCleanup=object.status;
+                if(marker==='E4_SLICE_READ ' && object.stage==='WINDOW_DRAINED') windows[object.phase]=object.windows.find(w=>w.phase===object.phase)?.sampleCoverage ?? 'UNKNOWN';
+                fs.appendFileSync(dir+'/closed-observations.jsonl',safe+'\n',{mode:0o600});
+                // Chunks preserve a complete large frame even when a log line is truncated.
+                for(let p=0;p<safe.length;p+=12000) process.stdout.write('E4_CLOSED_CHUNK '+JSON.stringify({record:records,index:p/12000,total:Math.ceil(safe.length/12000),data:safe.slice(p,p+12000)})+'\n');
+              } catch { refused=true; }
+              return;
+            }
+            discarded++;
+          }
+          const child=cp.spawn('pnpm',['exec','jest','--config','test/jest-e2e.config.ts','--runInBand',
+            '--runTestsByPath','test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts',
+            '--testNamePattern',pattern,'--json','--outputFile',privateJest],{stdio:['ignore','pipe','pipe'],detached:true});
+          let killTimer, terminalTimer, closeReceipt=null, finalized=false, groupAbsent=null;
+          const groupExists=()=>{
+            if(!Number.isSafeInteger(child.pid)||child.pid<1){terminationFailed=true;return null;}
+            try{process.kill(-child.pid,0);return true;}catch(error){if(error?.code==='ESRCH')return false;terminationFailed=true;return null;}
+          };
+          const signalGroup=(signal)=>{try{process.kill(-child.pid,signal);}catch(error){if(error?.code!=='ESRCH')terminationFailed=true;}};
+          const beginTermination=()=>{
+            terminationRequested=true; signalGroup('SIGTERM');
+            killTimer=setTimeout(()=>{
+              if(groupExists()!==false)signalGroup('SIGKILL');
+              terminalTimer=setTimeout(()=>{
+                groupAbsent=groupExists()===false;
+                finish(closeReceipt?.exitCode??null,closeReceipt?.signal??null,closeReceipt!==null);
+                // A bounded UNKNOWN receipt is persisted even if child close never arrives.
+                if(!closeReceipt||!groupAbsent)process.exit(1);
+              },1000);
+            },5000);
+          };
+          const watchdog=setTimeout(()=>{timedOut=true;beginTermination();},720000);
+          watchdog.unref();
+          for(const stream of [child.stdout,child.stderr]) {
+            let buffer='';
+            stream.setEncoding('utf8');
+            stream.on('data',chunk=>{buffer+=chunk; let n; while((n=buffer.indexOf('\n'))>=0){line(buffer.slice(0,n));buffer=buffer.slice(n+1);} if(buffer.length>131072){buffer='';refused=true;}});
+            stream.on('end',()=>{if(buffer)line(buffer);});
+          }
+          child.on('error',()=>{refused=true;});
+          function finish(exitCode,signal,closeObserved){
+            if(finalized)return;finalized=true;
+            clearTimeout(watchdog);clearTimeout(killTimer);clearTimeout(terminalTimer);
+            const summary={head:process.env.GITHUB_SHA,run:process.env.GITHUB_RUN_ID,status:'UNKNOWN',exitCode,signaled:!!signal,records,bytes,discarded,closedEvidenceRefused:refused,windowCoverage:windows,
+              process:{timedOut,terminationRequested,terminationFailed,closeObserved,groupAbsent,watchdogMs:720000},
+              evidenceCompleteness:{drainedWindows:Object.keys(windows).length,expectedWindows:4,observerCleanup,
+                methodCounters:seen.has('E4 maximum method boundaries (fixed counters)'),nativeCounters:seen.has('E4 maximum native request boundaries (fixed counters)')}};
+            try {
+              const raw=JSON.parse(fs.readFileSync(privateJest,'utf8'));
+              const selected=raw.testResults.flatMap(s=>s.assertionResults).filter(t=>!['pending','todo','disabled'].includes(t.status));
+              if(selected.length!==1 || selected[0].fullName!==target || raw.numTotalTestSuites!==1) throw Error('SELECTION_REFUSED');
+              const text=(selected[0].failureMessages ?? []).join('\n');
+              const numeric=(pattern)=>{const m=text.match(pattern),v=m?Number(m[1]):null;return Number.isSafeInteger(v)&&v>=0&&v<=3600000?v:null;};
+              summary.failureEvidence={codes:['P2028','P2010','P2002','P2003','57014','23514'].filter(c=>new RegExp('\\b'+c+'\\b').test(text)),
+                transactionTimeoutMs:numeric(/timeout for this transaction was (\d+) ms/),transactionElapsedMs:numeric(/(\d+) ms passed since the start of the transaction/),
+                locations:[]};
+              const files=['src/modules/activities/activity-time-settlement.service.ts','src/modules/activities/activity-contribution-settlement.service.ts','test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts'];
+              for(const file of files){const pattern=new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+':([0-9]+):([0-9]+)','g');let m;while((m=pattern.exec(text))&&summary.failureEvidence.locations.length<8)summary.failureEvidence.locations.push({file,line:Number(m[1]),column:Number(m[2])});}
+              summary.originalCase=selected[0].status==='passed' && exitCode===0 && raw.success ? 'PASS' : 'FAIL';
+              summary.counts={passed:raw.numPassedTests,failed:raw.numFailedTests,skipped:raw.numPendingTests};
+              summary.status=refused || records===0 || timedOut || terminationRequested || terminationFailed || !closeObserved || groupAbsent!==true ? 'UNKNOWN'
+                : Object.keys(windows).length!==4 || observerCleanup!=='OBSERVED' || !summary.evidenceCompleteness.methodCounters || !summary.evidenceCompleteness.nativeCounters ? 'PARTIAL_DIAGNOSTIC_ONLY' : 'COLLECTED_DIAGNOSTIC_ONLY';
+            } catch { summary.status='UNKNOWN'; }
+            finally {fs.rmSync(privateDir,{recursive:true,force:true});}
+            fs.writeFileSync(dir+'/summary.json',JSON.stringify(summary)+'\n');
+            process.stdout.write('E4_TRANSACTION_WAIT_SUMMARY '+JSON.stringify(summary)+'\n');
+            process.exitCode=summary.status==='COLLECTED_DIAGNOSTIC_ONLY' && summary.originalCase==='PASS' ? 0 : 1;
+          }
+          child.on('close',(exitCode,signal)=>{
+            closeReceipt={exitCode,signal};
+            groupAbsent=groupExists()===false;
+            if(groupAbsent)finish(exitCode,signal,true);
+            else if(!terminationRequested){clearTimeout(watchdog);beginTermination();}
+            // Existing escalation remains armed while any descendant survives its parent.
+          });
+          NODE
+      - name: Independently observe worker cleanup after original global teardown
+        if: always()
+        run: |
+          node <<'NODE'
+          const fs=require('node:fs'),cp=require('node:child_process');
+          let result={head:process.env.GITHUB_SHA,run:process.env.GITHUB_RUN_ID,status:'UNKNOWN',dedicatedLease:'NOT_APPLICABLE'};
+          try {
+            const sql="SELECT json_build_object('workerDatabases',(SELECT count(*) FROM pg_database WHERE datname='app_test_w1'),'templateDatabases',(SELECT count(*) FROM pg_database WHERE datname='app_test'),'clients',(SELECT count(*) FROM pg_stat_activity WHERE datname IN ('app_test','app_test_w1')))::text";
+            const facts=JSON.parse(cp.execFileSync('docker',['exec','u-nest-api-postgres','psql','-U','postgres','-d','postgres','-XAt','-v','ON_ERROR_STOP=1','-c',sql],{encoding:'utf8',timeout:5000,maxBuffer:4096}));
+            if(!['workerDatabases','templateDatabases','clients'].every(k=>Number.isSafeInteger(facts[k])&&facts[k]>=0&&facts[k]<=10000))throw Error('SHAPE');
+            result={...result,status:facts.workerDatabases===0&&facts.clients===0?'WORKER_ABSENT_NO_CLIENTS':'REMAINS',facts,templatePolicy:'RETAINED_BY_ORIGINAL_GLOBAL_TEARDOWN_UNTIL_SERVICE_REMOVAL'};
+          }catch{}
+          fs.mkdirSync('tmp/e4-transaction-wait-evidence',{recursive:true});
+          fs.writeFileSync('tmp/e4-transaction-wait-evidence/post-global-cleanup.json',JSON.stringify(result)+'\n');
+          process.stdout.write('E4_POST_GLOBAL_CLEANUP '+JSON.stringify(result)+'\n');
+          if(result.status!=='WORKER_ABSENT_NO_CLIENTS')process.exitCode=1;
+          NODE
+      - name: Remove only the service this job created and preserve the actual result
+        if: always()
+        run: |
+          node <<'NODE'
+          const fs=require('node:fs'),cp=require('node:child_process');
+          let status=fs.existsSync(process.env.RUNNER_TEMP+'/e4-observer-start-intent')?'UNKNOWN':'NOT_CREATED';
+          if(fs.existsSync(process.env.RUNNER_TEMP+'/e4-observer-container-id')) {
+            status='UNKNOWN';
+            const id=fs.readFileSync(process.env.RUNNER_TEMP+'/e4-observer-container-id','utf8').trim();
+            if(/^[a-f0-9]{64}$/.test(id)) {
+              const removed=cp.spawnSync('docker',['rm','-f',id],{stdio:'ignore',timeout:10000});
+              const inspected=cp.spawnSync('docker',['ps','-aq','--no-trunc','--filter','id='+id],{encoding:'utf8',timeout:5000});
+              if(removed.status===0&&inspected.status===0&&!inspected.stdout.trim())status='REMOVED';
+            }
+          }
+          fs.mkdirSync('tmp/e4-transaction-wait-evidence',{recursive:true});
+          fs.writeFileSync('tmp/e4-transaction-wait-evidence/container-cleanup.json',JSON.stringify({status})+'\n');
+          process.stdout.write('E4_CONTAINER_CLEANUP '+JSON.stringify({status})+'\n');
+          if(status==='UNKNOWN')process.exitCode=1;
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e4-transaction-wait-${{ github.run_id }}
+          path: |
+            tmp/e4-transaction-wait-evidence/binding.json
+            tmp/e4-transaction-wait-evidence/closed-observations.jsonl
+            tmp/e4-transaction-wait-evidence/summary.json
+            tmp/e4-transaction-wait-evidence/post-global-cleanup.json
+            tmp/e4-transaction-wait-evidence/container-cleanup.json
+          if-no-files-found: error
+          retention-days: 7

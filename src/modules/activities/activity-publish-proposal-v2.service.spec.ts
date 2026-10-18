@@ -7,10 +7,16 @@ import {
   ActivityPublishProposalV2Service,
   type ActivityPublishProposalSnapshotV2,
   type ActivityPublishProposalSnapshotV6,
+  type ActivityTemplateResolution,
 } from './activity-publish-proposal-v2.service';
 import { activitySessionCancellationEffects } from './activity-session-cancellation-effects';
 import { canonicalizeRegistrationFormDefinition } from './registration-form-definition';
 import { canonicalize, type CanonicalValue } from './settlement-content-hash';
+import { emptyActivityContributionPolicySelectionDocument } from './activity-contribution-policy-selection';
+import {
+  historicalAttendanceRoleFromRuleSnapshot,
+  historicalTimePolicySelectionTargetsFromRuleSnapshot,
+} from './activity-time-allocation-policy';
 
 type ProposalV2Internals = {
   currentState: jest.Mock;
@@ -1255,4 +1261,228 @@ describe('ActivityPublishProposalV2Service', () => {
     });
     expect((tx as { activityPlace?: unknown }).activityPlace).toBeUndefined();
   });
+});
+
+describe('approved policy RuleSnapshot supplies historical allocation roles', () => {
+  function setup(schemaVersion: number) {
+    const selection = emptyActivityContributionPolicySelectionDocument();
+    const service = new ActivityPublishProposalV2Service(
+      { get: jest.fn() } as never,
+      { applyPublishedTarget: jest.fn().mockResolvedValue(null) } as never,
+      { applyPublishedTarget: jest.fn().mockResolvedValue([]) } as never,
+      { apply: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        applyPublishReviewSelectionWithinTransaction: jest.fn().mockResolvedValue({
+          selection,
+          selectionRevisionId: 'contribution-selection',
+          revision: 1,
+          selectionHash: 'a'.repeat(64),
+        }),
+      } as never,
+    );
+    const internals = service as unknown as Record<string, jest.Mock>;
+    const sessions = [
+      {
+        sessionId: 'existing-session',
+        clientRef: null,
+        code: 'first',
+        positions: [
+          {
+            positionId: 'existing-position',
+            clientRef: null,
+            code: 'same-code',
+            attendanceRoleCode: 'service',
+            cancelled: true,
+          },
+        ],
+      },
+      {
+        sessionId: null,
+        clientRef: 'new-session-ref',
+        code: 'second',
+        positions: [
+          {
+            positionId: null,
+            clientRef: 'new-position-ref',
+            code: 'same-code',
+            attendanceRoleCode: 'training',
+            cancelled: false,
+          },
+        ],
+      },
+    ];
+    const activity = {
+      defaultLocationRequired: null,
+      defaultCheckInRadiusMeters: null,
+      archiveWaitingDays: null,
+      registrationModeCode: null,
+      allocationModeCode: 'first_come',
+    };
+    // Exercise the actual proposal config builder: it intentionally retains the old hash shape.
+    const config = (
+      service as unknown as {
+        resolveConfig(
+          activity: unknown,
+          sessions: unknown,
+          template: null,
+        ): ActivityTemplateResolution;
+      }
+    ).resolveConfig(activity, sessions, null);
+    const snapshot = {
+      schemaVersion,
+      activity,
+      sessions,
+      resolvedConfig: config,
+      timePolicyPointers: null,
+      registrationForm: null,
+      qualificationRuleSets: { ruleSets: [] },
+    };
+    internals.resolveNewlyCancelledSessionIds = jest.fn().mockResolvedValue([]);
+    internals.resolveRescheduledSessionIds = jest.fn().mockResolvedValue([]);
+    internals.applyActivity = jest.fn().mockResolvedValue(undefined);
+    internals.applySessions = jest.fn().mockResolvedValue(
+      new Map([
+        ['existing-session', 'existing-session'],
+        ['new-session-ref', 'new-session'],
+      ]),
+    );
+    internals.applyPositions = jest.fn().mockResolvedValue(
+      new Map([
+        ['existing-position', 'existing-position'],
+        ['new-position-ref', 'new-position'],
+      ]),
+    );
+    internals.v7MetricSelectionWrites = jest.fn().mockReturnValue(false);
+    internals.snapshotV6Fields = jest.fn().mockReturnValue({});
+    internals.snapshotV7Fields = jest.fn().mockReturnValue({});
+    internals.snapshotV8Fields = jest.fn().mockReturnValue({ timePolicyPointers: null });
+    internals.snapshotV9Fields = jest.fn().mockReturnValue({
+      contributionPolicyPointers: {
+        selection,
+        referenceKinds: {},
+        proposalSelectionHash: 'b'.repeat(64),
+      },
+    });
+    internals.materializeV9Selection = jest.fn().mockReturnValue(selection);
+    internals.loadV9TemplateSelection = jest.fn().mockResolvedValue(null);
+    internals.resolveV9ContributionPolicySelection = jest
+      .fn()
+      .mockResolvedValue({ fields: { contributionPolicyPointers: {} } });
+    internals.getTemplateResolution = jest.fn().mockResolvedValue(config);
+    const tx = {
+      activity: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ workflowRevision: 0 }),
+        update: jest.fn().mockResolvedValue({ workflowRevision: 1 }),
+      },
+      activityContributionPolicySelectionRevision: {
+        findUniqueOrThrow: jest
+          .fn()
+          .mockResolvedValue({ templateId: null, templateDefinitionHash: null }),
+      },
+    };
+    const apply = () =>
+      service.apply(tx as never, 'activity', snapshot as never, {
+        publish: false,
+        publishedByUserId: 'reviewer',
+        publishedByUserRole: 'USER',
+        versionKey: 'review:test',
+        auditMeta: { requestId: 'test', ip: null, ua: null },
+        at: new Date(),
+        contributionPolicyPublishReview: {
+          reviewId: 'review',
+          expectedSelectionRevision: 0,
+          proposalSelectionHash: 'b'.repeat(64),
+          actor: { id: 'reviewer', role: 'USER' } as never,
+          revalidate: jest.fn(),
+        },
+      });
+    return { apply, config, snapshot, internals };
+  }
+
+  beforeEach(() =>
+    jest.spyOn(activitySessionCancellationEffects, 'applyInTransactionTrusted').mockResolvedValue({
+      cancelledIdentityCount: 0,
+      revokedCredentialCount: 0,
+      notifiedMemberCount: 0,
+      populationRevisionBumped: false,
+    }),
+  );
+  afterEach(() => jest.restoreAllMocks());
+
+  it.each([8, 9])(
+    'V%s freezes approved roles and physical IDs for the actual historical reader',
+    async (version) => {
+      const f = setup(version);
+      const before = JSON.stringify(f.snapshot);
+      const result = await f.apply();
+      expect(historicalTimePolicySelectionTargetsFromRuleSnapshot(result.resolvedConfig)).toEqual([
+        { sessionId: 'existing-session', positionIds: ['existing-position'] },
+        { sessionId: 'new-session', positionIds: ['new-position'] },
+      ]);
+      expect(
+        historicalAttendanceRoleFromRuleSnapshot(
+          result.resolvedConfig,
+          'existing-session',
+          'existing-position',
+        ),
+      ).toBe('service');
+      expect(
+        historicalAttendanceRoleFromRuleSnapshot(
+          result.resolvedConfig,
+          'new-session',
+          'new-position',
+        ),
+      ).toBe('training');
+      expect(result.resolvedConfig.sessions[0].positions[0].cancelled).toBe(true);
+      expect(JSON.stringify(f.snapshot)).toBe(before);
+      f.snapshot.sessions[0].positions[0].attendanceRoleCode = 'changed-after-approval';
+      expect(
+        historicalAttendanceRoleFromRuleSnapshot(
+          result.resolvedConfig,
+          'existing-session',
+          'existing-position',
+        ),
+      ).toBe('service');
+    },
+  );
+
+  it.each([2, 3, 4, 5, 6, 7])(
+    'V%s retains its historical config without introducing policy role fields',
+    async (version) => {
+      const f = setup(version);
+      const before = JSON.stringify(f.snapshot);
+      expect((await f.apply()).resolvedConfig.sessions).toEqual(f.config.sessions);
+      expect(JSON.stringify(f.snapshot)).toBe(before);
+    },
+  );
+
+  it('rejects a missing physical position mapping', async () => {
+    const f = setup(8);
+    f.internals.applyPositions.mockResolvedValue(
+      new Map([['existing-position', 'existing-position']]),
+    );
+    await expect(f.apply()).rejects.toMatchObject({
+      biz: BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID,
+    });
+  });
+
+  it.each(['duplicate-session', 'duplicate-position', 'missing-config-position'])(
+    'rejects %s rather than guessing a role mapping',
+    async (kind) => {
+      const f = setup(8);
+      if (kind === 'duplicate-session') {
+        f.config.sessions.push(f.config.sessions[0]);
+      } else if (kind === 'duplicate-position') {
+        f.config.sessions[0].positions.push(f.config.sessions[0].positions[0]);
+      } else {
+        f.config.sessions[0].positions = [];
+      }
+      await expect(f.apply()).rejects.toMatchObject({
+        biz: BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID,
+      });
+    },
+  );
 });

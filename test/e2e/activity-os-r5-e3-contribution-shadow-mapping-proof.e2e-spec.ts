@@ -59,6 +59,8 @@ import {
 // Fixed pre-29.12 SQL reference; do not derive it from the candidate migration.
 import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
 
+const CURRENT_MIGRATION_COUNT = 147;
+
 const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_E3_D2_MAPPING_W98 === '1');
 
 const SOURCE_HASH_REFERENCE_SQL = `CREATE FUNCTION pg_temp.reference_source_hash_fn(v "ContributionShadowLegacySourceAnchor") RETURNS TEXT
@@ -1532,7 +1534,7 @@ describe('E3-2 D2 mapping schema construction', () => {
       sql(
         'SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL',
       ),
-    ).toBe('136');
+    ).toBe(String(CURRENT_MIGRATION_COUNT));
     for (const table of [
       'ContributionShadowMappingApproval',
       'ContributionShadowMappingApplication',

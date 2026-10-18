@@ -4,7 +4,187 @@ import {
   dayTotalWithinCap,
   distributeByWeight,
   splitRecognizedIntoDays,
+  splitNativeRecognizedIntoDays,
 } from './ledger-day-allocation';
+
+describe('E4 classified contribution dates are independent of service-hour dates', () => {
+  const date = new Date('2026-10-02T00:00:00.000Z');
+  const sourceStart = new Date('2026-10-01T16:00:00.000Z');
+  const input = {
+    spans: [],
+    recognizedServiceHours: 0,
+    recognizedContributionPoints: 1.01,
+    stableOrderKey: 'session:identity',
+  };
+  it('can post training contribution on its actual Beijing date with zero volunteer service hours', () => {
+    expect(
+      splitNativeRecognizedIntoDays({
+        ...input,
+        contributionDays: [
+          { ledgerDate: date, sequenceStartAt: sourceStart, recognizedPoints: '1.01' },
+        ],
+      }),
+    ).toEqual({
+      kind: 'split',
+      rows: [
+        {
+          ledgerDate: date,
+          sequenceStartAt: sourceStart,
+          serviceHours: 0,
+          recognizedPoints: 1.01,
+          stableOrderKey: input.stableOrderKey,
+        },
+      ],
+    });
+  });
+  it('keeps service-only days when the explicit contribution policy awards zero', () => {
+    const spans = [
+      {
+        startAt: new Date('2026-10-02T01:00:00.000Z'),
+        endAt: new Date('2026-10-02T03:00:00.000Z'),
+      },
+    ];
+    const outcome = splitNativeRecognizedIntoDays({
+      ...input,
+      spans,
+      recognizedServiceHours: 2,
+      recognizedContributionPoints: 0,
+      contributionDays: [],
+    });
+    expect(outcome).toEqual(
+      splitRecognizedIntoDays({
+        ...input,
+        spans,
+        recognizedServiceHours: 2,
+        recognizedContributionPoints: 0,
+      }),
+    );
+  });
+  it('does not invent a date or ledger entry for a zero-second/zero-point result', () => {
+    expect(
+      splitNativeRecognizedIntoDays({
+        ...input,
+        recognizedContributionPoints: 0,
+        contributionDays: [],
+      }),
+    ).toEqual({ kind: 'split', rows: [] });
+  });
+  it('preserves 1.01 = 0.51 + 0.50 across Beijing midnight, with source-based cap ordering', () => {
+    const previousDate = new Date('2026-10-01T00:00:00.000Z');
+    const previousStart = new Date('2026-10-01T15:59:00.000Z');
+    const outcome = splitNativeRecognizedIntoDays({
+      ...input,
+      contributionDays: [
+        { ledgerDate: date, sequenceStartAt: sourceStart, recognizedPoints: '0.50' },
+        { ledgerDate: previousDate, sequenceStartAt: previousStart, recognizedPoints: '0.51' },
+      ],
+    });
+    expect(outcome).toEqual({
+      kind: 'split',
+      rows: [
+        {
+          ledgerDate: previousDate,
+          sequenceStartAt: previousStart,
+          recognizedPoints: 0.51,
+          serviceHours: 0,
+          stableOrderKey: input.stableOrderKey,
+        },
+        {
+          ledgerDate: date,
+          sequenceStartAt: sourceStart,
+          recognizedPoints: 0.5,
+          serviceHours: 0,
+          stableOrderKey: input.stableOrderKey,
+        },
+      ],
+    });
+  });
+  it('keeps service and contribution on separate real dates rather than moving points to a volunteer span', () => {
+    const spans = [
+      {
+        startAt: new Date('2026-10-03T01:00:00.000Z'),
+        endAt: new Date('2026-10-03T02:00:00.000Z'),
+      },
+    ];
+    const outcome = splitNativeRecognizedIntoDays({
+      ...input,
+      spans,
+      recognizedServiceHours: 1,
+      contributionDays: [
+        { ledgerDate: date, sequenceStartAt: sourceStart, recognizedPoints: '1.01' },
+      ],
+    });
+    if (outcome.kind !== 'split') throw new Error('valid native split rejected');
+    expect(
+      outcome.rows.map((row) => [
+        row.ledgerDate.toISOString().slice(0, 10),
+        row.serviceHours,
+        row.recognizedPoints,
+      ]),
+    ).toEqual([
+      ['2026-10-02', 0, 1.01],
+      ['2026-10-03', 1, 0],
+    ]);
+  });
+  it('uses classified contribution sequence on the same day even when a volunteer span started earlier', () => {
+    const spans = [
+      {
+        startAt: new Date('2026-10-01T16:00:00.000Z'),
+        endAt: new Date('2026-10-01T17:00:00.000Z'),
+      },
+    ];
+    const recognizedStart = new Date('2026-10-02T01:00:00.000Z');
+    const outcome = splitNativeRecognizedIntoDays({
+      ...input,
+      spans,
+      recognizedServiceHours: 1,
+      contributionDays: [
+        { ledgerDate: date, sequenceStartAt: recognizedStart, recognizedPoints: '1.01' },
+      ],
+    });
+    if (outcome.kind !== 'split') throw new Error('valid native split rejected');
+    expect(outcome.rows[0]).toMatchObject({
+      serviceHours: 1,
+      recognizedPoints: 1.01,
+      sequenceStartAt: recognizedStart,
+    });
+    expect(allocateDailyCredit(outcome.rows, 2.5)).toEqual([
+      { creditedPoints: 0.5, cappedOutPoints: 0.51 },
+    ]);
+  });
+  it.each([
+    { recognizedPoints: '1.00' },
+    { recognizedPoints: '-1.01' },
+    { recognizedPoints: '1.001' },
+    { ledgerDate: new Date('2026-10-03T00:00:00.000Z') },
+    { ledgerDate: new Date('2026-10-02T01:00:00.000Z') },
+    { sequenceStartAt: new Date('2026-10-02T16:00:00.000Z') },
+    { sequenceStartAt: new Date(Number.NaN) },
+  ])('rejects mismatched sums, dates or noncanonical points %p', (override) => {
+    expect(() =>
+      splitNativeRecognizedIntoDays({
+        ...input,
+        contributionDays: [
+          { ledgerDate: date, sequenceStartAt: sourceStart, recognizedPoints: '1.01', ...override },
+        ],
+      }),
+    ).toThrow();
+  });
+  it('rejects duplicated days and a nonzero recognition without date evidence', () => {
+    const contributionDay = {
+      ledgerDate: date,
+      sequenceStartAt: sourceStart,
+      recognizedPoints: '1.01',
+    };
+    expect(() =>
+      splitNativeRecognizedIntoDays({
+        ...input,
+        contributionDays: [contributionDay, contributionDay],
+      }),
+    ).toThrow();
+    expect(() => splitNativeRecognizedIntoDays({ ...input, contributionDays: [] })).toThrow();
+  });
+});
 
 // 账本算术的判据。**它错了不会报错** —— 会产出一个看起来正常的账本,
 // 所以这里每一条都写成"算出来的数必须逐分等于某个具体值",不写"大致正确"。

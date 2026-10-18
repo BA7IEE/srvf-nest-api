@@ -1825,6 +1825,10 @@ export class ActivityPublishProposalV2Service {
     // The existing rule resolution is frozen when the proposal is submitted. v3/v4 append this
     // approval's compact active Form pointer; they must not re-resolve a template that changed
     // while the review was pending.
+    const policySessions =
+      snapshot.schemaVersion === 8 || snapshot.schemaVersion === 9
+        ? this.freezePolicySnapshotSessions(snapshot, sessionIds, positionIds)
+        : undefined;
     const resolvedConfig =
       snapshot.schemaVersion === 5
         ? { ...snapshot.resolvedConfig, registrationForm, qualificationRuleSets }
@@ -1845,6 +1849,7 @@ export class ActivityPublishProposalV2Service {
             : snapshot.schemaVersion === 8
               ? {
                   ...snapshot.resolvedConfig,
+                  sessions: policySessions!,
                   registrationForm,
                   qualificationRuleSets,
                   ...this.snapshotV8Fields(snapshot),
@@ -1853,6 +1858,7 @@ export class ActivityPublishProposalV2Service {
               : snapshot.schemaVersion === 9
                 ? {
                     ...snapshot.resolvedConfig,
+                    sessions: policySessions!,
                     registrationForm,
                     qualificationRuleSets,
                     ...this.snapshotV9Fields(snapshot),
@@ -3588,6 +3594,64 @@ export class ActivityPublishProposalV2Service {
       }
       throw error;
     }
+  }
+
+  /** Policy allocation reads roles only from the approved RuleSnapshot, never today's positions.
+   * Keep proposal/config hashing unchanged; enrich only the approval's final physical snapshot. */
+  private freezePolicySnapshotSessions(
+    snapshot: ActivityPublishProposalSnapshotV8 | ActivityPublishProposalSnapshotV9,
+    sessionIds: ReadonlyMap<string, string>,
+    positionIds: ReadonlyMap<string, string>,
+  ): ActivityTemplateResolution['sessions'] {
+    const invalid = (): never => {
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+    };
+    const key = (id: string | null, code: string) => JSON.stringify([id, code]);
+    const unique = <T>(rows: readonly T[], identify: (row: T) => string): Map<string, T> => {
+      const result = new Map(rows.map((row) => [identify(row), row]));
+      if (result.size !== rows.length) return invalid();
+      return result;
+    };
+    const approved = unique(snapshot.sessions, (session) => key(session.sessionId, session.code));
+    const physical = unique(
+      this.materializeV8Sessions(snapshot.sessions, sessionIds, positionIds),
+      (session) => session.sessionId ?? '',
+    );
+    const configs = snapshot.resolvedConfig.sessions;
+    if (unique(configs, (session) => key(session.sessionId, session.code)).size !== approved.size)
+      return invalid();
+    return configs.map((config) => {
+      const source = approved.get(key(config.sessionId, config.code));
+      if (!source) return invalid();
+      const target = physical.get(sessionIds.get(this.sessionReference(source)) ?? '');
+      if (!target || target.code !== config.code) return invalid();
+      const sourcePositions = unique(source.positions, (position) =>
+        key(position.positionId, position.code),
+      );
+      const targetPositions = unique(target.positions, (position) => position.positionId ?? '');
+      if (
+        unique(config.positions, (position) => key(position.positionId, position.code)).size !==
+        sourcePositions.size
+      )
+        return invalid();
+      return {
+        ...config,
+        sessionId: target.sessionId,
+        positions: config.positions.map((position) => {
+          const sourcePosition = sourcePositions.get(key(position.positionId, position.code));
+          if (!sourcePosition) return invalid();
+          const targetPosition = targetPositions.get(
+            positionIds.get(this.positionReference(sourcePosition)) ?? '',
+          );
+          if (!targetPosition || targetPosition.code !== position.code) return invalid();
+          return {
+            ...position,
+            positionId: targetPosition.positionId,
+            attendanceRoleCode: targetPosition.attendanceRoleCode,
+          };
+        }),
+      };
+    });
   }
 
   private materializeV8Sessions(

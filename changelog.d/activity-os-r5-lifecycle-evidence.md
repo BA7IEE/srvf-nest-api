@@ -1,0 +1,2 @@
+- 补充R5 active模式的真实PostgreSQL生命周期回归：preparing/pending任务跨API与实际worker进程重启后恰一次入账，以及native review guard成功后授权callback拒绝的完整事务回滚。
+- 修复更正source hash的数据库NULL缺口：新增147 validated CHECK，保留历史SQL/函数/ACL；补齐非空升级、脏数据升级拒绝、NULL整笔回滚与有效V3提交/重放证据。3b签字与生产切换边界保持。

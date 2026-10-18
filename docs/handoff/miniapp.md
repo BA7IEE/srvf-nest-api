@@ -1,5 +1,22 @@
 # 交接:后端 ↔ 小程序前端 / 招新 H5
 
+## E4 负责人工作台贡献证明（Draft PR1380，未合并、未部署）
+
+三个既有Human App managed GET增加可选 `contributionProof`，不新增路由或写入参数：
+
+- `/api/app/v1/my/managed-activities/{activityId}/time-settlement`：沿用 `activity.time-settlement.read`、当前成员及活动责任／组织范围复核。
+- `/api/app/v1/my/managed-activities/{activityId}/settlement`：沿用 `activity.settlement-generate.record` 及既有负责人资格。
+- `/api/app/v1/my/managed-activities/{activityId}/settlement/versions/{versionId}`：同上，读取指定不可变版本自己的证明，不借当前版本覆盖历史。
+
+字段与调用签名以本分支生成的 OpenAPI/App client 为准。legacy省略证明字段；native
+`pending=true` 或空总分表示未准备／来源陈旧，不得默认为零或在客户端调用旧规则兜底。
+明确零分也必须保留政策版本及解释证据。贡献积分和志愿服务时长独立展示，不能相互换算。
+最多100项 `evaluations` 是解释预览；`hasMore=true` 时不可把预览当全量或自行求和替代根总分。
+证明／摘要不是操作许可，后端仍在每次写入和锁后复核权限，客户端不得自动准备、送审或提交。
+
+2026-10-15：候选已提交至[Draft PR1380](https://github.com/BA7IEE/srvf-nest-api/pull/1380)，145 small／500全链及冻结oracle通过；旧C满额失败；145专用满额未运行，常规CI最大例prepare29.271秒后整例600秒超时、全链未过。当前仍默认off、fixture仅测试可写，E5正式准入与完整发布验收未完成；前端发布／回执、生产、Gate和D8-OPS未完成。最新边界见[来源复用评审记录](../plans/activity-os-r5-e4-assert-source-reuse-review.md)。
+下方既有阶段说明保留其历史时点。
+
 ## E1-3 活动贡献政策选择（后端 Draft 候选，前端未发布）
 
 Human App managed 面新增三项：

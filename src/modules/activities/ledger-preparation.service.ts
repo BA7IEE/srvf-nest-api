@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -12,8 +12,13 @@ import {
   decimalToHundredths,
   fromHundredths,
   splitRecognizedIntoDays,
+  splitNativeRecognizedIntoDays,
   type LedgerDaySplitRow,
 } from './ledger-day-allocation';
+import {
+  ActivityContributionSettlementService,
+  frozenContributionRegime,
+} from './activity-contribution-settlement.service';
 
 // ===== 活动改造 v1.1 第 2 批第五刀:§5.12 万人账本准备协议 =====
 //
@@ -84,6 +89,9 @@ export const LEDGER_PREPARE_MEMBER_CHUNK_SIZE = 500;
 
 /** 单个 item 事务的显式预算。分块之后每块工作量有界,不需要第三刀那种长预算。 */
 export const LEDGER_PREPARE_ITEM_TX_TIMEOUT_MS = 60_000;
+
+/** 收口事务须在同一预算内完成时间与贡献完整性校验及 ready 原子更新。 */
+export const LEDGER_PREPARE_FINALIZE_TX_TIMEOUT_MS = 30_000;
 
 export const LEDGER_PREPARE_JOB_TYPE = 'settlement_prepare';
 
@@ -186,6 +194,7 @@ export class LedgerPreparationService {
     // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
     private readonly timeLedger: ParticipationTimeLedgerService,
+    @Optional() private readonly contributions?: ActivityContributionSettlementService,
   ) {}
 
   // =========================================================================
@@ -211,12 +220,22 @@ export class LedgerPreparationService {
       }
 
       const operationKey = `${LEDGER_PREPARE_JOB_TYPE}:${postingBatchId}`;
-      await this.timeLedger.ensureManifest(tx, batch);
       const existing = await tx.activityBatchJob.findUnique({
         where: { operationKey },
         select: { id: true, total: true },
       });
-      if (existing !== null) return { jobId: existing.id, itemCount: existing.total };
+      if (existing !== null) {
+        if (frozenContributionRegime(batch.contributionRegimeCode) === 'policy_v1') {
+          if (!this.contributions)
+            throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+          this.activityWorkflowGate.assertV11WriteAllowed();
+        }
+        await this.timeLedger.assertManifestForReplay(tx, batch);
+        return { jobId: existing.id, itemCount: existing.total };
+      }
+
+      this.assertContributionWriteAllowed(batch.contributionRegimeCode);
+      await this.timeLedger.ensureManifest(tx, batch);
 
       const memberIds = await this.readVersionMemberIds(tx, batch.settlementVersionId);
       const chunkCount = Math.max(
@@ -305,6 +324,12 @@ export class LedgerPreparationService {
         if (batch.statusCode !== 'preparing') {
           throw new BizException(BizCode.LEDGER_PREPARE_BATCH_STATUS_INVALID);
         }
+        const native = frozenContributionRegime(batch.contributionRegimeCode) === 'policy_v1';
+        if (native) {
+          if (!this.contributions)
+            throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+          this.contributions.assertNativeWriteAllowed();
+        }
 
         const chunkIndex = chunkIndexOf(item.itemKey);
         const memberIds = await this.readVersionMemberIds(tx, batch.settlementVersionId);
@@ -331,14 +356,27 @@ export class LedgerPreparationService {
 
         // ===== §5.12 ③ 按北京日拆 day rows =====
         const splitRows: PreparedDayRow[] = [];
+        const contributionDays = native
+          ? await this.contributions?.ledgerDaysInTx(
+              tx,
+              batch.settlementVersionId,
+              revisions.map((row) => row.participationIdentityId),
+            )
+          : undefined;
         for (const revision of revisions) {
-          const outcome = splitRecognizedIntoDays({
+          const input = {
             spans: spansByIdentity.get(revision.participationIdentityId) ?? [],
             recognizedServiceHours: Number(revision.recognizedServiceHours.toString()),
             recognizedContributionPoints: Number(revision.recognizedContributionPoints.toString()),
             // §3.21 `stableOrderKey`:场次 + 身份,确定性且不依赖 id 生成顺序。
             stableOrderKey: `${revision.identity.sessionId}:${revision.participationIdentityId}`,
-          });
+          };
+          const outcome = native
+            ? splitNativeRecognizedIntoDays({
+                ...input,
+                contributionDays: contributionDays?.get(revision.participationIdentityId) ?? [],
+              })
+            : splitRecognizedIntoDays(input);
           // 🔴 有认定值却一天都归不上 ⇒ 拒绝。**不猜日期**(见 20078 的注释)。
           if (outcome.kind === 'no_service_day') {
             throw new BizException(BizCode.LEDGER_PREPARE_DAY_SPLIT_UNRESOLVED);
@@ -409,101 +447,115 @@ export class LedgerPreparationService {
     // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
     // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
     this.activityWorkflowGate.assertV11WriteAllowed();
-    return await this.prisma.$transaction(async (tx) => {
-      const job = await this.lockJob(tx, jobId);
-      const batch = await this.lockBatch(tx, requireBatchId(job.postingBatchId));
+    return await this.prisma.$transaction(
+      async (tx) => {
+        const job = await this.lockJob(tx, jobId);
+        const batch = await this.lockBatch(tx, requireBatchId(job.postingBatchId));
 
-      const pending = await tx.activityBatchJobItem.count({
-        where: { jobId, statusCode: { not: 'succeeded' } },
-      });
-      if (pending > 0) {
-        return {
-          jobId,
-          postingBatchId: batch.id,
-          batchStatus: batch.statusCode,
-          preparedCount: batch.preparedCount,
-          totalCount: batch.totalCount,
-          baselineJsonHash: batch.baselineJsonHash,
-        };
-      }
-      if (batch.statusCode !== 'preparing') {
-        return {
-          jobId,
-          postingBatchId: batch.id,
-          batchStatus: batch.statusCode,
-          preparedCount: batch.preparedCount,
-          totalCount: batch.totalCount,
-          baselineJsonHash: batch.baselineJsonHash,
-        };
-      }
+        const pending = await tx.activityBatchJobItem.count({
+          where: { jobId, statusCode: { not: 'succeeded' } },
+        });
+        if (pending > 0) {
+          return {
+            jobId,
+            postingBatchId: batch.id,
+            batchStatus: batch.statusCode,
+            preparedCount: batch.preparedCount,
+            totalCount: batch.totalCount,
+            baselineJsonHash: batch.baselineJsonHash,
+          };
+        }
+        if (batch.statusCode !== 'preparing') {
+          return {
+            jobId,
+            postingBatchId: batch.id,
+            batchStatus: batch.statusCode,
+            preparedCount: batch.preparedCount,
+            totalCount: batch.totalCount,
+            baselineJsonHash: batch.baselineJsonHash,
+          };
+        }
+        const native = this.assertContributionWriteAllowed(batch.contributionRegimeCode);
 
-      // 🔴 §5.12 ⑧「数量一致」:准备到的队员数必须等于批次声明的人口数。
-      //    不一致时**不进 ready**,也**不留在 preparing**(那等于一个永远可能
-      //    "再试一次"的僵尸批次)—— 直接判 `failed`,让第四刀的下一次终审
-      //    另开一条新批次(它只会恢复 preparing / ready 的批次)。
-      if (batch.preparedCount !== batch.totalCount) {
+        // 🔴 §5.12 ⑧「数量一致」:准备到的队员数必须等于批次声明的人口数。
+        //    不一致时**不进 ready**,也**不留在 preparing**(那等于一个永远可能
+        //    "再试一次"的僵尸批次)—— 直接判 `failed`,让第四刀的下一次终审
+        //    另开一条新批次(它只会恢复 preparing / ready 的批次)。
+        if (batch.preparedCount !== batch.totalCount) {
+          await tx.activityBatchJob.update({
+            where: { id: jobId },
+            data: {
+              statusCode: 'failed',
+              completedAt: new Date(),
+              lastErrorCode: 'LEDGER_PREPARE_COUNT_MISMATCH',
+            },
+          });
+          const failed = await tx.ledgerPostingBatch.update({
+            where: { id: batch.id },
+            data: {
+              statusCode: 'failed',
+              failedAt: new Date(),
+              failureCount: { increment: 1 },
+              version: { increment: 1 },
+            },
+            select: { statusCode: true, preparedCount: true, totalCount: true },
+          });
+          return {
+            jobId,
+            postingBatchId: batch.id,
+            batchStatus: failed.statusCode,
+            preparedCount: failed.preparedCount,
+            totalCount: failed.totalCount,
+            baselineJsonHash: null,
+          };
+        }
+
+        const baseline = readBaselineFromPayload(job.payload);
+        await this.timeLedger.assertComplete(tx, batch);
+        if (native)
+          await this.contributions!.assertVersionInTx(tx, batch.settlementVersionId, batch.id);
+        const baselineJsonHash = ledgerBaselineDigest(baseline);
+        const now = new Date();
+
         await tx.activityBatchJob.update({
           where: { id: jobId },
-          data: {
-            statusCode: 'failed',
-            completedAt: new Date(),
-            lastErrorCode: 'LEDGER_PREPARE_COUNT_MISMATCH',
-          },
+          data: { statusCode: 'succeeded', completedAt: now, lastErrorCode: null },
         });
-        const failed = await tx.ledgerPostingBatch.update({
-          where: { id: batch.id },
-          data: {
-            statusCode: 'failed',
-            failedAt: new Date(),
-            failureCount: { increment: 1 },
-            version: { increment: 1 },
-          },
-          select: { statusCode: true, preparedCount: true, totalCount: true },
-        });
+        const ready = await tx.ledgerPostingBatch
+          .update({
+            where: { id: batch.id },
+            data: {
+              statusCode: 'ready',
+              preparedAt: now,
+              baselineJsonHash,
+              version: { increment: 1 },
+            },
+            select: { statusCode: true, preparedCount: true, totalCount: true },
+          })
+          .catch((error: unknown) => this.timeLedger.rethrowConstraint(error));
+
         return {
           jobId,
           postingBatchId: batch.id,
-          batchStatus: failed.statusCode,
-          preparedCount: failed.preparedCount,
-          totalCount: failed.totalCount,
-          baselineJsonHash: null,
+          batchStatus: ready.statusCode,
+          preparedCount: ready.preparedCount,
+          totalCount: ready.totalCount,
+          baselineJsonHash,
         };
-      }
-
-      const baseline = readBaselineFromPayload(job.payload);
-      await this.timeLedger.assertComplete(tx, batch);
-      const baselineJsonHash = ledgerBaselineDigest(baseline);
-      const now = new Date();
-
-      await tx.activityBatchJob.update({
-        where: { id: jobId },
-        data: { statusCode: 'succeeded', completedAt: now, lastErrorCode: null },
-      });
-      const ready = await tx.ledgerPostingBatch
-        .update({
-          where: { id: batch.id },
-          data: {
-            statusCode: 'ready',
-            preparedAt: now,
-            baselineJsonHash,
-            version: { increment: 1 },
-          },
-          select: { statusCode: true, preparedCount: true, totalCount: true },
-        })
-        .catch((error: unknown) => this.timeLedger.rethrowConstraint(error));
-
-      return {
-        jobId,
-        postingBatchId: batch.id,
-        batchStatus: ready.statusCode,
-        preparedCount: ready.preparedCount,
-        totalCount: ready.totalCount,
-        baselineJsonHash,
-      };
-    });
+      },
+      { timeout: LEDGER_PREPARE_FINALIZE_TX_TIMEOUT_MS },
+    );
   }
 
   // ===== 读写细节 ==========================================================
+
+  private assertContributionWriteAllowed(value: string | undefined): boolean {
+    if (frozenContributionRegime(value) === 'legacy') return false;
+    if (!this.contributions)
+      throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+    this.contributions.assertNativeWriteAllowed();
+    return true;
+  }
 
   private async lockBatch(
     tx: PrismaTx,
@@ -518,6 +570,7 @@ export class LedgerPreparationService {
     preparedCount: number;
     totalCount: number;
     baselineJsonHash: string | null;
+    contributionRegimeCode?: string;
   }> {
     const rows = await tx.$queryRaw<
       Array<{
@@ -530,13 +583,15 @@ export class LedgerPreparationService {
         preparedCount: number;
         totalCount: number;
         baselineJsonHash: string | null;
+        contributionRegimeCode?: string;
       }>
     >`
       SELECT b.id, b."statusCode", b."settlementVersionId", b."settlementRunId",
              r."activityId", b."requestHash", b."preparedCount", b."totalCount",
-             b."baselineJsonHash"
+             b."baselineJsonHash", v."contributionRegimeCode"
       FROM "LedgerPostingBatch" b
       JOIN "AttendanceSettlementRun" r ON r.id = b."settlementRunId"
+      JOIN "AttendanceSettlementVersion" v ON v.id = b."settlementVersionId" AND v."settlementRunId" = r.id
       WHERE b.id = ${postingBatchId}
       FOR UPDATE OF b
     `;

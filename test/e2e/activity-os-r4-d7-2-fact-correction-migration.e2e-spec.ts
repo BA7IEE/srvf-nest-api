@@ -33,7 +33,7 @@ const D7_2_FACT_MIGRATION_COUNT = 125;
 const BINDING_GUARD_MIGRATION_COUNT = 126;
 const ALLOCATION_GUARD_MIGRATION_COUNT = 127;
 const CORRECTION_RECEIPT_GUARD_MIGRATION_COUNT = 128;
-const CURRENT_MIGRATION_COUNT = 136;
+const CURRENT_MIGRATION_COUNT = 147;
 const WORKER = 98;
 const USE_DEDICATED_W98 = process.env.SRVF_D7_2_W98 === '1';
 const LEGACY_V1_REQUEST_ID = 'd7-2-migration-v1-request';
@@ -220,24 +220,19 @@ async function seedLegacyFact(): Promise<void> {
           currentSubmittedVersion: 1,
         },
       });
-      const version = await tx.attendanceSettlementVersion.create({
-        data: {
-          settlementRunId: run.id,
-          version: 1,
-          evidenceSealId: seal.id,
-          evidenceRevision: 0,
-          populationRevision: 0,
-          workflowRevision: 0,
-          contentHash: 'd7-2-migration-version',
-          personCount: 1,
-          sessionParticipationCount: 1,
-          serviceSegmentCount: 1,
-          createdByUserId: user.id,
-          submittedAt: end,
-          statusCode: 'approved',
-          operationKey: 'd7-2-migration-submit',
-        },
-      });
+      const [version] = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+INSERT INTO "AttendanceSettlementVersion" (
+  "updatedAt", "id", "settlementRunId", "version",
+  "evidenceSealId", "evidenceRevision", "populationRevision", "workflowRevision",
+  "contentHash", "personCount", "sessionParticipationCount", "serviceSegmentCount",
+  "createdByUserId", "submittedAt", "statusCode", "operationKey"
+) VALUES (
+  CURRENT_TIMESTAMP, ${'legacy-d7-2-settlement-version'}, ${run.id}, ${1},
+  ${seal.id}, ${0}, ${0}, ${0},
+  ${'d7-2-migration-version'}, ${1}, ${1}, ${1},
+  ${user.id}, ${end}, ${'approved'}, ${'d7-2-migration-submit'}
+) RETURNING "id"
+`);
       const requestedChangeJson = {
         schemaVersion: 2,
         results: [],

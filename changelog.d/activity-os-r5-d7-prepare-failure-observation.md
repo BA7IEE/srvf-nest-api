@@ -1,0 +1,1 @@
+- Observe only the original 2,000-identity D7 prepare request with fixed engine request/transaction timings and independently anchored before/after counts. Preserve the original HTTP and budget assertions; keep observer reads outside the measured request, read-only and bounded to 15 seconds. Do not infer durability from an error response or reset historical UNKNOWN evidence.

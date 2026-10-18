@@ -1,0 +1,9 @@
+# E4 complete assertion source reuse
+
+Migration143 reuses relation-valued source rows within one complete assertion. INSERT and deferred checks remain independent, with the existing frozen selection, source, evaluation, root/hash and version/result checks intact. The first-review service pins the exact new function body; migrations1–142 remain unchanged.
+
+Adds nonempty142→143/no-op preservation, old/new guard equivalence and precedence, private SQL double-fault fixtures, native INSERT/deferred rollback, observed two-backend snapshot/freshness and frozen root/day/source oracle regressions. Historical142 tests keep their fixed migration entry. The formal full-scale30-second budget is unchanged; GitHub validation and maintainer SQL/trusted approval remain required before acceptance.
+
+Repairs the143 regression's small fixtures by loading the three frozen non-scale oracle functions and checking fixed day SQL against explicit one-source, cross-day and empty expectations. A single allocation/slice remains one source reference across Beijing dates. Test-owned guard transactions have a bounded30-second deadline; deferred COMMIT requires exact native23514/evaluation-guard evidence in the actual Prisma unknown-request wrapper, with an independent rollback snapshot read before error assertions. Post-upgrade tests require this dedicated database's143 checksum/body pin. Migration143 bytes, historical migrations and the formal scale test remain unchanged in this test repair.
+
+The subsequent performance candidate narrows only the root aggregate's materialized projection from the full evaluation row to recognizedPoints and its four existing canonical text columns. All hashes, source/evaluation checks and independent INSERT/deferred calls remain. Static function/checksum pins move to the exact new candidate; historical1–142 and the formal30-second scale test do not change. Improvement and acceptance require actual GitHub PG16 measurement.

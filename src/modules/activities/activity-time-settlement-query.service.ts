@@ -1,4 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import { ActivityContributionSettlementQueryService } from './activity-contribution-settlement-query.service';
+import { ContributionSettlementPolicyError } from './activity-contribution-settlement-policy';
+import {
+  assertNativeContributionLaunchCount as launchCount,
+  assertNativeContributionLaunchJson as launchJson,
+  assertNativeContributionLaunchSpans as launchSpans,
+  assertNativeContributionLaunchTimePolicies as launchTimePolicies,
+  assertNativeContributionLaunchTotal as launchTotal,
+} from './activity-contribution-launch-policy';
+import { presentContributionProof } from './activity-contribution-settlement-presenter';
 import { Prisma, type ParticipantTimeAllocationRevision } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
@@ -40,6 +50,7 @@ export interface TimeSettlementDraftContext {
   populationRevision: number | null;
   workflowRevision: number | null;
   draftContentHash: string | null;
+  contributionRegimeCode?: string;
   sealCurrent: boolean;
 }
 
@@ -162,6 +173,8 @@ export function timeSettlementReadinessBlockers(set: TimeSettlementSourceSet) {
 }
 
 export function timeSettlementError(error: unknown): never {
+  if (error instanceof ContributionSettlementPolicyError && error.reason === 'scale_limit')
+    throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SCALE_LIMIT);
   if (error instanceof TimeSettlementPolicyError) {
     const codes = {
       invalid: BizCode.ACTIVITY_TIME_SETTLEMENT_INVALID,
@@ -206,6 +219,7 @@ export class ActivityTimeSettlementQueryService {
     private readonly prisma: PrismaService,
     private readonly access: ActivityTimeSettlementAccessService,
     private readonly segments: ParticipationSegmentFacade,
+    @Optional() private readonly contributions?: ActivityContributionSettlementQueryService,
   ) {}
 
   /** Shared read primitive. Writers must acquire Activity -> Run locks before using the proof. */
@@ -216,7 +230,7 @@ export class ActivityTimeSettlementQueryService {
     const rows = await tx.$queryRaw<TimeSettlementDraftContext[]>`
       SELECT r.id AS "runId", r."statusCode" AS "runStatusCode", r."currentDraftVersion", r."currentSubmittedVersion",
         d.id AS "draftId", d.version AS "draftVersion", d."evidenceSealId", d."evidenceRevision",
-        d."populationRevision", d."workflowRevision", d."contentHash" AS "draftContentHash",
+        d."populationRevision", d."workflowRevision", d."contentHash" AS "draftContentHash", d."contributionRegimeCode",
         coalesce(s."statusCode" = 'active' AND s."activityId" = a.id
           AND s."evidenceRevision" = d."evidenceRevision" AND s."populationRevision" = d."populationRevision"
           AND s."workflowRevision" = d."workflowRevision" AND s."workflowRevision" = a."workflowRevision"
@@ -303,8 +317,27 @@ export class ActivityTimeSettlementQueryService {
     };
   }
 
-  async evaluateInTx(tx: Prisma.TransactionClient, sourceSet: TimeSettlementSourceSet) {
+  async evaluateInTx(
+    tx: Prisma.TransactionClient,
+    sourceSet: TimeSettlementSourceSet,
+    launchAdmission = false,
+  ) {
     const { proof, population, latest } = sourceSet;
+    if (launchAdmission) {
+      launchCount(population.length, 'identities');
+      launchCount(sourceSet.segments.length, 'segments');
+      launchSpans(
+        sourceSet.segments.flatMap((row) =>
+          row.checkOutAt === null ? [] : [{ startsAt: row.checkInAt, endsAt: row.checkOutAt }],
+        ),
+      );
+      launchCount(latest.length, 'allocations');
+      launchTotal(
+        latest.map((row) => row.sliceCount),
+        'slices',
+      );
+      launchJson(sourceSet, 'sourceBytes');
+    }
     const identityIds = new Set(population.map((row) => row.participationIdentityId));
     const segments = sourceSet.segments.filter((row) =>
       identityIds.has(row.participationIdentityId),
@@ -323,7 +356,9 @@ export class ActivityTimeSettlementQueryService {
         throw new TimeSettlementPolicyError('source_not_ready');
       applicable.push(allocation);
     }
-    const allocationIds = applicable.map((row) => row.id);
+    // Active admission inspects physical costs before valid/population filtering can hide them.
+    const inspected = launchAdmission ? latest : applicable;
+    const allocationIds = inspected.map((row) => row.id);
     const slices = await tx.participantTimeAllocationSlice.findMany({
       where: { allocationRevisionId: { in: allocationIds } },
       orderBy: [{ allocationRevisionId: 'asc' }, { ordinal: 'asc' }],
@@ -331,18 +366,27 @@ export class ActivityTimeSettlementQueryService {
     });
     if (slices.length > TIME_SETTLEMENT_LIMITS.slices)
       throw new TimeSettlementPolicyError('scale_limit');
+    if (launchAdmission) {
+      launchSpans(slices.map((row) => ({ startsAt: row.startAt, endsAt: row.endAt })));
+      launchJson({ sourceSet, slices }, 'sourceBytes');
+    }
     const policies = await tx.timePolicyVersion.findMany({
-      where: { id: { in: [...new Set(applicable.map((row) => row.policyVersionId))] } },
+      where: { id: { in: [...new Set(inspected.map((row) => row.policyVersionId))] } },
     });
+    if (launchAdmission) launchTimePolicies(policies);
     if (policies.some((row) => row.statusCode !== 'active' && row.statusCode !== 'retired'))
       throw new TimeSettlementPolicyError('source_not_ready');
     const snapshots = await tx.activityRuleSnapshot.findMany({
       where: {
-        id: { in: [...new Set(applicable.map((row) => row.ruleSnapshotId))] },
+        id: { in: [...new Set(inspected.map((row) => row.ruleSnapshotId))] },
         activityId: proof.activityId,
       },
       select: { id: true, snapshotHash: true, resolvedConfig: true },
     });
+    if (launchAdmission) {
+      launchCount(snapshots.length, 'snapshots');
+      launchJson(snapshots, 'snapshotBytes');
+    }
     const bySnapshot = new Map(snapshots.map((row) => [row.id, row]));
     const byAllocation = new Map<string, typeof slices>();
     for (const slice of slices) {
@@ -350,6 +394,37 @@ export class ActivityTimeSettlementQueryService {
       list.push(slice);
       byAllocation.set(slice.allocationRevisionId, list);
     }
+    if (
+      launchAdmission &&
+      inspected.some((row) => (byAllocation.get(row.id)?.length ?? 0) !== row.sliceCount)
+    )
+      throw new TimeSettlementPolicyError('source_not_ready');
+    // Reuse only successful historical roles during this synchronous evaluation.
+    // These are this transaction's JSON snapshots; no state survives the call.
+    const historicalRoles = new Map<(typeof snapshots)[number], Map<string, Map<string, string>>>();
+    const roleForSnapshot = (
+      snapshot: (typeof snapshots)[number],
+      sessionId: string,
+      positionId: string | null,
+    ): string | null => {
+      if (positionId === null)
+        return historicalAttendanceRoleFromRuleSnapshot(snapshot.resolvedConfig, sessionId, null);
+      const sessions = historicalRoles.get(snapshot) ?? new Map<string, Map<string, string>>();
+      const positions = sessions.get(sessionId) ?? new Map<string, string>();
+      const previous = positions.get(positionId);
+      if (previous !== undefined) return previous;
+      const role = historicalAttendanceRoleFromRuleSnapshot(
+        snapshot.resolvedConfig,
+        sessionId,
+        positionId,
+      );
+      if (role !== null) {
+        positions.set(positionId, role);
+        sessions.set(sessionId, positions);
+        historicalRoles.set(snapshot, sessions);
+      }
+      return role;
+    };
     const allocations: TimeSettlementAllocation[] = applicable.map((row) => {
       const snapshot = bySnapshot.get(row.ruleSnapshotId),
         sourceSlices = byAllocation.get(row.id) ?? [];
@@ -366,11 +441,7 @@ export class ActivityTimeSettlementQueryService {
       return {
         ...row,
         recognitionModeCode: row.recognitionModeCode,
-        attendanceRoleCode: historicalAttendanceRoleFromRuleSnapshot(
-          snapshot.resolvedConfig,
-          row.sessionId,
-          row.sourcePositionId,
-        ),
+        attendanceRoleCode: roleForSnapshot(snapshot, row.sessionId, row.sourcePositionId),
         slices: sourceSlices.map((slice) => {
           if (
             (slice.categoryCode !== 'volunteer_service' &&
@@ -389,13 +460,19 @@ export class ActivityTimeSettlementQueryService {
         }),
       };
     });
-    return buildTimeSettlementBuckets({
+    const evaluated = buildTimeSettlementBuckets({
       activityId: proof.activityId,
       population,
       segments,
       allocations,
       policies,
     });
+    if (launchAdmission) {
+      launchCount(evaluated.bucketCount, 'buckets');
+      launchCount(evaluated.sourceCount, 'bucketSources');
+      launchJson(evaluated.buckets, 'sourceBytes');
+    }
+    return evaluated;
   }
 
   private async read<T>(
@@ -438,6 +515,40 @@ export class ActivityTimeSettlementQueryService {
     }
   }
 
+  /** Draft reads must compare live sources; historical submitted proofs remain immutable. */
+  async readDraftContributionSummaryInTx(
+    tx: Prisma.TransactionClient,
+    activityId: string,
+    versionId: string,
+    draftContentHash: string,
+  ) {
+    if (!this.contributions) return presentContributionProof(null, []);
+    let sourceSetHash: string | null = null;
+    try {
+      const context = await this.readDraftContextInTx(tx, activityId);
+      const proof = requireTimeSettlementDraft(activityId, context);
+      if (
+        proof.settlementDraftVersionId === versionId &&
+        proof.draftContentHash === draftContentHash
+      )
+        sourceSetHash = (await this.readSourceSetInTx(tx, proof)).sourceSetHash;
+    } catch (error) {
+      if (
+        !(error instanceof TimeSettlementPolicyError) &&
+        !(
+          error instanceof BizException &&
+          (error.biz === BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY ||
+            error.biz === BizCode.ACTIVITY_TIME_SETTLEMENT_STALE)
+        )
+      )
+        throw error;
+    }
+    return this.contributions.readSummaryInTx(tx, versionId, {
+      draftContentHash,
+      sourceSetHash,
+    });
+  }
+
   async workbench(activityId: string, user: CurrentUserPayload) {
     return await this.read(activityId, user, async (tx) => {
       const context = await this.readDraftContextInTx(tx, activityId);
@@ -446,9 +557,11 @@ export class ActivityTimeSettlementQueryService {
         orderBy: { revision: 'desc' },
       });
       const blockers: { code: string; count: number }[] = [];
+      let contributionSourceSetHash: string | undefined;
       try {
         const proof = requireTimeSettlementDraft(activityId, context);
         const sourceSet = await this.readSourceSetInTx(tx, proof);
+        contributionSourceSetHash = sourceSet.sourceSetHash;
         blockers.push(...timeSettlementReadinessBlockers(sourceSet));
         if (blockers.length === 0) await this.evaluateInTx(tx, sourceSet);
       } catch (error) {
@@ -466,6 +579,16 @@ export class ActivityTimeSettlementQueryService {
           });
         else throw error;
       }
+      const contributionProof =
+        context?.contributionRegimeCode === 'policy_v1'
+          ? context.draftId && context.draftContentHash && this.contributions
+            ? await this.contributions.readSummaryInTx(tx, context.draftId, {
+                draftContentHash: context.draftContentHash,
+                sourceSetHash: contributionSourceSetHash ?? null,
+              })
+            : presentContributionProof(null, [])
+          : undefined;
+      if (contributionProof?.pending) blockers.push({ code: 'contribution_pending', count: 1 });
       return {
         activityId,
         run: context
@@ -490,6 +613,7 @@ export class ActivityTimeSettlementQueryService {
         latestRevision: latest ? presentTimeSettlementRevision(latest) : null,
         ready: blockers.length === 0,
         blockers,
+        ...(contributionProof ? { contributionProof } : {}),
       };
     });
   }

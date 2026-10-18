@@ -70,6 +70,8 @@ import { ActivityTimeCorrectionQueryService } from './activity-time-correction-q
 import { ActivityTimeSettlementAuditRecorder } from './activity-time-settlement-audit-recorder';
 import { ActivityTimeSettlementQueryService } from './activity-time-settlement-query.service';
 import { ActivityTimeSettlementService } from './activity-time-settlement.service';
+import { ActivityContributionSettlementService } from './activity-contribution-settlement.service';
+import { ActivityContributionSettlementQueryService } from './activity-contribution-settlement-query.service';
 import { AppManagedActivityTimeSettlementController } from './controllers/app-managed-activity-time-settlement.controller';
 import { AppManagedActivityTimeCorrectionController } from './controllers/app-managed-activity-time-correction.controller';
 import { AppManagedActivityOutcomesController } from './controllers/app-managed-activity-outcomes.controller';
@@ -307,6 +309,8 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityTimeSettlementAuditRecorder,
     ActivityTimeSettlementQueryService,
     ActivityTimeSettlementService,
+    ActivityContributionSettlementService,
+    ActivityContributionSettlementQueryService,
     ActivityControlPlaneGate,
     ActivityCreationService,
     ActivityCreationQuick,

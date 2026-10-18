@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "observedDateUtc": "2026-10-16",
+  "repository": "BA7IEE/srvf-nest-api",
+  "pullRequest": 1380,
+  "branch": "codex/activity-os-r5-e4-github-validation",
+  "testedHead": "5698123f039ccf189acc6400d66ca21ab152cb78",
+  "checkoutMerge": "00cd51e72320e8f50da4d8fc74d7c6f25cdc40c8",
+  "headAndCheckoutTree": "26eb4e9fe1980bd19b68c15485326965a76d3132",
+  "push": {
+    "previousRemoteHead": "719e16a8da6f964e4c0e36fa066e394773b50576",
+    "remoteWasAncestor": true,
+    "ahead": 7,
+    "behind": 0,
+    "normalFastForward": true,
+    "forcePush": false,
+    "sameHeadRunsBeforePush": 0,
+    "manualDuplicateDispatch": false
+  },
+  "runs": {
+    "ci": {
+      "id": 38852405540,
+      "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/38852405540",
+      "status": "completed",
+      "conclusion": "failure",
+      "passingE2eShards": [2, 3, 5],
+      "failingE2eShards": [1, 4],
+      "e2e": {
+        "passedSuites": 436,
+        "failedSuites": 2,
+        "passedTests": 7934,
+        "failedTests": 2,
+        "skippedTests": 5,
+        "additionalCollectionFailure": "The source-reuse migration suite failed while loading its frozen ordinary oracle; no cases from that suite ran."
+      },
+      "contract": { "passedTests": 1092, "passedSnapshots": 2 },
+      "goldenJourneys": { "passedSuites": 6, "passedTests": 6 },
+      "otherPassingJobs": ["Change set", "Docker image build", "Incident replay"],
+      "fastChecks": {
+        "passed": ["Lint", "Typecheck", "Docs guards", "Migration count pins", "Ops required items"],
+        "failed": "Architecture governance metadata: stale domain-map inputDigest",
+        "skipped": ["Build", "Unit tests", "Historical prefix offline regression"]
+      }
+    },
+    "dockerSmoke": {
+      "id": 38852405533,
+      "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/38852405533",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    "trusted": {
+      "id": 38852403464,
+      "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/38852403464",
+      "observedStatus": "waiting",
+      "scan": "success",
+      "approval": "harness-review human approval pending; not granted by this agent"
+    }
+  },
+  "maximum": {
+    "jobId": 116816341844,
+    "fixtureMs": 64285.18566,
+    "prepareMs": 33604.83572300001,
+    "transactionBudgetMs": 30000,
+    "wholeCaseBudgetMs": 600000,
+    "outcome": "FAIL",
+    "prismaCode": "P2028",
+    "lastBusinessStage": "PREPARE",
+    "laterBusinessStages": "NOT_RUN: oracle, submit, ledger, summary and final oracles",
+    "preparePhasesMs": {
+      "C3_PROOF": 40.604309000002104,
+      "C3_SOURCE": 2320.121963999991,
+      "C3_EVAL": 1569.4741179999983,
+      "C3_BUCKET_WRITE": 3068.446624000004,
+      "E4_EVAL": 26496.268964999996
+    },
+    "evaluationWriteCalls": 0,
+    "sameCommandFailureFacts": {
+      "roots": 0,
+      "evaluations": 0,
+      "timeRoots": 0,
+      "buckets": 0,
+      "sources": 0,
+      "receipts": 0,
+      "audits": 0
+    },
+    "cleanup": {
+      "observedClientDisconnect": "COMPLETE",
+      "independentDatabaseAndLeaseFourZero": "UNKNOWN"
+    },
+    "attribution": {
+      "observed": "The failing stack ends at readTimeEvaluationInTx's slice query, before evaluation INSERT. Engine request READ waits total 26923.60113000001ms; this is not server SQL execution time.",
+      "unknown": "Server plan, pure SQL time, lock/JIT contribution and cause of the wait were not captured. These observations do not attribute the failure to migration146 guard SQL.",
+      "nativeRequestBoundary": "UNKNOWN: SQL_LENGTH and NATIVE_CARDINALITY; five SQL-length query events uncovered"
+    },
+    "noBudgetOrOracleRelaxation": true,
+    "noStandaloneMaximumRetry": true
+  },
+  "retainedFailuresAndLocalRepairs": [
+    {
+      "failure": "Cutover sign-off 3b records migration-total136 while actual total is146",
+      "classification": "HUMAN_REVIEW_REQUIRED",
+      "action": "No ledger or signature edits; maintainer must review migrations137-146 and renew the actual SQL sign-off."
+    },
+    {
+      "failure": "Harness selftests:552 passed,21 failed,1 known gap",
+      "classification": "PROTECTED_DERIVED_METADATA",
+      "causes": { "staleDomainDigest": 19, "staleRouteAuthzDocument": 2 },
+      "exactPendingPaths": ["harness/domain-map.json", "docs/ai-harness/ROUTE_AUTHZ.md"],
+      "minimalProposal": "Only3 derived SHA replacements; no route declaration, permission, assertion, state-machine or collector change.",
+      "domainDigest": "sha256:4c8eb7c0372e80d2bbb24e0c3109824f8955d1bdac0f17b0e2f35aa90b7915e8",
+      "routeAuthzDigestAfterOrdinaryRename": "sha256:e884e9440d158cde6e1ffd842de4e9d6cd9f6a41df7db8a90265e86e9e59ad18",
+      "actualProtectedFilesWritten": false,
+      "exactGrantDelegation": "PENDING; AGENTS.md forbids AI self-issued grants"
+    },
+    {
+      "failure": "Local C5 gate criterion misclassifies contribution-rule active-mode helper by its old private method name",
+      "repair": "Rename that private helper and its three calls to assertLegacyRuleWriteAllowed; preserve RBAC order and write-gate behavior. No unnecessary DI import or criterion change."
+    },
+    {
+      "failure": "Scale closes-both check compares raw historical migration helpers against scale helpers, retaining51 catalog-adapter lines",
+      "repair": "Use existing strict restoreE4HistoricalCatalogOpening on that read and add the exact inverse binding; original expectations and frozen opening SHA remain unchanged."
+    },
+    {
+      "failure": "Source-reuse suite frozenOracle loads current ordinary file4285d782 but requires frozen46c31154",
+      "repair": "Use existing strict restoreE4OrdinaryOracleOpening before the original SHA assertion; extract the same three independent oracle functions."
+    },
+    {
+      "failure": "Local full-unit CLI test invoked global pnpm11 instead of repository pnpm10.14.0",
+      "repair": "Use the existing cached pnpm10.14.0 wrapper; affected suite32 tests passed without changing source or assertions."
+    }
+  ],
+  "localValidation": {
+    "firstFullUnitRun": { "passedSuites": 457, "failedSuites": 2, "passedTests": 10163, "failedTests": 2, "todoTests": 5, "matchedSnapshots": 8 },
+    "fullUnitRerunAfterRepairs": "NOT_RUN; original failure retained and affected suites verified separately",
+    "fixedGateServiceAndHistoricalPrefix": { "passedSuites": 3, "passedTests": 53 },
+    "cliWithPinnedPnpm": { "passedSuites": 1, "passedTests": 32 },
+    "stageHelper": { "passedSuites": 1, "passedTests": 26 },
+    "bothMigrationAndScaleOffline": {
+      "passedSuites": 2,
+      "passedTests": 683,
+      "businessCasesExcludedByNameFilter": 227,
+      "bothClosesBothCases": "PASS",
+      "databaseSetup": "NONE: unit configuration, offline name filter"
+    },
+    "sourceReuseOfflineAndCommitErrorAdapter": { "passedSuites": 1, "passedTests": 21, "businessCasesExcludedByNameFilter": 9 },
+    "nestBuild": "PASS",
+    "fourChangedTypeScriptFilesLint": "PASS",
+    "docsCountsAndCodemapChecks": "PASS",
+    "crossModelReadonlyReview": "PASS for all four ordinary paths; maximum timeout remains independent",
+    "frozenScaleOpeningSha256": "50a090de9193d80ab659852c0420aed4e05290913be1050b5f5631da9cf17ed6",
+    "newScaleCandidateSha256": "576eb7cd5edd0d30160c83161fbeb99d3dfeee6f614e78915b96ea8f03697442",
+    "originalExpectCallsByteIdenticalInOrder": { "scale": 322, "migration": 834, "sourceReuse": 90 }
+  },
+  "privateEvidenceDirectory": "tmp/e5-entry/ci-5698123f",
+  "retainedEvidence": ["run-38852405540-terminal.json", "run-38852405533-terminal.json", "maximum-stages.json", "retained-log-manifest.json", "original-assertions-preserved.json", "proposed-protected-fix.diff"],
+  "remainingBlockers": ["Maximum original30-second prepare budget failed", "Two exact protected derived-file grants pending", "Actual SQL human sign-off136/146 mismatch", "Trusted harness-review human approval pending"],
+  "repairDelivery": "Ordinary repairs sealed locally; no second push or new CI while the exact protected metadata grant is pending. Remote head remains the tested5698123f.",
+  "notDone": ["No production deployment or switch enablement", "No human or Trusted approval substitution", "No changes to production migrations, guard functions, SQL/function pins, budgets, test assertions or workflow", "No force push, merge or PR readiness change", "No speculative performance fix or new expensive fixture run"]
+}
