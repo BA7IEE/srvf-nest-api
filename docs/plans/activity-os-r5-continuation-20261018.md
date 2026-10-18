@@ -15,7 +15,7 @@
 实现写集：147唯一新migration；30份E2E及1份prefix单测的当前迁移计数；
 `test/helpers/e4-migration-prefix{,.spec}.ts`、`activity-contribution-policy.fixture.ts`、
 新增`activity-r5-correction-hash.fixture.ts`；新增正式147回归、active matrix及worker child；
-历史146部署入口与对应生命周期单测；必要CODEMAP、current-state、prisma说明、changelog及本轮证据。
+历史146部署入口与对应生命周期单测；必要CODEMAP、current-state、prisma说明、运行手册、changelog及本轮证据。
 本轮开发测试使用本checkout的`app_test`模板及`app_test_w1`一次性worker，按标准globalSetup
 迁移、克隆与teardown回收，不触生产或其他工作区；无新500或原满额手动性能实验。
 禁止域：前端、生产、默认开关、既有迁移字节、guard/预算放宽、既有业务断言放宽、
@@ -102,7 +102,7 @@ Trusted/3b代签、Ready/合并/部署。
 权限生成器只摘要非spec的业务TS及契约，迁移不在输入中；首次stale时未保存摘要，根因UNKNOWN。
 正常生成后ROUTE_AUTHZ与原HEAD逐字一致，断言配置亦一致，663声明不变；相关精确grant已clear。
 文档全文件格式化曾因表格空格推高readtax，已恢复原格式并保留本轮事实更新、正式重生成counts；
-current-state为9479字符，低于9600原预算，未改预算或删既有事实。
+current-state的readtax读数为9483字符，低于9600原预算，未改预算或删既有事实。
 
 ## 本次未做
 
