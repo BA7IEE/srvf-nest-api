@@ -1,0 +1,2 @@
+- 修复 Release 5 生产依赖审计的 critical/high：有界更新 sharp、multer、fast-uri、Swagger 使用的 js-yaml、qs、proxy-addr，并限定 Prisma config 的 deepmerge-ts override。Prisma/client 与 COS SDK 版本不变。
+- 沿既有策略明示三项 COS 传递 moderate，保留 high/critical 发布门槛；500 人首发限制及生产开关不变。

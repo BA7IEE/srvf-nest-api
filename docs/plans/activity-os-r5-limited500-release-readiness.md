@@ -1,0 +1,192 @@
+# Release 5 受限 500 人首发：完整实施 Goal（维护者已批准）
+
+状态：维护者已明确回复“批准完整方案，并委托六条精确 grant（推荐）”；本节方案与精确写集据此冻结。当前仅实施 D1，D2 尚未开始。基点 `main@dc9218d0b037643f5f29ae75715ac3e4a20a1034`；远端 main 相同、open PR 为 0、最近 Release/package 均为 v0.72.0。主工作树 clean。以下临时候选和生成预览均在仓库外，不代表新 SHA 的 CI 或部署通过。
+
+完整精确写集：60 文件 JSON（维护者确认的仓外送审材料），SHA256 `1e3a0be545d91d91ee9dc1d0a36a5b2187d614184b4fe5b25b1d3f35fa3198b9`。逐文件目的、阶段及红区范围见下表；送审JSON保存了全部现存文件基点SHA256。6 个精确红区路径已由原 `harness:needs` 实算，其余 54 个不需要 grant；原始预算（维护者确认的仓外送审材料）。本包不授权清单外文件。
+
+## 已有决定，直接承接
+
+- 首发受限 500 identities / 500 current segments / 500 current allocations；2500 physical slices、2000 evaluations 等全部维度继续由 `NATIVE_CONTRIBUTION_LAUNCH_LIMITS` 限制。原始 2000 identities / 10000 segments / 50000 slices 规模仍 NOT_VALIDATED。
+- `docs/current-state.md:94–95`、`NEXT_TASKS` 已将 AC-013 / AC-020 / AC-025 定为上线后按诉求立项，将 AC-017 搁置。这四条保持 todo，不转“已实现”或永久豁免。六条既有永久豁免不改。
+- ADV-010 / P2-21 是首次生产前必做，不能随上述四项延期。
+- 既有提交推送、正式评审、满足全部要求后正常 squash 合并及核验 main CI 的授权继续沿用；不使用 admin/force/跳过审批。
+- 实际服务器身份与访问方式尚未确认；不等待这些信息开展仓内工作，也不向未知目标部署。生产启用、旧数据转换、shadow、worker 操作均未授权执行。
+
+## 需要本次确认的一项业务口径
+
+建议：贡献值复用现有单一 `ActivityWorkflowGate.participationReadSource()`。
+
+- 闸关：逐字保留 approved 考勤、北京自然日全局封顶 3、入队年 3 月 31 日截止、门槛 5 的既有算法。
+- 闸开：仅累计 `ParticipationLedgerEntry.creditedPointsDelta`，且关联 `LedgerPostingBatch.statusCode=committed`；更正/冲回和重放自然沿真实分录生效。账本已执行日封顶，读面不二次封顶、不混入 recognized 或 preparing/pending 分数。
+- 同一响应/资格计算只使用当前闸选定的一源；不把旧考勤与账本相加、不按天取大值、不在账本空时偷偷回退。readonly 不改变取数源。不新增 flag，不回写考勤。
+- 旧分保护是开闸前置：沿现有 `LegacyLedgerConversionService` 的只读维护窗工具先账本化，并核对旧考勤封顶分与 committed 分的逐人总分、相关 cycle cutoff 一致；有遗漏、无法解释的 `skipped-new-chain-history` 或不一致就停止。真实数据不存在时也须留零存量的盘点证据，不能因测试样本一致而宣称生产一致。
+- 开闸后若需暂停，先进入只读维护态并保留新账本读源；代码没有永久 latch，直接关闸会读回旧考勤，不能把它描述成不会丢失新进度的回退。真实恢复/快照回滚仍需另行发布批准。
+
+该建议重开的是 `activity-workflow.gate.ts:153–156`、`participation-summary-query.service.ts:69–70`、team-join 本地 CLAUDE 和 C4 判据的“贡献值恒 approved”决定锁。已按 `AGENTS.md §3` 先声明；需维护者认可新口径后才改。
+
+备选：保留现状，依赖修复可单独完成，ADV-010 与首次生产继续阻塞。两边相加/按天取大值会新创合并口径，未获批准，不作为本包实现。
+
+## 风险与精确行为变化
+
+| 范围 | 变化与风险 | 判据/回退边界 |
+| --- | --- | --- |
+| 入队资格及成员汇总 | 闸开后贡献值来源改变；影响 admin/App 进度、评估、final join、生涯汇总 | 真 PG/HTTP、两活动同日封顶、跨日达到 5、准备中不可见、冲回、重放、batch 与单人一致；旧数据不一致则不开闸 |
+| 旧数据迁移 | 现有转换已写真账本，但原 SOP 刻意不比较贡献值 | 本轮补充总分及 cycle cutoff 对账说明和真实转换样本测试；生产执行 NOT_RUN，不改历史 SQL/转换实现 |
+| 机器守护 | C4/C8 必须识别新的只读闭包；禁止通过删保护让检查变绿 | team-join 可调用读源闸，写闸滥用仍拒绝；旧 calculator 反向约束保留；新增漏闸与错误放行的对照 |
+| 首发验收范围 | 四项延期使全合同 9a 持续未完成，不能冒称全合同通过 | 默认完整检查保留严格 9a；显式 `--profile r5-limited500` 单列首发结论和四项延期，仍打印完整合同未完成。任意新增/遗漏/重复 ID、skip、失败、Jest 退出异常均拒绝 |
+| 生产依赖 | 7 处有界调整，其中 deepmerge-ts 7→8 是作用域限定的 major override | Prisma/client 仍 6.19.3；临时目录真实 config 加载、validate/generate 通过。Node 24.19.0 与 Node 22.23.3 均完成临时 Prisma validate/generate 和 sharp runtime 预验；Node 22 下完整 CI/容器验证仍是合并前必要检查 |
+| 契约与客户端 | 贡献字段含义变化，结构不变 | 精确 3 条 description；原生成器已预览：OpenAPI 3 处、ROUTE_AUTHZ 两处 inputDigest、13 份客户端均仅摘要；663 路由声明及 assertion patterns 不变。最终摘要在完成源码后重算 |
+| 实际发布 | 未确认部署服务器，不能证明实际环境数据/配置/worker状态 | main CI 与临时 Smoke 只能证明制品；目标、旧数据、转换/shadow适用性、排空/稳定观察、10a/10b均保持单列 NOT_RUN |
+
+两处既有 E2E 行为锁需随获批口径明确更新（不降低断言）：
+
+1. `activity-v11-participation-read-consistency.e2e-spec.ts:358`：开闸夹具已有 0.5 分 committed 分录和 2 分旧考勤；成员贡献预期 2 → 0.5，增加不等于旧分 2 的反例。
+2. `activity-os-r4-d8-official-time-cutover.e2e-spec.ts:515`：开闸夹具只有 1 分旧考勤，没有贡献账本；贡献预期 1 → 0，其余官方时长、人数、记录等断言不改。
+
+另外三份直接调用贡献纯函数的 E2E 仅补传实际应用 Gate，不改原业务断言。所有手工构造 provider 的单测、批量通知自由 helper、module DI、DTO 后果面均已列入精确写集。
+
+## 生产依赖精确候选
+
+package/lock 精确补丁（维护者确认的仓外送审材料）；候选取证（维护者确认的仓外送审材料）。
+
+| 配置 | 从 | 到 | 锁定候选 |
+| --- | --- | --- | --- |
+| sharp | ^0.35.3 | ^0.35.5 | 0.35.5及配套平台/libvips |
+| multer override | ^2.2.0 | ^2.3.0 | 2.4.0（范围实际解析值） |
+| fast-uri override | ^3.1.4 | ^3.1.8 | 3.1.8 |
+| @nestjs/swagger>js-yaml override | ^4.2.0 | ^4.3.2 | 4.3.2；不扩大到所有 js-yaml |
+| qs override | ^6.15.2 | ^6.16.1 | 6.16.1 |
+| proxy-addr override | 无 | ^2.0.8 | 2.0.8 |
+| @prisma/config>deepmerge-ts override | 无 | 8.0.0 | 8.0.0；不升 Prisma/client |
+
+候选 `package.json` SHA256 `5d2b95923e418a02dde94f8acd1ae2f5156188def5132acb0c550a64b203bf14`；`pnpm-lock.yaml` SHA256 `7cc43484424c1467ea22219ace872682fb4d4d278a5eefae6b6e85de7a8009e0`。package +7/-5，lock +216/-229。只应用该候选；若安装必须新增不在补丁内的依赖变动，先取证，不笼统 update。
+
+临时目录：正式 `pnpm audit:production` exit 0；critical 1→0、high 14→0、moderate 7→3、low 1→0。3 项 moderate 与 `docs/ops/production-dependency-audit.md` 既有 GHSA 和接受边界相同（request、fast-xml-parser、uuid），继续显式登记，不增 ignore、不降低阈值、不写成“零漏洞”。JSON 审计仍 exit 1；这是 pnpm JSON 报告行为，不能混写正式 high 阈值命令的退出码。COS 3 的零审计候选未采纳：依赖改为供应商 fork 名字，XMLBuilder 源码仍与旧受影响文件相同，不能凭 registry 零读数认定已修复。
+
+独立 gpt-6-astra 只读方案复核：未发现阻断性方案错误或必须补入清单的调用方；60路径/6grant、基点摘要、patch边界及数据库生命周期一致。此结论不是实现代码 PASS。实现时重点核对 PostgreSQL date 与北京时间 cutoff，以及未 committed/旧考勤重叠/截止边界的真实负例。
+
+## DoD（每条都要有精确版本证据）
+
+1. 实际改动为获批 60 文件的子集，6 条 grant 仅按精确路径使用，结束撤销本任务 grant；分支 clean、无夹带，原 SQL147/权限/预算/开关不变。
+2. 原全合同 9a 仍诚实报告四项 todo；显式首发 profile 只承接已拍板的四项延期，ADV-010 真绑定且通过，正/反对照证明没有放行未知缺口或失效仪器。
+3. ADV-010 真 PG 两应用/两池并发、可观察实际锁等待：两活动共享同人同日上限，不超 3；与另一日累计达门槛 5，真实 admin/App 进度、评估/final join 复用同一读源。准备中、重放、更正、旧考勤重叠、北京时间截止边界、readonly 和旧分转换保护均有证据。不得仅造 DayState 数字冒充整条写链。
+4. 依赖候选在 Node 22 目标工具链的完整相关验证与容器构建通过；最终 SHA 的正式生产依赖审计 high/critical 为 0，同三项 moderate 继续明示。
+5. 500 限制及其他全部 native 维度保持拒绝超界；原最大规模不混为已验收。SQL147 NULL/有效V3重放、preparing/pending 跨重启及最终 native guard 后 callback 拒绝真实回滚证据在本轮受影响版本重新核验或逐项注明可复用输入与局限。
+6. 契约仅 3 项贡献 description 改动，fields/types/required/routes/权限断言不变；原生成物 fresh，snapshot diff 可逐行解释。
+7. 固定代码独立跨模型评审通过；维护者真正复核 6b 新读面闭包并明确签字后才登记。相关普通 CI/五 E2E/Trusted/Smoke 达到要求后按已有授权正式评审和正常合并，核验实际 main push CI 与 Smoke。旧 SHA 绿灯不覆盖新 SHA。
+8. 发布前结果分别列：仓内受限500 readiness、完整合同、原最大规模、实际环境条件。未证实的服务器/旧数据/转换/shadow/fleet开关一致/worker排空/稳定观察/10a10b均 NOT_RUN，仍阻止实际生产启用。
+
+## 探针队列与 D 档串行交付
+
+- D1：仅生产依赖修复 PR（package、lock、对应 ops、fragment、完整 Goal）。探针：实际版本、官方审计、Prisma/config、sharp runtime、quick、受影响上传/代理/SMS/存储验证及 Node22 全量 CI/容器。没有缺口才合并并验证 main。
+- D2：首发范围与 ADV-010 的一个可独立验收 PR（本清单其他源码、全部测试后果、生成物与交接，完整 Goal 在仓内包含全部60路径和授权边界，可追加本阶段事实）。先跑旧路径 characterization 和新缺口红例；随后实现，定向真数据库/HTTP、守护正反例及生成物检查。红区/签字按下段处理，不夹带依赖大版本工作。
+- 发布前验证：在最终合并的实际 main 上运行明确 profile、严格全合同检查、正式生产审计并 dispatch 既有只读 `release-audit.yml` 工作流核验 SHA；核验 main CI 与 ephemeral Docker Smoke。结果附原 PR，不另开纯状态 PR。若发生真正范围外问题，先集中只读排查完整后果再上报。
+- 遵循 process §7.1 两轮失败熔断与精确取证；不加 timeout、不删测试/放宽断言、不盲重跑。输入未变的旧证据仅按 §7.2 明确说明后复用。
+
+## 授权清单与精确 grant 委托
+
+本次确认建议一次覆盖：以上新来源口径、60 文件范围、明确两处 E2E 行为锁更新、实现/补测/清单内修复/文档与生成、提交推送及两阶段串行 PR；已有条件评审/合并/main 核验授权继续沿用。
+
+AGENTS.md §1 原文：“**AI 不得自行发放授权。**”因此需要维护者明确委托当前会话仅通过正常 `harness:grant` CLI 发放并在结束撤销以下六条精确路径（不用目录 glob、无预算或 ACL 改动）：
+
+```sh
+pnpm harness:grant 'package.json' --reason '维护者批准 Release5完整送审包 D1；write-set sha256:1e3a0be545d91d91ee9dc1d0a36a5b2187d614184b4fe5b25b1d3f35fa3198b9'
+pnpm harness:grant 'pnpm-lock.yaml' --reason '维护者批准 Release5完整送审包 D1；同一精确写集'
+pnpm harness:grant 'scripts/check-activity-workflow-gate.ts' --reason '维护者批准 ADV010单闸来源口径与C4/C8闭包；同一精确写集'
+pnpm harness:grant 'scripts/cutover-check.ts' --reason '维护者批准500首发profile，完整合同仍严格；同一精确写集'
+pnpm harness:grant 'test/contract/__snapshots__/openapi.contract-spec.ts.snap' --reason '维护者批准精确3项贡献description；禁盲更新；同一精确写集'
+pnpm harness:grant 'docs/ai-harness/ROUTE_AUTHZ.md' --reason '维护者批准原生成器刷新inputDigest，663条权限声明不变；同一精确写集'
+```
+
+仅在所需阶段发放对应 grant；本任务 grant 清除后验证列表。若发现其他任务令牌，保留并报告，不全局清除。
+
+本次确认是范围/实施口径和精确 grant 委托，**不能代替完成代码后的 6b 人类复核或每个新 SHA 的 Trusted environment 审批**。两者须在具体候选可审阅时按仓库要求完成。Ready/合并沿原授权有条件推进；生产及发版 tag/publish 不包含在内。
+
+## 验证范围与数据库生命周期
+
+- 此次送审前：只读 preflight / dev-guard / live GitHub 核对及仓外依赖、DTO原生成器预览；未运行数据库测试、未改主仓依赖或代码。候选 Prisma validate/generate 不连库，sharp 测试仅内存合成缓冲；两者已分别在 Node 24.19.0 和官方校验摘要匹配的 Node 22.23.3 下通过。
+- 获批后的云工作区本地：只复用现有本机 Postgres 的 `app_test` 模板和 `app_test_w1` worker。标准 globalSetup 可幂等创建模板、对模板执行已审查 `migrate deploy`、在零连接检查后重建 worker、清理 `tmp/storage-w*`；测试夹具在 worker 内正常写入/清理，globalTeardown 回收 worker、模板保留。单条 Jest 命令串行，`--runInBand`、`SRVF_TEST_RUN_SCOPE=app_test,app_test_w1`，不并跑 contract/e2e。
+- 不设置 `SRVF_D8_2_W98` / `SRVF_E4_W98` 等专用 scratch 开关；D8/E4 定向验证走标准 w1。更大的原始规模/具名 scratch 证明不因此重新获准。CI 仍在既有 GitHub-hosted 隔离 PostgreSQL/worker 中运行原五分片，配置不改。
+- 标准入口：`pnpm agent:check:quick`；相关单测及完整 typecheck/lint/build/harness；`pnpm test:contract`；`pnpm exec jest --config test/jest-e2e.config.ts --runInBand --runTestsByPath <下列选定文件>`，按所涉模块覆盖、不改变 runner 配置。
+- 定向 E2E 包括：新增 ADV010；team-join/admin/App/三份 member-lock/生命周期/身份不变量；notifications participation producer 和终审贡献阈值并发；app check-ins；legacy conversion；v11 participation read consistency；D8 official time；参与统计/overview/scoped authz；R5 E4 500 scale/HTTP/并发/更正/SQL147 source hash；E5 active matrix（含 preparing/pending 重启与 guard后 callback rollback）。依赖阶段另覆盖 attachments upload、app avatar、trusted-proxy identity、SMS settings/login 与已有 COS provider 单测。所有文件均现有，不为验证新增范围外源码改动。
+- 原 `docs:openapi/authz/feclient/codemap/rbacmap/counts/readtax/migcount` check；`check-frozen-drafts-ledger.ts`；`cutover:check:selftest`、默认 strict 与显式 profile；`cutover --signoff` 对拍。
+- 常规 CI 与 Docker Smoke 按既有自动触发；Production dependency audit 允许 dispatch 最终 SHA（工作流 contents:read，不改部署）。可做定向本地 detectOpenHandles；Nightly leaks 工作流会自动创建/评论 issue，本包不触发该外发流程，当前完整 nightly 证据不能自行写成通过。
+
+## 禁止域与最终报告
+
+不改 schema/migrations/SQL历史/DB函数或ACL、Permission/AuditEvent/BizCode、seed、harness预算、workflow、测试全局setup、全局auth/bootstrap、原始最大规模阈值与500所有native约束；不改旧贡献 calculator 算法；不引入新通知触发或前端页面；不强推/强合/清理他人分支或数据；不操作未确认服务器；不部署/启用/生产转换或shadow，不打tag、不发布GitHub Release。
+
+最终交付：两个阶段 PR/最终 SHA/main CI 与 Smoke/正式 audit 证据、全部变更精确列表、四项延期与原始最大规模、具体服务器与现场验收缺项，并按 AGENTS.md §2 单列“本次未做”。
+
+## 获批精确写集（60个唯一路径）
+
+| 阶段 | 路径 | 目的 | 红区 |
+| --- | --- | --- | --- |
+| D1 | `package.json` | 7处有界版本/override调整；版本号仍0.72.0，审计high阈值不变 | 是 |
+| D1 | `pnpm-lock.yaml` | pnpm10.14.0原生成锁；Prisma/client6.19.3、COS2.15.4不变；multer实际锁2.4.0 | 是 |
+| D1 | `docs/ops/production-dependency-audit.md` | 登记1C/14H/7M/1L到0C/0H/3M/0L与同三项既有moderate分析，明确JSON退出码区别 | 否 |
+| D1 | `changelog.d/activity-os-r5-production-audit.md` | 依赖修复fragment，不归并已发布CHANGELOG | 否 |
+| D1 | `docs/plans/activity-os-r5-limited500-release-readiness.md` | 同一完整Goal、风险表、A/B方案、精确写集、已批准口径及阶段结果；不另起状态PR | 否 |
+| D2 | `src/modules/team-join/team-join-progress.ts` | 必传现有Gate；off原approved封顶核；on仅SUM committed credited delta；北京日cutoff、单/批同源、空人0、不二次封顶 | 否 |
+| D2 | `src/modules/team-join/team-join-progress.spec.ts` | 保留旧读数characterization，增加新源/冲回/批量/空集/日界/只读矩阵 | 否 |
+| D2 | `src/modules/team-join/team-join-applications.service.ts` | admin进度、标gate、评估调用传真实Gate，权限/锁序不动 | 否 |
+| D2 | `src/modules/team-join/team-join-applications.app.service.ts` | App本人进度三处调用传真实Gate，准入/锁序不动 | 否 |
+| D2 | `src/modules/team-join/team-join-enrollment.service.ts` | final join贡献资格读取传真实Gate，门槛5/锁序/保险闸不动 | 否 |
+| D2 | `src/modules/team-join/team-join.module.ts` | 从common ActivityWorkflowModule正常DI；不导入ActivitiesModule或改AppModule | 否 |
+| D2 | `src/modules/team-join/team-join.constants.ts` | 仅更新原approved-only/封顶位置注释；3分日上限/5分资格/日期算法不改 | 否 |
+| D2 | `src/modules/team-join/CLAUDE.md` | 记录新获批来源口径，保留member/事务/保险限制 | 否 |
+| D2 | `src/modules/attendances/attendance-read.service.ts` | 成员生涯贡献汇总传真实Gate | 否 |
+| D2 | `src/modules/attendances/attendances.service.spec.ts` | 手工构造AttendanceReadService补齐Gate假件，旧断言保留 | 否 |
+| D2 | `src/modules/attendances/participation-summary-query.service.ts` | 现有admin/App成员汇总传已有Gate，更新刻意approved-only旧注释 | 否 |
+| D2 | `src/modules/attendances/attendance-notification-producer.ts` | 现有考勤终审before/after批量读数及自由helper传真实Gate；不新增新账本阈值通知触发 | 否 |
+| D2 | `src/modules/attendances/attendance-notification-producer.spec.ts` | 7处手工构造及封顶/跨阈值原断言保留 | 否 |
+| D2 | `src/common/activity-workflow/activity-workflow.gate.ts` | 仅将贡献读面加入现有单闸取数说明；不改enabled/readonly开关行为 | 否 |
+| D2 | `scripts/check-activity-workflow-gate.ts` | C4允许team-join只读取数闸，仍拦写闸滥用；C8纳入team-join统计闭包，保留contribution-calculator反向守护 | 是 |
+| D2 | `src/common/activity-workflow/activity-workflow-gate.criteria.spec.ts` | 替换获批旧口径行为锁，增加漏闸/写闸滥用/真阳性/真阴性对照，其余C1-C8不放宽 | 否 |
+| D2 | `scripts/cutover-check.ts` | 默认全合同9a不变；新增显式r5-limited500口径，仅四个既有延期ID可区分；采集真实Jest用例/退出码，独立报告full与首发；unknown/duplicate/missing/skip/failure fail-closed | 是 |
+| D2 | `src/cutover-r5-release-profile.spec.ts` | profile解析、四延期精确匹配、ADV仍TODO必拒、遗漏/重复/新TODO/失败/仪器失效反例；导入不运行CLI | 否 |
+| D2 | `src/modules/activities/activity-business-overhaul-acceptance.spec.ts` | 新R5去向表把ADV-010绑定真实PG并发入队进度用例；不改历史卡点表和六项永久豁免；四项延期保留todo | 否 |
+| D2 | `docs/ai-harness/FROZEN_DRAFTS.md` | 原生成器刷新验收读数；不修改冻结历史文件 | 否 |
+| D2 | `docs/ai-harness/CUTOVER_SIGNOFF.md` | 预列6b登记路径；仅在固定代码和维护者真正复核后的明确结论登记新闭包读数，不能本次范围批准自动代签 | 否 |
+| D2 | `test/e2e/activity-os-r5-adv010-contribution-progress.e2e-spec.ts` | 新增真实PG两Nest/两pool并发：同人同日两活动生效、封顶3、跨日到5、真实入队读面、准备中不可见、重放/冲回、旧分转换+cutoff一致；不直接伪造有效账本 | 否 |
+| D2 | `test/e2e/team-join-gate-evaluate-member-lock-concurrency.e2e-spec.ts` | 5处直接调用computeContribution传app实际Gate；原并发锁/资格断言不动 | 否 |
+| D2 | `test/e2e/notifications-participation-producers.e2e-spec.ts` | 6处直接调用computeContribution传app实际Gate；现有通知断言不动 | 否 |
+| D2 | `test/e2e/app-activity-check-ins.e2e-spec.ts` | 1处直接调用computeContribution传app实际Gate，旧路径断言不动 | 否 |
+| D2 | `test/e2e/activity-v11-participation-read-consistency.e2e-spec.ts` | 获批新口径下唯一贡献断言2→0.5（已有committed账本），同时断言不等于旧分2；服务时长等不变 | 否 |
+| D2 | `test/e2e/activity-os-r4-d8-official-time-cutover.e2e-spec.ts` | 获批新口径下唯一贡献断言1→0（夹具仅有旧考勤，没有贡献账本）；其余官方时长/汇总断言不变 | 否 |
+| D2 | `src/modules/attendances/attendances.dto.ts` | 成员贡献汇总仅3项之一description及相关旧口径注释；字段/类型/required不改 | 否 |
+| D2 | `src/modules/attendances/participation-summary.dto.ts` | Admin贡献汇总仅description及相关注释；不改变字段/类型 | 否 |
+| D2 | `src/modules/attendances/dto/app/app-my-participation-summary.dto.ts` | App独立DTO贡献description及注释；不继承Admin | 否 |
+| D2 | `test/contract/__snapshots__/openapi.contract-spec.ts.snap` | 精确替换3条贡献description（匹配完整description行），逐行审查；禁盲-u | 是 |
+| D2 | `docs/ai-harness/ROUTE_AUTHZ.md` | 原生成器刷新inputDigest，权限声明/断言族不变 | 是 |
+| D2 | `docs/handoff/clients/admin/client.ts` | 原FE生成器刷新inputDigest；预览实际13份均只变摘要 | 否 |
+| D2 | `docs/handoff/clients/admin/types.ts` | 原FE生成器刷新inputDigest；预览实际13份均只变摘要 | 否 |
+| D2 | `docs/handoff/clients/app/client.ts` | 原FE生成器刷新inputDigest；预览实际13份均只变摘要 | 否 |
+| D2 | `docs/handoff/clients/app/types.ts` | 原FE生成器刷新inputDigest；预览实际13份均只变摘要 | 否 |
+| D2 | `docs/handoff/clients/auth/client.ts` | 原FE生成器刷新inputDigest；预览实际13份均只变摘要 | 否 |
+| D2 | `docs/handoff/clients/auth/types.ts` | 原FE生成器刷新inputDigest；预览实际13份均只变摘要 | 否 |
+| D2 | `docs/handoff/clients/integration/client.ts` | 原FE生成器刷新inputDigest；预览实际13份均只变摘要 | 否 |
+| D2 | `docs/handoff/clients/integration/types.ts` | 原FE生成器刷新inputDigest；预览实际13份均只变摘要 | 否 |
+| D2 | `docs/handoff/clients/open/client.ts` | 原FE生成器刷新inputDigest；预览实际13份均只变摘要 | 否 |
+| D2 | `docs/handoff/clients/open/types.ts` | 原FE生成器刷新inputDigest；预览实际13份均只变摘要 | 否 |
+| D2 | `docs/handoff/clients/shared/types.ts` | 原FE生成器刷新inputDigest；预览实际13份均只变摘要 | 否 |
+| D2 | `docs/handoff/clients/system/client.ts` | 原FE生成器刷新inputDigest；预览实际13份均只变摘要 | 否 |
+| D2 | `docs/handoff/clients/system/types.ts` | 原FE生成器刷新inputDigest；预览实际13份均只变摘要 | 否 |
+| D2 | `docs/handoff/openapi.json` | 原生成器刷新3项schema字段description | 否 |
+| D2 | `CODEMAP.md` | 原生成器更新team-join/attendances行数与E2E计数443→444 | 否 |
+| D2 | `docs/current-state.md` | 承接AC013/020/025延期和AC017搁置；列500首发与原最大/生产未验；按实际写ADV/审计状态 | 否 |
+| D2 | `docs/ai-harness/NEXT_TASKS.md` | P2-21/ADV010仓内闭合证据与新来源决定；保留部署旧数据核验未执行条件 | 否 |
+| D2 | `docs/participation-bounded-context.md` | 更新贡献跨模块取数边界与单闸，旧考勤仍保留 | 否 |
+| D2 | `docs/handoff/admin-web.md` | 说明新贡献读源、3分日上限/5分资格/cutoff不变与四项首发延期 | 否 |
+| D2 | `docs/handoff/miniapp.md` | 说明本人贡献读源与首发延期，字段不变、前端实施不在本轮 | 否 |
+| D2 | `docs/ops/legacy-attendance-ledger-conversion.md` | 转换后核验新增贡献总分/入队cutoff逐人一致，skipped不能自动视成功，真实环境仍待确认 | 否 |
+| D2 | `docs/ops/activity-contribution-settlement.md` | 记录显式500profile、严格全合同差别、旧数据转换核对、只读回退与发布输入缺项 | 否 |
+| D2 | `changelog.d/activity-os-r5-limited500-adv010.md` | 首发范围与ADV-010实现fragment，不动已发布版本章节 | 否 |
+
+## 实施收据（只追加已核实事实）
+
+D1 候选冻结时（2026-10-18）：package/lock 与获批摘要逐字相同，Node 22.23.3 / pnpm 10.14.0 安装和 Prisma generate 通过；正式生产审计 exit 0（0 critical / 0 high / 3 moderate / 0 low）。461 套单测共 10288 通过、5 项既存 todo、8 份 snapshot；contract 1092 通过、2 份 snapshot；上传／头像／trusted proxy／SMS settings／SMS login 五套真实PG回归共85通过。OpenAPI、FE客户端、ROUTE_AUTHZ及冻结稿台账检查通过。
+
+首次 quick 的 typecheck/unit/harness 均 exit 0，lint 因 Node 默认约4GiB堆耗尽而 exit134，故该次 quick FAIL。按现有 CI 的 `NODE_OPTIONS=--max-old-space-size=6144` 重跑进行中；首次失败保留，不计为已全绿。最终结果附相同候选的 PR 验证节，不用后续改文档产生新代码候选来覆盖首次失败。
+
+此处是冻结时快照。独立固定SHA评审、该SHA普通CI/Trusted/Smoke、合并与main核验另看对应PR；D2、6b、部署与生产开关尚未完成。
