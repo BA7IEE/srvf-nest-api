@@ -4823,7 +4823,10 @@ describe('E4 terminal expected source offline', () => {
   });
 });
 // E4_TERMINAL_REFS_BODY_OFFLINE_BEGIN
-import { restoreE4MaximumStageOpening } from '../helpers/e4-maximum-stage-receipt';
+import {
+  restoreE4MaximumStageOpening,
+  restoreE4HistoricalCiFixtureOpening,
+} from '../helpers/e4-maximum-stage-receipt';
 // Only the exact migration-only catalog profile bindings may differ in shared facilities.
 function terminalFrozen137SharedOpening(source: string): string {
   const opening = 'bcc4fabb397bb510355694364e64927f73119ed7f9539508ca18c8559c1410ba';
@@ -4908,7 +4911,10 @@ describe('E4 terminal source projection offline', () => {
         resolve(__dirname, 'activity-os-r5-e4-contribution-settlement-' + kind + '.e2e-spec.ts'),
         'utf8',
       );
-      const opening = kind === 'scale' ? restoreE4MaximumStageOpening(source) : source;
+      const opening =
+        kind === 'scale'
+          ? restoreE4MaximumStageOpening(source)
+          : restoreE4HistoricalCiFixtureOpening(source);
       expect(terminalRefsTestOpening(opening, kind)).not.toBe(opening);
       expect(() => terminalRefsTestOpening(source + '\n', kind)).toThrow();
       const driver = [...source.matchAll(/^class S13ReadClient \{[\s\S]*?^\}/gmu)];
@@ -10308,7 +10314,13 @@ describe('E4 migration dedicated lease envelope', () => {
           let fixture: E4Fixture | undefined;
           let draftId: string;
           let submittedId: string;
+          let thirdRootId: string;
           const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+          const recordGenuinePhase = (phase: string, started: number) =>
+            console.info(
+              'E4_GENUINE_BAG_PHASE',
+              JSON.stringify({ phase, elapsedMs: performance.now() - started }),
+            );
           const catalog = (tx: Prisma.TransactionClient) => tx.$queryRaw<
             {
               body: string;
@@ -10353,6 +10365,18 @@ describe('E4 migration dedicated lease envelope', () => {
                   },
                 });
               submittedId = proof.id;
+              const thirdStarted = performance.now();
+              try {
+                const thirdSource = await createE4Source(fixture);
+                const third = await prepareE4Time(fixture, thirdSource);
+                const thirdRoot =
+                  await fixture.db.activitySettlementContributionRevision.findFirstOrThrow({
+                    where: { settlementVersionId: third.settlementVersionId, kindCode: 'draft' },
+                  });
+                thirdRootId = thirdRoot.id;
+              } finally {
+                recordGenuinePhase('third-fixture', thirdStarted);
+              }
             } catch (error) {
               terminalMigrationFailed = true;
               firstFailure = error;
@@ -10372,13 +10396,14 @@ describe('E4 migration dedicated lease envelope', () => {
             prove(async () => {
               if (!fixture) throw new Error('Terminal genuine small fixture missing');
               const f = fixture;
-              const source = await createE4Source(f);
-              const third = await prepareE4Time(f, source);
-              const thirdRoot = await f.db.activitySettlementContributionRevision.findFirstOrThrow({
-                where: { settlementVersionId: third.settlementVersionId, kindCode: 'draft' },
-              });
-              for (const rootId of [draftId, submittedId, thirdRoot.id])
-                await assertFixedE4Oracle(f.db, rootId);
+              const oracleStarted = performance.now();
+              try {
+                for (const rootId of [draftId, submittedId, thirdRootId])
+                  await assertFixedE4Oracle(f.db, rootId);
+              } finally {
+                recordGenuinePhase('three-oracles', oracleStarted);
+              }
+              const nativeStarted = performance.now();
               await withTerminalNative(f.db, async (client, deadline, identity) => {
                 const before = await terminalNativeIdentity(client, deadline);
                 terminalAssertIdentity(before, identity);
@@ -10389,7 +10414,7 @@ describe('E4 migration dedicated lease envelope', () => {
                   terminalRemaining(deadline),
                 );
                 expect(readonly.rows).toEqual([{ readonly: true }]);
-                for (const rootId of [draftId, submittedId, thirdRoot.id]) {
+                for (const rootId of [draftId, submittedId, thirdRootId]) {
                   const root = await f.db.activitySettlementContributionRevision.findUniqueOrThrow({
                     where: { id: rootId },
                   });
@@ -10432,7 +10457,7 @@ describe('E4 migration dedicated lease envelope', () => {
                 expect(query).not.toHaveBeenCalled();
                 query.mockRestore();
                 await client.query('ROLLBACK', [], terminalRemaining(deadline));
-              });
+              }).finally(() => recordGenuinePhase('native-with-cleanup', nativeStarted));
             }));
           it('proves raw PG16 temporary/public NULL plans on the actual native session without accepting zero-row coverage', () =>
             prove(async () => {
