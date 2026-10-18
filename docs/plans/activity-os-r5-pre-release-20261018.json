@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "assessment": "R5 limited launch pre-release snapshot after PR1380 merge",
+  "assessedAtUtc": "2026-10-18T09:21:23.204472+00:00",
+  "assessedMergedCommit": "82b5ce1b958e18cf411b6e8945dea69a943175e4",
+  "reviewedCandidate": "c5a49dd88b88406fa7468f87acbb6d768ad8c7fd",
+  "mergedTreeEqualsReviewedCandidate": true,
+  "scope": {
+    "identities": 500,
+    "currentSegments": 500,
+    "physicalSlices": 2500,
+    "evaluationUnits": 2000,
+    "additionalLimits": "src/modules/activities/activity-contribution-launch-policy.ts",
+    "originalR5Maximum": "NOT_VALIDATED"
+  },
+  "decision": "NO_GO_FOR_DEPLOYMENT_OR_ENABLEMENT",
+  "repositoryEvidence": {
+    "pr1380": {
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1380",
+      "status": "MERGED",
+      "method": "squash",
+      "checksSucceeded": 18,
+      "scopedFiles": 296
+    },
+    "candidateCi": {
+      "status": "PASS",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/39113008766"
+    },
+    "candidateSmoke": {
+      "status": "PASS",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/39113008789"
+    },
+    "candidateTrusted": {
+      "status": "PASS",
+      "humanApproved": true,
+      "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/39113006631"
+    },
+    "assessedMainPushCi": {
+      "status": "NOT_RUN",
+      "reason": "default squash message inherited a historical CI skip marker; no Actions CI run was created for this commit",
+      "followup": "record this actual snapshot and repair stale operational status through a reviewed follow-up PR; explicitly provide a merge message and verify the subsequent main push CI"
+    },
+    "migrationReview3b": {
+      "status": "PASS",
+      "reviewedThrough": 147,
+      "source": "docs/ai-harness/CUTOVER_SIGNOFF.md"
+    },
+    "fullCutover": {
+      "status": "FAIL",
+      "instrumentOk": true,
+      "signoffOk": true,
+      "signoffConflicts": [],
+      "machinePassed": 12,
+      "machineTotal": 13,
+      "machineFailed": ["9a"],
+      "acceptancePassed": 107,
+      "acceptanceTodo": 5,
+      "acceptanceFailed": 0,
+      "todoIds": ["AC-013", "AC-017", "AC-020", "AC-025", "ADV-010"],
+      "note": "The generic v1.1 ledger 9c scale register is distinct from the unvalidated R5 native original maximum."
+    },
+    "localSerialQuick": {
+      "status": "PASS",
+      "coldLintFiles": 2016,
+      "coldLintErrors": 0,
+      "coldLintWarnings": 0,
+      "coldLintElapsedMs": 142339,
+      "typecheckProjects": ["root", "test", "scripts"],
+      "unitSuites": 461,
+      "unitPassed": 10275,
+      "unitTodo": 5,
+      "snapshotsPassed": 8
+    }
+  },
+  "releaseChecks": {
+    "productionDependencyAudit": {
+      "status": "FAIL",
+      "critical": 1,
+      "high": 14,
+      "sameDependencySectionsAndLockAsPreMergeMain": true,
+      "note": "Advisory counts are not a runtime exploit demonstration; an unchanged dependency graph does not waive the release failure."
+    },
+    "documentedPublicHealthProbe": {
+      "status": "FAIL",
+      "liveHttp": 503,
+      "readyHttp": 503,
+      "actualReleaseTargetConfirmed": false,
+      "note": "A 503 from the probe does not establish the actual target root cause or deployed version."
+    },
+    "targetConnection": {
+      "status": "UNCONFIRMED",
+      "existingSshAliasFound": false,
+      "serverSideComposeAvailableInRepo": false,
+      "documentedServerComposePath": "/www/srvf/docker-compose.server.yml"
+    },
+    "currentCommitNightlyLeakCheck": {
+      "status": "NOT_RUN",
+      "latestHistoricalRun": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/39065721716",
+      "historicalHead": "5c296d62c8dbdd1800b47d679c7681c6ad99ef09",
+      "historicalConclusion": "FAIL",
+      "note": "Historical failure is not attributed to this PR and is not current-head clearance."
+    }
+  },
+  "actualTargetNotRun": [
+    "old-data and NULL inventory",
+    "applied migration checksum inventory",
+    "legacy conversion/shadow applicability",
+    "exact deployed image/SHA and fleet",
+    "worker drain",
+    "stability observation",
+    "production migration",
+    "deployment",
+    "production switches"
+  ],
+  "frontend": "NOT_RUN",
+  "productionSwitchesChangedByThisTask": false,
+  "missingInputs": [
+    "confirmed deployment target and existing access channel",
+    "server-side compose and current deployed version/fleet",
+    "read-only target data/migration and worker evidence"
+  ]
+}

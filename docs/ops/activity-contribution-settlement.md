@@ -1,6 +1,6 @@
 # E4 贡献政策结算：配置、证明读取与失败边界
 
-> 当前状态（2026-10-18）：候选仍位于 [Draft PR1380](https://github.com/BA7IEE/srvf-nest-api/pull/1380)，未合入或部署。首发按受限500身份范围推进，原R5最大规模仍未验收。147已补充更正来源hash非NULL约束；真实PG的非空升级、NULL整笔回滚、有效V3与重放，以及preparing/pending跨进程恢复和最终native guard后授权callback拒绝回滚通过。维护者已明确审阅认可137–147并授权登记3b，完整SQL、摘要和局限见[本轮审查记录](../plans/activity-os-r5-continuation-20261018.md)。最终SHA的CI、Trusted批准和发布准入分别核对；实际目标旧数据盘点、转换/shadow适用性、worker排空和稳定观察均NOT_RUN，生产保持NO_GO。本文不是生产启用授权。
+> 当前状态（2026-10-18）：后端已通过 [PR1380](https://github.com/BA7IEE/srvf-nest-api/pull/1380) 合入main，尚未部署。首发按受限500身份范围推进，原R5最大规模仍未验收。147已补充更正来源hash非NULL约束；真实PG的非空升级、NULL整笔回滚、有效V3与重放，以及preparing/pending跨进程恢复和最终native guard后授权callback拒绝回滚通过。维护者已明确审阅认可137–147并授权登记3b，完整SQL、摘要和局限见[本轮审查记录](../plans/activity-os-r5-continuation-20261018.md)。PR合并时的[发布前核验快照](../plans/activity-os-r5-pre-release-20261018.json)保留main CI未触发、完整切换检查9a仍有5个todo、依赖审计失败等事实；后续main CI、Trusted批准和实际发布准入分别核对。实际目标旧数据盘点、转换/shadow适用性、worker排空和稳定观察均NOT_RUN，生产保持NO_GO。本文不是生产启用授权。
 
 > 2026-10-16历史记录（不作为当前状态）：候选位于 [Draft PR1380](https://github.com/BA7IEE/srvf-nest-api/pull/1380)，未合入或部署。本地146修复仅把完整函数的 policy_bands 改为 NOT MATERIALIZED；非空145→146、冻结 oracle、小夹具正例和14项负例控制、新迁移7项与定向307项单测通过。fresh E5 已通过一次真实 V9 发布、HTTP prepare／submit／两级审核、部署 worker 首次 commit（539.788ms），正式积分0.50且零重试；详见[146证据](../plans/e4-146-validation.json)。该 fresh 基础链本轮不重跑。旧144/C专用满额run38721554302失败、145常规CI maximum prepare29.271秒后整例600秒超时及其UNKNOWN保留；145专用满额未派发；146 maximum、required CI、3b／Trusted／人工批准及 E5 生产准入当时仍未完成。
 

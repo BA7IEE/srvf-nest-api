@@ -23,7 +23,7 @@
 
 > **E3 当前边界（2026-10-03）**：不可变来源／映射证明、影子对账复核读面、受控窗口与逐项签字已仓内交付，当前主干验收通过；证据见[既有评审稿 §32](plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md#32-e3-当前状态收口2026-10-03)。仍未部署、真实业务未验收，31 类真实映射继续 hold，shadow／Gate 关闭、D8-OPS 未执行。历史未复现性能／隔离根因不因一次 CI 绿而关闭。操作入口及缺口计数见[对账说明](ops/contribution-shadow-reconciliation.md)；生成契约不代表外部端回执或生产批准。
 
-> **E4/E5 当前边界（2026-10-18）**：后端按受限500身份／current段、2500物理slice、2000评价单元推进；原R5最大规模仍未验收，旧满额超30秒的失败不关闭。更正来源hash的数据库NULL缺口已真实复现，新增147 validated CHECK修正，历史SQL／函数／ACL／预算不变。非空146→147、NULL整笔回滚与有效V3/4分录/重放已通过；preparing/pending跨API和实际worker进程重启、native guard后授权callback拒绝的PG回滚已有本轮证据，最终候选检查另记。[续推与审查记录](plans/activity-os-r5-continuation-20261018.md)。默认off，active→off仍恢复旧规则管理写，永久cutover latch未实施；前端、实际目标旧数据盘点／转换／shadow适用性、fleet、worker排空、稳定窗与生产切换均未完成。137–147的3b已由维护者实际审阅认可并登记；最终SHA CI及Trusted人工批准仍是独立门禁，未合入或部署，生产NO_GO。
+> **E4/E5 当前边界（2026-10-18）**：后端按受限500身份／current段、2500物理slice、2000评价单元推进；原R5最大规模仍未验收，旧满额超30秒的失败不关闭。更正来源hash的数据库NULL缺口已真实复现，新增147 validated CHECK修正，历史SQL／函数／ACL／预算不变。非空146→147、NULL整笔回滚与有效V3/4分录/重放已通过；preparing/pending跨API和实际worker进程重启、native guard后授权callback拒绝的PG回滚已有本轮证据，最终候选检查另记。[续推与审查记录](plans/activity-os-r5-continuation-20261018.md)。默认off，active→off仍恢复旧规则管理写，永久cutover latch未实施；前端、实际目标旧数据盘点／转换／shadow适用性、fleet、worker排空、稳定窗与生产切换均未完成。137–147的3b已由维护者实际审阅认可并登记；最终main CI、Trusted人工批准与实际发布准入分别核对；尚未部署，生产NO_GO。
 
 <!-- counts:begin -->
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->
