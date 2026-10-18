@@ -24,6 +24,20 @@
 
 这三条 moderate 本轮不新增 override、不升级 COS SDK 传递依赖、不替换 SDK。后续只有在供应商提供兼容修复或能复现冻结制品上的可利用路径时，才另立依赖升级 PR。
 
+## 2026-10-18 Release 5 受限500人候选
+
+维护者已批准[完整实施 Goal](../plans/activity-os-r5-limited500-release-readiness.md)的 D1 独立依赖修复。基点 `dc9218d0b037643f5f29ae75715ac3e4a20a1034` 的生产图为 1 critical / 14 high / 7 moderate / 1 low；获批候选的仓外预验为 0 critical / 0 high / 3 moderate / 0 low。工作区最终检查、新 SHA CI 与实际部署仍须分别核验，预验不代替发布批准。
+
+调整限定为 sharp `^0.35.5`、multer override `^2.3.0`（锁定实际解析 2.4.0）、fast-uri `^3.1.8`、`@nestjs/swagger>js-yaml` `^4.3.2`、qs `^6.16.1`、proxy-addr `^2.0.8`，以及仅 `@prisma/config>deepmerge-ts` `8.0.0`。Prisma/client 保持 6.19.3，COS SDK 保持 2.15.4，不扩大到所有 js-yaml 或其他依赖。deepmerge-ts 的 major override 已在真实项目配置下预验 Prisma validate/generate；Node 22 下的完整检查与容器构建仍是合并前置。
+
+候选剩余三项 moderate 正是上表 `GHSA-p8p7-x288-28g6`、`GHSA-gh4j-gqv2-49f6`、`GHSA-w5hq-g745-h8pq`，路径及接受边界沿用；它们仍是未修复的供应链风险，发布票必须继续列明，真实 egress/域名边界留现场验证。不新增 ignore、不降低 high/critical 阈值。COS 3 的依赖改名为供应商 fork，registry 零 advisory 不能证明对应代码已修复，本轮不据此升级。
+
+仪器区别：本次 pnpm 10.14.0 的正式 `pnpm audit:production`（文本、high 阈值）在上述候选上 exit 0；`pnpm audit --prod --audit-level high --json` 因仍列出 moderate 而 exit 1。必须同时保存计数与实际命令/退出码，不把 JSON 的非零写成正式阈值未过，也不把正式 exit 0 写成零漏洞。候选冻结后以同一 SHA 重跑，并记录 GitHub Production dependency audit 的整体结论。
+
+2026-10-19兼容补充：Multer2.3+自身将业务fileSize上限补偿为Busboy解析阈值，应用原有`+1`会叠加。注册上传、头像、标准照及CSV导入的真实HTTP红例已确认首个超额字节进入service；按维护者集中扩围批准，四入口直接配置原10MiB业务上限，保留原大小错误码及service前拒绝契约，补充三入口各两项精确边界回归。package/lock仍与上表获批摘要逐字相同，没有降回含high的旧版本或改变审计阈值。
+
+同批仅将测试库重建接入既有同快照严格分类器，原CI短暂连接来源仍UNKNOWN；该测试设施改动不代表生产数据库根因或发布条件已验证。固定修复SHA及main的完整检查仍须分别完成，生产NO_GO，受限500不变。
+
 ## 每次 release
 
 1. 在最终候选 SHA 上运行 `pnpm audit:production`。

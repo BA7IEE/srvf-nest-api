@@ -512,7 +512,7 @@ export class AppManagedActivityOnsiteOperationsController {
   @UseFilters(ImportPreviewFileSizeFilter)
   @UseInterceptors(
     FileInterceptor('file', {
-      limits: { fileSize: IMPORT_PREVIEW_MAX_BYTES + 1, files: 1 },
+      limits: { fileSize: IMPORT_PREVIEW_MAX_BYTES, files: 1 },
     }),
   )
   @ApiConsumes('multipart/form-data')

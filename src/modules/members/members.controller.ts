@@ -91,9 +91,9 @@ type PortraitMultipartFile = {
   buffer: Buffer;
 };
 
-// Busboy 在「已解析字节数等于配置值」时才发 limit,故配置值取上限 +1:
+// Multer 2.3+ 已补偿 Busboy 的等值 limit 事件,这里直接配置业务上限。
 // 对外接受的最大值仍是 10 MiB,第 1 个超出字节在进路由前被拒。
-const PORTRAIT_MULTIPART_FILE_SIZE_LIMIT = 10 * 1024 * 1024 + 1;
+const PORTRAIT_MULTIPART_FILE_SIZE_LIMIT = 10 * 1024 * 1024;
 
 // 全局 filter 把通用 multipart 413 保持在 40000。本路由有固定附件契约,
 // 解析层的体积拒绝必须保住 13013,否则客户端拿到的错误码会随「在哪一层被拒」漂移。

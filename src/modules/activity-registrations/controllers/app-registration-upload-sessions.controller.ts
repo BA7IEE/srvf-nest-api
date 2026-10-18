@@ -48,9 +48,9 @@ type MultipartUploadFile = {
 };
 
 const REGISTRATION_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
-// Busboy emits its `limit` event when the parsed size equals the configured value. Keep the
+// Multer 2.3+ already compensates for Busboy firing its limit event at equality. Keep the
 // externally accepted maximum at 10 MiB while rejecting its first excess byte before the route.
-const REGISTRATION_UPLOAD_MULTIPART_FILE_SIZE_LIMIT = REGISTRATION_UPLOAD_MAX_BYTES + 1;
+const REGISTRATION_UPLOAD_MULTIPART_FILE_SIZE_LIMIT = REGISTRATION_UPLOAD_MAX_BYTES;
 
 // The global filter intentionally keeps generic multipart 413 responses at 40000. This App route
 // has a fixed attachment contract, so its parser-level file-size rejection must preserve 13013.
