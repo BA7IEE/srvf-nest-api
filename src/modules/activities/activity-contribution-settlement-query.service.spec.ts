@@ -21,6 +21,32 @@ import {
 } from './activity-contribution-settlement-query.service';
 
 const rootScope = { layerCode: 'activity' as const, sessionId: null, positionId: null };
+
+describe('draft contribution summaries require a known current source hash', () => {
+  it.each([null, 'changed-source'])(
+    'withholds stale evidence for source %s',
+    async (sourceSetHash) => {
+      const tx = {
+        activitySettlementContributionRevision: {
+          findFirst: jest.fn().mockResolvedValue({ timeRevision: { sourceSetHash: 'old-source' } }),
+        },
+        participantContributionEvaluation: { findMany: jest.fn() },
+      };
+      const result = await new ActivityContributionSettlementQueryService().readSummaryInTx(
+        tx as unknown as Prisma.TransactionClient,
+        'draft',
+        { draftContentHash: 'unchanged-content', sourceSetHash },
+      );
+      expect(result).toMatchObject({
+        pending: true,
+        recognizedPointsTotal: null,
+        sourceSetHash: null,
+        evaluations: [],
+      });
+      expect(tx.participantContributionEvaluation.findMany).not.toHaveBeenCalled();
+    },
+  );
+});
 const positionScope = {
   layerCode: 'position' as const,
   sessionId: 'session-one',

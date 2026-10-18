@@ -539,7 +539,7 @@ export class ActivityContributionSettlementQueryService {
   async readSummaryInTx(
     tx: Prisma.TransactionClient,
     versionId: string,
-    expected?: { draftContentHash: string; sourceSetHash?: string },
+    expected?: { draftContentHash: string; sourceSetHash: string | null },
   ) {
     const root = await tx.activitySettlementContributionRevision.findFirst({
       where: {
@@ -550,7 +550,9 @@ export class ActivityContributionSettlementQueryService {
       include: { timeRevision: { select: { sourceSetHash: true } } },
     });
     const current =
-      !expected?.sourceSetHash || root?.timeRevision?.sourceSetHash === expected.sourceSetHash;
+      !expected ||
+      (expected.sourceSetHash !== null &&
+        root?.timeRevision?.sourceSetHash === expected.sourceSetHash);
     if (!root || !current) return presentContributionProof(root, [], false);
     const evaluations = await tx.participantContributionEvaluation.findMany({
       where: { contributionRevisionId: root.id },

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { Injectable, Optional } from '@nestjs/common';
 import { ActivityContributionSettlementQueryService } from './activity-contribution-settlement-query.service';
+import { ActivityTimeSettlementQueryService } from './activity-time-settlement-query.service';
 import {
   presentContributionProof,
   type ContributionProofSummary,
@@ -320,6 +321,7 @@ export class ActivitySettlementHttpService {
     private readonly reviews: SettlementReviewService,
     private readonly closure: ActivityClosureService,
     @Optional() private readonly contributions?: ActivityContributionSettlementQueryService,
+    @Optional() private readonly timeQueries?: ActivityTimeSettlementQueryService,
   ) {}
 
   async generate(
@@ -513,10 +515,13 @@ export class ActivitySettlementHttpService {
 
     const contributionProof =
       draft?.contributionRegimeCode === 'policy_v1'
-        ? this.contributions
-          ? await this.contributions.readSummaryInTx(this.prisma, draft.id, {
-              draftContentHash: draft.contentHash,
-            })
+        ? this.contributions && this.timeQueries
+          ? await this.timeQueries.readDraftContributionSummaryInTx(
+              this.prisma,
+              activityId,
+              draft.id,
+              draft.contentHash,
+            )
           : presentContributionProof(null, [])
         : undefined;
     if (contributionProof?.pending) gaps.push({ gapCode: 'contribution_pending', count: 1 });
@@ -735,15 +740,19 @@ export class ActivitySettlementHttpService {
     return {
       ...(version.contributionRegimeCode === 'policy_v1'
         ? {
-            contributionProof: this.contributions
-              ? await this.contributions.readSummaryInTx(
-                  this.prisma,
-                  version.id,
-                  version.statusCode === 'draft'
-                    ? { draftContentHash: version.contentHash }
-                    : undefined,
-                )
-              : presentContributionProof(null, []),
+            contributionProof:
+              version.statusCode === 'draft'
+                ? this.contributions && this.timeQueries
+                  ? await this.timeQueries.readDraftContributionSummaryInTx(
+                      this.prisma,
+                      activityId,
+                      version.id,
+                      version.contentHash,
+                    )
+                  : presentContributionProof(null, [])
+                : this.contributions
+                  ? await this.contributions.readSummaryInTx(this.prisma, version.id, undefined)
+                  : presentContributionProof(null, []),
           }
         : {}),
       version: {

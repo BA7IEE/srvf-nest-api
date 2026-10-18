@@ -706,6 +706,58 @@ describe('E4 time workbench contribution proof wiring', () => {
     },
   );
 
+  it('checks live source anchors for ordinary draft summaries without evaluating new points', async () => {
+    const f = setup();
+    await f.service.readDraftContributionSummaryInTx(f.tx, 'activity', 'draft', 'a'.repeat(64));
+    expect(f.contributions.readSummaryInTx).toHaveBeenCalledWith(f.tx, 'draft', {
+      draftContentHash: 'a'.repeat(64),
+      sourceSetHash: 'd'.repeat(64),
+    });
+    expect(f.sources).toHaveBeenCalledTimes(1);
+    expect(f.evaluate).not.toHaveBeenCalled();
+  });
+
+  it.each<Partial<TimeSettlementDraftContext>>([
+    { draftId: 'another-draft' },
+    { draftContentHash: 'changed' },
+    { sealCurrent: false },
+    { draftId: null },
+  ])('cannot treat an unavailable current draft as a fresh proof: %j', async (patch) => {
+    const f = setup();
+    f.draftContext.mockResolvedValue({ ...context, contributionRegimeCode: 'policy_v1', ...patch });
+    await f.service.readDraftContributionSummaryInTx(f.tx, 'activity', 'draft', 'a'.repeat(64));
+    expect(f.contributions.readSummaryInTx).toHaveBeenCalledWith(f.tx, 'draft', {
+      draftContentHash: 'a'.repeat(64),
+      sourceSetHash: null,
+    });
+    expect(f.sources).not.toHaveBeenCalled();
+  });
+
+  it('passes an explicit unavailable source when a bounded source read is rejected', async () => {
+    const f = setup();
+    f.sources.mockRejectedValue(new TimeSettlementPolicyError('scale_limit'));
+    await f.service.readDraftContributionSummaryInTx(f.tx, 'activity', 'draft', 'a'.repeat(64));
+    expect(f.contributions.readSummaryInTx).toHaveBeenCalledWith(f.tx, 'draft', {
+      draftContentHash: 'a'.repeat(64),
+      sourceSetHash: null,
+    });
+    await f.service.workbench('activity', actor);
+    expect(f.contributions.readSummaryInTx).toHaveBeenLastCalledWith(f.tx, 'draft', {
+      draftContentHash: 'a'.repeat(64),
+      sourceSetHash: null,
+    });
+  });
+
+  it('does not hide an unexpected source failure in the draft summary helper', async () => {
+    const f = setup();
+    const failure = new Error('source read failed');
+    f.sources.mockRejectedValue(failure);
+    await expect(
+      f.service.readDraftContributionSummaryInTx(f.tx, 'activity', 'draft', 'a'.repeat(64)),
+    ).rejects.toThrow(failure);
+    expect(f.contributions.readSummaryInTx).not.toHaveBeenCalled();
+  });
+
   it('does not query evidence before the first current-eligibility check succeeds', async () => {
     const f = setup();
     f.access.authorize.mockRejectedValue(new BizException(BizCode.FORBIDDEN));

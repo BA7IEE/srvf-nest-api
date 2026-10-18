@@ -144,6 +144,16 @@ describe('E4 settlement HTTP read proof wiring', () => {
     const authz = { explain: jest.fn().mockResolvedValue({ allow: true }) };
     const rbac = { can: jest.fn().mockResolvedValue(false) };
     const contributions = { readSummaryInTx: jest.fn().mockResolvedValue(summary()) };
+    const timeQueries = {
+      readDraftContributionSummaryInTx: jest
+        .fn()
+        .mockImplementation((tx: unknown, _activityId: string, id: string, hash: string) =>
+          contributions.readSummaryInTx(tx, id, {
+            draftContentHash: hash,
+            sourceSetHash: 'd'.repeat(64),
+          }),
+        ),
+    };
     type Dependencies = ConstructorParameters<typeof ActivitySettlementHttpService>;
     const reviews = { firstReview: jest.fn(), finalReview: jest.fn() };
     const service = new ActivitySettlementHttpService(
@@ -156,6 +166,7 @@ describe('E4 settlement HTTP read proof wiring', () => {
       reviews as unknown as Dependencies[6],
       {} as Dependencies[7],
       withContributions ? (contributions as unknown as Dependencies[8]) : undefined,
+      timeQueries as unknown as Dependencies[9],
     );
     return { db, authz, rbac, contributions, service, version, run, reviews };
   }
@@ -184,6 +195,7 @@ describe('E4 settlement HTTP read proof wiring', () => {
     const result = await f.service.workbench('activity', actor);
     expect(f.contributions.readSummaryInTx).toHaveBeenCalledWith(f.db, 'requested-version', {
       draftContentHash: 'e'.repeat(64),
+      sourceSetHash: 'd'.repeat(64),
     });
     expect(result.contributionProof).toEqual(summary());
     expect(result.gaps).toEqual([]);
@@ -222,6 +234,7 @@ describe('E4 settlement HTTP read proof wiring', () => {
     const result = await f.service.versionDetail('activity', 'requested-version', actor);
     expect(f.contributions.readSummaryInTx).toHaveBeenCalledWith(f.db, 'requested-version', {
       draftContentHash: 'e'.repeat(64),
+      sourceSetHash: 'd'.repeat(64),
     });
     expect(result.contributionProof).toEqual(summary());
   });

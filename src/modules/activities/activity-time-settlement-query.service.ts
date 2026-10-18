@@ -515,6 +515,40 @@ export class ActivityTimeSettlementQueryService {
     }
   }
 
+  /** Draft reads must compare live sources; historical submitted proofs remain immutable. */
+  async readDraftContributionSummaryInTx(
+    tx: Prisma.TransactionClient,
+    activityId: string,
+    versionId: string,
+    draftContentHash: string,
+  ) {
+    if (!this.contributions) return presentContributionProof(null, []);
+    let sourceSetHash: string | null = null;
+    try {
+      const context = await this.readDraftContextInTx(tx, activityId);
+      const proof = requireTimeSettlementDraft(activityId, context);
+      if (
+        proof.settlementDraftVersionId === versionId &&
+        proof.draftContentHash === draftContentHash
+      )
+        sourceSetHash = (await this.readSourceSetInTx(tx, proof)).sourceSetHash;
+    } catch (error) {
+      if (
+        !(error instanceof TimeSettlementPolicyError) &&
+        !(
+          error instanceof BizException &&
+          (error.biz === BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY ||
+            error.biz === BizCode.ACTIVITY_TIME_SETTLEMENT_STALE)
+        )
+      )
+        throw error;
+    }
+    return this.contributions.readSummaryInTx(tx, versionId, {
+      draftContentHash,
+      sourceSetHash,
+    });
+  }
+
   async workbench(activityId: string, user: CurrentUserPayload) {
     return await this.read(activityId, user, async (tx) => {
       const context = await this.readDraftContextInTx(tx, activityId);
@@ -550,7 +584,7 @@ export class ActivityTimeSettlementQueryService {
           ? context.draftId && context.draftContentHash && this.contributions
             ? await this.contributions.readSummaryInTx(tx, context.draftId, {
                 draftContentHash: context.draftContentHash,
-                sourceSetHash: contributionSourceSetHash,
+                sourceSetHash: contributionSourceSetHash ?? null,
               })
             : presentContributionProof(null, [])
           : undefined;
