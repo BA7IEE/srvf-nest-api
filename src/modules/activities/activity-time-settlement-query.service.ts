@@ -9,7 +9,11 @@ import {
   assertNativeContributionLaunchTotal as launchTotal,
 } from './activity-contribution-launch-policy';
 import { presentContributionProof } from './activity-contribution-settlement-presenter';
-import { Prisma, type ParticipantTimeAllocationRevision } from '@prisma/client';
+import {
+  Prisma,
+  type ParticipantTimeAllocationRevision,
+  type ParticipantTimeAllocationSlice,
+} from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -359,11 +363,15 @@ export class ActivityTimeSettlementQueryService {
     // Active admission inspects physical costs before valid/population filtering can hide them.
     const inspected = launchAdmission ? latest : applicable;
     const allocationIds = inspected.map((row) => row.id);
-    const slices = await tx.participantTimeAllocationSlice.findMany({
-      where: { allocationRevisionId: { in: allocationIds } },
-      orderBy: [{ allocationRevisionId: 'asc' }, { ordinal: 'asc' }],
-      take: TIME_SETTLEMENT_LIMITS.slices + 1,
-    });
+    // Keep the complete row, including id, because launch admission measures these bytes.
+    // One array parameter avoids constructing a separate SQL binding for every allocation.
+    const slices = await tx.$queryRaw<ParticipantTimeAllocationSlice[]>`
+      SELECT id, "allocationRevisionId", "activityId", ordinal, "categoryCode", "intervalKindCode", "startAt", "endAt"
+      FROM "ParticipantTimeAllocationSlice"
+      WHERE "allocationRevisionId" = ANY(${allocationIds}::text[])
+      ORDER BY "allocationRevisionId" ASC, ordinal ASC
+      LIMIT ${TIME_SETTLEMENT_LIMITS.slices + 1}
+    `;
     if (slices.length > TIME_SETTLEMENT_LIMITS.slices)
       throw new TimeSettlementPolicyError('scale_limit');
     if (launchAdmission) {

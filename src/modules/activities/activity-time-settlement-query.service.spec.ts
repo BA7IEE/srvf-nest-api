@@ -20,6 +20,7 @@ import {
 } from './activity-time-settlement-query.service';
 import {
   TimeSettlementPolicyError,
+  TIME_SETTLEMENT_LIMITS,
   TIME_SETTLEMENT_CATEGORIES,
   timeSettlementSourceSetHash,
 } from './activity-time-settlement-policy';
@@ -813,19 +814,18 @@ describe('D4 historical-role reuse stays inside one evaluation', () => {
       second,
     ].map((source) => ({ ...allocation(source), sourcePositionId: 'position' }));
     const tx = {
-      participantTimeAllocationSlice: {
-        findMany: jest.fn().mockResolvedValue(
-          rows.map((row) => ({
-            allocationRevisionId: row.id,
-            ordinal: 0,
-            activityId: 'activity',
-            categoryCode: 'volunteer_service',
-            intervalKindCode: 'service_segment',
-            startAt: first.checkInAt,
-            endAt: first.checkOutAt,
-          })),
-        ),
-      },
+      $queryRaw: jest.fn().mockResolvedValue(
+        rows.map((row) => ({
+          id: 'slice-' + row.id,
+          allocationRevisionId: row.id,
+          activityId: 'activity',
+          ordinal: 0,
+          categoryCode: 'volunteer_service',
+          intervalKindCode: 'service_segment',
+          startAt: first.checkInAt,
+          endAt: first.checkOutAt,
+        })),
+      ),
       timePolicyVersion: { findMany: jest.fn().mockResolvedValue([]) },
       activityRuleSnapshot: { findMany: jest.fn().mockResolvedValue(snapshots) },
     };
@@ -848,7 +848,7 @@ describe('D4 historical-role reuse stays inside one evaluation', () => {
     await expect(
       f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set, true),
     ).rejects.toThrow('scale_limit');
-    expect(f.tx.participantTimeAllocationSlice.findMany).not.toHaveBeenCalled();
+    expect(f.tx.$queryRaw).not.toHaveBeenCalled();
   });
   it('rejects a long complete service segment even when its manual allocation slice is short', async () => {
     const f = roleFixture();
@@ -860,7 +860,7 @@ describe('D4 historical-role reuse stays inside one evaluation', () => {
     await expect(
       f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set, true),
     ).rejects.toThrow('scale_limit');
-    expect(f.tx.participantTimeAllocationSlice.findMany).not.toHaveBeenCalled();
+    expect(f.tx.$queryRaw).not.toHaveBeenCalled();
   });
   it('counts manifests belonging to invalid/excluded segments before result filtering', async () => {
     const f = roleFixture();
@@ -869,7 +869,7 @@ describe('D4 historical-role reuse stays inside one evaluation', () => {
     await expect(
       f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set, true),
     ).rejects.toThrow('scale_limit');
-    expect(f.tx.participantTimeAllocationSlice.findMany).not.toHaveBeenCalled();
+    expect(f.tx.$queryRaw).not.toHaveBeenCalled();
   });
   it('checks actual physical slices independently of an understated manifest and empty population', async () => {
     const f = roleFixture();
@@ -886,19 +886,63 @@ describe('D4 historical-role reuse stays inside one evaluation', () => {
       startAt: new Date('2026-01-01'),
       endAt: new Date('2026-01-02'),
     };
-    f.tx.participantTimeAllocationSlice.findMany.mockResolvedValue(
-      Array.from({ length: 2501 }, () => slice),
-    );
+    f.tx.$queryRaw.mockResolvedValue(Array.from({ length: 2501 }, () => slice));
     await expect(
       f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set, true),
     ).rejects.toThrow('scale_limit');
-    expect(f.tx.participantTimeAllocationSlice.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { allocationRevisionId: { in: f.rows.map((row) => row.id) } },
-      }),
-    );
+    expect((f.tx.$queryRaw.mock.calls[0] as unknown[]).slice(1)).toEqual([
+      f.rows.map((row) => row.id),
+      TIME_SETTLEMENT_LIMITS.slices + 1,
+    ]);
     expect(f.tx.timePolicyVersion.findMany).not.toHaveBeenCalled();
   });
+  it('binds a single allocation array while retaining every admission field, original order and cap', async () => {
+    const f = roleFixture();
+    const builder = jest.spyOn(timeSettlementPolicy, 'buildTimeSettlementBuckets').mockReturnValue({
+      buckets: [],
+      bucketCount: 0,
+      sourceCount: 0,
+      bucketContentHash: 'f'.repeat(64),
+    });
+    try {
+      await f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set);
+      expect(f.tx.$queryRaw).toHaveBeenCalledTimes(1);
+      const [query, ids, cap] = f.tx.$queryRaw.mock.calls[0] as [
+        TemplateStringsArray,
+        string[],
+        number,
+      ];
+      expect(query.join('').replace(/\s+/gu, ' ').trim()).toBe(
+        'SELECT id, "allocationRevisionId", "activityId", ordinal, "categoryCode", "intervalKindCode", "startAt", "endAt" FROM "ParticipantTimeAllocationSlice" WHERE "allocationRevisionId" = ANY(::text[]) ORDER BY "allocationRevisionId" ASC, ordinal ASC LIMIT',
+      );
+      expect(ids).toEqual(f.rows.map((row) => row.id));
+      expect(cap).toBe(50001);
+    } finally {
+      builder.mockRestore();
+    }
+  });
+
+  it('retains the empty array as a bound predicate without broadening the physical slice read', async () => {
+    const f = roleFixture();
+    f.set.segments = [];
+    f.set.latest = [];
+    f.set.population = [];
+    f.tx.$queryRaw.mockResolvedValue([]);
+    const builder = jest.spyOn(timeSettlementPolicy, 'buildTimeSettlementBuckets').mockReturnValue({
+      buckets: [],
+      bucketCount: 0,
+      sourceCount: 0,
+      bucketContentHash: 'f'.repeat(64),
+    });
+    try {
+      await f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set);
+      expect((f.tx.$queryRaw.mock.calls[0] as unknown[]).slice(1)).toEqual([[], 50001]);
+      expect(builder.mock.calls[0][0].allocations).toEqual([]);
+    } finally {
+      builder.mockRestore();
+    }
+  });
+
   it('reuses a successful role while retaining all reads and full builder input', async () => {
     const f = roleFixture();
     const resolver = jest.spyOn(historicalRolePolicy, 'historicalAttendanceRoleFromRuleSnapshot');
@@ -915,7 +959,7 @@ describe('D4 historical-role reuse stays inside one evaluation', () => {
         'service',
         'service',
       ]);
-      expect(f.tx.participantTimeAllocationSlice.findMany).toHaveBeenCalledTimes(1);
+      expect(f.tx.$queryRaw).toHaveBeenCalledTimes(1);
       expect(f.tx.timePolicyVersion.findMany).toHaveBeenCalledTimes(1);
       expect(f.tx.activityRuleSnapshot.findMany).toHaveBeenCalledTimes(1);
       expect(f.access.authorize).not.toHaveBeenCalled();

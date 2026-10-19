@@ -1,0 +1,1 @@
+- Preserve full time-settlement source validation while binding allocation IDs once and reducing repeated bulk-payload keys; keep transaction budgets, row counts and serialization failures unchanged.

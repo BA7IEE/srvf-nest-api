@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { types } from 'node:util';
 import { Injectable, Optional } from '@nestjs/common';
 import { instanceToPlain } from 'class-transformer';
 import { Prisma, type ActivitySettlementTimeRevision } from '@prisma/client';
@@ -50,6 +51,70 @@ import {
   frozenContributionRegime,
 } from './activity-contribution-settlement.service';
 import type { ContributionRegimeCode } from './activity-contribution-settlement-policy';
+
+// These wire layouts are internal to the two bulk statements; persisted values are unchanged.
+const bucketWireKeys = [
+  'id',
+  'participationIdentityId',
+  'categoryCode',
+  'calculatedSeconds',
+  'recognizedSeconds',
+  'adjustmentReason',
+  'timePolicyVersionId',
+  'definitionHash',
+  'evaluatorVersion',
+  'quantumSeconds',
+  'rawCalculatedMilliseconds',
+  'rawRecognizedMilliseconds',
+  'emptyReasonCode',
+] as const;
+const sourceWireKeys = [
+  'allocationRevisionId',
+  'sourceSegmentId',
+  'sourceSegmentRevision',
+  'rawCalculatedMilliseconds',
+  'rawRecognizedMilliseconds',
+] as const;
+function wireScalar(value: unknown): boolean {
+  return (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  );
+}
+function ordinaryWireArray(value: unknown): value is unknown[] {
+  if (
+    types.isProxy(value) ||
+    !Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Array.prototype ||
+    'toJSON' in value
+  )
+    return false;
+  if (Reflect.ownKeys(value).length !== value.length + 1) return false;
+  for (let index = 0; index < value.length; index++)
+    if (!Object.hasOwn(Object.getOwnPropertyDescriptor(value, index) ?? {}, 'value')) return false;
+  return true;
+}
+function compactAdjustmentReason(value: unknown): boolean {
+  if (value === null) return true;
+  if (!ordinaryWireArray(value)) return false;
+  return value.every((reason) => {
+    if (
+      !reason ||
+      typeof reason !== 'object' ||
+      types.isProxy(reason) ||
+      Object.getPrototypeOf(reason) !== Object.prototype ||
+      'toJSON' in reason
+    )
+      return false;
+    if (Reflect.ownKeys(reason).length !== 2) return false;
+    return ['allocationRevisionId', 'manualReason'].every((key) => {
+      const descriptor = Object.getOwnPropertyDescriptor(reason, key);
+      return descriptor?.enumerable === true && typeof descriptor.value === 'string';
+    });
+  });
+}
 
 type Tx = Prisma.TransactionClient;
 type Reauthorize = () => Promise<CurrentUserPayload>;
@@ -616,35 +681,87 @@ export class ActivityTimeSettlementService {
         rawRecognizedMilliseconds: source.rawRecognizedMilliseconds.toString(),
       })),
     }));
-    // Each statement decodes only its own columns; do not send the full source graph twice.
+    // Check only the fresh records built above. Unusual values retain the original record
+    // serialization, including failures for unknown BigInts or key-dependent toJSON methods.
+    const compact =
+      ordinaryWireArray(rows) &&
+      rows.every(
+        (row) =>
+          !('toJSON' in row) &&
+          Object.keys(row).length === bucketWireKeys.length + 1 &&
+          bucketWireKeys.every(
+            (key) =>
+              Object.hasOwn(row, key) &&
+              (key === 'adjustmentReason'
+                ? compactAdjustmentReason(row[key])
+                : wireScalar(row[key])),
+          ) &&
+          ordinaryWireArray(row.sources) &&
+          row.sources.every(
+            (source) =>
+              !('toJSON' in source) &&
+              Object.keys(source).length === sourceWireKeys.length &&
+              sourceWireKeys.every((key) => Object.hasOwn(source, key) && wireScalar(source[key])),
+          ),
+      );
+    // Both payloads must finish serialization before either statement can write.
     const bucketJson = JSON.stringify(
       rows.map(({ sources, ...bucket }) => {
         void sources;
-        return bucket;
+        return compact ? bucketWireKeys.map((key) => bucket[key]) : bucket;
       }),
     );
-    const sourceJson = JSON.stringify(rows.map(({ id, sources }) => ({ id, sources })));
-    const bucketCount = await tx.$executeRaw`
+    const sourceJson = JSON.stringify(
+      rows.map(({ id, sources }) =>
+        compact
+          ? [id, sources.map((source) => sourceWireKeys.map((key) => source[key]))]
+          : { id, sources },
+      ),
+    );
+    const bucketRows = compact
+      ? Prisma.sql`
+      SELECT item->>0 AS id, item->>1 AS "participationIdentityId", item->>2 AS "categoryCode",
+        (item->>3)::INTEGER AS "calculatedSeconds", (item->>4)::INTEGER AS "recognizedSeconds",
+        nullif(item->5, 'null'::jsonb) AS "adjustmentReason", item->>6 AS "timePolicyVersionId",
+        item->>7 AS "definitionHash", (item->>8)::INTEGER AS "evaluatorVersion", (item->>9)::INTEGER AS "quantumSeconds",
+        (item->>10)::BIGINT AS "rawCalculatedMilliseconds", (item->>11)::BIGINT AS "rawRecognizedMilliseconds"
+      FROM jsonb_array_elements(${bucketJson}::jsonb) AS item
+    `
+      : Prisma.sql`
+      SELECT * FROM jsonb_to_recordset(${bucketJson}::jsonb) AS x(id TEXT, "participationIdentityId" TEXT, "categoryCode" TEXT,
+        "calculatedSeconds" INTEGER, "recognizedSeconds" INTEGER, "adjustmentReason" JSONB, "timePolicyVersionId" TEXT,
+        "definitionHash" TEXT, "evaluatorVersion" INTEGER, "quantumSeconds" INTEGER,
+        "rawCalculatedMilliseconds" BIGINT, "rawRecognizedMilliseconds" BIGINT)
+    `;
+    const sourceRows = compact
+      ? Prisma.sql`
+      SELECT b.item->>0 AS id, s.item->>0 AS "allocationRevisionId", s.item->>1 AS "sourceSegmentId",
+        (s.item->>2)::INTEGER AS "sourceSegmentRevision", (s.item->>3)::BIGINT AS "rawCalculatedMilliseconds",
+        (s.item->>4)::BIGINT AS "rawRecognizedMilliseconds"
+      FROM jsonb_array_elements(${sourceJson}::jsonb) AS b(item)
+      CROSS JOIN LATERAL jsonb_array_elements(b.item->1) AS s(item)
+    `
+      : Prisma.sql`
+      SELECT b.id, s.* FROM jsonb_to_recordset(${sourceJson}::jsonb) AS b(id TEXT, sources JSONB)
+      CROSS JOIN LATERAL jsonb_to_recordset(b.sources) AS s("allocationRevisionId" TEXT, "sourceSegmentId" TEXT,
+        "sourceSegmentRevision" INTEGER, "rawCalculatedMilliseconds" BIGINT, "rawRecognizedMilliseconds" BIGINT)
+    `;
+    const bucketCount = await tx.$executeRaw(Prisma.sql`
       INSERT INTO "ParticipantSettlementTimeBucket" (id, "timeRevisionId", "activityId", "participationIdentityId",
         "categoryCode", "calculatedSeconds", "recognizedSeconds", "adjustmentReason", "timePolicyVersionId",
         "definitionHash", "evaluatorVersion", "quantumSeconds", "rawCalculatedMilliseconds", "rawRecognizedMilliseconds")
       SELECT x.id, ${revision.id}, ${revision.activityId}, x."participationIdentityId", x."categoryCode", x."calculatedSeconds",
         x."recognizedSeconds", nullif(x."adjustmentReason", 'null'::jsonb), x."timePolicyVersionId", x."definitionHash", x."evaluatorVersion",
         x."quantumSeconds", x."rawCalculatedMilliseconds", x."rawRecognizedMilliseconds"
-      FROM jsonb_to_recordset(${bucketJson}::jsonb) AS x(id TEXT, "participationIdentityId" TEXT, "categoryCode" TEXT,
-        "calculatedSeconds" INTEGER, "recognizedSeconds" INTEGER, "adjustmentReason" JSONB, "timePolicyVersionId" TEXT,
-        "definitionHash" TEXT, "evaluatorVersion" INTEGER, "quantumSeconds" INTEGER,
-        "rawCalculatedMilliseconds" BIGINT, "rawRecognizedMilliseconds" BIGINT)
-    `;
-    const sourceCount = await tx.$executeRaw`
+      FROM (${bucketRows}) x
+    `);
+    const sourceCount = await tx.$executeRaw(Prisma.sql`
       INSERT INTO "ParticipantSettlementTimeBucketSource" (id, "bucketId", "timeRevisionId", "activityId",
         "allocationRevisionId", "sourceSegmentId", "sourceSegmentRevision", "rawCalculatedMilliseconds", "rawRecognizedMilliseconds")
-      SELECT gen_random_uuid()::text, b.id, ${revision.id}, ${revision.activityId}, s."allocationRevisionId", s."sourceSegmentId",
-        s."sourceSegmentRevision", s."rawCalculatedMilliseconds", s."rawRecognizedMilliseconds"
-      FROM jsonb_to_recordset(${sourceJson}::jsonb) AS b(id TEXT, sources JSONB)
-      CROSS JOIN LATERAL jsonb_to_recordset(b.sources) AS s("allocationRevisionId" TEXT, "sourceSegmentId" TEXT,
-        "sourceSegmentRevision" INTEGER, "rawCalculatedMilliseconds" BIGINT, "rawRecognizedMilliseconds" BIGINT)
-    `;
+      SELECT gen_random_uuid()::text, x.id, ${revision.id}, ${revision.activityId}, x."allocationRevisionId", x."sourceSegmentId",
+        x."sourceSegmentRevision", x."rawCalculatedMilliseconds", x."rawRecognizedMilliseconds"
+      FROM (${sourceRows}) x
+    `);
     if (bucketCount !== revision.bucketCount || sourceCount !== revision.sourceCount)
       throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_INVALID);
   }
