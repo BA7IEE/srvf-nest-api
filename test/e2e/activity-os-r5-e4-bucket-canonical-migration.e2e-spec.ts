@@ -405,14 +405,35 @@ describe('E4 bucket canonical migration 141 nonempty upgrade', () => {
   let oracleInstalled = false;
   const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
   beforeAll(async () => {
+    // E4_BUCKET141_SETUP_DIAGNOSTIC_BEGIN
+    const setupStarted = performance.now();
+    const markSetup = (stage: string) =>
+      console.info(
+        'E4_BUCKET141_SETUP_STAGE',
+        JSON.stringify({ stage, elapsedMs: performance.now() - setupStarted }),
+      );
+    // E4_BUCKET141_SETUP_DIAGNOSTIC_END
     process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
+    markSetup('UPGRADE_140_START');
     owner.deployEvaluationMigrations();
+    markSetup('UPGRADE_140_DONE');
+    markSetup('FIXTURE_START');
     fixture = await createE4Fixture();
+    markSetup('FIXTURE_DONE');
+    markSetup('SOURCE_START');
     const source = await createE4Source(fixture);
+    markSetup('SOURCE_DONE');
+    markSetup('PREPARE_START');
     const prepared = await prepareE4Time(fixture, source);
+    markSetup('PREPARE_DONE');
+    markSetup('SUBMIT_START');
     await submitE4Time(fixture, source, prepared);
+    markSetup('SUBMIT_DONE');
     const db = fixture.db;
+    markSetup('BODY_START');
     const before = await installedBody(db);
+    markSetup('BODY_DONE');
+    markSetup('ORACLE_START');
     await db.$transaction(
       async (tx) => {
         if (!/^e4_bucket_oracle_[a-f0-9]{16}$/u.test(namespace))
@@ -432,6 +453,7 @@ describe('E4 bucket canonical migration 141 nonempty upgrade', () => {
       { timeout: 5_000 },
     );
     oracleInstalled = true;
+    markSetup('ORACLE_DONE');
   });
   afterAll(async () => {
     try {

@@ -313,3 +313,41 @@ AC-064/066/ADV-022 接通(#1194)、万人档 4 条转永久豁免(#1196);**剩 9
 preflight此次续作读取到同一任务原有61份未提交输入，global结果因非clean而exit1，记录保留；远端main经正常fetch核实仍为本轮D1基点且无open PR。维护者此次明确授权基于这些已冻结输入续作，未丢弃或重置原工作，也未把该preflight写成通过；最终提交后再按原入口核验clean及门禁。
 
 本轮总范围78个唯一路径，D2实际65路径；新源码/装配/摘要之外的后果均沿原清单。后续按同一D2 PR完成最终quick、完整Harness、原架构及生成物检查、契约和14组读面/11组native真实PG、固定SHA独立复核及CI/Smoke/Trusted；原最大规模两用例保留NOT_RUN，生产NO_GO与四项延期不变。
+
+
+## R5 后端接续：nightly 精确候选与剩余验收（2026-10-19，仅送审快照）
+
+本节承接 main `7606e1f1f39ec8bef22102e58068dbda34c8ed96` 的D2已合并事实，不把受限500交付称为整个Release5完成。仅推进开发验收，生产、真实数据转换、shadow、开关、tag/Release均不执行。AC013/020/025按原决定后续立项，AC017搁置，四项保持TODO；前端/真实业务验收未完成，不自动扩入后端写集。
+
+原2000身份/10000段/50000物理slice/8000policy units与S13仍未验收，普通CI排除了原最大用例，专用scratch旧额度不恢复。10a/10b和实际目标条件是现场发布项，继续单列NOT_RUN，不以服务器信息缺失阻挡仓内取证。
+
+历史nightly run39162056648/job117777230976绑定c8c15843，实际checkout --depth=1。尾部已见fixture:383固定历史git show失败及bucket canonical的FAIL，最终却为too-slow；4200秒终止不能证明纯慢或句柄泄漏。取回的是完整Actions job日志归档，原tmp/leaks.log只tail200且未上传，尾部外首红和全部因果仍UNKNOWN。新depth1克隆原命令exit128，补全历史后exit0；远端与本地同一blob，前136历史迁移逐份相同。旧分类器输入FAIL+timeout仍给too-slow，仪器问题已复现。
+
+N1候选精确五路径：
+
+| 路径 | 仅授权该目的的候选 | 红区 |
+|---|---|---|
+| `.github/workflows/nightly-e2e-leaks.yml` | depth0，DB前预检固定历史及136个blob，7天完整原日志/诊断副本/独立事实artifact，分列exit/termination/FAIL/summary/handles/OOM，已见FAIL不被timeout覆盖；不改70m/85m/8GiB、矩阵/required名/触发/权限 | 是 |
+| `scripts/harness-guards.selftest.ts` | 执行真实shell判定段的17场景及历史pin/prefix/完整日志守护，原判据不删不松 | 是 |
+| `test/e2e/activity-os-r5-e4-bucket-canonical-migration.e2e-spec.ts` | 失败beforeAll内7阶段start/done/elapsed计数；原30秒hook、全部SQL/语句/断言与事务预算逐字保持 | 否 |
+| `docs/plans/activity-os-r5-limited500-release-readiness.md` | 本节送审快照及本轮真实授权/结果收据 | 否 |
+| `changelog.d/nightly-e4-historical-fixture-diagnostics.md` | 本包fragment，不改已发布版本 | 否 |
+
+这是候选范围，尚不是批准记录。原完整Goal禁止workflow，本包仅提议上述具名例外；两条新grant须维护者精确委托后才由正常CLI代执行，不复用D1/D2已结束grant，不手改令牌。Trusted仍须维护者对新SHA本人批准；既有正常提交推送/条件合并授权不绕过任何门禁。原SQL/500保护/Jest配置/global setup/依赖均不变。
+
+仓外候选17场景shell、追加守护块21项、浅历史拒绝/完整历史通过及4个变异均有实际校准；它们不是正式完整Harness或应用验证。未改main的真实PG bucket141+detectOpenHandles为211.52秒exit1、2 failed：407行beforeAll原30秒hook超时，业务断言未执行。未再出现历史git show错误；同步升级/建夹具/prepare/submit/oracle哪个阶段耗时仍UNKNOWN，故仅新增第五路径定位，不称已修复，不提高timeout。结束后只读观察模板app_test保留、w1/w98不存在且目标client0，仅为资源快照，不是业务回滚证明。
+
+获批后：原完整Harness/typecheck/quick与新增守护 → 具名bucket141在原预算下单轮取证 → 失败/UNKNOWN停后续，全部通过才普通CI五分片/Smoke/新SHA Trusted及既有正常合并。每层按代码、实际测试、推送、合并分别记录；候选应用前均NOT_RUN。
+
+N2完整nightly另需一次执行授权：只有短门/主干通过后才固定新main派发一次，不rerun/扩时/拆片；明确承接既有自动开/评论/关闭Issue的外发副作用。N1实现授权不自动包括N2。runner/job硬终止仍可能阻止always artifact，不保证所有死亡方式都能保留日志。
+
+C1原容量队列仅只读准备，待新scratch与有限次数批准。采用现有原S13一次→全门通过才原maximum一次，严格首停，不追加样本/预热/ANALYZE/换baseline。固定源码/147份SQL/oracle与原预算：prepare/submit30秒、review15秒、summary默认5秒、整例600秒，以及既有独立oracle/native/cleanup预算；不以90秒DIAGNOSTIC_ONLY结果代替验收。具名库拟为app_test/app_test_w1/app_test_w98，先查存在性/连接/owner，来源不明或失败证据库存在即停，不强清；原lease/普通DROP/失败保留/资源观察照旧。阶段JSONL、完整8000文档/袋/NULL/hash/oracle、响应与真实事务终态/副作用/资源分列，首红之后NOT_RUN。该历史fixture容量测试不授权active超500；若需要源码/SQL/断言修复，另给精确候选，不由测量授权自动扩写。
+
+本轮未应用候选、未提交推送/建PR/合并；完整nightly、原满额/S13、前端与真实业务验收、10a/10b和所有生产操作均NOT_RUN。实际后续批准与收据以相应PR的版本化结果核对，本送审快照不倒签。
+
+
+### N1实际批准与候选应用收据（2026-10-19）
+
+维护者对问题call_a9401137246245869f480bf8ee7e5559明确回复：“批准 N1 五路径与两条精确 grant，并附条件批准 C1；完整 nightly 暂缓（推荐）”。据此仅通过正常CLI代执行workflow和harness-guards.selftest两条具名grant，应用冻结patch `0c46ea383cc79703acd3fda46f2a0973594f5b87dd0af131bdf8a58d0f70e1da`；初次应用五文件逐份摘要与送审候选相同。上述送审快照不倒签为实现证据；本节才登记实际批准。
+
+N1清单内实施/修正、原预算验证、正常提交推送同一Draft PR沿批准范围推进；新SHA的Trusted仍须维护者本人批准。C1仅在N1全部门通过后开放原S13一次→全部通过才原满额一次，任一失败/UNKNOWN则后项NOT_RUN。N2完整nightly继续暂缓；生产/真实转换/开关/tag/Release不执行。实际验证、提交推送及合并分别记录，不提前预报通过。

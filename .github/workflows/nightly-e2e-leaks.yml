@@ -89,6 +89,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify fixed historical migration objects
+        run: |
+          set -euo pipefail
+          history=5c296d62c8dbdd1800b47d679c7681c6ad99ef09
+          git cat-file -e "${history}^{commit}"
+          mapfile -t migration_paths < <(git ls-tree -r --name-only HEAD -- prisma/migrations | sed -n '/\/migration.sql$/p')
+          if [ "${#migration_paths[@]}" -lt 136 ]; then
+            echo '::error::Historical migration prefix unavailable; E2E not started'
+            exit 1
+          fi
+          for migration_path in "${migration_paths[@]:0:136}"; do
+            git cat-file -e "${history}:${migration_path}"
+            if [ "$(git rev-parse "${history}:${migration_path}")" != "$(git rev-parse "HEAD:${migration_path}")" ]; then
+              echo "::error::Historical migration bytes changed: ${migration_path}"
+              exit 1
+            fi
+          done
+          echo 'Historical migration prefix: 136 readable, matching blobs'
 
       - name: Start PostgreSQL 16 service container
         run: docker compose up -d postgres
@@ -151,13 +172,9 @@ jobs:
       #                         ⚠️ 两片相差 30%(建模时预期 6%,即本文件的族耗时模型偏差不小)。
       #                         当前余量充足故不动;将来要再平衡,按上面这组实测挪族,别再信模型。
       #
-      # ⚠️ 2026-08-16 事故:08-08→08-15 连红 6 天,被读成「句柄泄漏」,实为**套件长胖跑不完**
-      # (spec 195→264,压线抖动导致 08-09 还回绿过一次)。根因不在测试代码,在**判据把两种
-      # 失败合并成了一条消息**。故本步骤下面把两者拆开判、拆开报:
-      #   - jest 打了汇总行(`Test Suites:`)却仍被 timeout 杀 ⇒ **跑完了但进程不退出 = 真泄漏**
-      #   - 没有汇总行就被杀             ⇒ **没跑完 = 时长不够**,该调 timeout 或再分片,不是找泄漏
-      # 两条路径的处置完全相反,合并报会把人带向错误方向(实测已浪费一轮排查)。
-      # 分片后这两条**逐片各判各报**,判别路径与单进程时代逐字一致。
+      # Keep the original execution budget. Record observed FAIL, summary, handle, OOM
+      # and termination facts independently; an unfinished run does not establish its cause.
+      # The complete original log is retained separately from the verdict artifact.
       - name: Run E2E (serial + detectOpenHandles; open handle = failure)
         env:
           SHARD: ${{ matrix.shard }}
@@ -181,7 +198,8 @@ jobs:
           rc=$?
           set -e
           elapsed=$(( $(date +%s) - started ))
-          tail -200 tmp/leaks.log
+          # NIGHTLY_RESULT_CLASSIFIER_BEGIN
+          tail -200 tmp/leaks.log || echo 'E2E log tail unavailable; classifier will record log status'
           # 时长恒可见:趋势是「该调 timeout / 该再分片」的唯一先行指标,别等撞线才发现。
           human="$(( elapsed / 60 ))分$(( elapsed % 60 ))秒"
           echo "片 ${SHARD} 串行 e2e 用时 ${elapsed}s ≈ ${human}(内层上限 70m = 4200s,余量 $(( 100 - elapsed * 100 / 4200 ))%)"
@@ -194,52 +212,83 @@ jobs:
             echo "LEAK_PLANNED=${planned}"
           } >> "$GITHUB_ENV"
 
-          # ① 真泄漏:jest 打出了逐句柄堆栈。与是否超时无关,恒优先判。
-          if grep -q 'Jest has detected the following' tmp/leaks.log; then
-            echo 'LEAK_VERDICT=leak-with-stack' >> "$GITHUB_ENV"
-            echo "::error::片 ${SHARD} 检测到未关闭句柄(某 spec 的 afterAll 缺 app.close()?句柄堆栈见上方 jest 输出)"
+          termination=exited
+          if [ "$rc" -eq 124 ]; then termination=timeout; fi
+          if [ "$rc" -eq 137 ]; then termination=killed-unknown; fi
+          {
+            echo "LEAK_RAW_EXIT=${rc}"
+            echo "LEAK_TERMINATION=${termination}"
+          } >> "$GITHUB_ENV"
+          printf 'exit=%s\ntermination=%s\n' "$rc" "$termination" > tmp/leaks-facts.txt
+          if [ ! -s tmp/leaks.log ]; then
+            echo 'LEAK_VERDICT=log-missing' >> "$GITHUB_ENV"
+            echo '::error::E2E log missing or empty; outcome unavailable'
             exit 1
           fi
+          # Normalize only a diagnostic copy. Keep the complete original log as evidence.
+          sed -E $'s/\x1B\[[0-?]*[ -/]*[@-~]//g' tmp/leaks.log > tmp/leaks-normalized.log
+          suite_failed=false
+          has_summary=false
+          handle_stack=false
+          oom=false
+          if grep -qE '^[[:space:]]*FAIL([[:space:]]|$)|^(Test Suites|Tests):.*[0-9]+ failed' tmp/leaks-normalized.log; then suite_failed=true; fi
+          if grep -q '^Test Suites:' tmp/leaks-normalized.log; then has_summary=true; fi
+          if grep -q 'Jest has detected the following' tmp/leaks-normalized.log; then handle_stack=true; fi
+          if grep -q 'JavaScript heap out of memory' tmp/leaks-normalized.log; then oom=true; fi
+          {
+            echo "LEAK_SUITE_FAILED=${suite_failed}"
+            echo "LEAK_HAS_SUMMARY=${has_summary}"
+            echo "LEAK_HANDLE_STACK=${handle_stack}"
+            echo "LEAK_OOM=${oom}"
+          } >> "$GITHUB_ENV"
+          printf 'suite_failed=%s\nhas_summary=%s\nhandle_stack=%s\noom=%s\n' \
+            "$suite_failed" "$has_summary" "$handle_stack" "$oom" >> tmp/leaks-facts.txt
 
-          if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
-            # 超时的两种死法靠「jest 有没有打汇总行」判别 —— 处置相反,不可合并成一条消息。
-            if grep -qE '^(Test Suites|Tests):' tmp/leaks.log; then
+          # Facts are independent: timeout, handles or OOM must not hide an observed FAIL.
+          if [ "$suite_failed" = true ]; then
+            echo 'LEAK_VERDICT=suite-failed' >> "$GITHUB_ENV"
+            echo "::error::片 ${SHARD} 已见测试 FAIL(exit ${rc}, termination ${termination}); see complete log and independent facts"
+            exit 1
+          fi
+          if [ "$oom" = true ]; then
+            echo 'LEAK_VERDICT=oom' >> "$GITHUB_ENV"
+            echo "::error::片 ${SHARD} has explicit V8 OOM evidence(exit ${rc}, termination ${termination})"
+            exit 1
+          fi
+          if [ "$handle_stack" = true ]; then
+            echo 'LEAK_VERDICT=leak-with-stack' >> "$GITHUB_ENV"
+            echo "::error::片 ${SHARD} has an open-handle report(exit ${rc}, termination ${termination})"
+            exit 1
+          fi
+          if [ "$rc" -eq 124 ]; then
+            if [ "$has_summary" = true ]; then
               echo 'LEAK_VERDICT=leak-no-stack' >> "$GITHUB_ENV"
-              echo "::error::片 ${SHARD} 套件已跑完(有汇总行)但进程 70m 内未退出 ⇒ 句柄泄漏且 jest 未能打出堆栈。查本片最后完成的 spec 的 afterAll。"
+              echo "::error::片 ${SHARD} reached timeout after a summary; handle cause unproven"
             else
               echo 'LEAK_VERDICT=too-slow' >> "$GITHUB_ENV"
-              echo "::error::片 ${SHARD} 在 70m 内未跑完(无汇总行)⇒ 这是**时长不足**不是泄漏。处置:调高本步骤 timeout 与 job timeout-minutes,或在 scripts/e2e-shard-plan.mjs 里再切一片。勿按泄漏排查。"
+              echo "::error::片 ${SHARD} reached timeout before a summary; cause undetermined"
             fi
             exit 1
           fi
-
-          # ③ 内存耗尽:与句柄泄漏同源(都是「没释放干净」)但处置完全不同 —— 查的是
-          # spec 之间的内存累积,不是 afterAll 关没关。exit 134 = SIGABRT,V8 OOM 走这条。
-          if grep -q 'JavaScript heap out of memory' tmp/leaks.log || [ "$rc" -eq 134 ]; then
-            echo 'LEAK_VERDICT=oom' >> "$GITHUB_ENV"
-            echo "::error::片 ${SHARD} node 堆内存耗尽(exit $rc)⇒ 单进程串行跑本片 spec 时内存只增不减。这**不是**句柄泄漏也**不是**超时:查 spec 之间的内存累积(全局缓存/模块级单例/未销毁的 Nest 应用),别只加大 --max-old-space-size。"
+          if [ "$rc" -eq 137 ]; then
+            echo 'LEAK_VERDICT=killed-unknown' >> "$GITHUB_ENV"
+            echo "::error::片 ${SHARD} was killed; signal alone does not establish timeout, OOM or leakage"
             exit 1
           fi
-
-          # ④ 分片漂移:jest 实收的 suite 数与清单预算数对不上。
-          # 这是分片引入的**新失败面**,也是最危险的一种:新增 spec 落不进任何一片时,
-          # 每片都正常绿、覆盖面却缩水,没有任何信号。故必须在「绿」之前把它拦下。
-          # 汇总行形如 `Test Suites: 144 passed, 144 total`(有失败时前面还会多几段),
-          # 取最后一个 `<N> total`。
-          suites="$(sed -nE 's/^Test Suites:.*[^0-9]([0-9]+) total.*/\1/p' tmp/leaks.log | tail -1)"
-          if [ -z "$suites" ] || [ "$suites" -ne "$planned" ]; then
-            echo 'LEAK_VERDICT=shard-plan-drift' >> "$GITHUB_ENV"
-            echo "::error::片 ${SHARD} 实收 ${suites:-0} 个 suite,清单预算 ${planned} 个 —— 分片清单与 jest 实收不一致,覆盖面不可信。处置:本地跑 node scripts/e2e-shard-plan.mjs --verify,核对 test/e2e/ 新增文件落进了哪一片。"
-            exit 1
-          fi
-
           if [ "$rc" -ne 0 ]; then
             echo 'LEAK_VERDICT=suite-failed' >> "$GITHUB_ENV"
-            echo "::error::片 ${SHARD} 串行 e2e 失败(exit $rc),详见上方输出"
+            echo "::error::片 ${SHARD} E2E exited ${rc}; cause not established by exit code alone"
             exit "$rc"
           fi
+          suites="$(sed -nE 's/^Test Suites:.*[^0-9]([0-9]+) total.*/\1/p' tmp/leaks-normalized.log | tail -1)"
+          if [ -z "$suites" ] || [ "$suites" -ne "$planned" ]; then
+            echo 'LEAK_VERDICT=shard-plan-drift' >> "$GITHUB_ENV"
+            echo "::error::片 ${SHARD} received ${suites:-0} suites; expected ${planned}"
+            exit 1
+          fi
           echo 'LEAK_VERDICT=green' >> "$GITHUB_ENV"
-          echo "✓ 片 ${SHARD} 无句柄泄漏(${suites}/${planned} suite,用时 ${elapsed}s)"
+          echo "✓ 片 ${SHARD} 无句柄报告(${suites}/${planned} suite,用时 ${elapsed}s)"
+          # NIGHTLY_RESULT_CLASSIFIER_END
 
       # 本片结论落盘成 artifact,交给下方聚合 job 渲染。
       # 为什么要跨 job 传:通知**必须**聚合两片后再发 —— 否则片 1 绿会去关掉片 2 刚开的
@@ -260,22 +309,39 @@ jobs:
             leak-with-stack)
               headline='句柄泄漏 —— jest 已给出逐句柄堆栈' ;;
             leak-no-stack)
-              headline='句柄泄漏 —— 套件跑完了但进程不退出' ;;
+              headline='汇总后超时未退出 —— 句柄原因未证实' ;;
             too-slow)
-              headline='本片没跑完 —— 时长不足,**不是**泄漏' ;;
+              headline='超时前未完成 —— 原因未定' ;;
             oom)
-              headline='node 堆内存耗尽 —— **不是**句柄泄漏,也**不是**超时' ;;
+              headline='已有 V8 OOM 证据；其他事实单列' ;;
             shard-plan-drift)
               headline='分片清单漂移 —— 覆盖面不可信(可能有 spec 没被任何一片跑到)' ;;
             suite-failed)
-              headline='串行 e2e 有测试失败' ;;
+              headline='串行 e2e 失败；保留独立终止证据' ;;
+            killed-unknown)
+              headline='进程被杀 —— 原因未定' ;;
+            log-missing)
+              headline='日志缺失或为空 —— 结果不可验证' ;;
             *)
               headline='e2e 开跑之前就失败了(依赖/Prisma/数据库/环境)' ;;
           esac
+          headline="${headline}; exit=${LEAK_RAW_EXIT:-unknown}, termination=${LEAK_TERMINATION:-unknown}, FAIL=${LEAK_SUITE_FAILED:-unknown}, handles=${LEAK_HANDLE_STACK:-unknown}, OOM=${LEAK_OOM:-unknown}, summary=${LEAK_HAS_SUMMARY:-unknown}"
           mkdir -p tmp/verdict
           printf '| 片 %s | `%s` | %s | %s | %s 个 spec |\n' \
             "$SHARD" "$verdict" "$headline" "$elapsed" "$planned" > "tmp/verdict/shard-${SHARD}.md"
           cat "tmp/verdict/shard-${SHARD}.md"
+
+      - name: Upload complete E2E log and independent facts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: leak-log-${{ matrix.shard }}
+          path: |
+            tmp/leaks.log
+            tmp/leaks-normalized.log
+            tmp/leaks-facts.txt
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: 上传本片结论
         if: always()
@@ -338,12 +404,14 @@ jobs:
           # 别只挑第一条(挑一条就是又把两种失败合并成一条消息,正是 2026-08-16 那轮的病根)。
           : > tmp-actions.md
           case "$rows" in *'`leak-with-stack`'*) echo '- **leak-with-stack**:看 run 日志里的句柄堆栈,定位对应 spec 的 `afterAll`(通常是缺 `app.close()`)。' >> tmp-actions.md ;; esac
-          case "$rows" in *'`leak-no-stack`'*) echo '- **leak-no-stack**:查该片**最后完成**的那个 spec 的 `afterAll`;本次 jest 未能打出堆栈。' >> tmp-actions.md ;; esac
-          case "$rows" in *'`too-slow`'*) echo '- **too-slow**:调高该 job 的内层 `timeout` 与 `timeout-minutes`,或在 `scripts/e2e-shard-plan.mjs` 里再切一片。**勿按泄漏排查** —— 2026-08-08 那轮正是把这种失败读成了泄漏,白查一轮。' >> tmp-actions.md ;; esac
+          case "$rows" in *'`leak-no-stack`'*) echo '- **leak-no-stack**:汇总后超时未退出；查完整日志及终止证据，不据此断定句柄泄漏。' >> tmp-actions.md ;; esac
+          case "$rows" in *'`too-slow`'*) echo '- **too-slow**:超时前无汇总；按完整日志查首个失败和所停阶段。根因未定，不自动扩时或拆片。' >> tmp-actions.md ;; esac
           case "$rows" in *'`oom`'*) echo '- **oom**:单进程串行跑本片 spec 时内存只增不减。查 spec 之间的内存累积:模块级单例/全局缓存/未销毁的 Nest 应用实例。**别只顾加大 `--max-old-space-size`** —— 那是缓解,累积源不除迟早再撞。' >> tmp-actions.md ;; esac
           case "$rows" in *'`shard-plan-drift`'*) echo '- **shard-plan-drift**:jest 实收 suite 数与分片清单预算对不上 ⇒ **可能有 spec 没被任何一片跑到,而两片都绿**。本地跑 `node scripts/e2e-shard-plan.mjs --verify`,核对 `test/e2e/` 新增文件落进了哪一片。' >> tmp-actions.md ;; esac
-          case "$rows" in *'`suite-failed`'*) echo '- **suite-failed**:按普通测试失败处理,与句柄泄漏无关。' >> tmp-actions.md ;; esac
+          case "$rows" in *'`suite-failed`'*) echo '- **suite-failed**:先查完整日志首个 FAIL；timeout、句柄及 OOM 证据独立保留。' >> tmp-actions.md ;; esac
           case "$rows" in *'`infra-failed`'*|*'`artifact-missing`'*) echo '- **infra-failed**:e2e 开跑之前就失败了,看 run 日志中 `Run E2E` 之前的步骤。' >> tmp-actions.md ;; esac
+          case "$rows" in *'`killed-unknown`'*) echo '- **killed-unknown**:进程被杀；退出码不能独自证明超时、OOM或句柄泄漏。' >> tmp-actions.md ;; esac
+          case "$rows" in *'`log-missing`'*) echo '- **log-missing**:日志缺失或为空，不能判通过；核对执行与artifact步骤。' >> tmp-actions.md ;; esac
           actions="$(cat tmp-actions.md)"
 
           gh label create nightly-e2e-leaks --color d73a4a \

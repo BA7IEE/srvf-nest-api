@@ -811,6 +811,144 @@ checkEq(
     /LEAK_VERDICT=shard-plan-drift/.test(nightly) && /"\$suites" -ne "\$planned"/.test(nightly),
     'nightly 缺 shard-plan-drift 判别 —— 实收少于预算时不会变红',
   );
+  // Execute the exact workflow classifier with synthetic logs; never invoke Jest or a DB.
+  {
+    const source = read('.github/workflows/nightly-e2e-leaks.yml');
+    const startMarker = '          # NIGHTLY_RESULT_CLASSIFIER_BEGIN\n';
+    const endMarker = '          # NIGHTLY_RESULT_CLASSIFIER_END';
+    const begin = source.indexOf(startMarker);
+    const end = source.indexOf(endMarker);
+    const classifier = source.slice(begin + startMarker.length, end).replace(/^ {10}/gm, '');
+    const cases: [string, number, string | null, string, number][] = [
+      ['green', 0, 'Test Suites: 2 passed, 2 total\nTests: 2 passed, 2 total\n', 'green', 0],
+      ['fail plus timeout', 124, 'FAIL test/example.e2e-spec.ts\n', 'suite-failed', 1],
+      [
+        'color fail plus timeout',
+        124,
+        '\u001b[31mFAIL\u001b[0m test/example.e2e-spec.ts\n',
+        'suite-failed',
+        1,
+      ],
+      [
+        'padded color fail plus timeout',
+        124,
+        '\u001b[7m\u001b[1m\u001b[31m FAIL \u001b[39m\u001b[22m\u001b[27m test/example.e2e-spec.ts\n',
+        'suite-failed',
+        1,
+      ],
+      ['indented fail plus timeout', 124, '  FAIL test/example.e2e-spec.ts\n', 'suite-failed', 1],
+      [
+        'failed summary despite zero exit',
+        0,
+        'Test Suites: 1 failed, 1 passed, 2 total\n',
+        'suite-failed',
+        1,
+      ],
+      [
+        'fail plus handles',
+        124,
+        'FAIL test/example.e2e-spec.ts\nJest has detected the following\n',
+        'suite-failed',
+        1,
+      ],
+      [
+        'fail plus OOM',
+        134,
+        'FAIL test/example.e2e-spec.ts\nJavaScript heap out of memory\n',
+        'suite-failed',
+        1,
+      ],
+      ['incomplete timeout', 124, 'PASS test/example.e2e-spec.ts\n', 'too-slow', 1],
+      ['summary timeout', 124, 'Test Suites: 2 passed, 2 total\n', 'leak-no-stack', 1],
+      ['handle report', 0, 'Jest has detected the following\n', 'leak-with-stack', 1],
+      ['OOM report', 134, 'JavaScript heap out of memory\n', 'oom', 1],
+      ['killed cause unknown', 137, 'PASS test/example.e2e-spec.ts\n', 'killed-unknown', 1],
+      ['aborted cause unknown', 134, 'process aborted\n', 'suite-failed', 134],
+      ['nonzero with no summary', 2, 'runner failed\n', 'suite-failed', 2],
+      ['suite count drift', 0, 'Test Suites: 1 passed, 1 total\n', 'shard-plan-drift', 1],
+      ['missing summary', 0, 'PASS test/example.e2e-spec.ts\n', 'shard-plan-drift', 1],
+      ['empty log', 0, '', 'log-missing', 1],
+      ['missing log', 124, null, 'log-missing', 1],
+    ];
+    check(
+      'P1 leak:nightly classifier markers are unique and ordered',
+      begin >= 0 &&
+        end > begin &&
+        source.split(startMarker).length === 2 &&
+        source.split(endMarker).length === 2,
+      'workflow classifier unavailable; calibration is not meaningful',
+    );
+    for (const [label, rc, log, verdict, expectedExit] of cases) {
+      const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'srvf-nightly-classifier-'));
+      try {
+        fs.mkdirSync(path.join(directory, 'tmp'));
+        if (log !== null) fs.writeFileSync(path.join(directory, 'tmp/leaks.log'), log);
+        const envFile = path.join(directory, 'github.env');
+        const result = spawnSync('bash', ['-e', '-c', classifier], {
+          cwd: directory,
+          env: {
+            ...process.env,
+            GITHUB_ENV: envFile,
+            rc: String(rc),
+            planned: '2',
+            SHARD: '1',
+            elapsed: '1',
+          },
+          encoding: 'utf8',
+          timeout: 5000,
+        });
+        const facts = fs.existsSync(envFile) ? fs.readFileSync(envFile, 'utf8') : '';
+        check(
+          `P1 leak:nightly runtime ${label}`,
+          result.status === expectedExit &&
+            facts.includes(`LEAK_VERDICT=${verdict}\n`) &&
+            facts.includes(`LEAK_RAW_EXIT=${rc}\n`) &&
+            (rc !== 124 || facts.includes('LEAK_TERMINATION=timeout\n')) &&
+            (log === null ||
+              log === '' ||
+              fs.readFileSync(path.join(directory, 'tmp/leaks.log'), 'utf8') === log) &&
+            (!label.includes('fail plus') || facts.includes('LEAK_SUITE_FAILED=true\n')) &&
+            (!label.includes('handles') || facts.includes('LEAK_HANDLE_STACK=true\n')) &&
+            (!label.includes('OOM') || facts.includes('LEAK_OOM=true\n')),
+          `exit=${String(result.status)}, expected=${expectedExit}, verdict=${verdict}`,
+        );
+      } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+      }
+    }
+    const leakJob = source.slice(
+      source.indexOf('  e2e-leaks:'),
+      source.indexOf('  notify-failure:'),
+    );
+    check(
+      'P1 leak:nightly checkout fetches complete history before fixed prefix verification',
+      /name: Checkout\s+uses: actions\/checkout@v4\s+with:\s+fetch-depth: 0/.test(leakJob) &&
+        leakJob.indexOf('Verify fixed historical migration objects') <
+          leakJob.indexOf('Start PostgreSQL'),
+      'history check must fail before database setup',
+    );
+    const fixture = read('test/helpers/activity-contribution-policy.fixture.ts');
+    const historyPin = /history=([a-f0-9]{40})/.exec(leakJob)?.[1];
+    check(
+      'P1 leak:nightly history pin matches immutable fixture input',
+      historyPin !== undefined &&
+        fixture.includes(`'${historyPin}:' + relative`) &&
+        leakJob.includes('migration_paths[@]:0:136') &&
+        leakJob.includes('git cat-file -e'),
+      'precheck pin/prefix differs from fixture',
+    );
+    check(
+      'P1 leak:complete original log is always uploaded separately from verdicts',
+      /name: Upload complete E2E log and independent facts\s+if: always\(\)\s+uses: actions\/upload-artifact@v4/.test(
+        leakJob,
+      ) &&
+        /name: leak-log-\$\{\{ matrix.shard \}\}/.test(leakJob) &&
+        /^ {12}tmp\/leaks\.log$/m.test(leakJob) &&
+        /^ {12}tmp\/leaks-facts\.txt$/m.test(leakJob),
+      'full original log or independent facts artifact missing',
+    );
+  }
+
   // 恒保持 job timeout > 内层 timeout,否则内层的「超时/泄漏」判别拿不到执行机会
   // (job 先被杀,`too-slow` / `leak-no-stack` 两条消息都发不出来,退回 2026-08-16
   // 之前「只知道红了、不知道为什么红」的状态)。此前这条只写在注释里,现在机核。
