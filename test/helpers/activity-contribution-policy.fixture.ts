@@ -305,6 +305,16 @@ export function installE4ValidationDatabase(options?: {
     }
     return deploy(historicalSchema, timeout);
   }
+  function deployEvaluationMigrations(): void;
+  function deployEvaluationMigrations(timeout: number): Promise<void>;
+  function deployEvaluationMigrations(timeout?: number) {
+    return deployHistoricalMigrations(140, timeout);
+  }
+  function deployBucketMigrations(): void;
+  function deployBucketMigrations(timeout: number): Promise<void>;
+  function deployBucketMigrations(timeout?: number) {
+    return deployHistoricalMigrations(141, timeout);
+  }
   function deployUnitMigrations(): void;
   function deployUnitMigrations(timeout: number): Promise<void>;
   function deployUnitMigrations(timeout?: number) {
@@ -459,12 +469,8 @@ export function installE4ValidationDatabase(options?: {
     deployReferenceMigrations() {
       deployHistoricalMigrations(139);
     },
-    deployEvaluationMigrations() {
-      deployHistoricalMigrations(140);
-    },
-    deployBucketMigrations() {
-      deployHistoricalMigrations(141);
-    },
+    deployEvaluationMigrations,
+    deployBucketMigrations,
     deployUnitMigrations,
     deploySourceReuseMigrations,
     deploySourceBucketMigrations() {

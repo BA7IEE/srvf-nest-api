@@ -373,3 +373,15 @@ N1清单内实施/修正、原预算验证、正常提交推送同一Draft PR沿
 旧main CI的同2019文件冷lint实际207524ms通过，仅绑定原 `7606e1f1`，不替代本候选，不能据此认定本地超窗原因。收口preflight先因本任务五处dirty而失败；正常提交候选后在clean工作树复核通过，没有绕过守护。这一卫生门通过不解除quick失败。
 
 **N1验收仍BLOCKED，Release5未完成。** 新增阶段日志的bucket141 PG取证、C1原S13／原满额均NOT_RUN；C1附条件额度尚未消费。原211.52秒／30秒hook失败和原容量失败继续保留，具体内层耗时原因仍UNKNOWN。本轮先冻结并正常推送可审阅分支，不启动后续普通CI／Trusted／合并；N2完整nightly继续暂缓。前端与真实业务验收、31类真实映射hold、四项延期及10a／10b现场边界不变；生产、真实数据转换、开关、tag／Release均NOT_RUN。
+
+### N1测试生命周期修复的实际批准（2026-10-19）
+
+维护者已对“只给这个测试设置独立的120秒初始化窗口，先关闭应用再恢复数据库，保留业务时限和全部断言；增加一个现有测试辅助文件到范围，用新隔离测试库验证并保留失败库”明确回复：“批准啊 别问”。本节记录新授权，不把此前原30秒hook保留的送审快照倒签为这次例外。
+
+本次精确四路径：`test/e2e/activity-os-r5-e4-bucket-canonical-migration.e2e-spec.ts`、`test/helpers/activity-contribution-policy.fixture.ts`、本Goal及既有`changelog.d/nightly-e4-historical-fixture-diagnostics.md`。复用migration146的外层owner、内层客户端关闭及pending/UNKNOWN门；bucket141设施beforeAll明确120秒，正文仍用原30秒，业务方法、SQL、所有原断言和隔离不变。现有helper仅给140/141迁移增加可选deadline，零参数保留原同步路径；不新增通用helper或修改全局Jest/workflow/业务服务。
+
+预算更正：源码prepare事务为30000ms，submit引用既有`SETTLEMENT_SUBMIT_TX_TIMEOUT_MS=120000`。此前送审将两者均称为30秒事务不准确；本刀不修改这两个业务预算，C1的提交验收口径不得由初始化窗口推定。原本地冷lint300秒超窗、旧211.52秒hook失败、b672cbb8定向111.840秒exit1及teardown的`client:in_transaction:1`均保留；b672cbb8普通PR CI14 jobs成功独立有效，不代替新候选验证。原`app_test_w1`失败库保留，147迁移和后续零连接不代表业务事务终态，仍UNKNOWN。
+
+新隔离验证路径为`/workspace/r5-n1-lifecycle`，linked worktree派生模板`app_test_r5_n1_lifecycle_64a90c`、worker `app_test_r5_n1_lifecycle_64a90c_w1`，执行前核实实际预览及资源；不创建或重建原失败w1，不使用C1的w98。批准的生命周期unit、单次具名PG+detectOpenHandles、同一Draft PR正常提交推送及原PR CI沿本范围继续，实际结果分别登记；当前新候选检查均NOT_RUN，不预报通过。任何首红/UNKNOWN保留真实输出并停止后续测量，不改断言、追加样本或自动抬预算。
+
+本刀不消费C1额度；C1仍须N1原批准的全部前置满足。N2完整nightly暂缓；新SHA的Trusted必须维护者本人批准，不代批、不Ready、不合并，不部署/开闸/真实转换/tag/Release。AC013/017/020/025、31类真实映射hold、前端及真实业务和10a/10b边界不变。
