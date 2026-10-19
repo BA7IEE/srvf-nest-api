@@ -1,5 +1,7 @@
 import {
+  canonicalMetricEnvelope,
   fingerprintActivityMetricDefinition,
+  fingerprintMetricEnvelope,
   parseActivityMetricDefinition,
 } from './activity-metric-definition';
 
@@ -10,6 +12,37 @@ const definition = (configuration: unknown = integer) => ({
   version: 1,
   name: '服务人数',
   configuration,
+});
+
+describe('C1 canonical text without a discarded hash', () => {
+  it.each([
+    null,
+    undefined,
+    false,
+    -0,
+    NaN,
+    Infinity,
+    'quote" slash\\ 雪🙂\ud800',
+    new Date('2020-01-01T00:00:00.000Z'),
+    new Array<unknown>(2),
+    { z: [null, undefined, '雪'], a: { nested: false, unset: undefined } },
+  ])('preserves the same complete envelope %j', (value: unknown) => {
+    expect(canonicalMetricEnvelope('domain"\\雪', value)).toBe(
+      fingerprintMetricEnvelope('domain"\\雪', value).canonicalText,
+    );
+  });
+
+  it('preserves descriptor rejection without invoking accessors', () => {
+    const getter = jest.fn();
+    const value = Object.defineProperty({}, 'field', { enumerable: true, get: getter });
+    expect(() => canonicalMetricEnvelope('domain', value)).toThrow(
+      'invalid parsed metric metadata',
+    );
+    expect(() => fingerprintMetricEnvelope('domain', value)).toThrow(
+      'invalid parsed metric metadata',
+    );
+    expect(getter).not.toHaveBeenCalled();
+  });
 });
 
 describe('C1 metric definition V1', () => {

@@ -66,10 +66,14 @@ describe('ParticipationSegmentFacade', () => {
   }
 
   function fixture(rows: unknown[] = []) {
+    const queries: { sql: string; values: unknown[] }[] = [];
     const db = {
-      participantServiceSegmentRevision: { findMany: jest.fn().mockResolvedValue(rows) },
+      $queryRaw: jest.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+        queries.push({ sql: strings.join('?').replace(/\s+/gu, ' ').trim(), values });
+        return Promise.resolve(rows);
+      }),
     };
-    return { db, tx: db as unknown as Prisma.TransactionClient };
+    return { db, queries, tx: db as unknown as Prisma.TransactionClient };
   }
 
   it('exposes only the D3 narrow activity lock bridge', async () => {
@@ -83,51 +87,32 @@ describe('ParticipationSegmentFacade', () => {
 
     await expect(service.readActivityCurrentSegmentsTrusted(f.tx, 'activity')).resolves.toEqual([]);
 
-    expect(f.db.participantServiceSegmentRevision.findMany).toHaveBeenCalledWith({
-      where: {
-        identity: { activityId: 'activity' },
-        statusCode: { not: 'superseded' },
+    expect(f.queries).toEqual([
+      {
+        sql: `
+          SELECT s.id, s."participationIdentityId", s."segmentKey", s.revision,
+            s."sourceCheckInEventId", s."sourceCloseEventId", s."resultCode", s."statusCode",
+            s."checkInAt", s."checkOutAt", s."lateFlag", s."earlyLeaveFlag", s."exceptionFlagsJson",
+            json_build_object('id', i.id, 'activityId', i."activityId", 'sessionId', i."sessionId", 'memberId', i."memberId") AS identity,
+            CASE WHEN ci.id IS NULL THEN NULL ELSE json_build_object('id', ci.id,
+              'activityId', ci."activityId", 'sessionId', ci."sessionId",
+              'participationIdentityId', ci."participationIdentityId", 'memberId', ci."memberId", 'positionId', ci."positionId") END AS "sourceCheckInEvent",
+            CASE WHEN ce.id IS NULL THEN NULL ELSE json_build_object('id', ce.id,
+              'activityId', ce."activityId", 'sessionId', ce."sessionId",
+              'participationIdentityId', ce."participationIdentityId", 'memberId', ce."memberId") END AS "sourceCloseEvent"
+          FROM "ParticipantServiceSegmentRevision" s
+          JOIN "ActivityParticipationIdentity" i ON i.id = s."participationIdentityId"
+          LEFT JOIN "AttendancePunchEvent" ci ON ci.id = s."sourceCheckInEventId"
+          LEFT JOIN "AttendancePunchEvent" ce ON ce.id = s."sourceCloseEventId"
+          WHERE i."activityId" = ? AND s."statusCode" <> 'superseded'
+          ORDER BY s."participationIdentityId" ASC, s."segmentKey" ASC, s.revision ASC
+          LIMIT ?
+        `
+          .replace(/\s+/gu, ' ')
+          .trim(),
+        values: ['activity', 10001],
       },
-      take: 10001,
-      orderBy: [{ participationIdentityId: 'asc' }, { segmentKey: 'asc' }, { revision: 'asc' }],
-      select: {
-        id: true,
-        participationIdentityId: true,
-        segmentKey: true,
-        revision: true,
-        sourceCheckInEventId: true,
-        sourceCloseEventId: true,
-        resultCode: true,
-        statusCode: true,
-        checkInAt: true,
-        checkOutAt: true,
-        lateFlag: true,
-        earlyLeaveFlag: true,
-        exceptionFlagsJson: true,
-        identity: {
-          select: { id: true, activityId: true, sessionId: true, memberId: true },
-        },
-        sourceCheckInEvent: {
-          select: {
-            id: true,
-            activityId: true,
-            sessionId: true,
-            participationIdentityId: true,
-            memberId: true,
-            positionId: true,
-          },
-        },
-        sourceCloseEvent: {
-          select: {
-            id: true,
-            activityId: true,
-            sessionId: true,
-            participationIdentityId: true,
-            memberId: true,
-          },
-        },
-      },
-    });
+    ]);
   });
 
   it('rejects an empty activity before issuing a query', async () => {
@@ -135,7 +120,15 @@ describe('ParticipationSegmentFacade', () => {
 
     await expect(service.readActivityCurrentSegmentsTrusted(f.tx, '')).rejects.toThrow(TypeError);
 
-    expect(f.db.participantServiceSegmentRevision.findMany).not.toHaveBeenCalled();
+    expect(f.db.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it('binds the activity id as data in the bounded relation query', async () => {
+    const f = fixture();
+    const activityId = "activity' OR true --";
+    await expect(service.readActivityCurrentSegmentsTrusted(f.tx, activityId)).resolves.toEqual([]);
+    expect(f.queries[0].values).toEqual([activityId, 10001]);
+    expect(f.queries[0].sql).not.toContain(activityId);
   });
 
   it('keeps exact segment and identity limits but rejects cap plus one without truncation', async () => {
@@ -153,7 +146,7 @@ describe('ParticipationSegmentFacade', () => {
       service.readActivityCurrentSegmentsTrusted(f.tx, 'activity'),
     ).resolves.toHaveLength(PARTICIPATION_SEGMENT_FACADE_LIMITS.segments);
 
-    f.db.participantServiceSegmentRevision.findMany.mockResolvedValue([
+    f.db.$queryRaw.mockResolvedValue([
       ...segmentRows,
       row({ id: 'cap-plus-one', segmentKey: 'cap-plus-one' }),
     ]);
@@ -165,15 +158,12 @@ describe('ParticipationSegmentFacade', () => {
       { length: PARTICIPATION_SEGMENT_FACADE_LIMITS.identities },
       (_, index) => forIdentity(String(index)),
     );
-    f.db.participantServiceSegmentRevision.findMany.mockResolvedValue(identityRows);
+    f.db.$queryRaw.mockResolvedValue(identityRows);
     await expect(
       service.readActivityCurrentSegmentsTrusted(f.tx, 'activity'),
     ).resolves.toHaveLength(PARTICIPATION_SEGMENT_FACADE_LIMITS.identities);
 
-    f.db.participantServiceSegmentRevision.findMany.mockResolvedValue([
-      ...identityRows,
-      forIdentity('cap-plus-one'),
-    ]);
+    f.db.$queryRaw.mockResolvedValue([...identityRows, forIdentity('cap-plus-one')]);
     await expect(service.readActivityCurrentSegmentsTrusted(f.tx, 'activity')).rejects.toThrow(
       RangeError,
     );

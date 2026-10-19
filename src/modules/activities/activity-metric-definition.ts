@@ -208,12 +208,17 @@ export function fingerprintParsedMetricMetadata(value: ActivityMetricDefinitionV
   );
 }
 
+/** Internal C1 canonical primitive; consumers must parse their own closed envelope first. */
+export function canonicalMetricEnvelope(domain: string, parsed: unknown): string {
+  return canonicalParsed({ domain, definition: parsed });
+}
+
 /** Internal C1 hash primitive; consumers must parse their own closed envelope first. */
 export function fingerprintMetricEnvelope(
   domain: string,
   parsed: unknown,
 ): { canonicalText: string; definitionHash: string } {
-  const canonicalText = canonicalParsed({ domain, definition: parsed });
+  const canonicalText = canonicalMetricEnvelope(domain, parsed);
   return {
     canonicalText,
     definitionHash: createHash('sha256').update(canonicalText, 'utf8').digest('hex'),

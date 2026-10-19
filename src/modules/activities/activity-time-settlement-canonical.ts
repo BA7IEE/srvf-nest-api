@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
-import { fingerprintMetricEnvelope } from './activity-metric-definition';
+import { canonicalMetricEnvelope } from './activity-metric-definition';
 
 const valueDomain = 'activity-time-settlement-local-value-v1';
 
 /** Preserve C1's recursive treatment of caller objects, including descriptor errors. */
 function canonicalCallerValue(value: unknown): string {
-  const canonical = fingerprintMetricEnvelope(valueDomain, value).canonicalText;
+  const canonical = canonicalMetricEnvelope(valueDomain, value);
   return canonical.slice(
     '{"definition":'.length,
     -(',"domain":' + JSON.stringify(valueDomain) + '}').length,

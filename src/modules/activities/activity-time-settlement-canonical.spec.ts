@@ -29,7 +29,11 @@ function capture(work: () => { definitionHash: string }) {
   });
   try {
     const result = work();
-    return { hash: result.definitionHash, canonical: streams[0].join('') };
+    return {
+      hash: result.definitionHash,
+      canonical: streams[0].join(''),
+      hashCount: streams.length,
+    };
   } finally {
     jest.mocked(createHash).mockImplementation(actualCrypto.createHash);
   }
@@ -61,6 +65,7 @@ describe('local time manifest complete canonical equivalence', () => {
       const candidate = capture(() => fingerprintLocalTimeSourceManifest(definition));
       expect(candidate.canonical).toBe(original.canonicalText);
       expect(candidate.hash).toBe(original.definitionHash);
+      expect(candidate.hashCount).toBe(1);
     }
   });
 
@@ -86,6 +91,7 @@ describe('local time manifest complete canonical equivalence', () => {
       const candidate = capture(() => fingerprintLocalTimeBucketManifest(buckets));
       expect(candidate.canonical).toBe(original.canonicalText);
       expect(candidate.hash).toBe(original.definitionHash);
+      expect(candidate.hashCount).toBe(1);
     }
   });
 
