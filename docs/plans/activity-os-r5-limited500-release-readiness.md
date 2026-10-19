@@ -351,3 +351,25 @@ C1原容量队列仅只读准备，待新scratch与有限次数批准。采用�
 维护者对问题call_a9401137246245869f480bf8ee7e5559明确回复：“批准 N1 五路径与两条精确 grant，并附条件批准 C1；完整 nightly 暂缓（推荐）”。据此仅通过正常CLI代执行workflow和harness-guards.selftest两条具名grant，应用冻结patch `0c46ea383cc79703acd3fda46f2a0973594f5b87dd0af131bdf8a58d0f70e1da`；初次应用五文件逐份摘要与送审候选相同。上述送审快照不倒签为实现证据；本节才登记实际批准。
 
 N1清单内实施/修正、原预算验证、正常提交推送同一Draft PR沿批准范围推进；新SHA的Trusted仍须维护者本人批准。C1仅在N1全部门通过后开放原S13一次→全部通过才原满额一次，任一失败/UNKNOWN则后项NOT_RUN。N2完整nightly继续暂缓；生产/真实转换/开关/tag/Release不执行。实际验证、提交推送及合并分别记录，不提前预报通过。
+
+### N1清单内修正与门禁首红（2026-10-19）
+
+仍只修改获批五路径。独立复审先发现两项缺陷，并在修正前实际复现：带前导空白的真实ANSI `FAIL` 被误判为超时；`set -e` 下缺日志会在分类前被未保护的 `tail` 提前终止。现分别容忍FAIL前导空白、将真实分类入口移到显式容错的tail前；原17场景完整保留，追加真实带空格ANSI及缩进FAIL两例，以 `bash -e -c` 执行workflow原段。复审两项均关闭，最终代码复审0 BLOCKER／0 SHOULD-FIX，不代表验收已过。
+
+代码候选固定为 `f9ce7727ac6c3f3e9c0236673548100a56a4fafd`；本节仅追加实际结果，不改变其实现。该候选工作文件在检查期间逐份摘要未变：
+
+| 检查 | 实际结果及边界 |
+|---|---|
+| 真实shell与追加守护 | 19场景／23项通过；6个变异全部检出，包括上述两项回归。不是完整Actions执行或真实日志上传证明 |
+| guards完整自测 | 596 passed／0 failed／1项既有known gap |
+| 完整 `pnpm harness:selftest` | guards完成后按已出现的首红停止后续，exit143；ESLint组已启动后取消、hooks组NOT_RUN，整套记CANCELLED_NOT_COMPLETE，不能记全绿 |
+| `pnpm typecheck` | exit0，应用／test／scripts三组配置全部通过 |
+| 格式／不变性 | 三个代码文件Prettier及diff检查通过；去除22行阶段日志后bucket文件与原main逐字相同；触发、权限、矩阵、70m／85m／8GiB及原业务预算不变 |
+| 历史预检 | 可执行预检段与送审候选逐字相同，明确复用原浅历史exit128拒绝／完整历史exit0通过的校准，不称本轮重跑 |
+| 派生检查 | readtax／counts／migcount／codemap／rbacmap均exit0；147迁移计数一致。CODEMAP原两项WARN保留，不顺手扩围 |
+| 首轮serial quick | 在两项复审修正前实际exit1：2019文件，src1470／test548两个CLI在原300秒窗口被SIGTERM，elapsed分别301126／300728ms，`COLD_LINT_FAIL WINDOW_EXCEEDED`；其后typecheck/unit原链未执行 |
+| 修正后完整quick／单测 | NOT_RUN；这两处分类器修正未解决冷lint超窗，不盲重跑或加时。inputSeal包含scripts，故也不谎称修正前后完整输入摘要相同 |
+
+旧main CI的同2019文件冷lint实际207524ms通过，仅绑定原 `7606e1f1`，不替代本候选，不能据此认定本地超窗原因。收口preflight先因本任务五处dirty而失败；正常提交候选后在clean工作树复核通过，没有绕过守护。这一卫生门通过不解除quick失败。
+
+**N1验收仍BLOCKED，Release5未完成。** 新增阶段日志的bucket141 PG取证、C1原S13／原满额均NOT_RUN；C1附条件额度尚未消费。原211.52秒／30秒hook失败和原容量失败继续保留，具体内层耗时原因仍UNKNOWN。本轮先冻结并正常推送可审阅分支，不启动后续普通CI／Trusted／合并；N2完整nightly继续暂缓。前端与真实业务验收、31类真实映射hold、四项延期及10a／10b现场边界不变；生产、真实数据转换、开关、tag／Release均NOT_RUN。
