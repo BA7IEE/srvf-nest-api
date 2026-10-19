@@ -1,6 +1,6 @@
 # R5 来源 hash 固定外层计算优化
 
-当前为 D 档开发候选，未执行数据库升级、未验收原满额、未部署。父任务 2026-10-19 明确将调查边界推进到本纯计算优化的实现及验证计划；仅 `astr_source_set_hash(text,text)` 的固定双键外层，保留原 document／canonical、锁、归属链、约束、触发器和预算。旧 v1/v2 完整记录编码／flags 字典候选继续弃用。新148的维护者 SQL 审阅及 Trusted 审批尚未取得，137–147既有签字不扩大至148。
+当前为 D 档开发候选，隔离升级单次已执行但整体失败，未验收原满额、未部署。父任务 2026-10-19 明确将调查边界推进到本纯计算优化的实现及验证计划；仅 `astr_source_set_hash(text,text)` 的固定双键外层，保留原 document／canonical、锁、归属链、约束、触发器和预算。旧 v1/v2 完整记录编码／flags 字典候选继续弃用。新148的维护者 SQL 审阅及 Trusted 审批尚未取得，137–147既有签字不扩大至148。
 
 2026-10-20（Asia/Shanghai）用户已明确批准冻结41路径包的精确正常CLI grant与四库条件验证。原CLI已登记仅该migration文件的grant，SQL摘要与送审值一致；不扩大到其他路径、3b、Ready、合并或生产。四库及操作清单见下，历史送审包和旧失败均保留。
 
@@ -39,10 +39,16 @@
 
 本轮明确批准的库名为 `app_test_r5_source_envelope_upgrade_ad4424`、`app_test_r5_source_envelope_upgrade_ad4424_w1`、`app_test_r5_source_envelope_regression_1a33fb`、`app_test_r5_source_envelope_regression_1a33fb_w1`。仅原入口建库／迁移／新worker重建及上述非空升级、正负例与恢复演练；旧18库不写，新旧库全部保留。升级一次全部通过且资源终态明确才执行普通R4一次；该次也全部通过且终态明确才创建同固定提交的Draft，由默认CI计原R4满额一次，不本地重复。任何失败或UNKNOWN立即停止后续阶段。
 
+## 单次实际结果与最小修复（2026-10-20）
+
+固定4947bb0c47ef3ff5dee2af9e66397d4dd035fa45执行升级一次，原始Jest退出1，1PASS/5FAIL。新模板148冷回放通过；首项非空147→148/no-op、历史checksum、196模型业务快照、其他函数/OID/ACL/约束/触发器/索引/设置保持均通过，12390ms。第二项57个完整UTF8 preimage/hash对照断言已通过，随后真实参数取样SQL误读 `AttendanceSettlementVersion.activityId`，报42703；该用例整体仍FAIL。后四项均被owned失败锁拒绝，业务验证NOT_RUN。普通R4、满额CI、推送与PR均NOT_RUN，未重启条件序列。
+
+最小修复只让该取样SQL从Version经settlementRunId关联Run读取activityId；一条合法Version仍恰好一个输入，NULL/missing输入、全部断言、预算及121/148函数均不改。旧18库和本轮两新库保留；另外两个获批regression库未创建。退出收据显示目标客户端、自有进程组及观察错误均为空，PG观察器已退出，资源终态已知。原失败保留，修复后完整升级/正负例/恢复演练仍未验收；不得据此直接启动后续阶段。
+
 ## 回退与数据兼容
 
 部署前若原子CREATE语句失败，不能算148成功；保留Prisma实际失败记录并调查。数据库事务回滚演练在新隔离worker内把函数体恢复为冻结121的原定义，核对完整stored roots、函数属性与目录，再主动抛错回滚演练；外层应仍为148、业务数据及迁移记录不变。它是恢复SQL和事务性质的证明，不冒充独立前向回退迁移已上线。
 
 若以后确需回退已成功部署的148，另行审查新增前向迁移，内容仅 CREATE OR REPLACE 同一函数为冻结原体（原完整定义SHA `0ec20439da18fa1c544e2fe4db2e18d99c085e262b963723391b12bb72310f69`）；保留148已应用记录及全部业务事实，不修改历史、schema、约束、ACL或旧数据。因输入输出字节一致，无数据回填或旧指纹重算。当前没有新增149，避免自动部署把优化立即撤销。
 
-本次未做：SQL实际升级、原生新验证、旧18库写入、完整nightly、C1/S13、Ready／合并／发版／生产操作和真实数据转换均未执行。AC013/020/025延期TODO、AC017搁置TODO、31真实映射HOLD和现场10a/10b边界保持。
+本次未做：修复后重跑、四项失败闸后的业务验证、普通R4／原满额CI、旧18库写入、完整nightly、C1/S13、Ready／合并／发版／生产操作和真实数据转换均未执行。AC013/020/025延期TODO、AC017搁置TODO、31真实映射HOLD和现场10a/10b边界保持。

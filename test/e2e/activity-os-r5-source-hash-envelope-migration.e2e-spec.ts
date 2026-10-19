@@ -308,7 +308,8 @@ describe('148 source hash fixed envelope on nonempty147', () => {
       );
       expect(facts).toEqual({ cases: inputs.length, mismatches: 0, nullInputs: 1, nullOutputs: 0 });
       const [arguments_] = await db().$queryRawUnsafe<{ cases: number; mismatches: number }[]>(
-        'WITH ids AS (SELECT "activityId" AS activity,id AS draft FROM "AttendanceSettlementVersion" ' +
+        'WITH ids AS (SELECT r."activityId" AS activity,d.id AS draft FROM "AttendanceSettlementVersion" d ' +
+          'JOIN "AttendanceSettlementRun" r ON r.id=d."settlementRunId" ' +
           "UNION ALL SELECT NULL::text,NULL::text UNION ALL SELECT 'missing-activity','missing-draft') " +
           'SELECT count(*)::int AS cases,count(*) FILTER (WHERE public.astr_source_set_hash(activity,draft) ' +
           'IS DISTINCT FROM ' +

@@ -25,7 +25,7 @@
 
 > **E4/E5 当前边界（2026-10-18）**：后端按受限500身份／current段、2500物理slice、2000评价单元推进；原R5最大规模仍未验收，旧满额超30秒的失败不关闭。更正来源hash的数据库NULL缺口已真实复现，新增147 validated CHECK修正，历史SQL／函数／ACL／预算不变。非空146→147、NULL整笔回滚与有效V3/4分录/重放已通过；preparing/pending跨API和实际worker进程重启、native guard后授权callback拒绝的PG回滚已有本轮证据，最终候选检查另记。[续推与审查记录](plans/activity-os-r5-continuation-20261018.md)。默认off，active→off仍恢复旧规则管理写，永久cutover latch未实施；前端、实际目标旧数据盘点／转换／shadow适用性、fleet、worker排空、稳定窗与生产切换均未完成。137–147的3b已由维护者实际审阅认可并登记；最终main CI、Trusted人工批准与实际发布准入分别核对；尚未部署，生产NO_GO。
 
-> **2026-10-20 来源hash优化候选**：148前向SQL已按用户精确批准落盘，固定来源指纹双键外层；原document／canonical、全部校验和预算保持。精确grant及四个新隔离库的条件验证已获本轮批准；非空147升级、伪造来源指纹拒绝及前向恢复演练测试待单次执行，DB验证NOT_RUN。旧满额receipt超30秒仍FAIL，148没有3b／CI／原规模事务验收，R5未完成。详见[实现与验证计划](plans/activity-os-r5-source-hash-envelope-20261019.md)。
+> **2026-10-20 来源hash候选148**：获批SQL已落盘，document／canonical、校验和预算不变。隔离升级单次1PASS/5FAIL：非空147→148/no-op通过，第二项误读Version.activityId报42703，后四项被失败闸拒绝。已改Run关联，未重跑；R4／CI未跑。旧receipt超30秒仍FAIL，148无3b／CI／原规模验收，R5未完成。详见[实现与验证计划](plans/activity-os-r5-source-hash-envelope-20261019.md)。
 
 <!-- counts:begin -->
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->
