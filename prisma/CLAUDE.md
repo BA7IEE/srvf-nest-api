@@ -1,5 +1,7 @@
 # prisma — 本地铁律
 
+> **2026-10-20 开发候选148**：当前148个migration、196个模型。仅固定 `astr_source_set_hash(text,text)` 双键外层，完整document／canonical、指纹字节、安全策略、权限、锁／守卫及30秒预算保持。前向SQL已按用户精确批准落盘，非空147→148／负例／恢复演练测试已准备；精确grant与四个新隔离库的条件验证已获本轮批准，数据库验证NOT_RUN。历史1–147不改，137–147既有3b不扩到148；新148审阅、最终CI和原满额完整事务验收仍待完成，不部署。见[固定外层方案](../docs/plans/activity-os-r5-source-hash-envelope-20261019.md)。下方为历史时点。
+
 > **2026-10-18 开发候选147**：当前147个migration、196个模型。147仅追加validated CHECK，要求correction_time_proof的correctionSourceSetHash非NULL；1–146、函数、ACL、schema与预算不变。原146的真实NULL写链已复现；同SQL候选的脏库升级拒绝、NULL整笔回滚及有效V3/4分录/重放通过。147正式回归与最终CI另行记录，3b仍待维护者对137–147实际审查签字；Draft未合入，生产NO_GO。详见[续推记录](../docs/plans/activity-os-r5-continuation-20261018.md)。下方为历史时点。
 
 > **2026-10-16 本地候选146**：当前146个migration、196个模型。仅将145完整函数内policy_bands改为NOT MATERIALIZED，正文MD5为40b56bac5a571c56e589cbc549419bfa；历史迁移、完整校验、双guard及原预算保留。非空升级／7项定向回归及fresh真实入口通过；归档复用与fresh结果分开，未证明普遍性能收益。未push、未跑满额／完整CI、未操作生产，人工与Trusted签字不变。见[验证证据](../docs/plans/e4-146-validation.json)。下方为历史时点。

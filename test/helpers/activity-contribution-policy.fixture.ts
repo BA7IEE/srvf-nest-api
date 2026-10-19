@@ -10,6 +10,7 @@ import {
   E4_MIGRATION_144,
   E4_MIGRATION_145,
   E4_MIGRATION_146,
+  E4_MIGRATION_147,
 } from './e4-migration-prefix';
 import type { INestApplication } from '@nestjs/common';
 import { BindingScopeType, PrincipalType, Role, UserStatus, Prisma } from '@prisma/client';
@@ -271,7 +272,7 @@ export function installE4ValidationDatabase(options?: {
       deployFailure(error);
     }
   }
-  type HistoricalCount = 137 | 138 | 139 | 140 | 141 | 142 | 143 | 144 | 145 | 146;
+  type HistoricalCount = 137 | 138 | 139 | 140 | 141 | 142 | 143 | 144 | 145 | 146 | 147;
   function deployHistoricalMigrations(count: HistoricalCount): void;
   function deployHistoricalMigrations(count: HistoricalCount, timeout: number): Promise<void>;
   function deployHistoricalMigrations(
@@ -294,6 +295,7 @@ export function installE4ValidationDatabase(options?: {
       E4_MIGRATION_144,
       E4_MIGRATION_145,
       E4_MIGRATION_146,
+      E4_MIGRATION_147,
     ].slice(0, count - 136);
     for (const name of successors) {
       const directory = join(temporary, 'migrations', name);
@@ -342,6 +344,11 @@ export function installE4ValidationDatabase(options?: {
   function deployPolicyBandMigrations(timeout: number): Promise<void>;
   function deployPolicyBandMigrations(timeout?: number) {
     return deployHistoricalMigrations(146, timeout);
+  }
+  function deployCorrectionHashMigrations(): void;
+  function deployCorrectionHashMigrations(timeout: number): Promise<void>;
+  function deployCorrectionHashMigrations(timeout?: number) {
+    return deployHistoricalMigrations(147, timeout);
   }
   const previous = {
     worker: process.env.JEST_WORKER_ID,
@@ -478,6 +485,7 @@ export function installE4ValidationDatabase(options?: {
     },
     deployEvaluationKeyMigrations,
     deployPolicyBandMigrations,
+    deployCorrectionHashMigrations,
     deployLatestMigrations,
     async recreateCurrentMigrations() {
       if (!baseline || !initialized || worker === undefined)
