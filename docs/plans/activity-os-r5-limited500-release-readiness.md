@@ -385,3 +385,24 @@ N1清单内实施/修正、原预算验证、正常提交推送同一Draft PR沿
 新隔离验证路径为`/workspace/r5-n1-lifecycle`，linked worktree派生模板`app_test_r5_n1_lifecycle_64a90c`、worker `app_test_r5_n1_lifecycle_64a90c_w1`，执行前核实实际预览及资源；不创建或重建原失败w1，不使用C1的w98。批准的生命周期unit、单次具名PG+detectOpenHandles、同一Draft PR正常提交推送及原PR CI沿本范围继续，实际结果分别登记；当前新候选检查均NOT_RUN，不预报通过。任何首红/UNKNOWN保留真实输出并停止后续测量，不改断言、追加样本或自动抬预算。
 
 本刀不消费C1额度；C1仍须N1原批准的全部前置满足。N2完整nightly暂缓；新SHA的Trusted必须维护者本人批准，不代批、不Ready、不合并，不部署/开闸/真实转换/tag/Release。AC013/017/020/025、31类真实映射hold、前端及真实业务和10a/10b边界不变。
+
+### N1生命周期候选的实际验证首红（2026-10-19，推送前收据）
+
+本刀代码固定为`8f082d7ac48635d998967682ab5c6c7d6899f34c`；后续本节与同一changelog仅登记事实，不修改受测代码。跨模型复查最终0 BLOCKER／0 SHOULD-FIX，静态比对39个原断言、23个SQL调用／模板和套件／测试名不变，typed corpus前置代码逐字保持。最终spec SHA256为`36c5bc144e32585ec7454c4b11de4c54824051ebf690d3215b21cfc351a66ec3`，fixture为`0f8649041e466aa568885fcd9ac442ef7aeedec2d5bf6f9cdf140f1f3e46e85a`。
+
+| 检查 | 实际结果及边界 |
+| --- | --- |
+| 生命周期unit | 2 suites／17 tests通过，exit0；之后仅移动spec中UNKNOWN抛错位置，受测生命周期helper未改。该unit不替代spec实际PG |
+| scoped ESLint | 首次exit1：`no-unsafe-finally`；同范围修正为finally只登记UNKNOWN、结束后再抛错，保留原异常。最终两文件exit0，无规则禁用 |
+| test类型／格式 | finally修正后`tsc --noEmit -p test/tsconfig.test.json` exit0；两文件Prettier check通过，diff check通过。完整本地quick仍未重跑，不改写旧300秒超窗 |
+| 候选隔离preflight | 新linked worktree安装／Prisma生成均exit0，候选checkout后具名lane preflight exit0；全局preflight因本任务既有Draft PR拒绝的原记录保留，未关闭PR或绕过守护 |
+| 单次PG＋detectOpenHandles | 2026-10-19T10:49:29Z启动，10:55:49Z正常exit1；实际进程墙钟380.188秒、Jest351.667秒、file351.397秒分别记录。新隔离模板／worker是本次唯一写库范围，没有重跑、扩时或追加样本 |
+| 初始化实际阶段 | 七阶段全部完成，累计44743.960ms：140升级4393.250ms、fixture12524.322ms、source2834.721ms、prepare9510.351ms、submit15355.468ms、body25.489ms、oracle83.525ms。设施120秒不改变原正文30秒和业务prepare30秒／submit120秒 |
+| 首个正文失败 | 第一例15847ms，在首次`verifyBusinessRoots(false)`的原5000ms事务内报expired，错误报告累计13296ms，位置spec:167。尚未首次deploy141，不证明非空141升级或完整roots正确；报错请求不等于耗时根因已定位 |
+| 后例与资源 | 第二例被owned首错保护拒绝，typed corpus为NOT_RUN；Jest计2 failed／0 passed，正常写出JSON且`openHandles: []`，未触发外层安全终止。只读观察目标连接0、测试进程组及live Node／迁移engine 0，worker已恢复147迁移、私有oracle schema 0；不是业务正确性或回滚证明 |
+
+本次采用既有`SRVF_KEEP_TEST_DBS=1`保留新worker供失败取证，因此globalTeardown的worker DROP记NOT_EXERCISED，不把保留当成清理通过。新模板OID48651、新worker最终OID55531；原失败`app_test_w1`仍为OID40052，未纳入本刀写库scope，未重建、清理或转换。三库完成迁移的名字／checksum摘要相同仅为catalog资源证据，不关闭旧失败或业务终态UNKNOWN。
+
+完整原日志SHA256为`a91576b3566b0e3ff7c82dd898c6fc65e5139cf8ffcb6e5e6634e4c709082c52`。实际Jest JSON、supervisor启动／退出、阶段结果、只读资源及跨模型收据保存在本云工作区`/workspace/r5-continuation-20261019/evidence/n1-lifecycle-*`；旧日志和原授权记录均保留。本节是推送前事实快照，正常提交推送同一Draft PR #1385并跟进原PR CI的授权继续；其新SHA检查以GitHub终态核对，不预报成功，不Ready或合并。
+
+**N1仍未验收通过，Release5未完成。** 新首红是原oracle事务过期，根因仍UNKNOWN，不调高5秒或其他原预算、不改SQL／断言。首红后Smoke、C1原S13／原满额均NOT_RUN，C1额度未消费；N2完整nightly仍暂缓。Trusted须维护者本人批准，生产NO_GO及四项延期、31类真实映射hold、前端／真实业务、10a／10b边界不变。
