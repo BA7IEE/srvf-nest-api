@@ -111,6 +111,101 @@ function sourceSet(overrides: Partial<TimeSettlementSourceSet> = {}): TimeSettle
   };
 }
 
+describe('D4 pre-lock source validation', () => {
+  function fixture() {
+    const current = segment();
+    const rows = [allocation(current)];
+    const tx = {
+      activityParticipationIdentity: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'identity', memberId: 'member' }]),
+      },
+      participantSettlementResultRevision: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ participationIdentityId: 'identity', exceptionFlagsJson: null }]),
+      },
+      $queryRaw: jest.fn().mockResolvedValue(rows),
+    };
+    const segments = {
+      readActivityCurrentSegmentsTrusted: jest.fn().mockResolvedValue([current]),
+    };
+    const service = new ActivityTimeSettlementQueryService(
+      {} as PrismaService,
+      {} as ActivityTimeSettlementAccessService,
+      segments as unknown as ParticipationSegmentFacade,
+    );
+    const read = (forLocking: boolean) =>
+      forLocking
+        ? service.readSourceSetInTx(tx as unknown as Prisma.TransactionClient, proof, true)
+        : service.readSourceSetInTx(tx as unknown as Prisma.TransactionClient, proof);
+    return { current, rows, tx, segments, read };
+  }
+
+  it('preserves the full source fingerprint when reading only lock and hash allocation fields', async () => {
+    const f = fixture();
+    const full = await f.read(false);
+    const fields = [
+      'id',
+      'participationIdentityId',
+      'segmentKey',
+      'allocationHash',
+      'ruleSnapshotId',
+      'policyVersionId',
+      'sliceCount',
+    ] as const;
+    f.tx.$queryRaw.mockResolvedValue([
+      Object.fromEntries(fields.map((field) => [field, f.rows[0][field]])),
+    ]);
+    const beforeLocks = await f.read(true);
+    expect(beforeLocks.sourceSetHash).toBe(full.sourceSetHash);
+    expect(beforeLocks.population).toEqual(full.population);
+    expect(beforeLocks.segments).toEqual(full.segments);
+    expect(beforeLocks.latest).toEqual([
+      Object.fromEntries(fields.map((field) => [field, f.rows[0][field]])),
+    ]);
+    expect(full.latest[0]).toHaveProperty('createdAt', f.rows[0].createdAt);
+  });
+
+  it.each([false, true])(
+    'rejects duplicate source keys before returning (forLocking=%s)',
+    async (mode) => {
+      const f = fixture();
+      f.tx.$queryRaw.mockResolvedValue([f.rows[0], { ...f.rows[0], id: 'duplicate' }]);
+      await expect(f.read(mode)).rejects.toMatchObject({ reason: 'invalid' });
+    },
+  );
+
+  it.each([false, true])('retains first-read date validation (forLocking=%s)', async (mode) => {
+    const f = fixture();
+    f.segments.readActivityCurrentSegmentsTrusted.mockResolvedValue([
+      { ...f.current, checkInAt: new Date(Number.NaN) },
+    ]);
+    await expect(f.read(mode)).rejects.toBeInstanceOf(RangeError);
+  });
+
+  it.each([false, true])(
+    'rejects slice overflow before invalid-date hashing (forLocking=%s)',
+    async (mode) => {
+      const f = fixture();
+      f.segments.readActivityCurrentSegmentsTrusted.mockResolvedValue([
+        { ...f.current, checkInAt: new Date(Number.NaN) },
+      ]);
+      f.rows[0].sliceCount = TIME_SETTLEMENT_LIMITS.slices + 1;
+      await expect(f.read(mode)).rejects.toMatchObject({ reason: 'scale_limit' });
+    },
+  );
+
+  it.each([false, true])(
+    'preserves a source SQL failure identity (forLocking=%s)',
+    async (mode) => {
+      const f = fixture();
+      const failure = new Error('fixed source read failure');
+      f.tx.$queryRaw.mockRejectedValue(failure);
+      await expect(f.read(mode)).rejects.toBe(failure);
+    },
+  );
+});
+
 describe('D4 draft proof and source readiness', () => {
   it('accepts zero revision counters and returns the complete proof without run metadata', () => {
     expect(proof).toEqual({

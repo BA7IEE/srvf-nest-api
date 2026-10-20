@@ -453,6 +453,62 @@ describe('D4 write orchestration and replay safety', () => {
     return { response, revision, createRevision, createReceipt, executeRaw, proof };
   }
 
+  it('locks pre-wait references and evaluates only the subsequent complete source read', async () => {
+    const f = freshPrepare('legacy');
+    const raw = jest.spyOn(tx, '$queryRaw');
+    const beforeWait = {
+      population: [],
+      segments: [{ id: 'before-wait-segment' }],
+      latest: [
+        {
+          id: 'before-wait-allocation',
+          participationIdentityId: 'identity',
+          segmentKey: 'key',
+          allocationHash: 'd'.repeat(64),
+          ruleSnapshotId: 'before-wait-snapshot',
+          policyVersionId: 'before-wait-policy',
+          sliceCount: 0,
+        },
+      ],
+      sourceSetHash: 'd'.repeat(64),
+    };
+    const afterWait = {
+      population: [],
+      segments: [],
+      latest: [],
+      sourceSetHash: 'e'.repeat(64),
+    };
+    queries.readSourceSetInTx.mockResolvedValueOnce(beforeWait).mockResolvedValueOnce(afterWait);
+    await expect(service.prepare(activityId, prepare, actor, meta)).resolves.toEqual(f.response);
+    expect(queries.readSourceSetInTx).toHaveBeenNthCalledWith(1, tx, expect.any(Object), true);
+    expect(queries.readSourceSetInTx).toHaveBeenNthCalledWith(2, tx, expect.any(Object));
+    expect(queries.evaluateInTx).toHaveBeenCalledWith(tx, afterWait, false);
+    expect(f.createRevision).toHaveBeenCalledTimes(1);
+    expect(f.createRevision.mock.calls[0]?.[0].data.sourceSetHash).toBe(afterWait.sourceSetHash);
+    const callFor = (table: string) =>
+      raw.mock.calls.find((call) => statement(call[0]).includes('FROM "' + table + '"'));
+    expect(callFor('ParticipantServiceSegmentRevision')?.[1]).toEqual(['before-wait-segment']);
+    expect(callFor('ActivityRuleSnapshot')?.[1]).toEqual(['before-wait-snapshot']);
+    expect(callFor('TimePolicyVersion')?.[1]).toEqual(['before-wait-policy']);
+  });
+
+  it('preserves first-source rejection before acquiring identity locks or evaluating', async () => {
+    const f = freshPrepare('legacy');
+    const raw = jest.spyOn(tx, '$queryRaw');
+    const failure = new Error('fixed first-source validation failure');
+    queries.readSourceSetInTx.mockRejectedValue(failure);
+    await expect(service.prepare(activityId, prepare, actor, meta)).rejects.toBe(failure);
+    expect(queries.readSourceSetInTx).toHaveBeenCalledTimes(1);
+    expect(
+      raw.mock.calls.some((call) =>
+        statement(call[0]).includes('FROM "ActivityParticipationIdentity"'),
+      ),
+    ).toBe(false);
+    expect(queries.evaluateInTx).not.toHaveBeenCalled();
+    expect(f.createRevision).not.toHaveBeenCalled();
+    expect(f.createReceipt).not.toHaveBeenCalled();
+  });
+
   const nativeBarrier =
     'SET CONSTRAINTS public.astr_parent_complete_guard, public.e4_revision_complete_guard IMMEDIATE';
   function statement(query: TemplateStringsArray | Prisma.Sql) {

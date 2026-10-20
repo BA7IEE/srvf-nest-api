@@ -213,7 +213,7 @@ export class ActivityTimeSettlementService {
     reauthorize: Reauthorize,
     launchAdmission = false,
   ): Promise<TimeSettlementSourceSet> {
-    const set = await this.queries.readSourceSetInTx(tx, proof);
+    const set = await this.queries.readSourceSetInTx(tx, proof, true);
     const identities = await tx.$queryRaw<
       { id: string }[]
     >`SELECT id FROM "ActivityParticipationIdentity"

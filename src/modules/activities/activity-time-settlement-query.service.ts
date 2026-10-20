@@ -75,6 +75,20 @@ export interface TimeSettlementSourceSet {
   sourceSetHash: string;
 }
 
+type LockAllocation = Pick<
+  AllocationBasis,
+  | 'id'
+  | 'participationIdentityId'
+  | 'segmentKey'
+  | 'allocationHash'
+  | 'ruleSnapshotId'
+  | 'policyVersionId'
+  | 'sliceCount'
+>;
+export interface TimeSettlementLockSourceSet extends Omit<TimeSettlementSourceSet, 'latest'> {
+  latest: readonly LockAllocation[];
+}
+
 export function requireTimeSettlementDraft(
   activityId: string,
   context: TimeSettlementDraftContext | null,
@@ -254,7 +268,18 @@ export class ActivityTimeSettlementQueryService {
   async readSourceSetInTx(
     tx: Prisma.TransactionClient,
     proof: TimeSettlementDraftProof,
-  ): Promise<TimeSettlementSourceSet> {
+    forLocking: true,
+  ): Promise<TimeSettlementLockSourceSet>;
+  async readSourceSetInTx(
+    tx: Prisma.TransactionClient,
+    proof: TimeSettlementDraftProof,
+    forLocking?: false,
+  ): Promise<TimeSettlementSourceSet>;
+  async readSourceSetInTx(
+    tx: Prisma.TransactionClient,
+    proof: TimeSettlementDraftProof,
+    forLocking = false,
+  ): Promise<TimeSettlementSourceSet | TimeSettlementLockSourceSet> {
     const identities = await tx.activityParticipationIdentity.findMany({
       where: { activityId: proof.activityId, populationIncluded: true },
       select: { id: true, memberId: true },
@@ -295,21 +320,29 @@ export class ActivityTimeSettlementQueryService {
     );
     // Bound the allocation manifest before reading any slices/definition JSON. Distinct is done
     // by PostgreSQL, not Prisma's in-memory distinct over an unbounded historical revision chain.
-    const latest = await tx.$queryRaw<AllocationBasis[]>`
-      SELECT DISTINCT ON (a."participationIdentityId", a."segmentKey")
-        a.id, a."activityId", a."sessionId", a."memberId", a."participationIdentityId", a."segmentKey",
+    // The pre-lock collection is discarded after waiting. Keep its original hash validation,
+    // but read only the allocation fields needed by that hash, the locks and the slice cap.
+    const columns = forLocking
+      ? Prisma.sql`a.id, a."participationIdentityId", a."segmentKey", a."allocationHash",
+          a."ruleSnapshotId", a."policyVersionId", a."sliceCount"`
+      : Prisma.sql`a.id, a."activityId", a."sessionId", a."memberId", a."participationIdentityId", a."segmentKey",
         a.revision, a."previousAllocationRevisionId", a."sourceSegmentId", a."sourceSegmentRevision", a."sourcePositionId",
         a."ruleSnapshotId", a."ruleSnapshotHash", a."timePolicySelectionRevisionId", a."selectionHash",
         a."policyId", a."policyVersionId", a."definitionHash", a."evaluatorVersion", a."recognitionModeCode",
         a."manualReason", a."allocationHash", a."sliceCount", a."createdAt", a."createdByUserId",
         a."settlementDraftVersionId", a."settlementEvidenceSealId", a."settlementEvidenceRevision",
-        a."settlementPopulationRevision", a."settlementWorkflowRevision", a."settlementDraftContentHash"
+        a."settlementPopulationRevision", a."settlementWorkflowRevision", a."settlementDraftContentHash"`;
+    const query = Prisma.sql`
+      SELECT DISTINCT ON (a."participationIdentityId", a."segmentKey") ${columns}
       FROM "ParticipantTimeAllocationRevision" a
       JOIN jsonb_to_recordset(${keys}::jsonb) AS k(identity TEXT, segment TEXT)
         ON a."participationIdentityId" = k.identity AND a."segmentKey" = k.segment
       WHERE a."activityId" = ${proof.activityId}
       ORDER BY a."participationIdentityId", a."segmentKey", a.revision DESC
     `;
+    const latest = forLocking
+      ? await tx.$queryRaw<LockAllocation[]>(query)
+      : await tx.$queryRaw<AllocationBasis[]>(query);
     if (latest.reduce((sum, row) => sum + row.sliceCount, 0) > TIME_SETTLEMENT_LIMITS.slices)
       throw new TimeSettlementPolicyError('scale_limit');
     return {
