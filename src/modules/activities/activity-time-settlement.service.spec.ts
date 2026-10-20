@@ -541,11 +541,19 @@ describe('D4 write orchestration and replay safety', () => {
     const firstWire = JSON.parse(
       (execute.mock.calls[0][0] as Prisma.Sql).values.at(-1) as string,
     ) as unknown[][];
+    const adjustmentDictionary = JSON.parse(
+      (execute.mock.calls[0][0] as Prisma.Sql).values.at(-2) as string,
+    ) as unknown[];
     const secondWire = JSON.parse(
       (execute.mock.calls[1][0] as Prisma.Sql).values.at(-1) as string,
     ) as [string, unknown[][]][];
     const first = firstWire.map((row) =>
-      Object.fromEntries(keys.map((key, index) => [key, row[index]])),
+      Object.fromEntries(
+        keys.map((key, index) => [
+          key,
+          key === 'adjustmentReason' ? adjustmentDictionary[row[index] as number] : row[index],
+        ]),
+      ),
     );
     const second = secondWire.map(([id, sources]) => ({
       id,
@@ -603,6 +611,41 @@ describe('D4 write orchestration and replay safety', () => {
       ...overrides,
     };
   }
+
+  it('retains null, empty, duplicate, ordered and escaped reasons while sharing equal ordinary wire values', async () => {
+    const manual = [
+      { allocationRevisionId: 'allocation-a', manualReason: '中文 "quoted" \\ line\nnext' },
+      { allocationRevisionId: 'allocation-b', manualReason: 'another' },
+    ];
+    const reasons = [
+      null,
+      [],
+      manual,
+      manual.map((row) => ({ ...row })),
+      [...manual].reverse(),
+      [manual[0], manual[0]],
+    ];
+    const buckets = reasons.map((adjustmentReason) => emptyWireBucket({ adjustmentReason }));
+    const execute = jest.spyOn(tx, '$executeRaw').mockResolvedValueOnce(6).mockResolvedValueOnce(0);
+    const insert = Reflect.get(service, 'insertBuckets') as (
+      client: Prisma.TransactionClient,
+      revision: ActivitySettlementTimeRevision,
+      rows: readonly TimeSettlementBucket[],
+    ) => Promise<void>;
+    await insert.call(service, tx, { ...parent, bucketCount: 6, sourceCount: 0 }, buckets);
+    expect(execute).toHaveBeenCalledTimes(2);
+    const query = execute.mock.calls[0][0] as Prisma.Sql;
+    const dictionary = JSON.parse(query.values.at(-2) as string) as unknown[];
+    const wire = JSON.parse(query.values.at(-1) as string) as unknown[][];
+    expect(wire.map((row) => dictionary[row[5] as number])).toEqual(reasons);
+    expect(dictionary).toHaveLength(5);
+    expect(wire[2][5]).toBe(wire[3][5]);
+    expect(wire[4][5]).not.toBe(wire[2][5]);
+    expect(wire[5][5]).not.toBe(wire[2][5]);
+    // Parsing the dictionary once must also hold when PostgreSQL uses a generic plan.
+    expect(statement(query)).toContain('WITH adjustment_wire AS MATERIALIZED');
+    expect(statement(query)).toContain('nullif(adjustment_wire.reasons -> ((item->>5)::INTEGER),');
+  });
 
   it('removes repeated wire keys at the full 8000/40000 scale while retaining two writes and parent links', async () => {
     const buckets = Array.from({ length: 8000 }, (_, index) =>

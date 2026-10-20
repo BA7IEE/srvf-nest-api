@@ -704,13 +704,31 @@ export class ActivityTimeSettlementService {
               sourceWireKeys.every((key) => Object.hasOwn(source, key) && wireScalar(source[key])),
           ),
       );
-    // Both payloads must finish serialization before either statement can write.
+    // Reuse only the fully checked ordinary JSON reasons, within this call. Four categories
+    // often carry equal reason arrays; the wire dictionary does not change the bucket values.
+    const serializedAdjustments: string[] = [];
+    const adjustmentIndexes = new Map<string, number>();
+    const adjustmentIndex = (value: TimeSettlementBucket['adjustmentReason']): number => {
+      const serialized = JSON.stringify(value);
+      const previous = adjustmentIndexes.get(serialized);
+      if (previous !== undefined) return previous;
+      const index = serializedAdjustments.length;
+      serializedAdjustments.push(serialized);
+      adjustmentIndexes.set(serialized, index);
+      return index;
+    };
+    // All payloads must finish serialization before either statement can write.
     const bucketJson = JSON.stringify(
       rows.map(({ sources, ...bucket }) => {
         void sources;
-        return compact ? bucketWireKeys.map((key) => bucket[key]) : bucket;
+        return compact
+          ? bucketWireKeys.map((key) =>
+              key === 'adjustmentReason' ? adjustmentIndex(bucket[key]) : bucket[key],
+            )
+          : bucket;
       }),
     );
+    const adjustmentJson = compact ? '[' + serializedAdjustments.join(',') + ']' : null;
     const sourceJson = JSON.stringify(
       rows.map(({ id, sources }) =>
         compact
@@ -720,12 +738,13 @@ export class ActivityTimeSettlementService {
     );
     const bucketRows = compact
       ? Prisma.sql`
+      WITH adjustment_wire AS MATERIALIZED (SELECT ${adjustmentJson}::jsonb AS reasons)
       SELECT item->>0 AS id, item->>1 AS "participationIdentityId", item->>2 AS "categoryCode",
         (item->>3)::INTEGER AS "calculatedSeconds", (item->>4)::INTEGER AS "recognizedSeconds",
-        nullif(item->5, 'null'::jsonb) AS "adjustmentReason", item->>6 AS "timePolicyVersionId",
+        nullif(adjustment_wire.reasons -> ((item->>5)::INTEGER), 'null'::jsonb) AS "adjustmentReason", item->>6 AS "timePolicyVersionId",
         item->>7 AS "definitionHash", (item->>8)::INTEGER AS "evaluatorVersion", (item->>9)::INTEGER AS "quantumSeconds",
         (item->>10)::BIGINT AS "rawCalculatedMilliseconds", (item->>11)::BIGINT AS "rawRecognizedMilliseconds"
-      FROM jsonb_array_elements(${bucketJson}::jsonb) AS item
+      FROM adjustment_wire CROSS JOIN LATERAL jsonb_array_elements(${bucketJson}::jsonb) AS item
     `
       : Prisma.sql`
       SELECT * FROM jsonb_to_recordset(${bucketJson}::jsonb) AS x(id TEXT, "participationIdentityId" TEXT, "categoryCode" TEXT,
