@@ -1,8 +1,8 @@
 # R5 来源 hash 固定外层计算优化
 
-当前为 D 档开发候选，隔离升级单次已执行但整体失败，未验收原满额、未部署。父任务 2026-10-19 明确将调查边界推进到本纯计算优化的实现及验证计划；仅 `astr_source_set_hash(text,text)` 的固定双键外层，保留原 document／canonical、锁、归属链、约束、触发器和预算。旧 v1/v2 完整记录编码／flags 字典候选继续弃用。新148的维护者 SQL 审阅及 Trusted 审批尚未取得，137–147既有签字不扩大至148。
+当前为 D 档开发候选。固定 `1c3157ea24d779fe7458ca92edce60dda2eb0e70` 的隔离升级6项、普通R4十五项和默认PR CI中的原R4满额已通过；整体CI仍因D7事务超时及文档治理失败而未通过，未验收整个Release 5、未部署。父任务 2026-10-19 明确将调查边界推进到本纯计算优化的实现及验证计划；仅 `astr_source_set_hash(text,text)` 的固定双键外层，保留原 document／canonical、锁、归属链、约束、触发器和预算。旧 v1/v2 完整记录编码／flags 字典候选继续弃用。新148的维护者 SQL 审阅及 Trusted 审批尚未取得，137–147既有签字不扩大至148。
 
-2026-10-20（Asia/Shanghai）用户已明确批准冻结41路径包的精确正常CLI grant与四库条件验证。原CLI已登记仅该migration文件的grant，SQL摘要与送审值一致；不扩大到其他路径、3b、Ready、合并或生产。四库及操作清单见下，历史送审包和旧失败均保留。
+2026-10-20（Asia/Shanghai）用户已明确批准冻结41路径包的精确正常CLI grant与四库条件验证。原CLI已登记且用后撤销仅该migration文件的grant，SQL摘要与送审值一致；不扩大到3b、Ready、合并或生产。后续同目标修复与文档更新遵循用户直接委托，实际库名及条件序列另留执行收据；历史送审包和旧失败均保留。
 
 ## 影响与范围
 
@@ -37,13 +37,33 @@
 
 计划不是执行凭据。实际worktree派生库名、命令、写操作、校验基点、批准来源和单次ledger放在执行包；未实际运行标 NOT_RUN。Draft PR准备须绑定最后SHA，保持Draft、不自动合并；开PR会触发默认CI并选中R4最大用例，不能在另一次本地最大之后再默认触发同一轮。
 
-本轮明确批准的库名为 `app_test_r5_source_envelope_upgrade_ad4424`、`app_test_r5_source_envelope_upgrade_ad4424_w1`、`app_test_r5_source_envelope_regression_1a33fb`、`app_test_r5_source_envelope_regression_1a33fb_w1`。仅原入口建库／迁移／新worker重建及上述非空升级、正负例与恢复演练；旧18库不写，新旧库全部保留。升级一次全部通过且资源终态明确才执行普通R4一次；该次也全部通过且终态明确才创建同固定提交的Draft，由默认CI计原R4满额一次，不本地重复。任何失败或UNKNOWN立即停止后续阶段。
+首轮明确批准的库名为 `app_test_r5_source_envelope_upgrade_ad4424`、`app_test_r5_source_envelope_upgrade_ad4424_w1`、`app_test_r5_source_envelope_regression_1a33fb`、`app_test_r5_source_envelope_regression_1a33fb_w1`。仅原入口建库／迁移／新worker重建及上述非空升级、正负例与恢复演练；旧18库不写，新旧库全部保留。升级一次全部通过且资源终态明确才执行普通R4一次；该次也全部通过且终态明确才创建同固定提交的Draft，由默认CI计原R4满额一次，不本地重复。任何失败或UNKNOWN立即停止后续阶段。
 
-## 单次实际结果与最小修复（2026-10-20）
+## 首轮失败与最小修复（历史检查点，2026-10-20）
+
+本节保留4947检查点的原始失败和当时NOT_RUN状态，后续执行结果见下一节，不覆盖历史失败。
 
 固定4947bb0c47ef3ff5dee2af9e66397d4dd035fa45执行升级一次，原始Jest退出1，1PASS/5FAIL。新模板148冷回放通过；首项非空147→148/no-op、历史checksum、196模型业务快照、其他函数/OID/ACL/约束/触发器/索引/设置保持均通过，12390ms。第二项57个完整UTF8 preimage/hash对照断言已通过，随后真实参数取样SQL误读 `AttendanceSettlementVersion.activityId`，报42703；该用例整体仍FAIL。后四项均被owned失败锁拒绝，业务验证NOT_RUN。普通R4、满额CI、推送与PR均NOT_RUN，未重启条件序列。
 
 最小修复只让该取样SQL从Version经settlementRunId关联Run读取activityId；一条合法Version仍恰好一个输入，NULL/missing输入、全部断言、预算及121/148函数均不改。旧18库和本轮两新库保留；另外两个获批regression库未创建。退出收据显示目标客户端、自有进程组及观察错误均为空，PG观察器已退出，资源终态已知。原失败保留，修复后完整升级/正负例/恢复演练仍未验收；不得据此直接启动后续阶段。
+
+## 修复后的实际结果（2026-10-20 UTC）
+
+后续用户明确委托继续修复并完成结果。固定1c3157e仅修正上述取样关联；在新的 `app_test_r5_source_envelope_upgrade_v2_b2cce4`／`app_test_r5_source_envelope_upgrade_v2_b2cce4_w1` 完整执行升级一次，通过后才在 `app_test_r5_source_envelope_regression_1a33fb`／`app_test_r5_source_envelope_regression_1a33fb_w1` 执行普通R4一次。库名、原入口操作、批准来源和单次ledger均留在执行授权收据；旧库不写，新旧24库及OID全部保留，目标客户端、自有进程组和观察错误均为空，观察器已退出。
+
+| 实际执行 | 原始结果 | 边界 |
+| --- | --- | --- |
+| 148独立升级／正负例／事务回滚演练 | raw 0，6 PASS／0 skip，188.560s | 非空147→148、no-op、完整字节／hash、prepare、伪造拒绝与submit后commit均实际执行 |
+| 普通R4 | raw 0，15 PASS／2个精确大用例skip，194.946s | 此处未在本地跑原R4满额 |
+| Draft [#1386](https://github.com/BA7IEE/srvf-nest-api/pull/1386) 默认[CI 39353274063](https://github.com/BA7IEE/srvf-nest-api/actions/runs/39353274063)，attempt 1 | 整体FAIL；E2E 444套通过／1套失败，8012 PASS／1 FAIL／6 skip | 五个分片全部终态，Contract另计1092 PASS，不混入E2E总数 |
+| 上述CI分片2的原R4满额 | PASS；2000身份／10000段／50000slice，8000桶／40000来源；prepare 15882ms，查询334／42／805 | 原30000ms与400／120／950查询上限不变；50001容量拒绝及148六项也通过；没有本地重复满额 |
+| Docker Smoke [39353274064](https://github.com/BA7IEE/srvf-nest-api/actions/runs/39353274064) | PASS | 不代替全部CI或生产准入 |
+
+CI唯一E2E失败是 `activity-os-r4-d7-time-correction.e2e-spec.ts` 的Human V3完整2000身份来源证明链：预期HTTP 200、实际500，P2028，事务预算7000ms、报告经过7077ms。现有阶段finally计时和聚合查询类别不能确定最后失败SQL、具体Prisma模型或COMMIT状态，不能把77ms差值归为抖动，也不能靠放宽7秒预算或业务断言求绿。R4满额通过与这项D7失败分别保留；一次墙钟结果不能外推其他环境或全部规模稳定。
+
+其余CI失败为 `ROUTE_AUTHZ.md` 的派生摘要陈旧（harness自测594 PASS／2 FAIL／1已知缺口，Fast架构治理同因）及3b仍签147而当前目录已有148。Fast的2022文件冷lint零错误／警告、三个语义TypeScript项目实际通过；之后unit／build NOT_RUN。修复策略是原生成器刷新摘要、把旧3b保留为历史并明确148待审，不能把机器完整性通过写成人工认可。Trusted scan成功、审批job仍等待；环境secret配置API无权读取，配置UNKNOWN，不代批。
+
+完整原生及CI日志、退出／资源收据、R4实际选择证明已封存于 `source-envelope-revalidation-v2-20261020` 执行包；232文件清单SHA256 `51f9c750fde7556d30f914fc531b630d94cedd4f4bdec06265d325d428680a1c`。此文档更新不改原1c3157e、不触发该Draft重复满额，也不擦除4947和旧2b05的失败。
 
 ## 回退与数据兼容
 
@@ -51,4 +71,4 @@
 
 若以后确需回退已成功部署的148，另行审查新增前向迁移，内容仅 CREATE OR REPLACE 同一函数为冻结原体（原完整定义SHA `0ec20439da18fa1c544e2fe4db2e18d99c085e262b963723391b12bb72310f69`）；保留148已应用记录及全部业务事实，不修改历史、schema、约束、ACL或旧数据。因输入输出字节一致，无数据回填或旧指纹重算。当前没有新增149，避免自动部署把优化立即撤销。
 
-本次未做：修复后重跑、四项失败闸后的业务验证、普通R4／原满额CI、旧18库写入、完整nightly、C1/S13、Ready／合并／发版／生产操作和真实数据转换均未执行。AC013/020/025延期TODO、AC017搁置TODO、31真实映射HOLD和现场10a/10b边界保持。
+本次未做：D7修复后的实际验证、原R5/E4最大规模、C1/S13、完整nightly、Trusted批准、148的3b重新认可、Ready／合并／发版／生产操作和真实数据转换均NOT_RUN；旧24库不写。AC013/020/025延期TODO、AC017搁置TODO、31真实映射HOLD和现场10a/10b边界保持。原R4满额通过不等于整个Release 5完成。
