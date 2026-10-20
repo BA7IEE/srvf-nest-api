@@ -56,6 +56,11 @@ import { deriveTestDbName } from '../setup/worktree-db';
 import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
 import { runD7GuardPlanDiagnostic } from '../helpers/d7-guard-plan-diagnostic';
 import { D7CommitTiming, observeD7Span, d7ObservedMethod } from '../helpers/d7-commit-timing';
+import {
+  D7FixtureTiming,
+  observeD7FixtureAsync,
+  observeD7FixtureSync,
+} from '../helpers/d7-fixture-timing';
 
 const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_D7_2_W98 === '1');
 
@@ -1585,40 +1590,65 @@ describe('D7-1 recognition correction real transaction', () => {
               });
             }
           }
-          await f.db.$transaction(
-            async (tx) => {
-              await tx.member.createMany({
-                data: people.map((person) => ({
-                  id: person.memberId,
-                  memberNo: person.memberId,
-                  ...memberIdentityData('D4 capacity fixture'),
-                })),
-              });
-              await tx.activityRegistration.createMany({
-                data: people.map((person) => ({
-                  id: person.registrationId,
-                  activityId: draft.activityId,
-                  memberId: person.memberId,
-                  statusCode: 'pass',
-                })),
-              });
-              await tx.activityParticipationIdentity.createMany({
-                data: people.map((person) => ({
-                  id: person.identityId,
-                  activityId: draft.activityId,
-                  sessionId: draft.sessionId,
-                  registrationId: person.registrationId,
-                  memberId: person.memberId,
-                  currentStatusCode: 'pass',
-                  populationIncluded: true,
-                  currentPositionId: draft.positionId,
-                })),
-              });
-              await tx.attendancePunchEvent.createMany({ data: events });
-              await tx.participantServiceSegmentRevision.createMany({ data: segments });
-            },
-            { timeout: 30000 },
-          );
+          const fixtureTiming =
+            population === 2000 ? new D7FixtureTiming(offset, people.length) : undefined;
+          try {
+            await observeD7FixtureAsync(fixtureTiming, 'transaction', () =>
+              f.db.$transaction(
+                (tx) =>
+                  observeD7FixtureAsync(fixtureTiming, 'callback', async () => {
+                    await observeD7FixtureAsync(fixtureTiming, 'member', () =>
+                      tx.member.createMany({
+                        data: observeD7FixtureSync(fixtureTiming, 'memberArgs', () =>
+                          people.map((person) => ({
+                            id: person.memberId,
+                            memberNo: person.memberId,
+                            ...memberIdentityData('D4 capacity fixture'),
+                          })),
+                        ),
+                      }),
+                    );
+                    await observeD7FixtureAsync(fixtureTiming, 'registration', () =>
+                      tx.activityRegistration.createMany({
+                        data: observeD7FixtureSync(fixtureTiming, 'registrationArgs', () =>
+                          people.map((person) => ({
+                            id: person.registrationId,
+                            activityId: draft.activityId,
+                            memberId: person.memberId,
+                            statusCode: 'pass',
+                          })),
+                        ),
+                      }),
+                    );
+                    await observeD7FixtureAsync(fixtureTiming, 'identity', () =>
+                      tx.activityParticipationIdentity.createMany({
+                        data: observeD7FixtureSync(fixtureTiming, 'identityArgs', () =>
+                          people.map((person) => ({
+                            id: person.identityId,
+                            activityId: draft.activityId,
+                            sessionId: draft.sessionId,
+                            registrationId: person.registrationId,
+                            memberId: person.memberId,
+                            currentStatusCode: 'pass',
+                            populationIncluded: true,
+                            currentPositionId: draft.positionId,
+                          })),
+                        ),
+                      }),
+                    );
+                    await observeD7FixtureAsync(fixtureTiming, 'punch', () =>
+                      tx.attendancePunchEvent.createMany({ data: events }),
+                    );
+                    await observeD7FixtureAsync(fixtureTiming, 'segment', () =>
+                      tx.participantServiceSegmentRevision.createMany({ data: segments }),
+                    );
+                  }),
+                { timeout: 30000 },
+              ),
+            );
+          } finally {
+            fixtureTiming?.emit();
+          }
         }
       },
     });
