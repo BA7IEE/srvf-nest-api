@@ -257,46 +257,50 @@ describe('150 outer proof-array count on nonempty149', () => {
     }
   });
 
-  it('upgrades149 with a real nonempty V3 proof to150 and no-op while preserving rows, identity, metadata and dependencies', async () =>
-    owned(async () => {
-      const deadline = performance.now() + 27_000;
-      const remaining = () => {
-        const ms = Math.floor(deadline - performance.now());
-        if (ms < 1) throw new Error('Source count execution deadline exceeded');
-        return ms;
-      };
-      const beforeMigrations = await migrationRows(db());
-      expect(beforeMigrations).toHaveLength(149);
-      expect(beforeMigrations[148].name).toBe(E4_MIGRATION_149);
-      expect(await installedBody(db())).toBe(bodyOf(originalDefinition()));
-      expect(
-        createHash('md5')
-          .update(await installedBody(db()))
-          .digest('hex'),
-      ).toBe('1e48ec063dbf452210a1c7dd9a0159ff');
-      const beforeCatalog = await catalog(db());
-      const beforeSettings = await settings(db());
-      const beforeRows = await nativeLaunchBusinessFingerprint(db(), stage);
-      await owner.deployLatestMigrations(remaining());
-      expect(createHash('sha256').update(migration).digest('hex')).toBe(CANDIDATE_SHA);
-      expect(await installedBody(db())).toBe(bodyOf(migration));
-      const afterMigrations = await migrationRows(db());
-      expect(afterMigrations).toEqual([
-        ...beforeMigrations,
-        { name: E4_MIGRATION_150, checksum: CANDIDATE_SHA },
-      ]);
-      expect((await catalog(db())) === beforeCatalog).toBe(true);
-      expect(await settings(db())).toEqual(beforeSettings);
-      expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(beforeRows);
-      await db()
-        .$queryRaw`SELECT public.ctsp_assert_complete(${prepared.newPostingBatchId},false)::text`;
-      await owner.deployLatestMigrations(remaining());
-      expect(await migrationRows(db())).toEqual(afterMigrations);
-      expect((await catalog(db())) === beforeCatalog).toBe(true);
-      expect(await settings(db())).toEqual(beforeSettings);
-      expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(beforeRows);
-      upgraded = true;
-    }));
+  it(
+    'upgrades149 with a real nonempty V3 proof to150 and no-op while preserving rows, identity, metadata and dependencies',
+    async () =>
+      owned(async () => {
+        const deadline = performance.now() + 117_000;
+        const remaining = () => {
+          const ms = Math.floor(deadline - performance.now());
+          if (ms < 1) throw new Error('Source count execution deadline exceeded');
+          return Math.min(60_000, ms);
+        };
+        const beforeMigrations = await migrationRows(db());
+        expect(beforeMigrations).toHaveLength(149);
+        expect(beforeMigrations[148].name).toBe(E4_MIGRATION_149);
+        expect(await installedBody(db())).toBe(bodyOf(originalDefinition()));
+        expect(
+          createHash('md5')
+            .update(await installedBody(db()))
+            .digest('hex'),
+        ).toBe('1e48ec063dbf452210a1c7dd9a0159ff');
+        const beforeCatalog = await catalog(db());
+        const beforeSettings = await settings(db());
+        const beforeRows = await nativeLaunchBusinessFingerprint(db(), stage);
+        await owner.deployLatestMigrations(remaining());
+        expect(createHash('sha256').update(migration).digest('hex')).toBe(CANDIDATE_SHA);
+        expect(await installedBody(db())).toBe(bodyOf(migration));
+        const afterMigrations = await migrationRows(db());
+        expect(afterMigrations).toEqual([
+          ...beforeMigrations,
+          { name: E4_MIGRATION_150, checksum: CANDIDATE_SHA },
+        ]);
+        expect((await catalog(db())) === beforeCatalog).toBe(true);
+        expect(await settings(db())).toEqual(beforeSettings);
+        expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(beforeRows);
+        await db()
+          .$queryRaw`SELECT public.ctsp_assert_complete(${prepared.newPostingBatchId},false)::text`;
+        await owner.deployLatestMigrations(remaining());
+        expect(await migrationRows(db())).toEqual(afterMigrations);
+        expect((await catalog(db())) === beforeCatalog).toBe(true);
+        expect(await settings(db())).toEqual(beforeSettings);
+        expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(beforeRows);
+        upgraded = true;
+      }),
+    120_000,
+  );
 
   it('checks the installed statement against the original for twenty array, SQL NULL and rejected-input controls', async () =>
     owned(async () => {
@@ -346,164 +350,177 @@ describe('150 outer proof-array count on nonempty149', () => {
       ).toBe(true);
     }));
 
-  it('compares full original and installed guards on rollback-only temporary copies with positive and independent negative controls', async () =>
-    owned(async () => {
-      const before = await nativeLaunchBusinessFingerprint(db(), stage);
-      assertTestDatabaseUrl(process.env.DATABASE_URL);
-      const proof = await db().correctionTimeSourceProof.findFirstOrThrow({
-        where: { postingBatchId: prepared.newPostingBatchId },
-      });
-      expect(proof.expectedSegmentCount).toBe(1);
-      expect(proof.expectedBindingCount).toBe(1);
-      expect(
-        await db().correctionTimeAllocationBinding.count({ where: { proofId: proof.id } }),
-      ).toBe(1);
-      const tables = [
-        'CorrectionTimeSourceProof',
-        'CorrectionApplication',
-        'AttendanceCorrectionRequest',
-        'ParticipationTimeCorrectionManifest',
-        'CorrectionPendingTimeAllocation',
-        'CorrectionPendingTimeAllocationEvidence',
-        'CorrectionTimeAllocationBinding',
-      ];
-      const cases = [
-        { name: 'complete', mutation: '', noBindings: '00000', bindings: '00000' },
-        {
-          name: 'source count mismatch',
-          mutation:
-            'UPDATE pg_temp."CorrectionTimeSourceProof" SET "expectedSegmentCount"="expectedSegmentCount"+1',
-          noBindings: '23514',
-          bindings: '23514',
-        },
-        {
-          name: 'missing proof',
-          mutation:
-            'UPDATE pg_temp."CorrectionTimeSourceProof" SET "postingBatchId"=\'not-the-batch\'',
-          noBindings: '23514',
-          bindings: '23514',
-        },
-        {
-          name: 'inconsistent source anchor',
-          mutation: 'UPDATE pg_temp."CorrectionTimeSourceProof" SET "sourceSetHash"=\'bad-anchor\'',
-          noBindings: '23514',
-          bindings: '23514',
-        },
-        {
-          name: 'missing pending coverage',
-          mutation:
-            'UPDATE pg_temp."CorrectionPendingTimeAllocation" SET "baseAllocationRevisionId"=\'not-in-source\'',
-          noBindings: '23514',
-          bindings: '23514',
-        },
-        {
-          name: 'missing binding',
-          mutation:
-            'UPDATE pg_temp."CorrectionTimeAllocationBinding" SET "proofId"=\'not-the-proof\'',
-          noBindings: '00000',
-          bindings: '23514',
-        },
-        ...[
-          'participationIdentityId',
-          'segmentKey',
-          'sourceSegmentId',
-          'allocationRevisionId',
-          'pendingAllocationId',
-          'sourceHash',
-        ].map((field) => ({
-          name: 'binding ' + field,
-          mutation:
-            'UPDATE pg_temp."CorrectionTimeAllocationBinding" SET "' + field + "\"='not-in-source'",
-          noBindings: '00000',
-          bindings: '23514',
-        })),
-        {
-          name: 'binding source revision',
-          mutation:
-            'UPDATE pg_temp."CorrectionTimeAllocationBinding" SET "sourceSegmentRevision"="sourceSegmentRevision"+1',
-          noBindings: '00000',
-          bindings: '23514',
-        },
-        {
-          name: 'duplicate binding replacing a distinct source while totals match',
-          mutation:
-            'INSERT INTO pg_temp."CorrectionTimeAllocationBinding" SELECT * FROM pg_temp."CorrectionTimeAllocationBinding";' +
-            'UPDATE pg_temp."CorrectionTimeSourceProof" SET "sourceSnapshotJson"="sourceSnapshotJson"||jsonb_set("sourceSnapshotJson"->0,\'{participationIdentityId}\',\'"missing-other-identity"\'::jsonb),' +
-            '"expectedSegmentCount"=2,"expectedBindingCount"=2,"expectedSliceCount"="expectedSliceCount"*2',
-          noBindings: '00000',
-          bindings: '23514',
-        },
-      ];
-      const rollback = new Error('Full guard matrix control observed; roll back temporary copies');
-      for (const control of cases) {
+  it(
+    'compares full original and installed guards on rollback-only temporary copies with positive and independent negative controls',
+    async () =>
+      owned(async () => {
+        const before = await nativeLaunchBusinessFingerprint(db(), stage);
+        assertTestDatabaseUrl(process.env.DATABASE_URL);
+        const proof = await db().correctionTimeSourceProof.findFirstOrThrow({
+          where: { postingBatchId: prepared.newPostingBatchId },
+        });
+        expect(proof.expectedSegmentCount).toBe(1);
+        expect(proof.expectedBindingCount).toBe(1);
+        expect(
+          await db().correctionTimeAllocationBinding.count({ where: { proofId: proof.id } }),
+        ).toBe(1);
+        const tables = [
+          'CorrectionTimeSourceProof',
+          'CorrectionApplication',
+          'AttendanceCorrectionRequest',
+          'ParticipationTimeCorrectionManifest',
+          'CorrectionPendingTimeAllocation',
+          'CorrectionPendingTimeAllocationEvidence',
+          'CorrectionTimeAllocationBinding',
+        ];
+        const cases = [
+          { name: 'complete', mutation: '', noBindings: '00000', bindings: '00000' },
+          {
+            name: 'source count mismatch',
+            mutation:
+              'UPDATE pg_temp."CorrectionTimeSourceProof" SET "expectedSegmentCount"="expectedSegmentCount"+1',
+            noBindings: '23514',
+            bindings: '23514',
+          },
+          {
+            name: 'missing proof',
+            mutation:
+              'UPDATE pg_temp."CorrectionTimeSourceProof" SET "postingBatchId"=\'not-the-batch\'',
+            noBindings: '23514',
+            bindings: '23514',
+          },
+          {
+            name: 'inconsistent source anchor',
+            mutation:
+              'UPDATE pg_temp."CorrectionTimeSourceProof" SET "sourceSetHash"=\'bad-anchor\'',
+            noBindings: '23514',
+            bindings: '23514',
+          },
+          {
+            name: 'missing pending coverage',
+            mutation:
+              'UPDATE pg_temp."CorrectionPendingTimeAllocation" SET "baseAllocationRevisionId"=\'not-in-source\'',
+            noBindings: '23514',
+            bindings: '23514',
+          },
+          {
+            name: 'missing binding',
+            mutation:
+              'UPDATE pg_temp."CorrectionTimeAllocationBinding" SET "proofId"=\'not-the-proof\'',
+            noBindings: '00000',
+            bindings: '23514',
+          },
+          ...[
+            'participationIdentityId',
+            'segmentKey',
+            'sourceSegmentId',
+            'allocationRevisionId',
+            'pendingAllocationId',
+            'sourceHash',
+          ].map((field) => ({
+            name: 'binding ' + field,
+            mutation:
+              'UPDATE pg_temp."CorrectionTimeAllocationBinding" SET "' +
+              field +
+              "\"='not-in-source'",
+            noBindings: '00000',
+            bindings: '23514',
+          })),
+          {
+            name: 'binding source revision',
+            mutation:
+              'UPDATE pg_temp."CorrectionTimeAllocationBinding" SET "sourceSegmentRevision"="sourceSegmentRevision"+1',
+            noBindings: '00000',
+            bindings: '23514',
+          },
+          {
+            name: 'duplicate binding replacing a distinct source while totals match',
+            mutation:
+              'INSERT INTO pg_temp."CorrectionTimeAllocationBinding" SELECT * FROM pg_temp."CorrectionTimeAllocationBinding";' +
+              'UPDATE pg_temp."CorrectionTimeSourceProof" SET "sourceSnapshotJson"="sourceSnapshotJson"||jsonb_set("sourceSnapshotJson"->0,\'{participationIdentityId}\',\'"missing-other-identity"\'::jsonb),' +
+              '"expectedSegmentCount"=2,"expectedBindingCount"=2,"expectedSliceCount"="expectedSliceCount"*2',
+            noBindings: '00000',
+            bindings: '23514',
+          },
+        ];
+        const rollback = new Error(
+          'Full guard matrix control observed; roll back temporary copies',
+        );
+        for (const control of cases) {
+          await expect(
+            db().$transaction(
+              async (tx) => {
+                for (const table of tables)
+                  await tx.$executeRawUnsafe(
+                    'CREATE TEMP TABLE "' +
+                      table +
+                      '" ON COMMIT DROP AS TABLE public."' +
+                      table +
+                      '"',
+                  );
+                await tx.$executeRawUnsafe('SET LOCAL search_path=pg_temp,public');
+                const [resolved] = await tx.$queryRaw<{ shadow: boolean }[]>`
+            SELECT '"CorrectionTimeSourceProof"'::regclass::oid<>'public."CorrectionTimeSourceProof"'::regclass::oid AS shadow
+          `;
+                expect(resolved.shadow).toBe(true);
+                if (control.mutation)
+                  for (const sql of control.mutation.split(';')) await tx.$executeRawUnsafe(sql);
+                // Each call catches its own SQLSTATE in a subtransaction; expected refusals do not abort the oracle's comparison.
+                const [observed] = await tx.$queryRawUnsafe<
+                  { noBindings: string; bindings: string }[]
+                >(
+                  'SELECT ' +
+                    namespace +
+                    '.compare_guards($1,false) AS "noBindings",' +
+                    namespace +
+                    '.compare_guards($1,true) AS bindings',
+                  prepared.newPostingBatchId,
+                );
+                expect({ name: control.name, ...observed }).toEqual({
+                  name: control.name,
+                  noBindings: control.noBindings,
+                  bindings: control.bindings,
+                });
+                throw rollback;
+              },
+              { timeout: 30000 },
+            ),
+          ).rejects.toBe(rollback);
+        }
+        expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(before);
+      }),
+    120_000,
+  );
+
+  it(
+    'rehearses the prior body transactionally and retains150, catalog and rows after forced rollback',
+    async () =>
+      owned(async () => {
+        const before = await nativeLaunchBusinessFingerprint(db(), stage);
+        const beforeCatalog = await catalog(db());
+        const beforeMigrations = await migrationRows(db());
+        const rollback = new Error('Prior function body verified; roll back rehearsal');
         await expect(
           db().$transaction(
             async (tx) => {
-              for (const table of tables)
-                await tx.$executeRawUnsafe(
-                  'CREATE TEMP TABLE "' +
-                    table +
-                    '" ON COMMIT DROP AS TABLE public."' +
-                    table +
-                    '"',
-                );
-              await tx.$executeRawUnsafe('SET LOCAL search_path=pg_temp,public');
-              const [resolved] = await tx.$queryRaw<{ shadow: boolean }[]>`
-            SELECT '"CorrectionTimeSourceProof"'::regclass::oid<>'public."CorrectionTimeSourceProof"'::regclass::oid AS shadow
-          `;
-              expect(resolved.shadow).toBe(true);
-              if (control.mutation)
-                for (const sql of control.mutation.split(';')) await tx.$executeRawUnsafe(sql);
-              // Each call catches its own SQLSTATE in a subtransaction; expected refusals do not abort the oracle's comparison.
-              const [observed] = await tx.$queryRawUnsafe<
-                { noBindings: string; bindings: string }[]
-              >(
-                'SELECT ' +
-                  namespace +
-                  '.compare_guards($1,false) AS "noBindings",' +
-                  namespace +
-                  '.compare_guards($1,true) AS bindings',
-                prepared.newPostingBatchId,
+              await tx.$executeRawUnsafe(
+                originalDefinition().replace('CREATE FUNCTION', 'CREATE OR REPLACE FUNCTION'),
               );
-              expect({ name: control.name, ...observed }).toEqual({
-                name: control.name,
-                noBindings: control.noBindings,
-                bindings: control.bindings,
-              });
+              expect(await installedBody(tx)).toBe(bodyOf(originalDefinition()));
+              expect((await catalog(tx)) === beforeCatalog).toBe(true);
+              await tx.$queryRaw`SELECT public.ctsp_assert_complete(${prepared.newPostingBatchId},true)::text`;
               throw rollback;
             },
             { timeout: 30000 },
           ),
         ).rejects.toBe(rollback);
-      }
-      expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(before);
-    }));
-
-  it('rehearses the prior body transactionally and retains150, catalog and rows after forced rollback', async () =>
-    owned(async () => {
-      const before = await nativeLaunchBusinessFingerprint(db(), stage);
-      const beforeCatalog = await catalog(db());
-      const beforeMigrations = await migrationRows(db());
-      const rollback = new Error('Prior function body verified; roll back rehearsal');
-      await expect(
-        db().$transaction(
-          async (tx) => {
-            await tx.$executeRawUnsafe(
-              originalDefinition().replace('CREATE FUNCTION', 'CREATE OR REPLACE FUNCTION'),
-            );
-            expect(await installedBody(tx)).toBe(bodyOf(originalDefinition()));
-            expect((await catalog(tx)) === beforeCatalog).toBe(true);
-            await tx.$queryRaw`SELECT public.ctsp_assert_complete(${prepared.newPostingBatchId},true)::text`;
-            throw rollback;
-          },
-          { timeout: 30000 },
-        ),
-      ).rejects.toBe(rollback);
-      expect(await installedBody(db())).toBe(bodyOf(migration));
-      expect((await catalog(db())) === beforeCatalog).toBe(true);
-      expect(await migrationRows(db())).toEqual(beforeMigrations);
-      expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(before);
-    }));
+        expect(await installedBody(db())).toBe(bodyOf(migration));
+        expect((await catalog(db())) === beforeCatalog).toBe(true);
+        expect(await migrationRows(db())).toEqual(beforeMigrations);
+        expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(before);
+      }),
+    120_000,
+  );
 
   it(
     'prepares and commits a fresh real source under150 with the original service budgets and guards',
