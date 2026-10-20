@@ -19,7 +19,7 @@ import {
 } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
 
-const CURRENT_MIGRATION_COUNT = 149;
+const CURRENT_MIGRATION_COUNT = 150;
 
 const MIGRATION = '20260913090000_activity_os_r4_d4_time_bucket_settlement';
 const D3_MIGRATION = '20260912090000_activity_os_r4_d3_time_allocation_revision';

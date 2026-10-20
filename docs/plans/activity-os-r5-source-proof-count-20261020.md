@@ -1,0 +1,17 @@
+# R5 D7 source proof count candidate150
+
+Base: f370f1cfb0428a100cde9c049cb00aa12ef5c78c. Development and acceptance only; production NO_GO.
+
+The sole native f370 D7 attempt reached the original7s transaction and failed QUERY7212/7000 at the receipt invocation. Target diagnostics KNOWN; setup frame UNKNOWN/faults2, not a missing frame or JSON parse failure. All37 databases retained; old35 OIDs unchanged. This failure and all earlier FAIL/UNKNOWN remain open.
+
+Existing PostgreSQL samples place binding and receipt INSERT on the same backend/transaction and show receipt BufFileWrite. A focused READ ONLY panel on that run's new worker measured the original outer count at1787.09ms/2665 temp-read+write blocks and jsonb_array_length at104.235ms/0 temp blocks. Its overall raw3 is retained: sum_narrow hit5s; pending cases NOT_RUN. The EXCEPT ALL component had0 temp blocks, so it is not changed. Sequential component timings cannot predict7s transaction success or isolate a sole cause.
+
+150 preserves the original function body except the count statement, uses COALESCE to retain SQL NULL=>0, and preserves array outer-element counts/duplicates/nulls/nesting. Twenty actual read-only scalar controls match counts and SQLSTATE; nonarray error wording/CONTEXT may differ. All sum/pending coverage/multisets/anchors/states/locks/budgets remain. Old migrations, service APIs, business assertions, schema, ACLs, workflow, production gates and real data are outside this patch.
+
+The new six-test upgrade suite prepares a real V3 proof under149; checks nonempty149→150/no-op, all business rows, exact target body, OID/attributes/owner/ACL/dependencies/other functions/constraints/triggers/indexes/settings; checks installed count statement plus20 scalar/error controls; commits/replays the real proof through both require_bindings branches; compares original and installed functions on transaction-local temporary copies with independent negative guards; rehearses prior-body restore with rollback; and prepares/commits a fresh source under150. The old149 suite is pinned to149 without changing its assertions or budgets. Historical137 prefix remains fixed;150 is separately pinned. Typed total counts and generated maps advance150.
+
+The reviewed40-path patch was materialized through the existing normal CLI exact grant on verified same-scope user continuation authority; the grant was then cleared. This is development code, not native acceptance. Actual landed-tree static checks and fixed-commit review still precede the intended validation: upgrade once → only all PASS/resource KNOWN original D7 once → only all PASS ordinaryR4 once. No unchanged retry, local duplicate originalR4 maximum, new CI, Ready or merge is authorized here. Old37 databases retain/no writes; new actual-derived/read-absent/registered pairs follow parent authorization. Any FAIL/UNKNOWN stops dependent work; original budgets and business assertions stay fixed. Full nightly remains paused. OriginalR5/E4 maximum2000/10000/50000 and S13 remain unaccepted, separate from1c31 originalR4 maximumCI PASS. AC013/020/025 remain deferred; AC017 shelved.
+
+Evidence outside Git: /workspace/r5-continuation-20261019/d7-whole-chain-observation-20261020/{same-boundary-comparison-252a-f370.md,binding-event-existing-pg-window.json,source-json-scan-profile-partial.json,count-equivalence-controls.json,count-fast-path-proposal/manifest.json}.
+
+本次未做：新非空升级/原D7/普通R4/实际树类型验收/新CI/推送/Ready/合并/生产/真实转换均NOT_RUN；正常CLI精确grant/落地/撤销已完成，R5未完成。

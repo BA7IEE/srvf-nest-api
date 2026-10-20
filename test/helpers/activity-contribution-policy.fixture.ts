@@ -12,6 +12,7 @@ import {
   E4_MIGRATION_146,
   E4_MIGRATION_147,
   E4_MIGRATION_148,
+  E4_MIGRATION_149,
 } from './e4-migration-prefix';
 import type { INestApplication } from '@nestjs/common';
 import { BindingScopeType, PrincipalType, Role, UserStatus, Prisma } from '@prisma/client';
@@ -273,7 +274,20 @@ export function installE4ValidationDatabase(options?: {
       deployFailure(error);
     }
   }
-  type HistoricalCount = 137 | 138 | 139 | 140 | 141 | 142 | 143 | 144 | 145 | 146 | 147 | 148;
+  type HistoricalCount =
+    | 137
+    | 138
+    | 139
+    | 140
+    | 141
+    | 142
+    | 143
+    | 144
+    | 145
+    | 146
+    | 147
+    | 148
+    | 149;
   function deployHistoricalMigrations(count: HistoricalCount): void;
   function deployHistoricalMigrations(count: HistoricalCount, timeout: number): Promise<void>;
   function deployHistoricalMigrations(
@@ -298,6 +312,7 @@ export function installE4ValidationDatabase(options?: {
       E4_MIGRATION_146,
       E4_MIGRATION_147,
       E4_MIGRATION_148,
+      E4_MIGRATION_149,
     ].slice(0, count - 136);
     for (const name of successors) {
       const directory = join(temporary, 'migrations', name);
@@ -356,6 +371,11 @@ export function installE4ValidationDatabase(options?: {
   function deploySourceEnvelopeMigrations(timeout: number): Promise<void>;
   function deploySourceEnvelopeMigrations(timeout?: number) {
     return deployHistoricalMigrations(148, timeout);
+  }
+  function deploySingletonMigrations(): void;
+  function deploySingletonMigrations(timeout: number): Promise<void>;
+  function deploySingletonMigrations(timeout?: number) {
+    return deployHistoricalMigrations(149, timeout);
   }
   const previous = {
     worker: process.env.JEST_WORKER_ID,
@@ -494,6 +514,7 @@ export function installE4ValidationDatabase(options?: {
     deployPolicyBandMigrations,
     deployCorrectionHashMigrations,
     deploySourceEnvelopeMigrations,
+    deploySingletonMigrations,
     deployLatestMigrations,
     async recreateCurrentMigrations() {
       if (!baseline || !initialized || worker === undefined)

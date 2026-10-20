@@ -19,7 +19,7 @@ import {
 } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
 
-const CURRENT_MIGRATION_COUNT = 149;
+const CURRENT_MIGRATION_COUNT = 150;
 
 const MIGRATION = '20260914120000_activity_os_r4_d6_time_ledger';
 function target() {
