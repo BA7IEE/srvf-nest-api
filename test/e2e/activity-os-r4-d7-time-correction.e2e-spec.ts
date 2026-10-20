@@ -55,6 +55,7 @@ import { deriveTestDbName } from '../setup/worktree-db';
 
 import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
 import { runD7GuardPlanDiagnostic } from '../helpers/d7-guard-plan-diagnostic';
+import { D7CommitTiming, observeD7Span, d7ObservedMethod } from '../helpers/d7-commit-timing';
 
 const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_D7_2_W98 === '1');
 
@@ -2904,6 +2905,7 @@ describe('D7-1 recognition correction real transaction', () => {
           diagnosticErrorCount++;
         });
       const transactionObservation = createCommitTransactionObservation();
+      const timing = population === 2000 ? new D7CommitTiming() : undefined;
       type QueryEvent = {
         category: keyof CommitQueryTiming;
         control: ReturnType<typeof classifyCommitControl>;
@@ -2927,7 +2929,7 @@ describe('D7-1 recognition correction real transaction', () => {
         const startedAt = performance.now();
         commitPhaseState[phase] = 'ENTERED';
         try {
-          const value = await work();
+          const value = await observeD7Span(timing, phase, work);
           commitPhaseState[phase] = 'RETURNED';
           return value;
         } catch (error) {
@@ -2943,32 +2945,37 @@ describe('D7-1 recognition correction real transaction', () => {
         await observed.$connect();
         observed.$on('query', (event) =>
           safelyObserve(() => {
-            recordCommitQueryTiming(queryTiming, event.query, event.duration);
-            const fixedEvent: QueryEvent = {
-              category: classifyCommitQuery(event.query),
-              control: classifyCommitControl(event.query),
-              durationMs: Math.round(event.duration),
-              callbackState: transactionObservation.callbackState,
+            const existingListener = () => {
+              recordCommitQueryTiming(queryTiming, event.query, event.duration);
+              const fixedEvent: QueryEvent = {
+                category: classifyCommitQuery(event.query),
+                control: classifyCommitControl(event.query),
+                durationMs: Math.round(event.duration),
+                callbackState: transactionObservation.callbackState,
+              };
+              queryEventTail.push(fixedEvent);
+              if (queryEventTail.length > 16) queryEventTail.shift();
+              if (fixedEvent.control !== null) {
+                controlEvents.push(fixedEvent);
+                if (controlEvents.length > 32) controlEvents.shift();
+              }
             };
-            queryEventTail.push(fixedEvent);
-            if (queryEventTail.length > 16) queryEventTail.shift();
-            if (fixedEvent.control !== null) {
-              controlEvents.push(fixedEvent);
-              if (controlEvents.length > 32) controlEvents.shift();
-            }
+            if (timing) timing.query(event.query, event.duration, existingListener);
+            else existingListener();
           }, undefined),
         );
       }
       const transactionSpy = observed
-        ? jest
-            .spyOn(f.db, '$transaction')
-            .mockImplementation((body, options) =>
-              observeCommitTransaction(
-                body,
-                (callback) => observed.$transaction(callback, options),
-                transactionObservation,
-              ),
-            )
+        ? jest.spyOn(f.db, '$transaction').mockImplementation((body, options) =>
+            observeCommitTransaction(
+              (tx) => observeD7Span(timing, 'callback', () => body(tx)),
+              (callback) =>
+                observeD7Span(timing, 'transaction', () =>
+                  observed.$transaction(callback, options),
+                ),
+              transactionObservation,
+            ),
+          )
         : undefined;
       const correction = f.app.get(CorrectionApplicationService);
       const commit = correction.commit.bind(correction);
@@ -3002,6 +3009,25 @@ describe('D7-1 recognition correction real transaction', () => {
           return assertComplete(...args);
         });
       const ledgerPosting = f.app.get(LedgerPostingService);
+      type LedgerReadMethod = 'readBatchDayDeltas' | 'assertPreparedSetConsistent';
+      const timedLedger = ledgerPosting as unknown as Record<
+        LedgerReadMethod,
+        (this: unknown, ...args: unknown[]) => Promise<unknown>
+      >;
+      const readBatchDayDeltas = timedLedger.readBatchDayDeltas;
+      const assertPreparedSetConsistent = timedLedger.assertPreparedSetConsistent;
+      const deltasSpy = observed
+        ? jest
+            .spyOn(timedLedger, 'readBatchDayDeltas')
+            .mockImplementation(d7ObservedMethod(timing, 'readBatchDayDeltas', readBatchDayDeltas))
+        : undefined;
+      const shapeSpy = observed
+        ? jest
+            .spyOn(timedLedger, 'assertPreparedSetConsistent')
+            .mockImplementation(
+              d7ObservedMethod(timing, 'assertPreparedSetConsistent', assertPreparedSetConsistent),
+            )
+        : undefined;
       const commitBatchWithin = ledgerPosting.commitBatchWithin.bind(ledgerPosting);
       const ledgerSpy = observed
         ? jest
@@ -3128,6 +3154,8 @@ describe('D7-1 recognition correction real transaction', () => {
           receiptSpy?.mockRestore();
           assertCompleteSpy.mockRestore();
           ledgerSpy?.mockRestore();
+          deltasSpy?.mockRestore();
+          shapeSpy?.mockRestore();
           applicationCommittedSpy?.mockRestore();
           requestAppliedSpy?.mockRestore();
           finalAuditSpy?.mockRestore();
@@ -3153,6 +3181,7 @@ describe('D7-1 recognition correction real transaction', () => {
                         commitPhaseMs,
                         commitPhaseState,
                         transactionObservation,
+                        timingEvidence: timing?.report() ?? null,
                         controlEvents,
                         queryEventTail,
                         diagnosticErrorCount,
