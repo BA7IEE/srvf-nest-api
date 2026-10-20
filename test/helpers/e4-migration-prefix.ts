@@ -23,10 +23,12 @@ export const E4_MIGRATION_147 =
 
 export const E4_MIGRATION_148 = '20261019184200_activity_source_hash_envelope_fast_path';
 
+export const E4_MIGRATION_149 = '20261020032500_activity_canonical_json_singleton_fast_paths';
+
 export function e4HistoricalMigrationPrefix(names: readonly string[]): string[] {
   const ordered = [...names].sort();
   if (
-    ordered.length !== 148 ||
+    ordered.length !== 149 ||
     ordered[136] !== E4_MIGRATION_137 ||
     ordered[137] !== E4_MIGRATION_138 ||
     ordered[138] !== E4_MIGRATION_139 ||
@@ -38,10 +40,11 @@ export function e4HistoricalMigrationPrefix(names: readonly string[]): string[] 
     ordered[144] !== E4_MIGRATION_145 ||
     ordered[145] !== E4_MIGRATION_146 ||
     ordered[146] !== E4_MIGRATION_147 ||
-    ordered[147] !== E4_MIGRATION_148
+    ordered[147] !== E4_MIGRATION_148 ||
+    ordered[148] !== E4_MIGRATION_149
   )
     throw new Error(
-      'E4 fixed 137 prefix or explicit 138/139/140/141/142/143/144/145/146/147/148 successors changed',
+      'E4 fixed 137 prefix or explicit 138/139/140/141/142/143/144/145/146/147/148/149 successors changed',
     );
   return ordered.slice(0, 137);
 }

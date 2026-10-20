@@ -15,7 +15,7 @@ import * as path from 'node:path';
 import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
 
-const CURRENT_MIGRATION_COUNT = 148;
+const CURRENT_MIGRATION_COUNT = 149;
 
 const MIGRATION = '20260911100000_activity_os_r4_d1_3_time_policy_selection';
 

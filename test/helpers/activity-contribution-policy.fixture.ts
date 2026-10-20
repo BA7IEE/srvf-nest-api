@@ -11,6 +11,7 @@ import {
   E4_MIGRATION_145,
   E4_MIGRATION_146,
   E4_MIGRATION_147,
+  E4_MIGRATION_148,
 } from './e4-migration-prefix';
 import type { INestApplication } from '@nestjs/common';
 import { BindingScopeType, PrincipalType, Role, UserStatus, Prisma } from '@prisma/client';
@@ -272,7 +273,7 @@ export function installE4ValidationDatabase(options?: {
       deployFailure(error);
     }
   }
-  type HistoricalCount = 137 | 138 | 139 | 140 | 141 | 142 | 143 | 144 | 145 | 146 | 147;
+  type HistoricalCount = 137 | 138 | 139 | 140 | 141 | 142 | 143 | 144 | 145 | 146 | 147 | 148;
   function deployHistoricalMigrations(count: HistoricalCount): void;
   function deployHistoricalMigrations(count: HistoricalCount, timeout: number): Promise<void>;
   function deployHistoricalMigrations(
@@ -296,6 +297,7 @@ export function installE4ValidationDatabase(options?: {
       E4_MIGRATION_145,
       E4_MIGRATION_146,
       E4_MIGRATION_147,
+      E4_MIGRATION_148,
     ].slice(0, count - 136);
     for (const name of successors) {
       const directory = join(temporary, 'migrations', name);
@@ -349,6 +351,11 @@ export function installE4ValidationDatabase(options?: {
   function deployCorrectionHashMigrations(timeout: number): Promise<void>;
   function deployCorrectionHashMigrations(timeout?: number) {
     return deployHistoricalMigrations(147, timeout);
+  }
+  function deploySourceEnvelopeMigrations(): void;
+  function deploySourceEnvelopeMigrations(timeout: number): Promise<void>;
+  function deploySourceEnvelopeMigrations(timeout?: number) {
+    return deployHistoricalMigrations(148, timeout);
   }
   const previous = {
     worker: process.env.JEST_WORKER_ID,
@@ -486,6 +493,7 @@ export function installE4ValidationDatabase(options?: {
     deployEvaluationKeyMigrations,
     deployPolicyBandMigrations,
     deployCorrectionHashMigrations,
+    deploySourceEnvelopeMigrations,
     deployLatestMigrations,
     async recreateCurrentMigrations() {
       if (!baseline || !initialized || worker === undefined)

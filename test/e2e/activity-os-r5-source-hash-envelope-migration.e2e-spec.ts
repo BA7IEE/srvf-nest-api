@@ -231,7 +231,7 @@ describe('148 source hash fixed envelope on nonempty147', () => {
       const beforeSettings = await settings(db());
       const beforeRows = await nativeLaunchBusinessFingerprint(db(), stage);
       await verifyRoots(db());
-      await owner.deployLatestMigrations(remaining(deadline));
+      await owner.deploySourceEnvelopeMigrations(remaining(deadline));
       expect(createHash('sha256').update(migration).digest('hex')).toBe(CANDIDATE_SHA);
       expect(await installedBody(db())).toBe(bodyOf(migration));
       const afterMigrations = await migrationRows(db());
@@ -243,7 +243,7 @@ describe('148 source hash fixed envelope on nonempty147', () => {
       expect(await settings(db())).toEqual(beforeSettings);
       expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(beforeRows);
       await verifyRoots(db());
-      await owner.deployLatestMigrations(remaining(deadline));
+      await owner.deploySourceEnvelopeMigrations(remaining(deadline));
       expect(await migrationRows(db())).toEqual(afterMigrations);
       expect((await catalog(db())) === beforeCatalog).toBe(true);
       expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(beforeRows);

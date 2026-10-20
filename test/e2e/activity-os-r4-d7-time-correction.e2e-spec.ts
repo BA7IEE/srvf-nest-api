@@ -27,6 +27,7 @@ import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { CorrectionApplicationService } from '../../src/modules/activities/correction-application.service';
 import { CorrectionAuditRecorder } from '../../src/modules/activities/correction-audit-recorder';
 import { CorrectionTimeAllocationService } from '../../src/modules/activities/correction-time-allocation.service';
+import { AttendanceCorrectionWriteService } from '../../src/modules/attendances/attendance-correction-write.service';
 import { ParticipationTimeCorrectionService } from '../../src/modules/activities/participation-time-correction.service';
 import { LedgerPreparationService } from '../../src/modules/activities/ledger-preparation.service';
 import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
@@ -154,6 +155,129 @@ function recordCommitQueryTiming(timing: CommitQueryTiming, query: string, durat
   bucket.durationMs += roundedDuration;
   bucket.maxDurationMs = Math.max(bucket.maxDurationMs, roundedDuration);
 }
+
+type CommitCallbackState = 'NOT_ENTERED' | 'RUNNING' | 'RETURNED' | 'THREW';
+
+// Observability must not replace the original business value or rejection.
+function collectCommitDiagnostic<T>(work: () => T, fallback: T, onFailure: () => void): T {
+  try {
+    return work();
+  } catch {
+    try {
+      onFailure();
+    } catch {
+      // A broken diagnostic reporter is also isolated from the business path.
+    }
+    return fallback;
+  }
+}
+
+function createCommitTransactionObservation() {
+  return {
+    transactionState: 'NOT_STARTED' as 'NOT_STARTED' | 'STARTED' | 'RESOLVED' | 'REJECTED',
+    callbackState: 'NOT_ENTERED' as CommitCallbackState,
+    callbackMs: null as number | null,
+    transactionMs: null as number | null,
+    settlementAfterCallbackMs: null as number | null,
+  };
+}
+
+// Observe the existing interactive transaction without changing its options,
+// callback count, return value, or thrown error. A returned callback is not a commit.
+async function observeCommitTransaction<T>(
+  body: (tx: Prisma.TransactionClient) => Promise<T>,
+  run: (callback: (tx: Prisma.TransactionClient) => Promise<T>) => Promise<T>,
+  observation: ReturnType<typeof createCommitTransactionObservation>,
+): Promise<T> {
+  const startedAt = performance.now();
+  let callbackEndedAt: number | null = null;
+  observation.transactionState = 'STARTED';
+  try {
+    const result = await run(async (tx) => {
+      const callbackStartedAt = performance.now();
+      observation.callbackState = 'RUNNING';
+      try {
+        const value = await body(tx);
+        observation.callbackState = 'RETURNED';
+        return value;
+      } catch (error) {
+        observation.callbackState = 'THREW';
+        throw error;
+      } finally {
+        callbackEndedAt = performance.now();
+        observation.callbackMs = Math.round(callbackEndedAt - callbackStartedAt);
+      }
+    });
+    observation.transactionState = 'RESOLVED';
+    return result;
+  } catch (error) {
+    observation.transactionState = 'REJECTED';
+    throw error;
+  } finally {
+    const endedAt = performance.now();
+    observation.transactionMs = Math.round(endedAt - startedAt);
+    observation.settlementAfterCallbackMs =
+      callbackEndedAt === null ? null : Math.round(endedAt - callbackEndedAt);
+  }
+}
+
+function classifyCommitControl(query: string) {
+  const fixedShapes = [
+    ['BEGIN', /^\s*(?:BEGIN|START\s+TRANSACTION)(?:\s|;|$)/iu],
+    ['SET_TRANSACTION', /^\s*SET\s+TRANSACTION(?:\s|;|$)/iu],
+    ['SET_LOCAL_LOCK_TIMEOUT', /^\s*SET\s+LOCAL\s+lock_timeout(?:\s|=|;|$)/iu],
+    ['COMMIT', /^\s*COMMIT(?:\s|;|$)/iu],
+    ['ROLLBACK', /^\s*ROLLBACK(?:\s|;|$)/iu],
+    ['SAVEPOINT', /^\s*SAVEPOINT(?:\s|;|$)/iu],
+    ['RELEASE', /^\s*RELEASE(?:\s|;|$)/iu],
+    ['OTHER_CONTROL', /^\s*SET(?:\s|;|$)/iu],
+  ] as const;
+  return fixedShapes.find(([, pattern]) => pattern.test(query))?.[0] ?? null;
+}
+
+function commitErrorLocation(error: unknown) {
+  const message = error instanceof Error ? error.message : '';
+  const expiredOperation =
+    message
+      .match(/\b(query|commit|rollback) cannot be executed on an expired transaction\b/iu)?.[1]
+      ?.toUpperCase() ?? 'UNKNOWN';
+  const model =
+    error instanceof Prisma.PrismaClientKnownRequestError ? error.meta?.modelName : null;
+  const allowedModels = [
+    'Activity',
+    'AttendanceSettlementRun',
+    'AttendanceCorrectionRequest',
+    'CorrectionApplication',
+    'LedgerPostingBatch',
+    'ParticipantSettlementResultRevision',
+    'ParticipantServiceSegmentRevision',
+    'ParticipationTimeCorrectionCommitReceipt',
+    'AuditLog',
+  ];
+  const allowedFiles = new Set([
+    'src/modules/activities/correction-application.service.ts',
+    'src/modules/activities/correction-time-allocation.service.ts',
+    'src/modules/activities/participation-time-correction.service.ts',
+    'src/modules/activities/ledger-posting.service.ts',
+    'src/modules/activities/correction-audit-recorder.ts',
+    'src/modules/attendances/attendance-correction-write.service.ts',
+    'src/common/prisma/member-advisory-lock.util.ts',
+  ]);
+  const sourceFrames: Array<{ file: string; line: number; column: number }> = [];
+  for (const frame of error instanceof Error ? (error.stack ?? '').split('\n').slice(1) : []) {
+    const match = frame.match(/(?:^|\/)(src\/[^():\s]+):(\d+):(\d+)\)?$/u);
+    if (match && allowedFiles.has(match[1])) {
+      sourceFrames.push({ file: match[1], line: Number(match[2]), column: Number(match[3]) });
+      if (sourceFrames.length === 8) break;
+    }
+  }
+  return {
+    expiredOperation,
+    prismaModel: typeof model === 'string' && allowedModels.includes(model) ? model : null,
+    sourceFrames,
+  };
+}
+
 function diagnosticCode(error: unknown): string {
   const kind =
     error instanceof Error &&
@@ -787,6 +911,155 @@ describe('D7 receipt SQL authority pure controls', () => {
       receiptInstalledBodiesMatch(authority, [installed[0], installed[0], ...installed.slice(2)]),
     ).toBe(false);
     expect(receiptInstalledBodiesMatch(authority, [...installed, installed[0]])).toBe(false);
+  });
+});
+
+describe('D7 commit transaction observer pure controls', () => {
+  it('isolates throwing error getters and output without replacing the original rejection', () => {
+    const original = new Error('private original error');
+    Object.defineProperty(original, 'stack', {
+      get: () => {
+        throw new Error('private getter');
+      },
+    });
+    let errors = 0;
+    const fallback = { expiredOperation: 'UNKNOWN', prismaModel: null, sourceFrames: [] };
+    try {
+      try {
+        throw original;
+      } catch (error) {
+        expect(
+          collectCommitDiagnostic(
+            () => commitErrorLocation(error),
+            fallback,
+            () => {
+              errors++;
+            },
+          ),
+        ).toBe(fallback);
+        collectCommitDiagnostic(
+          () => {
+            throw new Error('private output failure');
+          },
+          undefined,
+          () => {
+            errors++;
+          },
+        );
+        throw error;
+      }
+    } catch (error) {
+      expect(error).toBe(original);
+    }
+    expect(errors).toBe(2);
+    expect(
+      collectCommitDiagnostic(
+        () => {
+          throw original;
+        },
+        17,
+        () => {
+          throw original;
+        },
+      ),
+    ).toBe(17);
+  });
+
+  it('preserves a returned callback value and records resolved settlement', async () => {
+    const tx = {} as Prisma.TransactionClient;
+    const value = { unchanged: true };
+    const body = jest.fn(async (received: Prisma.TransactionClient) => {
+      expect(received).toBe(tx);
+      return value;
+    });
+    const run = jest.fn((callback: (client: Prisma.TransactionClient) => Promise<typeof value>) =>
+      callback(tx),
+    );
+    const observation = createCommitTransactionObservation();
+    await expect(observeCommitTransaction(body, run, observation)).resolves.toBe(value);
+    expect(body).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(observation).toMatchObject({ transactionState: 'RESOLVED', callbackState: 'RETURNED' });
+    expect(observation.callbackMs).toEqual(expect.any(Number));
+    expect(observation.settlementAfterCallbackMs).toEqual(expect.any(Number));
+  });
+
+  it.each(['CALLBACK', 'AFTER_CALLBACK', 'BEFORE_CALLBACK'] as const)(
+    'preserves the original rejection at %s without inventing commit success',
+    async (at) => {
+      const failure = new Error('synthetic-private-error');
+      const body = jest.fn(async () => {
+        if (at === 'CALLBACK') throw failure;
+        return 17;
+      });
+      const run = jest.fn(async (callback: (tx: Prisma.TransactionClient) => Promise<number>) => {
+        if (at === 'BEFORE_CALLBACK') throw failure;
+        await callback({} as Prisma.TransactionClient);
+        throw failure;
+      });
+      const observation = createCommitTransactionObservation();
+      await expect(observeCommitTransaction(body, run, observation)).rejects.toBe(failure);
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(body).toHaveBeenCalledTimes(at === 'BEFORE_CALLBACK' ? 0 : 1);
+      expect(observation).toMatchObject({
+        transactionState: 'REJECTED',
+        callbackState:
+          at === 'CALLBACK' ? 'THREW' : at === 'AFTER_CALLBACK' ? 'RETURNED' : 'NOT_ENTERED',
+      });
+      expect(JSON.stringify(observation)).not.toContain('synthetic-private-error');
+    },
+  );
+
+  it.each([
+    ['BEGIN', 'BEGIN'],
+    ['SET TRANSACTION ISOLATION LEVEL READ COMMITTED', 'SET_TRANSACTION'],
+    ['SET LOCAL lock_timeout = 4000', 'SET_LOCAL_LOCK_TIMEOUT'],
+    ['COMMIT', 'COMMIT'],
+    ['ROLLBACK', 'ROLLBACK'],
+    ['SAVEPOINT private_name', 'SAVEPOINT'],
+    ['RELEASE SAVEPOINT private_name', 'RELEASE'],
+    ['SET private_setting = private_value', 'OTHER_CONTROL'],
+    ['SELECT $1 /* COMMIT private_value */', null],
+  ])('records only the fixed transaction-control kind %#', (query, expected) => {
+    expect(classifyCommitControl(query)).toBe(expected);
+  });
+
+  it.each(['query', 'commit', 'rollback'])(
+    'redacts error details while retaining explicit expired %s evidence',
+    (operation) => {
+      const failure = new Prisma.PrismaClientKnownRequestError(
+        `private detail: A ${operation} cannot be executed on an expired transaction.`,
+        { code: 'P2028', clientVersion: 'diagnostic', meta: { modelName: 'private_model' } },
+      );
+      failure.stack = [
+        failure.message,
+        '    at privateLabel (/private/root/src/modules/activities/correction-application.service.ts:1438:7)',
+        '    at privateLabel (/private/root/src/private-data.ts:10:20)',
+      ].join('\n');
+      const result = commitErrorLocation(failure);
+      expect(result).toEqual({
+        expiredOperation: operation.toUpperCase(),
+        prismaModel: null,
+        sourceFrames: [
+          {
+            file: 'src/modules/activities/correction-application.service.ts',
+            line: 1438,
+            column: 7,
+          },
+        ],
+      });
+      expect(JSON.stringify(result)).not.toContain('private');
+    },
+  );
+
+  it('leaves ambiguous expiry and untrusted source frames unknown', () => {
+    const failure = new Error('Transaction already closed: private query detail');
+    failure.stack = failure.message + '\n    at /private/query.ts:2:3';
+    expect(commitErrorLocation(failure)).toEqual({
+      expiredOperation: 'UNKNOWN',
+      prismaModel: null,
+      sourceFrames: [],
+    });
   });
 });
 
@@ -2617,17 +2890,49 @@ describe('D7-1 recognition correction real transaction', () => {
         timeAllocationMaterialization: null as number | null,
         correctionReceipt: null as number | null,
         ledgerCommit: null as number | null,
+        applicationCommitted: null as number | null,
+        requestApplied: null as number | null,
+        finalAudit: null as number | null,
       };
+      const commitPhaseState: Partial<
+        Record<keyof typeof commitPhaseMs, 'ENTERED' | 'RETURNED' | 'THREW'>
+      > = {};
       const queryTiming = createCommitQueryTiming();
+      let diagnosticErrorCount = 0;
+      const safelyObserve = <T>(work: () => T, fallback: T): T =>
+        collectCommitDiagnostic(work, fallback, () => {
+          diagnosticErrorCount++;
+        });
+      const transactionObservation = createCommitTransactionObservation();
+      type QueryEvent = {
+        category: keyof CommitQueryTiming;
+        control: ReturnType<typeof classifyCommitControl>;
+        durationMs: number;
+        callbackState: CommitCallbackState;
+      };
+      // Query events have no success flag. Keep only fixed categories and a
+      // bounded tail; an observed COMMIT event alone is not a successful commit.
+      const queryEventTail: QueryEvent[] = [];
+      const controlEvents: QueryEvent[] = [];
       let commitHttpStatus: number | null = null;
       let commitResponseCode: number | null = null;
+      let commitRequestRejected = false;
+      let commitRequestFailure: unknown;
+      let observerDisconnectFailure: unknown;
+      let observerDisconnectState: 'NOT_STARTED' | 'RETURNED' | 'THREW' = 'NOT_STARTED';
       const measureCommitPhase = async <T>(
         phase: keyof typeof commitPhaseMs,
         work: () => Promise<T>,
       ): Promise<T> => {
         const startedAt = performance.now();
+        commitPhaseState[phase] = 'ENTERED';
         try {
-          return await work();
+          const value = await work();
+          commitPhaseState[phase] = 'RETURNED';
+          return value;
+        } catch (error) {
+          commitPhaseState[phase] = 'THREW';
+          throw error;
         } finally {
           commitPhaseMs[phase] = Math.round(performance.now() - startedAt);
         }
@@ -2636,12 +2941,34 @@ describe('D7-1 recognition correction real transaction', () => {
         population === 2000 ? new PrismaClient({ log: [{ emit: 'event', level: 'query' }] }) : null;
       if (observed) {
         await observed.$connect();
-        observed.$on('query', (event) => {
-          recordCommitQueryTiming(queryTiming, event.query, event.duration);
-        });
+        observed.$on('query', (event) =>
+          safelyObserve(() => {
+            recordCommitQueryTiming(queryTiming, event.query, event.duration);
+            const fixedEvent: QueryEvent = {
+              category: classifyCommitQuery(event.query),
+              control: classifyCommitControl(event.query),
+              durationMs: Math.round(event.duration),
+              callbackState: transactionObservation.callbackState,
+            };
+            queryEventTail.push(fixedEvent);
+            if (queryEventTail.length > 16) queryEventTail.shift();
+            if (fixedEvent.control !== null) {
+              controlEvents.push(fixedEvent);
+              if (controlEvents.length > 32) controlEvents.shift();
+            }
+          }, undefined),
+        );
       }
       const transactionSpy = observed
-        ? jest.spyOn(f.db, '$transaction').mockImplementation(observed.$transaction.bind(observed))
+        ? jest
+            .spyOn(f.db, '$transaction')
+            .mockImplementation((body, options) =>
+              observeCommitTransaction(
+                body,
+                (callback) => observed.$transaction(callback, options),
+                transactionObservation,
+              ),
+            )
         : undefined;
       const correction = f.app.get(CorrectionApplicationService);
       const commit = correction.commit.bind(correction);
@@ -2683,44 +3010,87 @@ describe('D7-1 recognition correction real transaction', () => {
               measureCommitPhase('ledgerCommit', () => commitBatchWithin(...args)),
             )
         : undefined;
-      jest.spyOn(correction, 'commit').mockImplementation(async (...args) => {
-        const startedAt = performance.now();
-        try {
-          return await commit(...args);
-        } catch (error) {
-          if (population === 2000) {
-            commitPhaseMs.correctionCommit = Math.round(performance.now() - startedAt);
-            // Fixed diagnostic fields only; never expose SQL, IDs, URLs or raw error messages.
-            commitFailure = JSON.stringify({
-              prismaCode: error instanceof Prisma.PrismaClientKnownRequestError ? error.code : null,
-              expiredTransaction:
-                error instanceof Error &&
-                /expired transaction|Transaction already closed/u.test(error.message),
-              transactionTimeoutMs:
-                error instanceof Error
-                  ? Number(
-                      error.message.match(/timeout for this transaction was (\d+) ms/u)?.[1],
-                    ) || null
-                  : null,
-              transactionElapsedMs:
-                error instanceof Error
-                  ? Number(error.message.match(/however (\d+) ms passed/u)?.[1]) || null
-                  : null,
-              knownPrisma: error instanceof Prisma.PrismaClientKnownRequestError,
-              unknownPrisma: error instanceof Prisma.PrismaClientUnknownRequestError,
-              commitPhaseMs,
-              queryTiming,
-            });
+      const correctionWrites = f.app.get(AttendanceCorrectionWriteService);
+      const markApplicationCommitted =
+        correctionWrites.markApplicationCommitted.bind(correctionWrites);
+      const applicationCommittedSpy = observed
+        ? jest
+            .spyOn(correctionWrites, 'markApplicationCommitted')
+            .mockImplementation((...args) =>
+              measureCommitPhase('applicationCommitted', () => markApplicationCommitted(...args)),
+            )
+        : undefined;
+      const markRequestApplied = correctionWrites.markRequestApplied.bind(correctionWrites);
+      const requestAppliedSpy = observed
+        ? jest
+            .spyOn(correctionWrites, 'markRequestApplied')
+            .mockImplementation((...args) =>
+              measureCommitPhase('requestApplied', () => markRequestApplied(...args)),
+            )
+        : undefined;
+      const correctionAudit = f.app.get(CorrectionAuditRecorder);
+      const logCommit = correctionAudit.logCommit.bind(correctionAudit);
+      const finalAuditSpy = observed
+        ? jest
+            .spyOn(correctionAudit, 'logCommit')
+            .mockImplementation((...args) =>
+              measureCommitPhase('finalAudit', () => logCommit(...args)),
+            )
+        : undefined;
+      const correctionCommitSpy = jest
+        .spyOn(correction, 'commit')
+        .mockImplementation(async (...args) => {
+          const startedAt = performance.now();
+          try {
+            return await measureCommitPhase('correctionCommit', () => commit(...args));
+          } catch (error) {
+            if (population === 2000) {
+              commitPhaseMs.correctionCommit = Math.round(performance.now() - startedAt);
+              // Fixed diagnostic fields only; never expose SQL, IDs, URLs or raw error messages.
+              commitFailure = safelyObserve(
+                () =>
+                  JSON.stringify({
+                    prismaCode:
+                      error instanceof Prisma.PrismaClientKnownRequestError &&
+                      /^P\d{4}$/u.test(error.code)
+                        ? error.code
+                        : null,
+                    expiredTransaction:
+                      error instanceof Error &&
+                      /expired transaction|Transaction already closed/u.test(error.message),
+                    transactionTimeoutMs:
+                      error instanceof Error
+                        ? Number(
+                            error.message.match(/timeout for this transaction was (\d+) ms/u)?.[1],
+                          ) || null
+                        : null,
+                    transactionElapsedMs:
+                      error instanceof Error
+                        ? Number(error.message.match(/however (\d+) ms passed/u)?.[1]) || null
+                        : null,
+                    knownPrisma: error instanceof Prisma.PrismaClientKnownRequestError,
+                    unknownPrisma: error instanceof Prisma.PrismaClientUnknownRequestError,
+                    ...commitErrorLocation(error),
+                    commitPhaseMs,
+                    commitPhaseState,
+                    transactionObservation,
+                    controlEvents,
+                    queryEventTail,
+                    queryTiming,
+                  }),
+                '{"diagnostic":"UNAVAILABLE"}',
+              );
+            }
+            throw error;
+          } finally {
+            if (commitPhaseMs.correctionCommit === null)
+              commitPhaseMs.correctionCommit = Math.round(performance.now() - startedAt);
           }
-          throw error;
-        } finally {
-          if (commitPhaseMs.correctionCommit === null)
-            commitPhaseMs.correctionCommit = Math.round(performance.now() - startedAt);
-        }
-      });
+        });
       const committed = await (async () => {
+        let commitResponse: request.Response | undefined;
         try {
-          return await request(httpServer(f.app))
+          commitResponse = await request(httpServer(f.app))
             .post(`${correctionUrl}/${submittedData.requestId}/commit`)
             .set('Authorization', f.reviewer.auth)
             .send({
@@ -2737,57 +3107,94 @@ describe('D7-1 recognition correction real transaction', () => {
               }
               if (response.status !== 200) {
                 // Fixed diagnostic fields only; never expose raw response content, IDs, URLs or errors.
-                console.error('D7 2000-identity commit failure', {
-                  status: response.status,
-                  code: typeof response.body?.code === 'number' ? response.body.code : null,
-                  commitFailure,
-                });
+                safelyObserve(
+                  () =>
+                    console.error('D7 2000-identity commit failure', {
+                      status: response.status,
+                      code: typeof response.body?.code === 'number' ? response.body.code : null,
+                      commitFailure,
+                    }),
+                  undefined,
+                );
               }
             })
             .expect(200);
+        } catch (error) {
+          commitRequestRejected = true;
+          commitRequestFailure = error;
         } finally {
           transactionSpy?.mockRestore();
           timeAllocationSpy?.mockRestore();
           receiptSpy?.mockRestore();
           assertCompleteSpy.mockRestore();
           ledgerSpy?.mockRestore();
+          applicationCommittedSpy?.mockRestore();
+          requestAppliedSpy?.mockRestore();
+          finalAuditSpy?.mockRestore();
+          correctionCommitSpy.mockRestore();
           if (observed) {
             try {
               await observed.$disconnect();
+              observerDisconnectState = 'RETURNED';
+            } catch (error) {
+              observerDisconnectState = 'THREW';
+              diagnosticErrorCount++;
+              observerDisconnectFailure = error;
             } finally {
-              console.info(
-                '[d7-commit-diagnostic] ' +
-                  JSON.stringify({
-                    population: 2000,
-                    status: commitHttpStatus,
-                    code: commitResponseCode,
-                    outcome: commitHttpStatus === 200 ? 'success' : 'not_success',
-                    commitPhaseMs,
-                    queryTiming,
-                    failure: commitFailure === 'none' ? null : JSON.parse(commitFailure),
-                  }),
+              safelyObserve(
+                () =>
+                  console.info(
+                    '[d7-commit-diagnostic] ' +
+                      JSON.stringify({
+                        population: 2000,
+                        status: commitHttpStatus,
+                        code: commitResponseCode,
+                        outcome: commitHttpStatus === 200 ? 'success' : 'not_success',
+                        commitPhaseMs,
+                        commitPhaseState,
+                        transactionObservation,
+                        controlEvents,
+                        queryEventTail,
+                        diagnosticErrorCount,
+                        observerDisconnectState,
+                        queryTiming,
+                        failure: commitFailure === 'none' ? null : JSON.parse(commitFailure),
+                      }),
+                  ),
+                undefined,
               );
               if (process.env.SRVF_D7_GUARD_INTERNAL_DIAGNOSTIC === '1') {
                 try {
                   // Outside the original transaction and after observer teardown. This does
                   // not recreate its failed internal state or count as its acceptance.
                   const evidence = await runD7GuardPlanDiagnostic(preparedData.postingBatchId);
-                  console.info('[d7-guard-internal-evidence] ' + JSON.stringify(evidence));
+                  safelyObserve(
+                    () => console.info('[d7-guard-internal-evidence] ' + JSON.stringify(evidence)),
+                    undefined,
+                  );
                 } catch {
-                  console.info(
-                    '[d7-guard-internal-evidence] ' +
-                      JSON.stringify({
-                        sample: 'separate_session_rollback',
-                        evidence: 'not_failed_transaction',
-                        channel: 'unavailable',
-                        outcome: 'rejected',
-                      }),
+                  safelyObserve(
+                    () =>
+                      console.info(
+                        '[d7-guard-internal-evidence] ' +
+                          JSON.stringify({
+                            sample: 'separate_session_rollback',
+                            evidence: 'not_failed_transaction',
+                            channel: 'unavailable',
+                            outcome: 'rejected',
+                          }),
+                      ),
+                    undefined,
                   );
                 }
               }
             }
           }
         }
+        if (commitRequestRejected) throw commitRequestFailure;
+        if (observerDisconnectState === 'THREW') throw observerDisconnectFailure;
+        if (commitResponse === undefined) throw new Error('commit observer response unavailable');
+        return commitResponse;
       })();
       expect(lockedCompleteCalls).toBe(0);
       expect(committed.body.data).toMatchObject({
