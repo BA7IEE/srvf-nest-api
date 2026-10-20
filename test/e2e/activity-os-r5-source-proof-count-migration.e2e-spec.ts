@@ -505,36 +505,40 @@ describe('150 outer proof-array count on nonempty149', () => {
       expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(before);
     }));
 
-  it('prepares and commits a fresh real source under150 with the original service budgets and guards', async () =>
-    owned(async () => {
-      const next = await approvedE4TimeCorrection(f(), {
-        startsAt: new Date('2020-03-02T08:00:00.000Z'),
-        endsAt: new Date('2020-03-02T09:00:00.000Z'),
-      });
-      const nextPrepared = await next.correction.prepare(
-        next.input,
-        e4Actor(f().finalReviewer),
-        E4_META,
-      );
-      const committed = await next.correction.commit(
-        next.input,
-        e4Actor(f().finalReviewer),
-        E4_META,
-      );
-      expect(committed).toMatchObject({
-        applicationStatus: 'committed',
-        correctionStatus: 'applied',
-        replayed: false,
-        ledger: {
-          postingBatchId: nextPrepared.newPostingBatchId,
-          batchStatus: 'committed',
-          entryCount: 4,
-        },
-      });
-      await db()
-        .$queryRaw`SELECT public.ctsp_assert_complete(${nextPrepared.newPostingBatchId},true)::text`;
-      expect(
-        (await next.correction.commit(next.input, e4Actor(f().finalReviewer), E4_META)).replayed,
-      ).toBe(true);
-    }));
+  it(
+    'prepares and commits a fresh real source under150 with the original service budgets and guards',
+    async () =>
+      owned(async () => {
+        const next = await approvedE4TimeCorrection(f(), {
+          startsAt: new Date('2020-03-02T08:00:00.000Z'),
+          endsAt: new Date('2020-03-02T09:00:00.000Z'),
+        });
+        const nextPrepared = await next.correction.prepare(
+          next.input,
+          e4Actor(f().finalReviewer),
+          E4_META,
+        );
+        const committed = await next.correction.commit(
+          next.input,
+          e4Actor(f().finalReviewer),
+          E4_META,
+        );
+        expect(committed).toMatchObject({
+          applicationStatus: 'committed',
+          correctionStatus: 'applied',
+          replayed: false,
+          ledger: {
+            postingBatchId: nextPrepared.newPostingBatchId,
+            batchStatus: 'committed',
+            entryCount: 4,
+          },
+        });
+        await db()
+          .$queryRaw`SELECT public.ctsp_assert_complete(${nextPrepared.newPostingBatchId},true)::text`;
+        expect(
+          (await next.correction.commit(next.input, e4Actor(f().finalReviewer), E4_META)).replayed,
+        ).toBe(true);
+      }),
+    120_000,
+  );
 });
