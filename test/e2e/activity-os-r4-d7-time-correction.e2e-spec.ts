@@ -61,6 +61,15 @@ import {
   observeD7FixtureAsync,
   observeD7FixtureSync,
 } from '../helpers/d7-fixture-timing';
+import {
+  D7SetupObservation,
+  observeD7Setup,
+  observeD7Receipt,
+  preserveD7Prepare,
+  safeD7Diagnostic,
+  type D7SetupBatch,
+} from '../helpers/d7-setup-observation';
+let activeSetupObservation: D7SetupObservation | undefined;
 
 const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_D7_2_W98 === '1');
 
@@ -509,19 +518,17 @@ function safeReceiptPlan(value: unknown): unknown {
   return value;
 }
 function receiptEvidence(label: string, value: object) {
-  console.info('[d7-receipt-evidence] ' + JSON.stringify({ label, ...value }));
+  safeD7Diagnostic(
+    () => console.info('[d7-receipt-evidence] ' + JSON.stringify({ label, ...value })),
+    () => activeSetupObservation?.fault(),
+  );
 }
 async function observeReceiptOnce<T>(
   original: () => Promise<T>,
   observe: () => Promise<void>,
   report: (error: unknown) => void,
 ): Promise<T> {
-  try {
-    await observe();
-  } catch (error) {
-    report(error);
-  }
-  return original();
+  return await observeD7Receipt(original, observe, report, () => activeSetupObservation?.fault());
 }
 async function preservePrepareFailure<T>(
   original: () => Promise<T>,
@@ -529,16 +536,9 @@ async function preservePrepareFailure<T>(
   probe: () => Promise<void>,
   report: (error: unknown) => void,
 ): Promise<T> {
-  try {
-    return await original();
-  } catch (error) {
-    try {
-      if (await eligible()) await probe();
-    } catch (diagnosticError) {
-      report(diagnosticError);
-    }
-    throw error;
-  }
+  return await preserveD7Prepare(original, eligible, probe, report, () =>
+    activeSetupObservation?.fault(),
+  );
 }
 type ReceiptPlanQuery = { label: string; sql: string; values: unknown[] };
 async function collectReceiptPlans(
@@ -1215,10 +1215,15 @@ describe('D7-1 recognition correction real transaction', () => {
     });
   }, 120000);
   afterEach(async () => {
-    jest.restoreAllMocks();
-    await closeD13Fixture(f);
-    if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
-    else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
+    try {
+      jest.restoreAllMocks();
+      await closeD13Fixture(f);
+      if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
+    } finally {
+      activeSetupObservation?.emit();
+      activeSetupObservation = undefined;
+    }
   });
   afterAll(async () => {
     if (!USE_DEDICATED_W98) return;
@@ -1400,7 +1405,9 @@ describe('D7-1 recognition correction real transaction', () => {
       });
     }
     await options.beforeSeal?.({ ...draft, positionId: draft.positionId });
-    await f.app.get(EvidenceSealService).seal(draft.activityId, actor, meta);
+    await observeD7Setup(activeSetupObservation, 'seal', null, () =>
+      f.app.get(EvidenceSealService).seal(draft.activityId, actor, meta),
+    );
     let generated: Pick<
       SettlementDraftResult,
       | 'settlementRunId'
@@ -1411,11 +1418,15 @@ describe('D7-1 recognition correction real transaction', () => {
       | 'blockedItemCount'
     >;
     if (options.batch) {
-      const response = await post(`${D13_APP}/${draft.activityId}/settlement/generate`, {
-        operationKey: f.key('capacity_generate'),
-      });
+      const response = await observeD7Setup(activeSetupObservation, 'generate', null, () =>
+        post(`${D13_APP}/${draft.activityId}/settlement/generate`, {
+          operationKey: f.key('capacity_generate'),
+        }),
+      );
       expect(response.outcome).toBe('job');
-      const processed = await f.app.get(ActivityBatchWorker).drainOnce();
+      const processed = await observeD7Setup(activeSetupObservation, 'generateDrain', null, () =>
+        f.app.get(ActivityBatchWorker).drainOnce(),
+      );
       expect(processed).toMatchObject({ jobId: response.jobId, itemsProcessed: 1, itemsFailed: 0 });
       const job = await f.db.activityBatchJob.findUniqueOrThrow({
         where: { id: response.jobId as string },
@@ -1783,13 +1794,33 @@ describe('D7-1 recognition correction real transaction', () => {
         });
       }
       // Parent, complete children and receipt commit together; all database guards remain enabled.
-      await f.db.$transaction(
-        async (tx) => {
-          await tx.participantTimeAllocationRevision.createMany({ data: parents });
-          await tx.participantTimeAllocationSlice.createMany({ data: slices });
-          await tx.participantTimeAllocationCommandReceipt.createMany({ data: receipts });
-        },
-        { timeout: 30000 },
+      const setupBatch: D7SetupBatch = {
+        family: 'draftAllocations',
+        offset,
+        total: sources.length,
+        parents: parents.length,
+        slices: slices.length,
+        evidence: 0,
+        receipts: receipts.length,
+      };
+      await observeD7Setup(activeSetupObservation, 'batchTransaction', setupBatch, () =>
+        f.db.$transaction(
+          async (tx) =>
+            observeD7Setup(activeSetupObservation, 'batchCallback', setupBatch, () =>
+              (async () => {
+                await observeD7Setup(activeSetupObservation, 'batchParents', setupBatch, () =>
+                  tx.participantTimeAllocationRevision.createMany({ data: parents }),
+                );
+                await observeD7Setup(activeSetupObservation, 'batchSlices', setupBatch, () =>
+                  tx.participantTimeAllocationSlice.createMany({ data: slices }),
+                );
+                await observeD7Setup(activeSetupObservation, 'batchReceipt', setupBatch, () =>
+                  tx.participantTimeAllocationCommandReceipt.createMany({ data: receipts }),
+                );
+              })(),
+            ),
+          { timeout: 30000 },
+        ),
       );
     }
     return p;
@@ -2059,15 +2090,37 @@ describe('D7-1 recognition correction real transaction', () => {
           createdAt,
         });
       }
-      await f.db.$transaction(
-        async (tx) => {
-          await tx.participantTimeAllocationRevision.createMany({ data: parents });
-          await tx.participantTimeAllocationSlice.createMany({ data: slices });
-          if (evidence.length > 0)
-            await tx.participantTimeAllocationEvidence.createMany({ data: evidence });
-          await tx.participantTimeAllocationCommandReceipt.createMany({ data: receipts });
-        },
-        { timeout: 30000 },
+      const setupBatch: D7SetupBatch = {
+        family: 'committedAllocations',
+        offset,
+        total: remaining.length,
+        parents: parents.length,
+        slices: slices.length,
+        evidence: evidence.length,
+        receipts: receipts.length,
+      };
+      await observeD7Setup(activeSetupObservation, 'batchTransaction', setupBatch, () =>
+        f.db.$transaction(
+          async (tx) =>
+            observeD7Setup(activeSetupObservation, 'batchCallback', setupBatch, () =>
+              (async () => {
+                await observeD7Setup(activeSetupObservation, 'batchParents', setupBatch, () =>
+                  tx.participantTimeAllocationRevision.createMany({ data: parents }),
+                );
+                await observeD7Setup(activeSetupObservation, 'batchSlices', setupBatch, () =>
+                  tx.participantTimeAllocationSlice.createMany({ data: slices }),
+                );
+                if (evidence.length > 0)
+                  await observeD7Setup(activeSetupObservation, 'batchEvidence', setupBatch, () =>
+                    tx.participantTimeAllocationEvidence.createMany({ data: evidence }),
+                  );
+                await observeD7Setup(activeSetupObservation, 'batchReceipt', setupBatch, () =>
+                  tx.participantTimeAllocationCommandReceipt.createMany({ data: receipts }),
+                );
+              })(),
+            ),
+          { timeout: 30000 },
+        ),
       );
     }
   }
@@ -2150,6 +2203,8 @@ describe('D7-1 recognition correction real transaction', () => {
             'astr_bucket_content_hash', 'astr_receipt_complete_guard')`;
           const matches = receiptInstalledBodiesMatch(authority, installed);
           receiptEvidence('installed_body', {
+            referenceKind: 'historical_121_138',
+            currentSqlValidation: 'UNKNOWN',
             matches,
             functions: installed.map((row) => ({
               name: authority.bodies.has(row.name) ? row.name : 'other',
@@ -2157,7 +2212,16 @@ describe('D7-1 recognition correction real transaction', () => {
               digest: createHash('sha256').update(row.body).digest('hex'),
             })),
           });
-          if (!matches) throw new Error('installed receipt SQL differs from authority');
+          if (!matches) {
+            receiptEvidence('collection', {
+              analyze: false,
+              collected: 0,
+              complete: false,
+              reason: 'historical_121_138_reference_mismatch',
+              currentSqlPlanEvidence: 'UNKNOWN',
+            });
+            return;
+          }
           sqlMatches = true;
           if (performance.now() - began < 200) {
             const snapshot = await tx.$queryRaw<Array<{ snapshot: unknown }>>`
@@ -2250,14 +2314,18 @@ describe('D7-1 recognition correction real transaction', () => {
         f.db.$transaction = transaction;
         for (const probe of probes) probe.mockRestore();
         receiptProbe.mockRestore();
-        console.info(
-          '[d7-prepare-diagnostic] ' +
-            JSON.stringify({
-              elapsedMs: performance.now() - began,
-              queryCount: rows.length,
-              rows: summarizeDiagnostics(rows),
-              stages: summarizeDiagnostics(stages),
-            }),
+        safeD7Diagnostic(
+          () =>
+            console.info(
+              '[d7-prepare-diagnostic] ' +
+                JSON.stringify({
+                  elapsedMs: performance.now() - began,
+                  queryCount: rows.length,
+                  rows: summarizeDiagnostics(rows),
+                  stages: summarizeDiagnostics(stages),
+                }),
+            ),
+          () => activeSetupObservation?.fault(),
         );
       }
     };
@@ -2325,44 +2393,66 @@ describe('D7-1 recognition correction real transaction', () => {
    * allocation and final-review facts instead of creating a partial shortcut.
    */
   async function createCommittedFactCorrectionBase(population = 1, diagnosticDeadline?: number) {
-    const p = population === 1 ? await prepareSource() : await createCapacitySource(population);
+    const p =
+      population === 1
+        ? await prepareSource()
+        : await observeD7Setup(activeSetupObservation, 'capacity', null, () =>
+            createCapacitySource(population),
+          );
     if (population === 1) await recognize(p);
     const initialCommand = prepareCommand(p);
     const preparedTime =
       population === 2000
-        ? await diagnoseInitialPrepare(
-            () => post(p.url + '/prepare', initialCommand),
-            () =>
-              f.app
-                .get(ActivityTimeSettlementService)
-                .prepare(p.activityId, initialCommand, actor, meta),
-            diagnosticDeadline ?? performance.now(),
+        ? await observeD7Setup(activeSetupObservation, 'timePrepare', null, () =>
+            diagnoseInitialPrepare(
+              () => post(p.url + '/prepare', initialCommand),
+              () =>
+                f.app
+                  .get(ActivityTimeSettlementService)
+                  .prepare(p.activityId, initialCommand, actor, meta),
+              diagnosticDeadline ?? performance.now(),
+            ),
           )
         : await post(p.url + '/prepare', initialCommand);
-    const submittedTime = await post(p.url + '/submit', {
-      operationKey: f.key('submit_time'),
-      expectedDraftVersion: p.proof.expectedDraftVersion,
-      expectedEvidenceSealId: p.proof.expectedEvidenceSealId,
-      timeRevisionId: preparedTime.timeRevisionId,
-      expectedBucketContentHash: preparedTime.bucketContentHash,
-    });
-    const { timeRevision, finalActor, finalRole, batch } = await createClassifiedPostingFixture(
-      submittedTime.timeRevisionId as string,
-      population,
+    const submittedTime = await observeD7Setup(activeSetupObservation, 'timeSubmit', null, () =>
+      post(p.url + '/submit', {
+        operationKey: f.key('submit_time'),
+        expectedDraftVersion: p.proof.expectedDraftVersion,
+        expectedEvidenceSealId: p.proof.expectedEvidenceSealId,
+        timeRevisionId: preparedTime.timeRevisionId,
+        expectedBucketContentHash: preparedTime.bucketContentHash,
+      }),
+    );
+    const { timeRevision, finalActor, finalRole, batch } = await observeD7Setup(
+      activeSetupObservation,
+      'postingFixture',
+      null,
+      () => createClassifiedPostingFixture(submittedTime.timeRevisionId as string, population),
     );
     const preparation = f.app.get(LedgerPreparationService);
-    const job = await preparation.ensurePrepareJob(batch.id);
+    const job = await observeD7Setup(activeSetupObservation, 'ledgerEnsure', null, () =>
+      preparation.ensurePrepareJob(batch.id),
+    );
     const items = await f.db.activityBatchJobItem.findMany({ where: { jobId: job.jobId } });
-    for (const item of items) await preparation.prepareChunk(job.jobId, item.id);
-    await preparation.finalize(job.jobId);
-    await f.app
-      .get(LedgerPostingService)
-      .commitBatch(
-        { postingBatchId: batch.id, operationKey: f.key('initial_commit') },
-        finalActor,
-        meta,
+    for (const item of items)
+      await observeD7Setup(activeSetupObservation, 'ledgerChunk', null, () =>
+        preparation.prepareChunk(job.jobId, item.id),
       );
-    await materializeCommittedAllocationFacts(p);
+    await observeD7Setup(activeSetupObservation, 'ledgerFinalize', null, () =>
+      preparation.finalize(job.jobId),
+    );
+    await observeD7Setup(activeSetupObservation, 'initialCommit', null, () =>
+      f.app
+        .get(LedgerPostingService)
+        .commitBatch(
+          { postingBatchId: batch.id, operationKey: f.key('initial_commit') },
+          finalActor,
+          meta,
+        ),
+    );
+    await observeD7Setup(activeSetupObservation, 'committedFacts', null, () =>
+      materializeCommittedAllocationFacts(p),
+    );
     await f.db.roleBinding.create({
       data: {
         principalType: PrincipalType.USER,
@@ -2775,9 +2865,15 @@ describe('D7-1 recognition correction real transaction', () => {
   it.each([100, 2000])(
     'runs the Human V3 write chain against a complete %i-identity source proof',
     async (population) => {
+      activeSetupObservation = population === 2000 ? new D7SetupObservation() : undefined;
+
       const diagnosticDeadline = performance.now() + 600000;
-      const { p, timeRevision, root, roots, sources, allocations } =
-        await createCommittedFactCorrectionBase(population, diagnosticDeadline);
+      const { p, timeRevision, root, roots, sources, allocations } = await observeD7Setup(
+        activeSetupObservation,
+        'base',
+        null,
+        () => createCommittedFactCorrectionBase(population, diagnosticDeadline),
+      );
       expect(sources).toHaveLength(population * 5);
       const source =
         sources.find((row) => row.participationIdentityId !== p.identityId) ?? sources[0];
@@ -2797,86 +2893,101 @@ describe('D7-1 recognition correction real transaction', () => {
           row.segmentKey === source.segmentKey,
       );
       if (!allocation) throw new Error('source allocation required');
+      const sourceServiceHours = source.serviceHours;
       const correctedCheckOutAt = new Date(source.checkOutAt.getTime() - 1_000);
       const correctionUrl = `${D13_APP}/${p.activityId}/time-corrections`;
-      const submitted = await request(httpServer(f.app))
-        .post(correctionUrl)
-        .set('Authorization', f.creator.auth)
-        .send({
-          participationIdentityId: source.participationIdentityId,
-          requestTypeCode: 'time',
-          requestedChangeJson: {
-            schemaVersion: 3,
-            results: [],
-            segments: [
-              {
-                participationIdentityId: source.participationIdentityId,
-                segmentKey: source.segmentKey,
-                checkInAt: source.checkInAt.toISOString(),
-                checkOutAt: correctedCheckOutAt.toISOString(),
-                resultCode: source.resultCode,
-                // This one-second source correction stays within the existing
-                // two-decimal service-hour representation, so it exercises a
-                // real V3 fact change without fabricating a rounded value.
-                serviceHours: source.serviceHours.toString(),
+      const submitted = await observeD7Setup(activeSetupObservation, 'humanSubmit', null, () =>
+        request(httpServer(f.app))
+          .post(correctionUrl)
+          .set('Authorization', f.creator.auth)
+          .send({
+            participationIdentityId: source.participationIdentityId,
+            requestTypeCode: 'time',
+            requestedChangeJson: {
+              schemaVersion: 3,
+              results: [],
+              segments: [
+                {
+                  participationIdentityId: source.participationIdentityId,
+                  segmentKey: source.segmentKey,
+                  checkInAt: source.checkInAt.toISOString(),
+                  checkOutAt: correctedCheckOutAt.toISOString(),
+                  resultCode: source.resultCode,
+                  // This one-second source correction stays within the existing
+                  // two-decimal service-hour representation, so it exercises a
+                  // real V3 fact change without fabricating a rounded value.
+                  serviceHours: sourceServiceHours.toString(),
+                },
+              ],
+              timeCorrection: {
+                baseSettlementVersionId: timeRevision.settlementVersionId,
+                baseTimeLedgerHash: root.contentHash,
+                reason: '满额来源集合中的一条服务段经核验后更正',
+                items: roots.map((entry) => ({
+                  rootEntryId: entry.id,
+                  // V3 的事实变化即使落在同一量化桶，也不得被当作空更正拒绝。
+                  recognizedSeconds: entry.recognizedSeconds,
+                })),
               },
-            ],
-            timeCorrection: {
-              baseSettlementVersionId: timeRevision.settlementVersionId,
-              baseTimeLedgerHash: root.contentHash,
-              reason: '满额来源集合中的一条服务段经核验后更正',
-              items: roots.map((entry) => ({
-                rootEntryId: entry.id,
-                // V3 的事实变化即使落在同一量化桶，也不得被当作空更正拒绝。
-                recognizedSeconds: entry.recognizedSeconds,
-              })),
+              allocations: [
+                {
+                  participationIdentityId: source.participationIdentityId,
+                  segmentKey: source.segmentKey,
+                  baseSegmentRevisionId: source.id,
+                  baseAllocationRevisionId: allocation.id,
+                  recognitionModeCode: 'automatic',
+                  manualReason: null,
+                  slices: [],
+                  evidenceAttachmentIds: [],
+                },
+              ],
             },
-            allocations: [
-              {
-                participationIdentityId: source.participationIdentityId,
-                segmentKey: source.segmentKey,
-                baseSegmentRevisionId: source.id,
-                baseAllocationRevisionId: allocation.id,
-                recognitionModeCode: 'automatic',
-                manualReason: null,
-                slices: [],
-                evidenceAttachmentIds: [],
-              },
-            ],
-          },
-          reason: '满额事实更正验收',
-          operationKey: f.key(`human_capacity_${population}_submit`),
-        })
-        .expect(201);
+            reason: '满额事实更正验收',
+            operationKey: f.key(`human_capacity_${population}_submit`),
+          })
+          .expect(201),
+      );
       const submittedData = submitted.body.data as { requestId: string; requestVersion: number };
-      await request(httpServer(f.app))
-        .post(`${correctionUrl}/${submittedData.requestId}/review`)
-        .set('Authorization', f.reviewer.auth)
-        .send({
-          actionCode: 'approve',
-          expectedRequestVersion: submittedData.requestVersion,
-          note: '满额事实来源复核通过',
-        })
-        .expect(200);
-      const prepared = await request(httpServer(f.app))
-        .post(`${correctionUrl}/${submittedData.requestId}/prepare`)
-        .set('Authorization', f.reviewer.auth)
-        .send({
-          expectedBaseSettlementVersionId: timeRevision.settlementVersionId,
-          operationKey: f.key(`human_capacity_${population}_prepare`),
-        })
-        .expect(200);
+      await observeD7Setup(activeSetupObservation, 'humanReview', null, () =>
+        request(httpServer(f.app))
+          .post(`${correctionUrl}/${submittedData.requestId}/review`)
+          .set('Authorization', f.reviewer.auth)
+          .send({
+            actionCode: 'approve',
+            expectedRequestVersion: submittedData.requestVersion,
+            note: '满额事实来源复核通过',
+          })
+          .expect(200),
+      );
+      const prepared = await observeD7Setup(activeSetupObservation, 'humanPrepare', null, () =>
+        request(httpServer(f.app))
+          .post(`${correctionUrl}/${submittedData.requestId}/prepare`)
+          .set('Authorization', f.reviewer.auth)
+          .send({
+            expectedBaseSettlementVersionId: timeRevision.settlementVersionId,
+            operationKey: f.key(`human_capacity_${population}_prepare`),
+          })
+          .expect(200),
+      );
       const preparedData = prepared.body.data as {
         applicationId: string;
         postingBatchId: string;
         settlementVersionId: string;
       };
-      const sourceProof = await f.db.correctionTimeSourceProof.findUniqueOrThrow({
-        where: { applicationId: preparedData.applicationId },
-      });
-      const pendingAllocations = await f.db.correctionPendingTimeAllocation.findMany({
-        where: { applicationId: preparedData.applicationId },
-      });
+      const sourceProof = await observeD7Setup(activeSetupObservation, 'proofRead', null, () =>
+        f.db.correctionTimeSourceProof.findUniqueOrThrow({
+          where: { applicationId: preparedData.applicationId },
+        }),
+      );
+      const pendingAllocations = await observeD7Setup(
+        activeSetupObservation,
+        'proofRead',
+        null,
+        () =>
+          f.db.correctionPendingTimeAllocation.findMany({
+            where: { applicationId: preparedData.applicationId },
+          }),
+      );
       expect(pendingAllocations).toHaveLength(1);
       const expectedSliceCount =
         allocations.reduce((total, row) => total + row.sliceCount, 0) -
@@ -2928,6 +3039,7 @@ describe('D7-1 recognition correction real transaction', () => {
       const commitPhaseState: Partial<
         Record<keyof typeof commitPhaseMs, 'ENTERED' | 'RETURNED' | 'THREW'>
       > = {};
+      activeSetupObservation?.complete();
       const queryTiming = createCommitQueryTiming();
       let diagnosticErrorCount = 0;
       const safelyObserve = <T>(work: () => T, fallback: T): T =>
