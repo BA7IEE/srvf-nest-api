@@ -279,7 +279,7 @@ describe('150 outer proof-array count on nonempty149', () => {
         const beforeCatalog = await catalog(db());
         const beforeSettings = await settings(db());
         const beforeRows = await nativeLaunchBusinessFingerprint(db(), stage);
-        await owner.deployLatestMigrations(remaining());
+        await owner.deploySourceProofCountMigrations(remaining());
         expect(createHash('sha256').update(migration).digest('hex')).toBe(CANDIDATE_SHA);
         expect(await installedBody(db())).toBe(bodyOf(migration));
         const afterMigrations = await migrationRows(db());
@@ -292,7 +292,7 @@ describe('150 outer proof-array count on nonempty149', () => {
         expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(beforeRows);
         await db()
           .$queryRaw`SELECT public.ctsp_assert_complete(${prepared.newPostingBatchId},false)::text`;
-        await owner.deployLatestMigrations(remaining());
+        await owner.deploySourceProofCountMigrations(remaining());
         expect(await migrationRows(db())).toEqual(afterMigrations);
         expect((await catalog(db())) === beforeCatalog).toBe(true);
         expect(await settings(db())).toEqual(beforeSettings);
