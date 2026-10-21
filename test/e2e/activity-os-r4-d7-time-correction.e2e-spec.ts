@@ -70,6 +70,14 @@ import {
   type D7SetupBatch,
 } from '../helpers/d7-setup-observation';
 let activeSetupObservation: D7SetupObservation | undefined;
+const deferredD7Diagnostics: Array<() => unknown> = [];
+function deferD7Diagnostic(work: () => unknown): void {
+  try {
+    deferredD7Diagnostics.push(work);
+  } catch {
+    activeSetupObservation?.fault();
+  }
+}
 
 const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_D7_2_W98 === '1');
 
@@ -333,13 +341,31 @@ function diagnosticCode(error: unknown): string {
       : 'unavailable';
   return [kind, prismaCode, sqlState].join(':');
 }
-function diagnosticTx<T extends object>(target: T, rows: DiagnosticRow[], prefix = ''): T {
+type DiagnosticSettled = DiagnosticRow & { enteredMs: number; settledMs: number };
+function diagnosticTx<T extends object>(
+  target: T,
+  rows: DiagnosticRow[],
+  prefix = '',
+  settled?: (row: DiagnosticSettled) => void,
+): T {
+  const notify = (row: DiagnosticSettled) => {
+    if (!settled) return;
+    try {
+      settled(row);
+    } catch {
+      try {
+        activeSetupObservation?.fault();
+      } catch {
+        /* preserve the original result/error */
+      }
+    }
+  };
   return new Proxy(target, {
     get(object, key) {
       const value: unknown = Reflect.get(object, key);
       if (typeof key !== 'string') return value;
       if (typeof value === 'object' && value !== null && !prefix && /^[a-z][a-zA-Z]+$/.test(key))
-        return diagnosticTx(value, rows, key);
+        return diagnosticTx(value, rows, key, settled);
       if (typeof value !== 'function') return value;
       return (...args: unknown[]) => {
         let label = prefix ? prefix + '.' + key : key;
@@ -394,20 +420,64 @@ function diagnosticTx<T extends object>(target: T, rows: DiagnosticRow[], prefix
                 if (typeof then !== 'function') throw new Error('diagnostic promise contract');
                 return Reflect.apply(then, promise, [
                   (output: unknown) => {
-                    rows.push({
+                    const ended = performance.now();
+                    try {
+                      rows.push({
+                        label,
+                        elapsedMs: ended - began,
+                        outcome: 'ok',
+                        code: '',
+                      });
+                    } catch {
+                      try {
+                        activeSetupObservation?.fault();
+                      } catch {
+                        /* preserve business result */
+                      }
+                    }
+                    notify({
                       label,
-                      elapsedMs: performance.now() - began,
+                      elapsedMs: ended - began,
+                      enteredMs: began,
+                      settledMs: ended,
                       outcome: 'ok',
                       code: '',
                     });
                     return fulfilled ? fulfilled(output) : output;
                   },
                   (error: unknown) => {
-                    rows.push({
+                    const ended = performance.now();
+                    let code = 'unavailable';
+                    try {
+                      code = diagnosticCode(error);
+                    } catch {
+                      try {
+                        activeSetupObservation?.fault();
+                      } catch {
+                        /* preserve rejection identity */
+                      }
+                    }
+                    try {
+                      rows.push({
+                        label,
+                        elapsedMs: ended - began,
+                        outcome: 'error',
+                        code,
+                      });
+                    } catch {
+                      try {
+                        activeSetupObservation?.fault();
+                      } catch {
+                        /* preserve business result */
+                      }
+                    }
+                    notify({
                       label,
-                      elapsedMs: performance.now() - began,
+                      elapsedMs: ended - began,
+                      enteredMs: began,
+                      settledMs: ended,
                       outcome: 'error',
-                      code: diagnosticCode(error),
+                      code,
                     });
                     if (rejected) return rejected(error);
                     throw error;
@@ -421,6 +491,60 @@ function diagnosticTx<T extends object>(target: T, rows: DiagnosticRow[], prefix
       };
     },
   });
+}
+
+async function optionalNativeObservation(
+  tx: Prisma.TransactionClient,
+  work: () => Promise<void>,
+): Promise<boolean> {
+  let open = false;
+  try {
+    await tx.$executeRawUnsafe('SAVEPOINT r5_d7_native_observation');
+    open = true;
+    await work();
+    await tx.$executeRawUnsafe('RELEASE SAVEPOINT r5_d7_native_observation');
+    return true;
+  } catch {
+    if (open) {
+      try {
+        await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT r5_d7_native_observation');
+        await tx.$executeRawUnsafe('RELEASE SAVEPOINT r5_d7_native_observation');
+      } catch {
+        /* The original business call still owns the transaction outcome. */
+      }
+    }
+    return false;
+  }
+}
+
+function nativeFailureRecord(error: unknown) {
+  const text = (value: unknown) =>
+    String(value).replace(/postgres(?:ql)?:\/\/\S+/gu, '<redacted-connection>');
+  const object = error as {
+    name?: string;
+    code?: string;
+    message?: string;
+    stack?: string;
+    meta?: unknown;
+  };
+  return {
+    name: text(object?.name),
+    nativeCode: object?.code ?? null,
+    nativeMessage: text(object?.message),
+    nativeStack: text(object?.stack),
+    meta:
+      object?.meta === undefined
+        ? null
+        : JSON.parse(
+            JSON.stringify(object.meta, (_key, value: unknown) =>
+              typeof value === 'string'
+                ? text(value)
+                : typeof value === 'bigint'
+                  ? value.toString()
+                  : value,
+            ),
+          ),
+  };
 }
 
 function summarizeDiagnostics(rows: DiagnosticRow[]) {
@@ -519,7 +643,10 @@ function safeReceiptPlan(value: unknown): unknown {
 }
 function receiptEvidence(label: string, value: object) {
   safeD7Diagnostic(
-    () => console.info('[d7-receipt-evidence] ' + JSON.stringify({ label, ...value })),
+    () =>
+      deferD7Diagnostic(() =>
+        console.info('[d7-receipt-evidence] ' + JSON.stringify({ label, ...value })),
+      ),
     () => activeSetupObservation?.fault(),
   );
 }
@@ -527,18 +654,18 @@ async function observeReceiptOnce<T>(
   original: () => Promise<T>,
   observe: () => Promise<void>,
   report: (error: unknown) => void,
+  onFault: () => void = () => activeSetupObservation?.fault(),
 ): Promise<T> {
-  return await observeD7Receipt(original, observe, report, () => activeSetupObservation?.fault());
+  return await observeD7Receipt(original, observe, report, onFault);
 }
 async function preservePrepareFailure<T>(
   original: () => Promise<T>,
   eligible: () => Promise<boolean>,
   probe: () => Promise<void>,
   report: (error: unknown) => void,
+  onFault: () => void = () => activeSetupObservation?.fault(),
 ): Promise<T> {
-  return await preserveD7Prepare(original, eligible, probe, report, () =>
-    activeSetupObservation?.fault(),
-  );
+  return await preserveD7Prepare(original, eligible, probe, report, onFault);
 }
 type ReceiptPlanQuery = { label: string; sql: string; values: unknown[] };
 async function collectReceiptPlans(
@@ -679,6 +806,8 @@ function receiptQueries(
 
 // Instrument positive controls never contact a database or log exception text.
 async function assertDiagnosticObserver() {
+  const selfTestObservation = new D7SetupObservation();
+  const selfTestFault = () => selfTestObservation.fault();
   const rows: DiagnosticRow[] = [];
   let executed = 0;
   const failure = new Error('synthetic private detail must not be logged');
@@ -751,6 +880,7 @@ async function assertDiagnosticObserver() {
       () => {
         observedErrors += 1;
       },
+      selfTestFault,
     ),
   ).rejects.toBe(failure);
   expect(calls).toBe(1);
@@ -760,6 +890,7 @@ async function assertDiagnosticObserver() {
       async () => 17,
       async () => undefined,
       () => undefined,
+      selfTestFault,
     ),
   ).resolves.toBe(17);
   let probes = 0;
@@ -771,6 +902,7 @@ async function assertDiagnosticObserver() {
         probes += 1;
       },
       () => undefined,
+      selfTestFault,
     ),
   ).resolves.toBe(17);
   expect(probes).toBe(0);
@@ -786,6 +918,7 @@ async function assertDiagnosticObserver() {
         throw sentinel;
       },
       () => undefined,
+      selfTestFault,
     ),
   ).rejects.toBe(failure);
   expect(probes).toBe(1);
@@ -799,9 +932,11 @@ async function assertDiagnosticObserver() {
         probes += 1;
       },
       () => undefined,
+      selfTestFault,
     ),
   ).rejects.toBe(failure);
   expect(probes).toBe(1);
+  expect(selfTestObservation.report().faults).toBe(2);
   const authority = receiptSqlAuthority();
   const parent = {
     id: 'private',
@@ -1221,6 +1356,8 @@ describe('D7-1 recognition correction real transaction', () => {
       if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
       else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
     } finally {
+      for (const work of deferredD7Diagnostics.splice(0))
+        safeD7Diagnostic(work, () => activeSetupObservation?.fault());
       activeSetupObservation?.emit();
       activeSetupObservation = undefined;
     }
@@ -1658,7 +1795,7 @@ describe('D7-1 recognition correction real transaction', () => {
               ),
             );
           } finally {
-            fixtureTiming?.emit();
+            deferD7Diagnostic(() => fixtureTiming?.emit());
           }
         }
       },
@@ -2129,10 +2266,35 @@ describe('D7-1 recognition correction real transaction', () => {
     run: () => Promise<T>,
     rollbackPrepare: () => Promise<unknown>,
     deadline: number,
+    operation: 'prepare' | 'submit' = 'prepare',
   ): Promise<T> {
     assertTestDatabaseUrl(process.env.DATABASE_URL);
     await assertDiagnosticObserver();
-    const authority = receiptSqlAuthority();
+    // Keep pure observer controls; extra database diagnostics require explicit opt-in.
+    if (process.env.SRVF_D7_NATIVE_CHAIN_DIAGNOSTIC !== '1') return run();
+    const chainMode = process.env.SRVF_D7_NATIVE_CHAIN_DIAGNOSTIC === '1';
+    const chainEvents: Array<DiagnosticSettled & { ordinal: number }> = [];
+    let chainFaults = 0;
+    const nativeFailures: Array<{ label: string; error: unknown }> = [];
+    let backendObservation: Record<string, unknown> | undefined;
+    const calibration = {
+      beforeMs: performance.now(),
+      utcMs: Date.now(),
+      afterMs: performance.now(),
+      timeOriginMs: performance.timeOrigin,
+    };
+    const record = (row: DiagnosticSettled) => {
+      if (!chainMode) return;
+      try {
+        if (chainEvents.length >= 4096) {
+          chainFaults++;
+          return;
+        }
+        chainEvents.push({ ...row, ordinal: chainEvents.length + 1 });
+      } catch {
+        chainFaults++;
+      }
+    };
     const rows: DiagnosticRow[] = [];
     const stages: DiagnosticRow[] = [];
     const measured = async <R>(label: string, work: () => Promise<R>): Promise<R> => {
@@ -2143,16 +2305,35 @@ describe('D7-1 recognition correction real transaction', () => {
         return await work();
       } catch (error) {
         outcome = 'error';
-        code = diagnosticCode(error);
+        try {
+          if (chainMode) nativeFailures.push({ label, error });
+          code = diagnosticCode(error);
+        } catch {
+          code = 'unavailable';
+          chainFaults++;
+        }
         throw error;
       } finally {
-        stages.push({ label, elapsedMs: performance.now() - started, outcome, code });
+        const ended = performance.now();
+        try {
+          stages.push({ label, elapsedMs: ended - started, outcome, code });
+        } catch {
+          chainFaults++;
+        }
+        record({
+          label: 'phase.' + label,
+          enteredMs: started,
+          settledMs: ended,
+          elapsedMs: ended - started,
+          outcome,
+          code,
+        });
       }
     };
     const service = f.app.get(ActivityTimeSettlementService);
     const queries = f.app.get(ActivityTimeSettlementQueryService);
     const access = f.app.get(ActivityTimeSettlementAccessService);
-    const prepare = service.prepare.bind(service);
+    const prepare = service[operation].bind(service);
     const readDraft = queries.readDraftContextInTx.bind(queries);
     const readSources = queries.readSourceSetInTx.bind(queries);
     const evaluate = queries.evaluateInTx.bind(queries);
@@ -2182,6 +2363,7 @@ describe('D7-1 recognition correction real transaction', () => {
       return parent as unknown as Record<string, unknown>;
     };
     const plansInTx = async (tx: Prisma.TransactionClient, id: string, analyze: boolean) => {
+      const authority = receiptSqlAuthority();
       const began = performance.now();
       try {
         const parent = await readAnchor(tx, id);
@@ -2265,6 +2447,10 @@ describe('D7-1 recognition correction real transaction', () => {
       reachedReceipt = true;
       parentId = args[5].timeRevisionId;
       try {
+        if (chainMode) {
+          await measured('receipt.method', () => originalReceipt(...args));
+          return;
+        }
         await observeReceiptOnce(
           () => originalReceipt(...args),
           () => plansInTx(args[0], args[5].timeRevisionId, false),
@@ -2277,22 +2463,30 @@ describe('D7-1 recognition correction real transaction', () => {
     });
     const probes = [
       jest
-        .spyOn(service, 'prepare')
-        .mockImplementation((...args) => measured('prepare.service', () => prepare(...args))),
+        .spyOn(service, operation)
+        .mockImplementation((...args: Parameters<typeof service.prepare>) =>
+          measured(operation + '.service', () => prepare(...args)),
+        ),
       jest
         .spyOn(queries, 'readDraftContextInTx')
-        .mockImplementation((...args) => measured('prepare.readDraft', () => readDraft(...args))),
+        .mockImplementation((...args) =>
+          measured(operation + '.readDraft', () => readDraft(...args)),
+        ),
       jest
         .spyOn(queries, 'readSourceSetInTx')
         .mockImplementation((...args) =>
-          measured('prepare.readSources', () => readSources(...args)),
+          measured(operation + '.readSources', () => readSources(...args)),
         ),
       jest
         .spyOn(queries, 'evaluateInTx')
-        .mockImplementation((...args) => measured('prepare.evaluate', () => evaluate(...args))),
+        .mockImplementation((...args) =>
+          measured(operation + '.evaluate', () => evaluate(...args)),
+        ),
       jest
         .spyOn(access, 'authorize')
-        .mockImplementation((...args) => measured('prepare.authorize', () => authorize(...args))),
+        .mockImplementation((...args) =>
+          measured(operation + '.authorize', () => authorize(...args)),
+        ),
     ];
     const transaction = f.db.$transaction.bind(f.db);
     const began = performance.now();
@@ -2300,35 +2494,121 @@ describe('D7-1 recognition correction real transaction', () => {
       apply(original, receiver, args: unknown[]) {
         const callback = args[0];
         if (typeof callback !== 'function') return Reflect.apply(original, receiver, args);
-        return Reflect.apply(original, receiver, [
-          (tx: Prisma.TransactionClient) =>
-            Reflect.apply(callback, undefined, [diagnosticTx(tx, rows)]),
-          ...args.slice(1),
-        ]);
+        const invoke = () =>
+          Reflect.apply(original, receiver, [
+            (tx: Prisma.TransactionClient) => {
+              const execute = () =>
+                Reflect.apply(callback, undefined, [
+                  diagnosticTx(
+                    tx,
+                    rows,
+                    '',
+                    chainMode
+                      ? (row) => record({ ...row, label: 'delegate.' + row.label })
+                      : undefined,
+                  ),
+                ]);
+              if (!chainMode) return execute();
+              return measured('transaction.callback', async () => {
+                await measured('diagnostic.configure', async () => {
+                  const configured = await optionalNativeObservation(tx, async () => {
+                    const observed = await tx.$queryRaw<
+                      Array<{ observation: Record<string, unknown> }>
+                    >`
+                  SELECT jsonb_build_object(
+                    'database',current_database(),'oid',(SELECT oid::text FROM pg_database WHERE datname=current_database()),
+                    'backendPid',pg_backend_pid(),'backendStart',backend_start,'xactStart',xact_start,'at',clock_timestamp(),
+                    'snapshot',pg_current_snapshot()::text,'role',current_user,
+                    'statementTimeout',current_setting('statement_timeout'),'lockTimeout',current_setting('lock_timeout'),
+                    'workMem',current_setting('work_mem'),'jit',current_setting('jit'),'planCacheMode',current_setting('plan_cache_mode'),
+                    'minDuration',current_setting('auto_explain.log_min_duration',true),
+                    'protocolMin',current_setting('log_min_duration_statement'),
+                    'protocolDuration',current_setting('log_duration'),
+                    'protocolStatement',current_setting('log_statement'),
+                    'sharedPreload',current_setting('shared_preload_libraries'),
+                    'parameterMax',current_setting('log_parameter_max_length'),
+                    'parameterErrorMax',current_setting('log_parameter_max_length_on_error'),
+                    'tables',(SELECT jsonb_agg(jsonb_build_object('table',c.relname,'estimatedRows',c.reltuples,
+                      'lastAnalyze',s.last_analyze,'lastAutoAnalyze',s.last_autoanalyze,'live',s.n_live_tup,'dead',s.n_dead_tup) ORDER BY c.relname)
+                      FROM pg_class c JOIN pg_stat_all_tables s ON s.relid=c.oid
+                      WHERE c.relnamespace='public'::regnamespace AND c.relname IN (
+                        'ParticipantSettlementResultRevision','ParticipantSettlementTimeBucket','ParticipantSettlementTimeBucketSource'))
+                    ) AS observation
+                  FROM pg_stat_activity WHERE pid=pg_backend_pid()`;
+                    backendObservation = observed[0]?.observation;
+                    if (
+                      !backendObservation ||
+                      backendObservation.database !== deriveTestDbName() ||
+                      !Number.isInteger(backendObservation.backendPid) ||
+                      typeof backendObservation.backendStart !== 'string' ||
+                      (backendObservation.minDuration !== null &&
+                        backendObservation.minDuration !== '-1') ||
+                      backendObservation.protocolMin !== '-1' ||
+                      backendObservation.protocolDuration !== 'off' ||
+                      backendObservation.protocolStatement !== 'none'
+                    )
+                      chainFaults++;
+                  });
+                  if (!configured) chainFaults++;
+                });
+                return await execute();
+              });
+            },
+            ...args.slice(1),
+          ]);
+        return chainMode ? measured('transaction.request', invoke) : invoke();
       },
     });
     const originalRun = async () => {
       try {
-        return await run();
+        return await (chainMode ? measured('http.run', run) : run());
       } finally {
         f.db.$transaction = transaction;
         for (const probe of probes) probe.mockRestore();
         receiptProbe.mockRestore();
+        const prepareElapsedMs = performance.now() - began;
+        if (chainMode)
+          safeD7Diagnostic(
+            () =>
+              deferD7Diagnostic(() =>
+                console.info(
+                  '[d7-native-chain] ' +
+                    JSON.stringify({
+                      schemaVersion: 1,
+                      calibration,
+                      operation,
+                      nativeFailures: nativeFailures.map(({ label, error }) => ({
+                        label,
+                        error: nativeFailureRecord(error),
+                      })),
+                      faults: chainFaults,
+                      events: chainEvents,
+                      backend: backendObservation,
+                      semantics:
+                        'inclusive original Promise-consumption and method spans; no sum or CPU partition; settings consume original transaction budget',
+                    }),
+                ),
+              ),
+            () => activeSetupObservation?.fault(),
+          );
         safeD7Diagnostic(
           () =>
-            console.info(
-              '[d7-prepare-diagnostic] ' +
-                JSON.stringify({
-                  elapsedMs: performance.now() - began,
-                  queryCount: rows.length,
-                  rows: summarizeDiagnostics(rows),
-                  stages: summarizeDiagnostics(stages),
-                }),
+            deferD7Diagnostic(() =>
+              console.info(
+                '[d7-prepare-diagnostic] ' +
+                  JSON.stringify({
+                    elapsedMs: prepareElapsedMs,
+                    queryCount: rows.length,
+                    rows: summarizeDiagnostics(rows),
+                    stages: summarizeDiagnostics(stages),
+                  }),
+              ),
             ),
           () => activeSetupObservation?.fault(),
         );
       }
     };
+    if (chainMode) return await originalRun();
     return preservePrepareFailure(
       originalRun,
       async () => {
@@ -2414,14 +2694,23 @@ describe('D7-1 recognition correction real transaction', () => {
             ),
           )
         : await post(p.url + '/prepare', initialCommand);
-    const submittedTime = await observeD7Setup(activeSetupObservation, 'timeSubmit', null, () =>
+    const submitInitialTime = () =>
       post(p.url + '/submit', {
         operationKey: f.key('submit_time'),
         expectedDraftVersion: p.proof.expectedDraftVersion,
         expectedEvidenceSealId: p.proof.expectedEvidenceSealId,
         timeRevisionId: preparedTime.timeRevisionId,
         expectedBucketContentHash: preparedTime.bucketContentHash,
-      }),
+      });
+    const submittedTime = await observeD7Setup(activeSetupObservation, 'timeSubmit', null, () =>
+      population === 2000 && process.env.SRVF_D7_NATIVE_CHAIN_DIAGNOSTIC === '1'
+        ? diagnoseInitialPrepare(
+            submitInitialTime,
+            async () => undefined,
+            diagnosticDeadline ?? performance.now(),
+            'submit',
+          )
+        : submitInitialTime(),
     );
     const { timeRevision, finalActor, finalRole, batch } = await observeD7Setup(
       activeSetupObservation,
@@ -3277,11 +3566,13 @@ describe('D7-1 recognition correction real transaction', () => {
                 // Fixed diagnostic fields only; never expose raw response content, IDs, URLs or errors.
                 safelyObserve(
                   () =>
-                    console.error('D7 2000-identity commit failure', {
-                      status: response.status,
-                      code: typeof response.body?.code === 'number' ? response.body.code : null,
-                      commitFailure,
-                    }),
+                    deferD7Diagnostic(() =>
+                      console.error('D7 2000-identity commit failure', {
+                        status: response.status,
+                        code: typeof response.body?.code === 'number' ? response.body.code : null,
+                        commitFailure,
+                      }),
+                    ),
                   undefined,
                 );
               }
@@ -3313,24 +3604,26 @@ describe('D7-1 recognition correction real transaction', () => {
             } finally {
               safelyObserve(
                 () =>
-                  console.info(
-                    '[d7-commit-diagnostic] ' +
-                      JSON.stringify({
-                        population: 2000,
-                        status: commitHttpStatus,
-                        code: commitResponseCode,
-                        outcome: commitHttpStatus === 200 ? 'success' : 'not_success',
-                        commitPhaseMs,
-                        commitPhaseState,
-                        transactionObservation,
-                        timingEvidence: timing?.report() ?? null,
-                        controlEvents,
-                        queryEventTail,
-                        diagnosticErrorCount,
-                        observerDisconnectState,
-                        queryTiming,
-                        failure: commitFailure === 'none' ? null : JSON.parse(commitFailure),
-                      }),
+                  deferD7Diagnostic(() =>
+                    console.info(
+                      '[d7-commit-diagnostic] ' +
+                        JSON.stringify({
+                          population: 2000,
+                          status: commitHttpStatus,
+                          code: commitResponseCode,
+                          outcome: commitHttpStatus === 200 ? 'success' : 'not_success',
+                          commitPhaseMs,
+                          commitPhaseState,
+                          transactionObservation,
+                          timingEvidence: timing?.report() ?? null,
+                          controlEvents,
+                          queryEventTail,
+                          diagnosticErrorCount,
+                          observerDisconnectState,
+                          queryTiming,
+                          failure: commitFailure === 'none' ? null : JSON.parse(commitFailure),
+                        }),
+                    ),
                   ),
                 undefined,
               );
@@ -3340,20 +3633,25 @@ describe('D7-1 recognition correction real transaction', () => {
                   // not recreate its failed internal state or count as its acceptance.
                   const evidence = await runD7GuardPlanDiagnostic(preparedData.postingBatchId);
                   safelyObserve(
-                    () => console.info('[d7-guard-internal-evidence] ' + JSON.stringify(evidence)),
+                    () =>
+                      deferD7Diagnostic(() =>
+                        console.info('[d7-guard-internal-evidence] ' + JSON.stringify(evidence)),
+                      ),
                     undefined,
                   );
                 } catch {
                   safelyObserve(
                     () =>
-                      console.info(
-                        '[d7-guard-internal-evidence] ' +
-                          JSON.stringify({
-                            sample: 'separate_session_rollback',
-                            evidence: 'not_failed_transaction',
-                            channel: 'unavailable',
-                            outcome: 'rejected',
-                          }),
+                      deferD7Diagnostic(() =>
+                        console.info(
+                          '[d7-guard-internal-evidence] ' +
+                            JSON.stringify({
+                              sample: 'separate_session_rollback',
+                              evidence: 'not_failed_transaction',
+                              channel: 'unavailable',
+                              outcome: 'rejected',
+                            }),
+                        ),
                       ),
                     undefined,
                   );

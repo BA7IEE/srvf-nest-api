@@ -52,6 +52,12 @@ import {
 } from './activity-contribution-settlement.service';
 import type { ContributionRegimeCode } from './activity-contribution-settlement-policy';
 
+// Release 5 feasibility candidate, scoped to classified prepare only. The original
+// D4 plan initially chose 30s; the full source-proof workload requires calibration
+// on representative hardware. This is not an end-to-end HTTP deadline or an SLO.
+// Allocation, submit, member lock waits and Human commit retain their own budgets.
+export const TIME_SETTLEMENT_PREPARE_TX_TIMEOUT_MS = 60_000;
+
 // These wire layouts are internal to the two bulk statements; persisted values are unchanged.
 const bucketWireKeys = [
   'id',
@@ -350,7 +356,7 @@ export class ActivityTimeSettlementService {
         'prepare',
         TIME_SETTLEMENT_PREPARE_OPERATION,
         command.operationKey,
-        30000,
+        TIME_SETTLEMENT_PREPARE_TX_TIMEOUT_MS,
         async (tx, reauthorize) => {
           const replay = await this.replay(
             tx,

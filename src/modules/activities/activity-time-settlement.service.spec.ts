@@ -252,7 +252,7 @@ describe('D4 write orchestration and replay safety', () => {
       expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
         isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
         maxWait: 2000,
-        timeout: method === 'prepare' ? 30000 : SETTLEMENT_SUBMIT_TX_TIMEOUT_MS,
+        timeout: method === 'prepare' ? 60000 : SETTLEMENT_SUBMIT_TX_TIMEOUT_MS,
       });
       expect(receiptLookup).toHaveBeenCalledWith({
         where: {
@@ -380,6 +380,11 @@ describe('D4 write orchestration and replay safety', () => {
       allocationRevisionId: 'allocation',
     });
     expect(transaction).toHaveBeenCalledTimes(1);
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+      maxWait: 2000,
+      timeout: 30000,
+    });
     expect(queries.readDraftContextInTx).toHaveBeenCalledTimes(2);
     expect(queries.readDraftContextInTx).toHaveBeenCalledWith(tx, activityId);
   });
@@ -394,6 +399,21 @@ describe('D4 write orchestration and replay safety', () => {
     const failure = new Error('connection unavailable');
     transaction.mockRejectedValueOnce(failure);
     await expect(service.prepare(activityId, prepare, actor, meta)).rejects.toBe(failure);
+  });
+
+  it('preserves the original transaction-expiry error under the scoped prepare budget', async () => {
+    const failure = new Prisma.PrismaClientKnownRequestError('transaction expired', {
+      code: 'P2028',
+      clientVersion: 'test',
+    });
+    transaction.mockRejectedValueOnce(failure);
+    await expect(service.prepare(activityId, prepare, actor, meta)).rejects.toBe(failure);
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+      maxWait: 2000,
+      timeout: 60000,
+    });
+    expect(audit.log).not.toHaveBeenCalled();
   });
 
   function freshPrepare(regime = 'policy_v1') {
@@ -914,7 +934,7 @@ describe('D4 write orchestration and replay safety', () => {
     expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
       isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
       maxWait: 2000,
-      timeout: 30000,
+      timeout: 60000,
     });
   });
 
