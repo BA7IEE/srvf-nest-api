@@ -11,6 +11,8 @@ import { ParticipationTimeLedgerService } from './participation-time-ledger.serv
 import { ParticipationTimeCorrectionService } from './participation-time-correction.service';
 import { ParticipationTimeLedgerAccessService } from './participation-time-ledger-access.service';
 import { MEMBER_TX_TIMEOUT_MS } from '../../common/prisma/member-advisory-lock.util';
+import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { CorrectionPostingShapeFacts } from './correction-posting-shape';
 
 describe('ledger posting draft member query characterization', () => {
   const tx = new PrismaClient();
@@ -40,6 +42,79 @@ describe('ledger posting draft member query characterization', () => {
   });
   afterEach(() => jest.restoreAllMocks());
   afterAll(() => tx.$disconnect());
+
+  const correctionBatch = {
+    id: 'correction-batch',
+    statusCode: 'ready',
+    settlementRunId: 'run-one',
+    settlementVersionId: 'replacement-version',
+    totalCount: 2,
+    preparedCount: 2,
+    baselineJsonHash: null,
+    committedAt: null,
+  };
+  const completeCorrection: CorrectionPostingShapeFacts = {
+    creditEntryCount: 4,
+    creditPairCount: 2,
+    settlementDayCount: 2,
+    reversalEntryCount: 4,
+    reversalPairCount: 2,
+    reversalClaimCount: 4,
+    unreversedOriginalCount: 0,
+    reversalOfUncommittedCount: 0,
+    mismatchedReversalAmountCount: 0,
+  };
+
+  it('accepts a complete correction with one query and the original scalar anchors', async () => {
+    const query = jest.spyOn(tx, '$queryRaw').mockResolvedValue([completeCorrection]);
+    await expect(
+      service['assertCorrectionSetConsistent'](tx, correctionBatch, 'replacement-version'),
+    ).resolves.toBeUndefined();
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0].slice(1)).toEqual([
+      'replacement-version',
+      'correction-batch',
+      'replacement-version',
+      'correction-batch',
+      'correction-batch',
+    ]);
+  });
+
+  it.each([
+    ['creditEntryCount', 3, BizCode.CORRECTION_POSTING_REPLACEMENT_MISSING],
+    ['creditPairCount', 1, BizCode.CORRECTION_POSTING_REPLACEMENT_MISSING],
+    ['settlementDayCount', 1, BizCode.CORRECTION_POSTING_REPLACEMENT_MISSING],
+    ['reversalEntryCount', 3, BizCode.CORRECTION_POSTING_REVERSAL_MISSING],
+    ['reversalPairCount', 1, BizCode.CORRECTION_POSTING_REVERSAL_MISSING],
+    ['reversalClaimCount', 3, BizCode.CORRECTION_POSTING_REVERSAL_MISSING],
+    ['unreversedOriginalCount', 1, BizCode.CORRECTION_POSTING_REVERSAL_MISSING],
+    ['reversalOfUncommittedCount', 1, BizCode.CORRECTION_POSTING_REVERSAL_MISSING],
+    ['mismatchedReversalAmountCount', 1, BizCode.CORRECTION_POSTING_REVERSAL_AMOUNT_INVALID],
+  ] as const)('keeps the correction rejection for %s', async (field, value, expected) => {
+    const query = jest
+      .spyOn(tx, '$queryRaw')
+      .mockResolvedValue([{ ...completeCorrection, [field]: value }]);
+    await expect(
+      service['assertCorrectionSetConsistent'](tx, correctionBatch, 'replacement-version'),
+    ).rejects.toMatchObject({ name: 'BizException', biz: expected });
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects missing correction facts and preserves the native query failure', async () => {
+    const query = jest.spyOn(tx, '$queryRaw').mockResolvedValueOnce([]);
+    await expect(
+      service['assertCorrectionSetConsistent'](tx, correctionBatch, 'replacement-version'),
+    ).rejects.toMatchObject({
+      name: 'BizException',
+      biz: BizCode.LEDGER_COMMIT_ENTRY_SET_MISMATCH,
+    });
+    const failure = new Error('synthetic correction shape query failure');
+    query.mockRejectedValueOnce(failure);
+    await expect(
+      service['assertCorrectionSetConsistent'](tx, correctionBatch, 'replacement-version'),
+    ).rejects.toBe(failure);
+    expect(query).toHaveBeenCalledTimes(2);
+  });
 
   it.each([
     { rows: [] },

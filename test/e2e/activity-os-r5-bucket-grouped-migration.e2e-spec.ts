@@ -217,7 +217,7 @@ describe('151 bucket grouped hash on nonempty150', () => {
         const beforeCatalog = await catalog(db);
         const beforeRows = await nativeLaunchBusinessFingerprint(db, stage);
         const beforeRoots = await verifyRoots(db);
-        await owner.deployLatestMigrations(remaining());
+        await owner.deployBucketGroupedMigrations(remaining());
         const afterMigrations = await migrationRows(db);
         expect(afterMigrations).toEqual([
           ...beforeMigrations,
@@ -227,7 +227,7 @@ describe('151 bucket grouped hash on nonempty150', () => {
         expect(await catalog(db)).toBe(beforeCatalog);
         expect(await nativeLaunchBusinessFingerprint(db, stage)).toEqual(beforeRows);
         expect(await verifyRoots(db)).toBe(beforeRoots);
-        await owner.deployLatestMigrations(remaining());
+        await owner.deployBucketGroupedMigrations(remaining());
         expect(await migrationRows(db)).toEqual(afterMigrations);
         expect(await catalog(db)).toBe(beforeCatalog);
         expect(await nativeLaunchBusinessFingerprint(db, stage)).toEqual(beforeRows);
