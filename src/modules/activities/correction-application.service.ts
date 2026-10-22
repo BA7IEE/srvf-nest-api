@@ -1309,7 +1309,7 @@ export class CorrectionApplicationService {
       },
     );
 
-    return await runMemberLinearizedTransaction(this.prisma, async (tx) => {
+    const commitWithin = async (tx: PrismaTx): Promise<CorrectionCommitResult> => {
       // ① Activity → ② run → ③ correction request(本刀新增的唯一一把,插在 run 之后)
       await this.lockActivity(tx, anchor.activityId);
       const run = await this.lockRun(tx, anchor.activityId);
@@ -1469,7 +1469,12 @@ export class CorrectionApplicationService {
         tx,
       });
       return result;
-    });
+    };
+    return await runMemberLinearizedTransaction(
+      this.prisma,
+      commitWithin,
+      options?.human ? 'd7-human-correction-commit' : 'standard',
+    );
   }
 
   // =========================================================================

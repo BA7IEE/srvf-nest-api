@@ -3696,6 +3696,312 @@ describe('D7-1 recognition correction real transaction', () => {
     600000,
   );
 
+  async function prepareHumanBudgetCorrection(schemaVersion: 2 | 3) {
+    const { p, timeRevision, root, roots, source, allocation } =
+      await createCommittedFactCorrectionBase();
+    if (source.checkOutAt === null) throw new Error('closed source segment required');
+    const url = `${D13_APP}/${p.activityId}/time-corrections`;
+    const submitted = await request(httpServer(f.app))
+      .post(url)
+      .set('Authorization', f.creator.auth)
+      .send({
+        participationIdentityId: source.participationIdentityId,
+        requestTypeCode: 'time',
+        requestedChangeJson: {
+          schemaVersion,
+          results: [],
+          segments:
+            schemaVersion === 3
+              ? [
+                  {
+                    participationIdentityId: source.participationIdentityId,
+                    segmentKey: source.segmentKey,
+                    checkInAt: source.checkInAt.toISOString(),
+                    checkOutAt: new Date(source.checkOutAt.getTime() - 60_000).toISOString(),
+                    resultCode: source.resultCode,
+                    serviceHours: '0.98',
+                  },
+                ]
+              : [],
+          timeCorrection: {
+            baseSettlementVersionId: timeRevision.settlementVersionId,
+            baseTimeLedgerHash: root.contentHash,
+            reason: 'bounded Human commit transaction fixture',
+            items: roots.map((entry) => ({
+              rootEntryId: entry.id,
+              recognizedSeconds:
+                entry.categoryCode === 'volunteer_service' ? 3540 : entry.recognizedSeconds,
+            })),
+          },
+          ...(schemaVersion === 3
+            ? {
+                allocations: [
+                  {
+                    participationIdentityId: source.participationIdentityId,
+                    segmentKey: source.segmentKey,
+                    baseSegmentRevisionId: source.id,
+                    baseAllocationRevisionId: allocation.id,
+                    recognitionModeCode: 'automatic',
+                    manualReason: null,
+                    slices: [],
+                    evidenceAttachmentIds: [],
+                  },
+                ],
+              }
+            : {}),
+        },
+        reason: 'bounded Human commit transaction fixture',
+        operationKey: f.key('budget_submit'),
+      })
+      .expect(201);
+    await request(httpServer(f.app))
+      .post(`${url}/${submitted.body.data.requestId}/review`)
+      .set('Authorization', f.reviewer.auth)
+      .send({ actionCode: 'approve', expectedRequestVersion: submitted.body.data.requestVersion })
+      .expect(200);
+    const prepared = await request(httpServer(f.app))
+      .post(`${url}/${submitted.body.data.requestId}/prepare`)
+      .set('Authorization', f.reviewer.auth)
+      .send({
+        expectedBaseSettlementVersionId: timeRevision.settlementVersionId,
+        operationKey: f.key('budget_prepare'),
+      })
+      .expect(200);
+    const target = prepared.body.data as { applicationId: string; postingBatchId: string };
+    const payload = {
+      expectedBaseSettlementVersionId: timeRevision.settlementVersionId,
+      correctionApplicationId: target.applicationId,
+      postingBatchId: target.postingBatchId,
+      operationKey: f.key('budget_commit'),
+    };
+    return {
+      activityId: p.activityId,
+      ...target,
+      send: () =>
+        request(httpServer(f.app))
+          .post(`${url}/${submitted.body.data.requestId}/commit`)
+          .set('Authorization', f.reviewer.auth)
+          .send(payload),
+    };
+  }
+
+  async function humanBudgetState(activityId: string) {
+    const orderBy = { id: 'asc' as const };
+    return {
+      activity: await f.db.activity.findUniqueOrThrow({ where: { id: activityId } }),
+      run: await f.db.attendanceSettlementRun.findUniqueOrThrow({ where: { activityId } }),
+      versions: await f.db.attendanceSettlementVersion.findMany({
+        where: { settlementRun: { activityId } },
+        orderBy,
+      }),
+      results: await f.db.participantSettlementResultRevision.findMany({
+        where: { settlementVersion: { settlementRun: { activityId } } },
+        orderBy,
+      }),
+      segments: await f.db.participantServiceSegmentRevision.findMany({
+        where: { identity: { activityId } },
+        orderBy,
+      }),
+      allocations: await f.db.participantTimeAllocationRevision.findMany({
+        where: { activityId },
+        include: { slices: { orderBy }, evidence: { orderBy }, commandReceipt: true },
+        orderBy,
+      }),
+      bindings: await f.db.correctionTimeAllocationBinding.findMany({
+        where: { activityId },
+        orderBy,
+      }),
+      proofs: await f.db.correctionTimeSourceProof.findMany({ where: { activityId }, orderBy }),
+      batches: await f.db.ledgerPostingBatch.findMany({
+        where: { settlementVersion: { settlementRun: { activityId } } },
+        orderBy,
+      }),
+      entries: await f.db.participationLedgerEntry.findMany({
+        where: { postingBatch: { settlementVersion: { settlementRun: { activityId } } } },
+        orderBy,
+      }),
+      dayStates: await f.db.memberContributionDayState.findMany({
+        where: { memberId: f.creator.memberId },
+        orderBy,
+      }),
+      closures: await f.db.activitySettlementClosureRevision.findMany({
+        where: { activityId },
+        orderBy,
+      }),
+      requests: await f.db.attendanceCorrectionRequest.findMany({ where: { activityId }, orderBy }),
+      applications: await f.db.correctionApplication.findMany({
+        where: { correctionRequest: { activityId } },
+        orderBy,
+      }),
+      receipts: await f.db.participationTimeCorrectionCommitReceipt.findMany({
+        where: { activityId },
+        orderBy,
+      }),
+      audit: await f.db.auditLog.findMany({ where: { resourceId: activityId }, orderBy }),
+      outbox: await f.db.notificationOutboxIntent.findMany({
+        where: { aggregateId: activityId },
+        orderBy,
+      }),
+    };
+  }
+
+  async function memberBudgetLockAvailable() {
+    const [row] = await f.db.$queryRaw<Array<{ available: boolean }>>`
+      SELECT pg_try_advisory_xact_lock(hashtext(${f.creator.memberId})) AS available
+    `;
+    return row.available;
+  }
+
+  function pauseHumanBudgetCommit(
+    target: Awaited<ReturnType<typeof prepareHumanBudgetCorrection>>,
+    before: Awaited<ReturnType<typeof humanBudgetState>>,
+    seconds: number,
+  ) {
+    const recorder = f.app.get(CorrectionAuditRecorder);
+    const logCommit = recorder.logCommit.bind(recorder);
+    return jest.spyOn(recorder, 'logCommit').mockImplementationOnce(async (args) => {
+      await logCommit(args);
+      // The real last audit and outbox are already written, but a second connection
+      // must still see the old business state while the existing member lock is held.
+      expect(
+        await args.tx.participationTimeCorrectionCommitReceipt.count({
+          where: { postingBatchId: target.postingBatchId },
+        }),
+      ).toBe(1);
+      expect(
+        await args.tx.notificationOutboxIntent.count({
+          where: { eventKey: `settlement-ledger-commit:${target.postingBatchId}` },
+        }),
+      ).toBe(1);
+      expect(
+        await args.tx.auditLog.count({ where: { resourceId: target.activityId } }),
+      ).toBeGreaterThan(before.audit.length);
+      expect(await memberBudgetLockAvailable()).toBe(false);
+      expect(await humanBudgetState(target.activityId)).toEqual(before);
+      await args.tx.$queryRaw`SELECT pg_sleep(${seconds}::double precision)::text`;
+    });
+  }
+
+  it.each([2, 3] as const)(
+    'atomically commits and replays Human V%i beyond seven seconds',
+    async (version) => {
+      const target = await prepareHumanBudgetCorrection(version);
+      const before = await humanBudgetState(target.activityId);
+      const pause = pauseHumanBudgetCommit(target, before, 8);
+      const startedAt = performance.now();
+      const committed = await target.send();
+      expect(pause).toHaveBeenCalledTimes(1);
+      pause.mockRestore();
+      expect(performance.now() - startedAt).toBeGreaterThanOrEqual(8_000);
+      expect({ status: committed.status, code: committed.body.code }).toEqual({
+        status: 200,
+        code: 0,
+      });
+      expect(committed.body.data).toMatchObject({
+        applicationId: target.applicationId,
+        postingBatchId: target.postingBatchId,
+        applicationStatus: 'committed',
+        replayed: false,
+      });
+      const after = await humanBudgetState(target.activityId);
+      expect(after.receipts).toHaveLength(before.receipts.length + 1);
+      expect(after.batches.find((row) => row.id === target.postingBatchId)).toMatchObject({
+        statusCode: 'committed',
+      });
+      expect(after.applications.find((row) => row.id === target.applicationId)).toMatchObject({
+        statusCode: 'committed',
+      });
+      expect(
+        after.outbox.filter(
+          (row) => row.eventKey === `settlement-ledger-commit:${target.postingBatchId}`,
+        ),
+      ).toHaveLength(1);
+      expect(await memberBudgetLockAvailable()).toBe(true);
+
+      // Committed applications have no preparing-proof hint. Their mandatory full
+      // checks still belong to the same operation budget and must not append effects.
+      const corrections = f.app.get(ParticipationTimeCorrectionService);
+      const assertComplete = corrections.assertComplete.bind(corrections);
+      const replayProof = jest
+        .spyOn(corrections, 'assertComplete')
+        .mockImplementationOnce(async (...args) => {
+          const proof = await assertComplete(...args);
+          await args[0].$queryRaw`SELECT pg_sleep(8::double precision)::text`;
+          return proof;
+        });
+      const replayStartedAt = performance.now();
+      const replayed = await target.send();
+      expect(replayProof).toHaveBeenCalled();
+      expect(performance.now() - replayStartedAt).toBeGreaterThanOrEqual(8_000);
+      expect({ status: replayed.status, code: replayed.body.code }).toEqual({
+        status: 200,
+        code: 0,
+      });
+      expect(replayed.body.data).toMatchObject({
+        applicationId: target.applicationId,
+        postingBatchId: target.postingBatchId,
+        replayed: true,
+      });
+      expect(await humanBudgetState(target.activityId)).toEqual(after);
+    },
+    120000,
+  );
+
+  it('rolls back every Human V3 effect beyond fifteen seconds, releases locks and retries once', async () => {
+    const target = await prepareHumanBudgetCorrection(3);
+    const before = await humanBudgetState(target.activityId);
+    const pause = pauseHumanBudgetCommit(target, before, 16);
+    const corrections = f.app.get(CorrectionApplicationService);
+    const commit = corrections.commit.bind(corrections);
+    let transactionFailure: unknown;
+    jest.spyOn(corrections, 'commit').mockImplementationOnce(async (...args) => {
+      try {
+        return await commit(...args);
+      } catch (error) {
+        transactionFailure = error;
+        throw error;
+      }
+    });
+    const startedAt = performance.now();
+    const failed = await target.send();
+    expect(pause).toHaveBeenCalledTimes(1);
+    pause.mockRestore();
+    expect(performance.now() - startedAt).toBeGreaterThanOrEqual(15_000);
+    expect({ status: failed.status, code: failed.body.code }).toEqual({
+      status: BizCode.INTERNAL_ERROR.httpStatus,
+      code: BizCode.INTERNAL_ERROR.code,
+    });
+    expect(transactionFailure).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+    expect(transactionFailure).toMatchObject({ code: 'P2028' });
+    expect((transactionFailure as Error).message).toContain(
+      'timeout for this transaction was 15000 ms',
+    );
+    expect(await humanBudgetState(target.activityId)).toEqual(before);
+    expect(await memberBudgetLockAvailable()).toBe(true);
+    // NOWAIT on another connection proves the aggregate row lock was released too.
+    await f.db
+      .$queryRaw`SELECT id FROM "Activity" WHERE id = ${target.activityId} FOR UPDATE NOWAIT`;
+
+    const retried = await target.send();
+    expect({ status: retried.status, code: retried.body.code }).toEqual({ status: 200, code: 0 });
+    expect(retried.body.data).toMatchObject({
+      applicationId: target.applicationId,
+      postingBatchId: target.postingBatchId,
+      replayed: false,
+    });
+    const after = await humanBudgetState(target.activityId);
+    expect(after.receipts).toHaveLength(before.receipts.length + 1);
+    expect(
+      after.outbox.filter(
+        (row) => row.eventKey === `settlement-ledger-commit:${target.postingBatchId}`,
+      ),
+    ).toHaveLength(1);
+    const replayed = await target.send();
+    expect({ status: replayed.status, code: replayed.body.code }).toEqual({ status: 200, code: 0 });
+    expect(replayed.body.data.replayed).toBe(true);
+    expect(await humanBudgetState(target.activityId)).toEqual(after);
+  }, 120000);
+
   it('serializes concurrent Human commits into one effect and one exact replay', async () => {
     const { p, timeRevision, root, roots, source, allocation } =
       await createCommittedFactCorrectionBase();

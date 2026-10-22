@@ -204,7 +204,7 @@ export class CorrectionTimeAllocationService {
   constructor(private readonly attachments: AttachmentsService) {}
 
   /**
-   * Parse the large, immutable V3 source proof before the 7-second Human
+   * Parse the large, immutable V3 source proof before the bounded Human
    * commit transaction.  This is deliberately advisory: a missing, malformed
    * or stale prevalidation is never a reason to trust it inside the
    * transaction.  `materialize` re-reads its compact anchor after the caller
