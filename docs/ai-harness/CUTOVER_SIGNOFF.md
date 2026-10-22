@@ -67,7 +67,7 @@ function eviSub(id, kind, title, evidence): SubCheck {
 
 改动本表后,**同一个 PR 里**把下面这行的数字改对(少一条签字**不产生任何坏链接**,只有这行看得见):
 
-**签字条数(机器核对):9 条**
+**签字条数(机器核对):10 条**
 
 ## 3. 可对拍的读数(闭集)
 
@@ -219,9 +219,18 @@ function eviSub(id, kind, title, evidence): SubCheck {
 > 本条是**根本不存在对应读数** —— 过程发生在历史里,仓库是它的产物而不是它的函数。
 > ⇒ 这条**永远**不会因为仓库变化而过期,也就永远不会自动提醒任何人重签。**它就是纯人证。**
 
+### 3b — 「新 schema migrations 经审查」148–152
+
+- **结论**:认可
+- **理由**:固定候选 HEAD `97346196d9d77ce7b07ee8066129aa291ae7cd64` 的第148–152条仅 CREATE OR REPLACE 五次，涉及 astr_source_set_hash、astr_canonical_json、ctsp_assert_complete（150及152）和 astr_bucket_content_hash；历史1–147 SQL、schema、seed逐字未改；函数签名、声明属性、守卫与上限保持。现有CI39743617211中五套升级测试均PASS；不将有限500准备状态视为完整R5或生产验收，不把prepare60候选升级为正式SLA，不提高共享7秒预算。完整SQL SHA-256：148 `bbde4b75459953641dd80a57d83a924b9b7e5068432b54847f08f1ee9f90914d`；149 `997589df6de8900e60d1461c1fc38612937ec62d4c178c0f67c9c96ccb0523a2`；150 `9451091106a43afff7419f6debca85bf29322bbaa19a34bb93924d51bbeff0f0`；151 `7b027fe0764525f7bc23500fd99d01ee363cc21b40c6654e492e4db35e502b54`；152 `ae2b166f5a58b47b5938cde13fa3e9205d01bfa91e30096155aaab04582ed745`。签署仅覆盖上述SQL审阅及migration-total=152；不替代Trusted、Ready、合并、生产、真实转换、shadow、Gate、worker、tag或Release授权。
+- **签字人**:维护者
+- **日期**:2026-10-22
+- **依据**:维护者于2026-10-22 18:30（Asia/Shanghai，10:30 UTC）直接回复本会话针对 `97346196d9d77ce7b07ee8066129aa291ae7cd64` 的148–152迁移审阅确认问题：「确认」。问题已明示优化范围、第150条对非法非数组输入的数据库原生报错文字可能变化、prepare60仍为候选及共享7秒保持。本次据真实回复登记迁移审阅认可，沿用既有条件整合/合并授权；不替代最终SHA的Trusted人工审批，不授权生产、开闸、转换、shadow、worker、tag或Release。
+- **对拍**:有 —— `migration-total` = `152`
+
 ### 3b 历史签字 — 「新 schema migrations 经审查」
 
-当前状态（2026-10-20）：**⏸ 待维护者确认148，尚未重签**。下列历史结论及完整依据保留在原范围；137–147旧签不覆盖新增148。当前有效签字不计本项，声明条数由10改为9。此处只修正登记表对覆盖范围的陈述，不认可148，不关闭旧最大规模失败，不授予Ready、合并、生产或切换。148完整SQL、摘要与实际验证见[本轮计划](../plans/activity-os-r5-source-hash-envelope-20261019.md)。
+历史状态（2026-10-20，原范围与依据完整保留）：**⏸ 当时待维护者确认148，尚未重签**。下列历史结论及完整依据保留在原范围；137–147旧签不覆盖新增148。当前有效签字不计本项，声明条数由10改为9。此处只修正登记表对覆盖范围的陈述，不认可148，不关闭旧最大规模失败，不授予Ready、合并、生产或切换。148完整SQL、摘要与实际验证见[本轮计划](../plans/activity-os-r5-source-hash-envelope-20261019.md)。
 
 > **当前重签（2026-09-25，E2 旧规则转换第一层隔离能力）**：维护者确认第132条
 > `20260924180000_activity_os_r5_e2_contribution_rule_conversion`，SQL SHA-256
@@ -520,7 +529,6 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **依据**:维护者本轮明确确认「允许扩展 test/helpers/audit-logs-cleanup.ts，仅补两张新表及守卫的受控清理／恢复；确认评审稿§31.13列明的第136条3b及本轮4b重签」。实际第136条SQL完整SHA-256重新核对为 `184da14396cbdf7ad14b8ac654e05f0eab57809efe2b799f5b250a47d805b4b6`，与被确认评审稿一致。
 - **对拍**:有 —— `migration-total` = `136`，SQL SHA-256 = `184da14396cbdf7ad14b8ac654e05f0eab57809efe2b799f5b250a47d805b4b6`
 
-
 > **当前正式签字（2026-10-18，Release 5 E4/E5；137–147，历史签字保留）**：维护者已审阅本轮完整SQL、精确摘要与技术审查，并明确认可3b；以下由AI按维护者结论代为登记，不是AI自签。
 
 - **结论**:认可
@@ -695,6 +703,7 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **对拍**:有 —— `gate-settlement-read-faces` = `6`;`gate-read-files` = `4`
 
 > **2026-10-19 前签历史（同日原61稿，原文保留）**
+>
 > - **结论**:认可
 > - **理由**:R5 新增 team-join 两个贡献取数核后，维护者复核当前六读面／四文件，认可既有口径「读旧考勤结算列并对外产出结算量」内的单闸接线：off 保留 approved 考勤北京日封顶3，on 仅累计 committed credited delta，含冲回和重记，不叠加旧分、不二次封顶、不空时回退；入队 cutoff 转为北京 civil DATE 排他边界。C8 仍为文件内语法近似，独立上下行闭包防共享 helper 污染；不证明任意 ActivityCheckIn/AttendanceSheet/$queryRaw 读者或跨文件语义，P2-22 保持开放。本签不代表四项延期已实现、原始最大规模验收、生产或 Trusted 批准。
 > - **签字人**:维护者
@@ -703,6 +712,7 @@ function eviSub(id, kind, title, evidence): SubCheck {
 > - **对拍**:有 —— `gate-settlement-read-faces` = `6`;`gate-read-files` = `4`
 
 > **2026-08-26 首签历史（以下为原文，不是当前读数）**
+>
 > - **结论**:认可
 > - **理由**:认可该口径 —— 口径 = 「读旧考勤的结算列**并对外产出结算量**」。机器在此口径内**已是闭包**:C8 函数粒度、发现面 `collectProdFiles()` 现取 + AST 判 select 列,**不硬编码文件名**。🔴 **局限**:机器证不了**口径本身**对不对 —— 若「旧读者」应含「任何读 `AttendanceRecord` 的地方」,那是更宽的集合,已登记为 **P2-22**
 > - **签字人**:维护者
