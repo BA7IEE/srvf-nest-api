@@ -332,7 +332,16 @@ export class ActivityTimeSettlementQueryService {
         a."manualReason", a."allocationHash", a."sliceCount", a."createdAt", a."createdByUserId",
         a."settlementDraftVersionId", a."settlementEvidenceSealId", a."settlementEvidenceRevision",
         a."settlementPopulationRevision", a."settlementWorkflowRevision", a."settlementDraftContentHash"`;
-    const query = Prisma.sql`
+    const latest = forLocking
+      ? await tx.$queryRaw<LockAllocation[]>`
+      SELECT DISTINCT ON (a."participationIdentityId", a."segmentKey") ${columns}
+      FROM "ParticipantTimeAllocationRevision" a
+      JOIN jsonb_to_recordset(${keys}::jsonb) AS k(identity TEXT, segment TEXT)
+        ON a."participationIdentityId" = k.identity AND a."segmentKey" = k.segment
+      WHERE a."activityId" = ${proof.activityId}
+      ORDER BY a."participationIdentityId", a."segmentKey", a.revision DESC
+    `
+      : await tx.$queryRaw<AllocationBasis[]>`
       SELECT DISTINCT ON (a."participationIdentityId", a."segmentKey") ${columns}
       FROM "ParticipantTimeAllocationRevision" a
       JOIN jsonb_to_recordset(${keys}::jsonb) AS k(identity TEXT, segment TEXT)
@@ -340,9 +349,6 @@ export class ActivityTimeSettlementQueryService {
       WHERE a."activityId" = ${proof.activityId}
       ORDER BY a."participationIdentityId", a."segmentKey", a.revision DESC
     `;
-    const latest = forLocking
-      ? await tx.$queryRaw<LockAllocation[]>(query)
-      : await tx.$queryRaw<AllocationBasis[]>(query);
     if (latest.reduce((sum, row) => sum + row.sliceCount, 0) > TIME_SETTLEMENT_LIMITS.slices)
       throw new TimeSettlementPolicyError('scale_limit');
     return {
