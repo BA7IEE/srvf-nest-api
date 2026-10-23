@@ -25,6 +25,8 @@
 
 > **E4/E5 当前边界（2026-10-18）**：后端按受限500身份／current段、2500物理slice、2000评价单元推进；原R5最大规模仍未验收，旧满额超30秒的失败不关闭。更正来源hash的数据库NULL缺口已真实复现，新增147 validated CHECK修正，历史SQL／函数／ACL／预算不变。非空146→147、NULL整笔回滚与有效V3/4分录/重放已通过；preparing/pending跨API和实际worker进程重启、native guard后授权callback拒绝的PG回滚已有本轮证据，最终候选检查另记。[续推与审查记录](plans/activity-os-r5-continuation-20261018.md)。默认off，active→off仍恢复旧规则管理写，永久cutover latch未实施；前端、实际目标旧数据盘点／转换／shadow适用性、fleet、worker排空、稳定窗与生产切换均未完成。137–147的3b已由维护者实际审阅认可并登记；最终main CI、Trusted人工批准与实际发布准入分别核对；尚未部署，生产NO_GO。
 
+> **2026-10-20 来源hash候选148**：1c3157e隔离升级6项、普通R4十五项通过；默认CI原R4满额通过，prepare 15882ms，查询334/42/805，预算和断言不变。整体CI仍FAIL：D7 Human V3 2000身份报P2028（7077/7000ms），另有文档治理失败；旧42703及receipt超30秒失败保留。148的3b／Trusted待审，原R5/E4满额与S13未验收，R5未完成、生产NO_GO。见[结果](plans/activity-os-r5-source-hash-envelope-20261019.md)。
+
 <!-- counts:begin -->
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->
 | 计数项 | 值 |
@@ -32,7 +34,7 @@
 | 模块 | 43 |
 | Controller | 128 |
 | Endpoint | 663 |
-| Migration | 147 |
+| Migration | 152 |
 | BizCode | 582 |
 | 权限码 | 273 |
 | AuditLogEvent | 178 |

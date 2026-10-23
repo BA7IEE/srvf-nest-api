@@ -27,6 +27,7 @@ import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { CorrectionApplicationService } from '../../src/modules/activities/correction-application.service';
 import { CorrectionAuditRecorder } from '../../src/modules/activities/correction-audit-recorder';
 import { CorrectionTimeAllocationService } from '../../src/modules/activities/correction-time-allocation.service';
+import { AttendanceCorrectionWriteService } from '../../src/modules/attendances/attendance-correction-write.service';
 import { ParticipationTimeCorrectionService } from '../../src/modules/activities/participation-time-correction.service';
 import { LedgerPreparationService } from '../../src/modules/activities/ledger-preparation.service';
 import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
@@ -54,6 +55,29 @@ import { deriveTestDbName } from '../setup/worktree-db';
 
 import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
 import { runD7GuardPlanDiagnostic } from '../helpers/d7-guard-plan-diagnostic';
+import { D7CommitTiming, observeD7Span, d7ObservedMethod } from '../helpers/d7-commit-timing';
+import {
+  D7FixtureTiming,
+  observeD7FixtureAsync,
+  observeD7FixtureSync,
+} from '../helpers/d7-fixture-timing';
+import {
+  D7SetupObservation,
+  observeD7Setup,
+  observeD7Receipt,
+  preserveD7Prepare,
+  safeD7Diagnostic,
+  type D7SetupBatch,
+} from '../helpers/d7-setup-observation';
+let activeSetupObservation: D7SetupObservation | undefined;
+const deferredD7Diagnostics: Array<() => unknown> = [];
+function deferD7Diagnostic(work: () => unknown): void {
+  try {
+    deferredD7Diagnostics.push(work);
+  } catch {
+    activeSetupObservation?.fault();
+  }
+}
 
 const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_D7_2_W98 === '1');
 
@@ -154,6 +178,129 @@ function recordCommitQueryTiming(timing: CommitQueryTiming, query: string, durat
   bucket.durationMs += roundedDuration;
   bucket.maxDurationMs = Math.max(bucket.maxDurationMs, roundedDuration);
 }
+
+type CommitCallbackState = 'NOT_ENTERED' | 'RUNNING' | 'RETURNED' | 'THREW';
+
+// Observability must not replace the original business value or rejection.
+function collectCommitDiagnostic<T>(work: () => T, fallback: T, onFailure: () => void): T {
+  try {
+    return work();
+  } catch {
+    try {
+      onFailure();
+    } catch {
+      // A broken diagnostic reporter is also isolated from the business path.
+    }
+    return fallback;
+  }
+}
+
+function createCommitTransactionObservation() {
+  return {
+    transactionState: 'NOT_STARTED' as 'NOT_STARTED' | 'STARTED' | 'RESOLVED' | 'REJECTED',
+    callbackState: 'NOT_ENTERED' as CommitCallbackState,
+    callbackMs: null as number | null,
+    transactionMs: null as number | null,
+    settlementAfterCallbackMs: null as number | null,
+  };
+}
+
+// Observe the existing interactive transaction without changing its options,
+// callback count, return value, or thrown error. A returned callback is not a commit.
+async function observeCommitTransaction<T>(
+  body: (tx: Prisma.TransactionClient) => Promise<T>,
+  run: (callback: (tx: Prisma.TransactionClient) => Promise<T>) => Promise<T>,
+  observation: ReturnType<typeof createCommitTransactionObservation>,
+): Promise<T> {
+  const startedAt = performance.now();
+  let callbackEndedAt: number | null = null;
+  observation.transactionState = 'STARTED';
+  try {
+    const result = await run(async (tx) => {
+      const callbackStartedAt = performance.now();
+      observation.callbackState = 'RUNNING';
+      try {
+        const value = await body(tx);
+        observation.callbackState = 'RETURNED';
+        return value;
+      } catch (error) {
+        observation.callbackState = 'THREW';
+        throw error;
+      } finally {
+        callbackEndedAt = performance.now();
+        observation.callbackMs = Math.round(callbackEndedAt - callbackStartedAt);
+      }
+    });
+    observation.transactionState = 'RESOLVED';
+    return result;
+  } catch (error) {
+    observation.transactionState = 'REJECTED';
+    throw error;
+  } finally {
+    const endedAt = performance.now();
+    observation.transactionMs = Math.round(endedAt - startedAt);
+    observation.settlementAfterCallbackMs =
+      callbackEndedAt === null ? null : Math.round(endedAt - callbackEndedAt);
+  }
+}
+
+function classifyCommitControl(query: string) {
+  const fixedShapes = [
+    ['BEGIN', /^\s*(?:BEGIN|START\s+TRANSACTION)(?:\s|;|$)/iu],
+    ['SET_TRANSACTION', /^\s*SET\s+TRANSACTION(?:\s|;|$)/iu],
+    ['SET_LOCAL_LOCK_TIMEOUT', /^\s*SET\s+LOCAL\s+lock_timeout(?:\s|=|;|$)/iu],
+    ['COMMIT', /^\s*COMMIT(?:\s|;|$)/iu],
+    ['ROLLBACK', /^\s*ROLLBACK(?:\s|;|$)/iu],
+    ['SAVEPOINT', /^\s*SAVEPOINT(?:\s|;|$)/iu],
+    ['RELEASE', /^\s*RELEASE(?:\s|;|$)/iu],
+    ['OTHER_CONTROL', /^\s*SET(?:\s|;|$)/iu],
+  ] as const;
+  return fixedShapes.find(([, pattern]) => pattern.test(query))?.[0] ?? null;
+}
+
+function commitErrorLocation(error: unknown) {
+  const message = error instanceof Error ? error.message : '';
+  const expiredOperation =
+    message
+      .match(/\b(query|commit|rollback) cannot be executed on an expired transaction\b/iu)?.[1]
+      ?.toUpperCase() ?? 'UNKNOWN';
+  const model =
+    error instanceof Prisma.PrismaClientKnownRequestError ? error.meta?.modelName : null;
+  const allowedModels = [
+    'Activity',
+    'AttendanceSettlementRun',
+    'AttendanceCorrectionRequest',
+    'CorrectionApplication',
+    'LedgerPostingBatch',
+    'ParticipantSettlementResultRevision',
+    'ParticipantServiceSegmentRevision',
+    'ParticipationTimeCorrectionCommitReceipt',
+    'AuditLog',
+  ];
+  const allowedFiles = new Set([
+    'src/modules/activities/correction-application.service.ts',
+    'src/modules/activities/correction-time-allocation.service.ts',
+    'src/modules/activities/participation-time-correction.service.ts',
+    'src/modules/activities/ledger-posting.service.ts',
+    'src/modules/activities/correction-audit-recorder.ts',
+    'src/modules/attendances/attendance-correction-write.service.ts',
+    'src/common/prisma/member-advisory-lock.util.ts',
+  ]);
+  const sourceFrames: Array<{ file: string; line: number; column: number }> = [];
+  for (const frame of error instanceof Error ? (error.stack ?? '').split('\n').slice(1) : []) {
+    const match = frame.match(/(?:^|\/)(src\/[^():\s]+):(\d+):(\d+)\)?$/u);
+    if (match && allowedFiles.has(match[1])) {
+      sourceFrames.push({ file: match[1], line: Number(match[2]), column: Number(match[3]) });
+      if (sourceFrames.length === 8) break;
+    }
+  }
+  return {
+    expiredOperation,
+    prismaModel: typeof model === 'string' && allowedModels.includes(model) ? model : null,
+    sourceFrames,
+  };
+}
+
 function diagnosticCode(error: unknown): string {
   const kind =
     error instanceof Error &&
@@ -194,13 +341,31 @@ function diagnosticCode(error: unknown): string {
       : 'unavailable';
   return [kind, prismaCode, sqlState].join(':');
 }
-function diagnosticTx<T extends object>(target: T, rows: DiagnosticRow[], prefix = ''): T {
+type DiagnosticSettled = DiagnosticRow & { enteredMs: number; settledMs: number };
+function diagnosticTx<T extends object>(
+  target: T,
+  rows: DiagnosticRow[],
+  prefix = '',
+  settled?: (row: DiagnosticSettled) => void,
+): T {
+  const notify = (row: DiagnosticSettled) => {
+    if (!settled) return;
+    try {
+      settled(row);
+    } catch {
+      try {
+        activeSetupObservation?.fault();
+      } catch {
+        /* preserve the original result/error */
+      }
+    }
+  };
   return new Proxy(target, {
     get(object, key) {
       const value: unknown = Reflect.get(object, key);
       if (typeof key !== 'string') return value;
       if (typeof value === 'object' && value !== null && !prefix && /^[a-z][a-zA-Z]+$/.test(key))
-        return diagnosticTx(value, rows, key);
+        return diagnosticTx(value, rows, key, settled);
       if (typeof value !== 'function') return value;
       return (...args: unknown[]) => {
         let label = prefix ? prefix + '.' + key : key;
@@ -255,20 +420,64 @@ function diagnosticTx<T extends object>(target: T, rows: DiagnosticRow[], prefix
                 if (typeof then !== 'function') throw new Error('diagnostic promise contract');
                 return Reflect.apply(then, promise, [
                   (output: unknown) => {
-                    rows.push({
+                    const ended = performance.now();
+                    try {
+                      rows.push({
+                        label,
+                        elapsedMs: ended - began,
+                        outcome: 'ok',
+                        code: '',
+                      });
+                    } catch {
+                      try {
+                        activeSetupObservation?.fault();
+                      } catch {
+                        /* preserve business result */
+                      }
+                    }
+                    notify({
                       label,
-                      elapsedMs: performance.now() - began,
+                      elapsedMs: ended - began,
+                      enteredMs: began,
+                      settledMs: ended,
                       outcome: 'ok',
                       code: '',
                     });
                     return fulfilled ? fulfilled(output) : output;
                   },
                   (error: unknown) => {
-                    rows.push({
+                    const ended = performance.now();
+                    let code = 'unavailable';
+                    try {
+                      code = diagnosticCode(error);
+                    } catch {
+                      try {
+                        activeSetupObservation?.fault();
+                      } catch {
+                        /* preserve rejection identity */
+                      }
+                    }
+                    try {
+                      rows.push({
+                        label,
+                        elapsedMs: ended - began,
+                        outcome: 'error',
+                        code,
+                      });
+                    } catch {
+                      try {
+                        activeSetupObservation?.fault();
+                      } catch {
+                        /* preserve business result */
+                      }
+                    }
+                    notify({
                       label,
-                      elapsedMs: performance.now() - began,
+                      elapsedMs: ended - began,
+                      enteredMs: began,
+                      settledMs: ended,
                       outcome: 'error',
-                      code: diagnosticCode(error),
+                      code,
                     });
                     if (rejected) return rejected(error);
                     throw error;
@@ -282,6 +491,60 @@ function diagnosticTx<T extends object>(target: T, rows: DiagnosticRow[], prefix
       };
     },
   });
+}
+
+async function optionalNativeObservation(
+  tx: Prisma.TransactionClient,
+  work: () => Promise<void>,
+): Promise<boolean> {
+  let open = false;
+  try {
+    await tx.$executeRawUnsafe('SAVEPOINT r5_d7_native_observation');
+    open = true;
+    await work();
+    await tx.$executeRawUnsafe('RELEASE SAVEPOINT r5_d7_native_observation');
+    return true;
+  } catch {
+    if (open) {
+      try {
+        await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT r5_d7_native_observation');
+        await tx.$executeRawUnsafe('RELEASE SAVEPOINT r5_d7_native_observation');
+      } catch {
+        /* The original business call still owns the transaction outcome. */
+      }
+    }
+    return false;
+  }
+}
+
+function nativeFailureRecord(error: unknown) {
+  const text = (value: unknown) =>
+    String(value).replace(/postgres(?:ql)?:\/\/\S+/gu, '<redacted-connection>');
+  const object = error as {
+    name?: string;
+    code?: string;
+    message?: string;
+    stack?: string;
+    meta?: unknown;
+  };
+  return {
+    name: text(object?.name),
+    nativeCode: object?.code ?? null,
+    nativeMessage: text(object?.message),
+    nativeStack: text(object?.stack),
+    meta:
+      object?.meta === undefined
+        ? null
+        : JSON.parse(
+            JSON.stringify(object.meta, (_key, value: unknown) =>
+              typeof value === 'string'
+                ? text(value)
+                : typeof value === 'bigint'
+                  ? value.toString()
+                  : value,
+            ),
+          ),
+  };
 }
 
 function summarizeDiagnostics(rows: DiagnosticRow[]) {
@@ -379,36 +642,30 @@ function safeReceiptPlan(value: unknown): unknown {
   return value;
 }
 function receiptEvidence(label: string, value: object) {
-  console.info('[d7-receipt-evidence] ' + JSON.stringify({ label, ...value }));
+  safeD7Diagnostic(
+    () =>
+      deferD7Diagnostic(() =>
+        console.info('[d7-receipt-evidence] ' + JSON.stringify({ label, ...value })),
+      ),
+    () => activeSetupObservation?.fault(),
+  );
 }
 async function observeReceiptOnce<T>(
   original: () => Promise<T>,
   observe: () => Promise<void>,
   report: (error: unknown) => void,
+  onFault: () => void = () => activeSetupObservation?.fault(),
 ): Promise<T> {
-  try {
-    await observe();
-  } catch (error) {
-    report(error);
-  }
-  return original();
+  return await observeD7Receipt(original, observe, report, onFault);
 }
 async function preservePrepareFailure<T>(
   original: () => Promise<T>,
   eligible: () => Promise<boolean>,
   probe: () => Promise<void>,
   report: (error: unknown) => void,
+  onFault: () => void = () => activeSetupObservation?.fault(),
 ): Promise<T> {
-  try {
-    return await original();
-  } catch (error) {
-    try {
-      if (await eligible()) await probe();
-    } catch (diagnosticError) {
-      report(diagnosticError);
-    }
-    throw error;
-  }
+  return await preserveD7Prepare(original, eligible, probe, report, onFault);
 }
 type ReceiptPlanQuery = { label: string; sql: string; values: unknown[] };
 async function collectReceiptPlans(
@@ -549,6 +806,8 @@ function receiptQueries(
 
 // Instrument positive controls never contact a database or log exception text.
 async function assertDiagnosticObserver() {
+  const selfTestObservation = new D7SetupObservation();
+  const selfTestFault = () => selfTestObservation.fault();
   const rows: DiagnosticRow[] = [];
   let executed = 0;
   const failure = new Error('synthetic private detail must not be logged');
@@ -621,6 +880,7 @@ async function assertDiagnosticObserver() {
       () => {
         observedErrors += 1;
       },
+      selfTestFault,
     ),
   ).rejects.toBe(failure);
   expect(calls).toBe(1);
@@ -630,6 +890,7 @@ async function assertDiagnosticObserver() {
       async () => 17,
       async () => undefined,
       () => undefined,
+      selfTestFault,
     ),
   ).resolves.toBe(17);
   let probes = 0;
@@ -641,6 +902,7 @@ async function assertDiagnosticObserver() {
         probes += 1;
       },
       () => undefined,
+      selfTestFault,
     ),
   ).resolves.toBe(17);
   expect(probes).toBe(0);
@@ -656,6 +918,7 @@ async function assertDiagnosticObserver() {
         throw sentinel;
       },
       () => undefined,
+      selfTestFault,
     ),
   ).rejects.toBe(failure);
   expect(probes).toBe(1);
@@ -669,9 +932,11 @@ async function assertDiagnosticObserver() {
         probes += 1;
       },
       () => undefined,
+      selfTestFault,
     ),
   ).rejects.toBe(failure);
   expect(probes).toBe(1);
+  expect(selfTestObservation.report().faults).toBe(2);
   const authority = receiptSqlAuthority();
   const parent = {
     id: 'private',
@@ -787,6 +1052,155 @@ describe('D7 receipt SQL authority pure controls', () => {
       receiptInstalledBodiesMatch(authority, [installed[0], installed[0], ...installed.slice(2)]),
     ).toBe(false);
     expect(receiptInstalledBodiesMatch(authority, [...installed, installed[0]])).toBe(false);
+  });
+});
+
+describe('D7 commit transaction observer pure controls', () => {
+  it('isolates throwing error getters and output without replacing the original rejection', () => {
+    const original = new Error('private original error');
+    Object.defineProperty(original, 'stack', {
+      get: () => {
+        throw new Error('private getter');
+      },
+    });
+    let errors = 0;
+    const fallback = { expiredOperation: 'UNKNOWN', prismaModel: null, sourceFrames: [] };
+    try {
+      try {
+        throw original;
+      } catch (error) {
+        expect(
+          collectCommitDiagnostic(
+            () => commitErrorLocation(error),
+            fallback,
+            () => {
+              errors++;
+            },
+          ),
+        ).toBe(fallback);
+        collectCommitDiagnostic(
+          () => {
+            throw new Error('private output failure');
+          },
+          undefined,
+          () => {
+            errors++;
+          },
+        );
+        throw error;
+      }
+    } catch (error) {
+      expect(error).toBe(original);
+    }
+    expect(errors).toBe(2);
+    expect(
+      collectCommitDiagnostic(
+        () => {
+          throw original;
+        },
+        17,
+        () => {
+          throw original;
+        },
+      ),
+    ).toBe(17);
+  });
+
+  it('preserves a returned callback value and records resolved settlement', async () => {
+    const tx = {} as Prisma.TransactionClient;
+    const value = { unchanged: true };
+    const body = jest.fn(async (received: Prisma.TransactionClient) => {
+      expect(received).toBe(tx);
+      return value;
+    });
+    const run = jest.fn((callback: (client: Prisma.TransactionClient) => Promise<typeof value>) =>
+      callback(tx),
+    );
+    const observation = createCommitTransactionObservation();
+    await expect(observeCommitTransaction(body, run, observation)).resolves.toBe(value);
+    expect(body).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(observation).toMatchObject({ transactionState: 'RESOLVED', callbackState: 'RETURNED' });
+    expect(observation.callbackMs).toEqual(expect.any(Number));
+    expect(observation.settlementAfterCallbackMs).toEqual(expect.any(Number));
+  });
+
+  it.each(['CALLBACK', 'AFTER_CALLBACK', 'BEFORE_CALLBACK'] as const)(
+    'preserves the original rejection at %s without inventing commit success',
+    async (at) => {
+      const failure = new Error('synthetic-private-error');
+      const body = jest.fn(async () => {
+        if (at === 'CALLBACK') throw failure;
+        return 17;
+      });
+      const run = jest.fn(async (callback: (tx: Prisma.TransactionClient) => Promise<number>) => {
+        if (at === 'BEFORE_CALLBACK') throw failure;
+        await callback({} as Prisma.TransactionClient);
+        throw failure;
+      });
+      const observation = createCommitTransactionObservation();
+      await expect(observeCommitTransaction(body, run, observation)).rejects.toBe(failure);
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(body).toHaveBeenCalledTimes(at === 'BEFORE_CALLBACK' ? 0 : 1);
+      expect(observation).toMatchObject({
+        transactionState: 'REJECTED',
+        callbackState:
+          at === 'CALLBACK' ? 'THREW' : at === 'AFTER_CALLBACK' ? 'RETURNED' : 'NOT_ENTERED',
+      });
+      expect(JSON.stringify(observation)).not.toContain('synthetic-private-error');
+    },
+  );
+
+  it.each([
+    ['BEGIN', 'BEGIN'],
+    ['SET TRANSACTION ISOLATION LEVEL READ COMMITTED', 'SET_TRANSACTION'],
+    ['SET LOCAL lock_timeout = 4000', 'SET_LOCAL_LOCK_TIMEOUT'],
+    ['COMMIT', 'COMMIT'],
+    ['ROLLBACK', 'ROLLBACK'],
+    ['SAVEPOINT private_name', 'SAVEPOINT'],
+    ['RELEASE SAVEPOINT private_name', 'RELEASE'],
+    ['SET private_setting = private_value', 'OTHER_CONTROL'],
+    ['SELECT $1 /* COMMIT private_value */', null],
+  ])('records only the fixed transaction-control kind %#', (query, expected) => {
+    expect(classifyCommitControl(query)).toBe(expected);
+  });
+
+  it.each(['query', 'commit', 'rollback'])(
+    'redacts error details while retaining explicit expired %s evidence',
+    (operation) => {
+      const failure = new Prisma.PrismaClientKnownRequestError(
+        `private detail: A ${operation} cannot be executed on an expired transaction.`,
+        { code: 'P2028', clientVersion: 'diagnostic', meta: { modelName: 'private_model' } },
+      );
+      failure.stack = [
+        failure.message,
+        '    at privateLabel (/private/root/src/modules/activities/correction-application.service.ts:1438:7)',
+        '    at privateLabel (/private/root/src/private-data.ts:10:20)',
+      ].join('\n');
+      const result = commitErrorLocation(failure);
+      expect(result).toEqual({
+        expiredOperation: operation.toUpperCase(),
+        prismaModel: null,
+        sourceFrames: [
+          {
+            file: 'src/modules/activities/correction-application.service.ts',
+            line: 1438,
+            column: 7,
+          },
+        ],
+      });
+      expect(JSON.stringify(result)).not.toContain('private');
+    },
+  );
+
+  it('leaves ambiguous expiry and untrusted source frames unknown', () => {
+    const failure = new Error('Transaction already closed: private query detail');
+    failure.stack = failure.message + '\n    at /private/query.ts:2:3';
+    expect(commitErrorLocation(failure)).toEqual({
+      expiredOperation: 'UNKNOWN',
+      prismaModel: null,
+      sourceFrames: [],
+    });
   });
 });
 
@@ -936,10 +1350,17 @@ describe('D7-1 recognition correction real transaction', () => {
     });
   }, 120000);
   afterEach(async () => {
-    jest.restoreAllMocks();
-    await closeD13Fixture(f);
-    if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
-    else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
+    try {
+      jest.restoreAllMocks();
+      await closeD13Fixture(f);
+      if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
+    } finally {
+      for (const work of deferredD7Diagnostics.splice(0))
+        safeD7Diagnostic(work, () => activeSetupObservation?.fault());
+      activeSetupObservation?.emit();
+      activeSetupObservation = undefined;
+    }
   });
   afterAll(async () => {
     if (!USE_DEDICATED_W98) return;
@@ -1121,7 +1542,9 @@ describe('D7-1 recognition correction real transaction', () => {
       });
     }
     await options.beforeSeal?.({ ...draft, positionId: draft.positionId });
-    await f.app.get(EvidenceSealService).seal(draft.activityId, actor, meta);
+    await observeD7Setup(activeSetupObservation, 'seal', null, () =>
+      f.app.get(EvidenceSealService).seal(draft.activityId, actor, meta),
+    );
     let generated: Pick<
       SettlementDraftResult,
       | 'settlementRunId'
@@ -1132,11 +1555,15 @@ describe('D7-1 recognition correction real transaction', () => {
       | 'blockedItemCount'
     >;
     if (options.batch) {
-      const response = await post(`${D13_APP}/${draft.activityId}/settlement/generate`, {
-        operationKey: f.key('capacity_generate'),
-      });
+      const response = await observeD7Setup(activeSetupObservation, 'generate', null, () =>
+        post(`${D13_APP}/${draft.activityId}/settlement/generate`, {
+          operationKey: f.key('capacity_generate'),
+        }),
+      );
       expect(response.outcome).toBe('job');
-      const processed = await f.app.get(ActivityBatchWorker).drainOnce();
+      const processed = await observeD7Setup(activeSetupObservation, 'generateDrain', null, () =>
+        f.app.get(ActivityBatchWorker).drainOnce(),
+      );
       expect(processed).toMatchObject({ jobId: response.jobId, itemsProcessed: 1, itemsFailed: 0 });
       const job = await f.db.activityBatchJob.findUniqueOrThrow({
         where: { id: response.jobId as string },
@@ -1311,40 +1738,65 @@ describe('D7-1 recognition correction real transaction', () => {
               });
             }
           }
-          await f.db.$transaction(
-            async (tx) => {
-              await tx.member.createMany({
-                data: people.map((person) => ({
-                  id: person.memberId,
-                  memberNo: person.memberId,
-                  ...memberIdentityData('D4 capacity fixture'),
-                })),
-              });
-              await tx.activityRegistration.createMany({
-                data: people.map((person) => ({
-                  id: person.registrationId,
-                  activityId: draft.activityId,
-                  memberId: person.memberId,
-                  statusCode: 'pass',
-                })),
-              });
-              await tx.activityParticipationIdentity.createMany({
-                data: people.map((person) => ({
-                  id: person.identityId,
-                  activityId: draft.activityId,
-                  sessionId: draft.sessionId,
-                  registrationId: person.registrationId,
-                  memberId: person.memberId,
-                  currentStatusCode: 'pass',
-                  populationIncluded: true,
-                  currentPositionId: draft.positionId,
-                })),
-              });
-              await tx.attendancePunchEvent.createMany({ data: events });
-              await tx.participantServiceSegmentRevision.createMany({ data: segments });
-            },
-            { timeout: 30000 },
-          );
+          const fixtureTiming =
+            population === 2000 ? new D7FixtureTiming(offset, people.length) : undefined;
+          try {
+            await observeD7FixtureAsync(fixtureTiming, 'transaction', () =>
+              f.db.$transaction(
+                (tx) =>
+                  observeD7FixtureAsync(fixtureTiming, 'callback', async () => {
+                    await observeD7FixtureAsync(fixtureTiming, 'member', () =>
+                      tx.member.createMany({
+                        data: observeD7FixtureSync(fixtureTiming, 'memberArgs', () =>
+                          people.map((person) => ({
+                            id: person.memberId,
+                            memberNo: person.memberId,
+                            ...memberIdentityData('D4 capacity fixture'),
+                          })),
+                        ),
+                      }),
+                    );
+                    await observeD7FixtureAsync(fixtureTiming, 'registration', () =>
+                      tx.activityRegistration.createMany({
+                        data: observeD7FixtureSync(fixtureTiming, 'registrationArgs', () =>
+                          people.map((person) => ({
+                            id: person.registrationId,
+                            activityId: draft.activityId,
+                            memberId: person.memberId,
+                            statusCode: 'pass',
+                          })),
+                        ),
+                      }),
+                    );
+                    await observeD7FixtureAsync(fixtureTiming, 'identity', () =>
+                      tx.activityParticipationIdentity.createMany({
+                        data: observeD7FixtureSync(fixtureTiming, 'identityArgs', () =>
+                          people.map((person) => ({
+                            id: person.identityId,
+                            activityId: draft.activityId,
+                            sessionId: draft.sessionId,
+                            registrationId: person.registrationId,
+                            memberId: person.memberId,
+                            currentStatusCode: 'pass',
+                            populationIncluded: true,
+                            currentPositionId: draft.positionId,
+                          })),
+                        ),
+                      }),
+                    );
+                    await observeD7FixtureAsync(fixtureTiming, 'punch', () =>
+                      tx.attendancePunchEvent.createMany({ data: events }),
+                    );
+                    await observeD7FixtureAsync(fixtureTiming, 'segment', () =>
+                      tx.participantServiceSegmentRevision.createMany({ data: segments }),
+                    );
+                  }),
+                { timeout: 30000 },
+              ),
+            );
+          } finally {
+            deferD7Diagnostic(() => fixtureTiming?.emit());
+          }
         }
       },
     });
@@ -1479,13 +1931,33 @@ describe('D7-1 recognition correction real transaction', () => {
         });
       }
       // Parent, complete children and receipt commit together; all database guards remain enabled.
-      await f.db.$transaction(
-        async (tx) => {
-          await tx.participantTimeAllocationRevision.createMany({ data: parents });
-          await tx.participantTimeAllocationSlice.createMany({ data: slices });
-          await tx.participantTimeAllocationCommandReceipt.createMany({ data: receipts });
-        },
-        { timeout: 30000 },
+      const setupBatch: D7SetupBatch = {
+        family: 'draftAllocations',
+        offset,
+        total: sources.length,
+        parents: parents.length,
+        slices: slices.length,
+        evidence: 0,
+        receipts: receipts.length,
+      };
+      await observeD7Setup(activeSetupObservation, 'batchTransaction', setupBatch, () =>
+        f.db.$transaction(
+          async (tx) =>
+            observeD7Setup(activeSetupObservation, 'batchCallback', setupBatch, () =>
+              (async () => {
+                await observeD7Setup(activeSetupObservation, 'batchParents', setupBatch, () =>
+                  tx.participantTimeAllocationRevision.createMany({ data: parents }),
+                );
+                await observeD7Setup(activeSetupObservation, 'batchSlices', setupBatch, () =>
+                  tx.participantTimeAllocationSlice.createMany({ data: slices }),
+                );
+                await observeD7Setup(activeSetupObservation, 'batchReceipt', setupBatch, () =>
+                  tx.participantTimeAllocationCommandReceipt.createMany({ data: receipts }),
+                );
+              })(),
+            ),
+          { timeout: 30000 },
+        ),
       );
     }
     return p;
@@ -1755,15 +2227,37 @@ describe('D7-1 recognition correction real transaction', () => {
           createdAt,
         });
       }
-      await f.db.$transaction(
-        async (tx) => {
-          await tx.participantTimeAllocationRevision.createMany({ data: parents });
-          await tx.participantTimeAllocationSlice.createMany({ data: slices });
-          if (evidence.length > 0)
-            await tx.participantTimeAllocationEvidence.createMany({ data: evidence });
-          await tx.participantTimeAllocationCommandReceipt.createMany({ data: receipts });
-        },
-        { timeout: 30000 },
+      const setupBatch: D7SetupBatch = {
+        family: 'committedAllocations',
+        offset,
+        total: remaining.length,
+        parents: parents.length,
+        slices: slices.length,
+        evidence: evidence.length,
+        receipts: receipts.length,
+      };
+      await observeD7Setup(activeSetupObservation, 'batchTransaction', setupBatch, () =>
+        f.db.$transaction(
+          async (tx) =>
+            observeD7Setup(activeSetupObservation, 'batchCallback', setupBatch, () =>
+              (async () => {
+                await observeD7Setup(activeSetupObservation, 'batchParents', setupBatch, () =>
+                  tx.participantTimeAllocationRevision.createMany({ data: parents }),
+                );
+                await observeD7Setup(activeSetupObservation, 'batchSlices', setupBatch, () =>
+                  tx.participantTimeAllocationSlice.createMany({ data: slices }),
+                );
+                if (evidence.length > 0)
+                  await observeD7Setup(activeSetupObservation, 'batchEvidence', setupBatch, () =>
+                    tx.participantTimeAllocationEvidence.createMany({ data: evidence }),
+                  );
+                await observeD7Setup(activeSetupObservation, 'batchReceipt', setupBatch, () =>
+                  tx.participantTimeAllocationCommandReceipt.createMany({ data: receipts }),
+                );
+              })(),
+            ),
+          { timeout: 30000 },
+        ),
       );
     }
   }
@@ -1772,10 +2266,35 @@ describe('D7-1 recognition correction real transaction', () => {
     run: () => Promise<T>,
     rollbackPrepare: () => Promise<unknown>,
     deadline: number,
+    operation: 'prepare' | 'submit' = 'prepare',
   ): Promise<T> {
     assertTestDatabaseUrl(process.env.DATABASE_URL);
     await assertDiagnosticObserver();
-    const authority = receiptSqlAuthority();
+    // Keep pure observer controls; extra database diagnostics require explicit opt-in.
+    if (process.env.SRVF_D7_NATIVE_CHAIN_DIAGNOSTIC !== '1') return run();
+    const chainMode = process.env.SRVF_D7_NATIVE_CHAIN_DIAGNOSTIC === '1';
+    const chainEvents: Array<DiagnosticSettled & { ordinal: number }> = [];
+    let chainFaults = 0;
+    const nativeFailures: Array<{ label: string; error: unknown }> = [];
+    let backendObservation: Record<string, unknown> | undefined;
+    const calibration = {
+      beforeMs: performance.now(),
+      utcMs: Date.now(),
+      afterMs: performance.now(),
+      timeOriginMs: performance.timeOrigin,
+    };
+    const record = (row: DiagnosticSettled) => {
+      if (!chainMode) return;
+      try {
+        if (chainEvents.length >= 4096) {
+          chainFaults++;
+          return;
+        }
+        chainEvents.push({ ...row, ordinal: chainEvents.length + 1 });
+      } catch {
+        chainFaults++;
+      }
+    };
     const rows: DiagnosticRow[] = [];
     const stages: DiagnosticRow[] = [];
     const measured = async <R>(label: string, work: () => Promise<R>): Promise<R> => {
@@ -1786,16 +2305,35 @@ describe('D7-1 recognition correction real transaction', () => {
         return await work();
       } catch (error) {
         outcome = 'error';
-        code = diagnosticCode(error);
+        try {
+          if (chainMode) nativeFailures.push({ label, error });
+          code = diagnosticCode(error);
+        } catch {
+          code = 'unavailable';
+          chainFaults++;
+        }
         throw error;
       } finally {
-        stages.push({ label, elapsedMs: performance.now() - started, outcome, code });
+        const ended = performance.now();
+        try {
+          stages.push({ label, elapsedMs: ended - started, outcome, code });
+        } catch {
+          chainFaults++;
+        }
+        record({
+          label: 'phase.' + label,
+          enteredMs: started,
+          settledMs: ended,
+          elapsedMs: ended - started,
+          outcome,
+          code,
+        });
       }
     };
     const service = f.app.get(ActivityTimeSettlementService);
     const queries = f.app.get(ActivityTimeSettlementQueryService);
     const access = f.app.get(ActivityTimeSettlementAccessService);
-    const prepare = service.prepare.bind(service);
+    const prepare = service[operation].bind(service);
     const readDraft = queries.readDraftContextInTx.bind(queries);
     const readSources = queries.readSourceSetInTx.bind(queries);
     const evaluate = queries.evaluateInTx.bind(queries);
@@ -1825,6 +2363,7 @@ describe('D7-1 recognition correction real transaction', () => {
       return parent as unknown as Record<string, unknown>;
     };
     const plansInTx = async (tx: Prisma.TransactionClient, id: string, analyze: boolean) => {
+      const authority = receiptSqlAuthority();
       const began = performance.now();
       try {
         const parent = await readAnchor(tx, id);
@@ -1846,6 +2385,8 @@ describe('D7-1 recognition correction real transaction', () => {
             'astr_bucket_content_hash', 'astr_receipt_complete_guard')`;
           const matches = receiptInstalledBodiesMatch(authority, installed);
           receiptEvidence('installed_body', {
+            referenceKind: 'historical_121_138',
+            currentSqlValidation: 'UNKNOWN',
             matches,
             functions: installed.map((row) => ({
               name: authority.bodies.has(row.name) ? row.name : 'other',
@@ -1853,7 +2394,16 @@ describe('D7-1 recognition correction real transaction', () => {
               digest: createHash('sha256').update(row.body).digest('hex'),
             })),
           });
-          if (!matches) throw new Error('installed receipt SQL differs from authority');
+          if (!matches) {
+            receiptEvidence('collection', {
+              analyze: false,
+              collected: 0,
+              complete: false,
+              reason: 'historical_121_138_reference_mismatch',
+              currentSqlPlanEvidence: 'UNKNOWN',
+            });
+            return;
+          }
           sqlMatches = true;
           if (performance.now() - began < 200) {
             const snapshot = await tx.$queryRaw<Array<{ snapshot: unknown }>>`
@@ -1897,6 +2447,10 @@ describe('D7-1 recognition correction real transaction', () => {
       reachedReceipt = true;
       parentId = args[5].timeRevisionId;
       try {
+        if (chainMode) {
+          await measured('receipt.method', () => originalReceipt(...args));
+          return;
+        }
         await observeReceiptOnce(
           () => originalReceipt(...args),
           () => plansInTx(args[0], args[5].timeRevisionId, false),
@@ -1909,22 +2463,30 @@ describe('D7-1 recognition correction real transaction', () => {
     });
     const probes = [
       jest
-        .spyOn(service, 'prepare')
-        .mockImplementation((...args) => measured('prepare.service', () => prepare(...args))),
+        .spyOn(service, operation)
+        .mockImplementation((...args: Parameters<typeof service.prepare>) =>
+          measured(operation + '.service', () => prepare(...args)),
+        ),
       jest
         .spyOn(queries, 'readDraftContextInTx')
-        .mockImplementation((...args) => measured('prepare.readDraft', () => readDraft(...args))),
+        .mockImplementation((...args) =>
+          measured(operation + '.readDraft', () => readDraft(...args)),
+        ),
       jest
         .spyOn(queries, 'readSourceSetInTx')
         .mockImplementation((...args) =>
-          measured('prepare.readSources', () => readSources(...args)),
+          measured(operation + '.readSources', () => readSources(...args)),
         ),
       jest
         .spyOn(queries, 'evaluateInTx')
-        .mockImplementation((...args) => measured('prepare.evaluate', () => evaluate(...args))),
+        .mockImplementation((...args) =>
+          measured(operation + '.evaluate', () => evaluate(...args)),
+        ),
       jest
         .spyOn(access, 'authorize')
-        .mockImplementation((...args) => measured('prepare.authorize', () => authorize(...args))),
+        .mockImplementation((...args) =>
+          measured(operation + '.authorize', () => authorize(...args)),
+        ),
     ];
     const transaction = f.db.$transaction.bind(f.db);
     const began = performance.now();
@@ -1932,31 +2494,121 @@ describe('D7-1 recognition correction real transaction', () => {
       apply(original, receiver, args: unknown[]) {
         const callback = args[0];
         if (typeof callback !== 'function') return Reflect.apply(original, receiver, args);
-        return Reflect.apply(original, receiver, [
-          (tx: Prisma.TransactionClient) =>
-            Reflect.apply(callback, undefined, [diagnosticTx(tx, rows)]),
-          ...args.slice(1),
-        ]);
+        const invoke = () =>
+          Reflect.apply(original, receiver, [
+            (tx: Prisma.TransactionClient) => {
+              const execute = () =>
+                Reflect.apply(callback, undefined, [
+                  diagnosticTx(
+                    tx,
+                    rows,
+                    '',
+                    chainMode
+                      ? (row) => record({ ...row, label: 'delegate.' + row.label })
+                      : undefined,
+                  ),
+                ]);
+              if (!chainMode) return execute();
+              return measured('transaction.callback', async () => {
+                await measured('diagnostic.configure', async () => {
+                  const configured = await optionalNativeObservation(tx, async () => {
+                    const observed = await tx.$queryRaw<
+                      Array<{ observation: Record<string, unknown> }>
+                    >`
+                  SELECT jsonb_build_object(
+                    'database',current_database(),'oid',(SELECT oid::text FROM pg_database WHERE datname=current_database()),
+                    'backendPid',pg_backend_pid(),'backendStart',backend_start,'xactStart',xact_start,'at',clock_timestamp(),
+                    'snapshot',pg_current_snapshot()::text,'role',current_user,
+                    'statementTimeout',current_setting('statement_timeout'),'lockTimeout',current_setting('lock_timeout'),
+                    'workMem',current_setting('work_mem'),'jit',current_setting('jit'),'planCacheMode',current_setting('plan_cache_mode'),
+                    'minDuration',current_setting('auto_explain.log_min_duration',true),
+                    'protocolMin',current_setting('log_min_duration_statement'),
+                    'protocolDuration',current_setting('log_duration'),
+                    'protocolStatement',current_setting('log_statement'),
+                    'sharedPreload',current_setting('shared_preload_libraries'),
+                    'parameterMax',current_setting('log_parameter_max_length'),
+                    'parameterErrorMax',current_setting('log_parameter_max_length_on_error'),
+                    'tables',(SELECT jsonb_agg(jsonb_build_object('table',c.relname,'estimatedRows',c.reltuples,
+                      'lastAnalyze',s.last_analyze,'lastAutoAnalyze',s.last_autoanalyze,'live',s.n_live_tup,'dead',s.n_dead_tup) ORDER BY c.relname)
+                      FROM pg_class c JOIN pg_stat_all_tables s ON s.relid=c.oid
+                      WHERE c.relnamespace='public'::regnamespace AND c.relname IN (
+                        'ParticipantSettlementResultRevision','ParticipantSettlementTimeBucket','ParticipantSettlementTimeBucketSource'))
+                    ) AS observation
+                  FROM pg_stat_activity WHERE pid=pg_backend_pid()`;
+                    backendObservation = observed[0]?.observation;
+                    if (
+                      !backendObservation ||
+                      backendObservation.database !== deriveTestDbName() ||
+                      !Number.isInteger(backendObservation.backendPid) ||
+                      typeof backendObservation.backendStart !== 'string' ||
+                      (backendObservation.minDuration !== null &&
+                        backendObservation.minDuration !== '-1') ||
+                      backendObservation.protocolMin !== '-1' ||
+                      backendObservation.protocolDuration !== 'off' ||
+                      backendObservation.protocolStatement !== 'none'
+                    )
+                      chainFaults++;
+                  });
+                  if (!configured) chainFaults++;
+                });
+                return await execute();
+              });
+            },
+            ...args.slice(1),
+          ]);
+        return chainMode ? measured('transaction.request', invoke) : invoke();
       },
     });
     const originalRun = async () => {
       try {
-        return await run();
+        return await (chainMode ? measured('http.run', run) : run());
       } finally {
         f.db.$transaction = transaction;
         for (const probe of probes) probe.mockRestore();
         receiptProbe.mockRestore();
-        console.info(
-          '[d7-prepare-diagnostic] ' +
-            JSON.stringify({
-              elapsedMs: performance.now() - began,
-              queryCount: rows.length,
-              rows: summarizeDiagnostics(rows),
-              stages: summarizeDiagnostics(stages),
-            }),
+        const prepareElapsedMs = performance.now() - began;
+        if (chainMode)
+          safeD7Diagnostic(
+            () =>
+              deferD7Diagnostic(() =>
+                console.info(
+                  '[d7-native-chain] ' +
+                    JSON.stringify({
+                      schemaVersion: 1,
+                      calibration,
+                      operation,
+                      nativeFailures: nativeFailures.map(({ label, error }) => ({
+                        label,
+                        error: nativeFailureRecord(error),
+                      })),
+                      faults: chainFaults,
+                      events: chainEvents,
+                      backend: backendObservation,
+                      semantics:
+                        'inclusive original Promise-consumption and method spans; no sum or CPU partition; settings consume original transaction budget',
+                    }),
+                ),
+              ),
+            () => activeSetupObservation?.fault(),
+          );
+        safeD7Diagnostic(
+          () =>
+            deferD7Diagnostic(() =>
+              console.info(
+                '[d7-prepare-diagnostic] ' +
+                  JSON.stringify({
+                    elapsedMs: prepareElapsedMs,
+                    queryCount: rows.length,
+                    rows: summarizeDiagnostics(rows),
+                    stages: summarizeDiagnostics(stages),
+                  }),
+              ),
+            ),
+          () => activeSetupObservation?.fault(),
         );
       }
     };
+    if (chainMode) return await originalRun();
     return preservePrepareFailure(
       originalRun,
       async () => {
@@ -2021,44 +2673,75 @@ describe('D7-1 recognition correction real transaction', () => {
    * allocation and final-review facts instead of creating a partial shortcut.
    */
   async function createCommittedFactCorrectionBase(population = 1, diagnosticDeadline?: number) {
-    const p = population === 1 ? await prepareSource() : await createCapacitySource(population);
+    const p =
+      population === 1
+        ? await prepareSource()
+        : await observeD7Setup(activeSetupObservation, 'capacity', null, () =>
+            createCapacitySource(population),
+          );
     if (population === 1) await recognize(p);
     const initialCommand = prepareCommand(p);
     const preparedTime =
       population === 2000
-        ? await diagnoseInitialPrepare(
-            () => post(p.url + '/prepare', initialCommand),
-            () =>
-              f.app
-                .get(ActivityTimeSettlementService)
-                .prepare(p.activityId, initialCommand, actor, meta),
-            diagnosticDeadline ?? performance.now(),
+        ? await observeD7Setup(activeSetupObservation, 'timePrepare', null, () =>
+            diagnoseInitialPrepare(
+              () => post(p.url + '/prepare', initialCommand),
+              () =>
+                f.app
+                  .get(ActivityTimeSettlementService)
+                  .prepare(p.activityId, initialCommand, actor, meta),
+              diagnosticDeadline ?? performance.now(),
+            ),
           )
         : await post(p.url + '/prepare', initialCommand);
-    const submittedTime = await post(p.url + '/submit', {
-      operationKey: f.key('submit_time'),
-      expectedDraftVersion: p.proof.expectedDraftVersion,
-      expectedEvidenceSealId: p.proof.expectedEvidenceSealId,
-      timeRevisionId: preparedTime.timeRevisionId,
-      expectedBucketContentHash: preparedTime.bucketContentHash,
-    });
-    const { timeRevision, finalActor, finalRole, batch } = await createClassifiedPostingFixture(
-      submittedTime.timeRevisionId as string,
-      population,
+    const submitInitialTime = () =>
+      post(p.url + '/submit', {
+        operationKey: f.key('submit_time'),
+        expectedDraftVersion: p.proof.expectedDraftVersion,
+        expectedEvidenceSealId: p.proof.expectedEvidenceSealId,
+        timeRevisionId: preparedTime.timeRevisionId,
+        expectedBucketContentHash: preparedTime.bucketContentHash,
+      });
+    const submittedTime = await observeD7Setup(activeSetupObservation, 'timeSubmit', null, () =>
+      population === 2000 && process.env.SRVF_D7_NATIVE_CHAIN_DIAGNOSTIC === '1'
+        ? diagnoseInitialPrepare(
+            submitInitialTime,
+            async () => undefined,
+            diagnosticDeadline ?? performance.now(),
+            'submit',
+          )
+        : submitInitialTime(),
+    );
+    const { timeRevision, finalActor, finalRole, batch } = await observeD7Setup(
+      activeSetupObservation,
+      'postingFixture',
+      null,
+      () => createClassifiedPostingFixture(submittedTime.timeRevisionId as string, population),
     );
     const preparation = f.app.get(LedgerPreparationService);
-    const job = await preparation.ensurePrepareJob(batch.id);
+    const job = await observeD7Setup(activeSetupObservation, 'ledgerEnsure', null, () =>
+      preparation.ensurePrepareJob(batch.id),
+    );
     const items = await f.db.activityBatchJobItem.findMany({ where: { jobId: job.jobId } });
-    for (const item of items) await preparation.prepareChunk(job.jobId, item.id);
-    await preparation.finalize(job.jobId);
-    await f.app
-      .get(LedgerPostingService)
-      .commitBatch(
-        { postingBatchId: batch.id, operationKey: f.key('initial_commit') },
-        finalActor,
-        meta,
+    for (const item of items)
+      await observeD7Setup(activeSetupObservation, 'ledgerChunk', null, () =>
+        preparation.prepareChunk(job.jobId, item.id),
       );
-    await materializeCommittedAllocationFacts(p);
+    await observeD7Setup(activeSetupObservation, 'ledgerFinalize', null, () =>
+      preparation.finalize(job.jobId),
+    );
+    await observeD7Setup(activeSetupObservation, 'initialCommit', null, () =>
+      f.app
+        .get(LedgerPostingService)
+        .commitBatch(
+          { postingBatchId: batch.id, operationKey: f.key('initial_commit') },
+          finalActor,
+          meta,
+        ),
+    );
+    await observeD7Setup(activeSetupObservation, 'committedFacts', null, () =>
+      materializeCommittedAllocationFacts(p),
+    );
     await f.db.roleBinding.create({
       data: {
         principalType: PrincipalType.USER,
@@ -2471,9 +3154,15 @@ describe('D7-1 recognition correction real transaction', () => {
   it.each([100, 2000])(
     'runs the Human V3 write chain against a complete %i-identity source proof',
     async (population) => {
+      activeSetupObservation = population === 2000 ? new D7SetupObservation() : undefined;
+
       const diagnosticDeadline = performance.now() + 600000;
-      const { p, timeRevision, root, roots, sources, allocations } =
-        await createCommittedFactCorrectionBase(population, diagnosticDeadline);
+      const { p, timeRevision, root, roots, sources, allocations } = await observeD7Setup(
+        activeSetupObservation,
+        'base',
+        null,
+        () => createCommittedFactCorrectionBase(population, diagnosticDeadline),
+      );
       expect(sources).toHaveLength(population * 5);
       const source =
         sources.find((row) => row.participationIdentityId !== p.identityId) ?? sources[0];
@@ -2493,86 +3182,101 @@ describe('D7-1 recognition correction real transaction', () => {
           row.segmentKey === source.segmentKey,
       );
       if (!allocation) throw new Error('source allocation required');
+      const sourceServiceHours = source.serviceHours;
       const correctedCheckOutAt = new Date(source.checkOutAt.getTime() - 1_000);
       const correctionUrl = `${D13_APP}/${p.activityId}/time-corrections`;
-      const submitted = await request(httpServer(f.app))
-        .post(correctionUrl)
-        .set('Authorization', f.creator.auth)
-        .send({
-          participationIdentityId: source.participationIdentityId,
-          requestTypeCode: 'time',
-          requestedChangeJson: {
-            schemaVersion: 3,
-            results: [],
-            segments: [
-              {
-                participationIdentityId: source.participationIdentityId,
-                segmentKey: source.segmentKey,
-                checkInAt: source.checkInAt.toISOString(),
-                checkOutAt: correctedCheckOutAt.toISOString(),
-                resultCode: source.resultCode,
-                // This one-second source correction stays within the existing
-                // two-decimal service-hour representation, so it exercises a
-                // real V3 fact change without fabricating a rounded value.
-                serviceHours: source.serviceHours.toString(),
+      const submitted = await observeD7Setup(activeSetupObservation, 'humanSubmit', null, () =>
+        request(httpServer(f.app))
+          .post(correctionUrl)
+          .set('Authorization', f.creator.auth)
+          .send({
+            participationIdentityId: source.participationIdentityId,
+            requestTypeCode: 'time',
+            requestedChangeJson: {
+              schemaVersion: 3,
+              results: [],
+              segments: [
+                {
+                  participationIdentityId: source.participationIdentityId,
+                  segmentKey: source.segmentKey,
+                  checkInAt: source.checkInAt.toISOString(),
+                  checkOutAt: correctedCheckOutAt.toISOString(),
+                  resultCode: source.resultCode,
+                  // This one-second source correction stays within the existing
+                  // two-decimal service-hour representation, so it exercises a
+                  // real V3 fact change without fabricating a rounded value.
+                  serviceHours: sourceServiceHours.toString(),
+                },
+              ],
+              timeCorrection: {
+                baseSettlementVersionId: timeRevision.settlementVersionId,
+                baseTimeLedgerHash: root.contentHash,
+                reason: '满额来源集合中的一条服务段经核验后更正',
+                items: roots.map((entry) => ({
+                  rootEntryId: entry.id,
+                  // V3 的事实变化即使落在同一量化桶，也不得被当作空更正拒绝。
+                  recognizedSeconds: entry.recognizedSeconds,
+                })),
               },
-            ],
-            timeCorrection: {
-              baseSettlementVersionId: timeRevision.settlementVersionId,
-              baseTimeLedgerHash: root.contentHash,
-              reason: '满额来源集合中的一条服务段经核验后更正',
-              items: roots.map((entry) => ({
-                rootEntryId: entry.id,
-                // V3 的事实变化即使落在同一量化桶，也不得被当作空更正拒绝。
-                recognizedSeconds: entry.recognizedSeconds,
-              })),
+              allocations: [
+                {
+                  participationIdentityId: source.participationIdentityId,
+                  segmentKey: source.segmentKey,
+                  baseSegmentRevisionId: source.id,
+                  baseAllocationRevisionId: allocation.id,
+                  recognitionModeCode: 'automatic',
+                  manualReason: null,
+                  slices: [],
+                  evidenceAttachmentIds: [],
+                },
+              ],
             },
-            allocations: [
-              {
-                participationIdentityId: source.participationIdentityId,
-                segmentKey: source.segmentKey,
-                baseSegmentRevisionId: source.id,
-                baseAllocationRevisionId: allocation.id,
-                recognitionModeCode: 'automatic',
-                manualReason: null,
-                slices: [],
-                evidenceAttachmentIds: [],
-              },
-            ],
-          },
-          reason: '满额事实更正验收',
-          operationKey: f.key(`human_capacity_${population}_submit`),
-        })
-        .expect(201);
+            reason: '满额事实更正验收',
+            operationKey: f.key(`human_capacity_${population}_submit`),
+          })
+          .expect(201),
+      );
       const submittedData = submitted.body.data as { requestId: string; requestVersion: number };
-      await request(httpServer(f.app))
-        .post(`${correctionUrl}/${submittedData.requestId}/review`)
-        .set('Authorization', f.reviewer.auth)
-        .send({
-          actionCode: 'approve',
-          expectedRequestVersion: submittedData.requestVersion,
-          note: '满额事实来源复核通过',
-        })
-        .expect(200);
-      const prepared = await request(httpServer(f.app))
-        .post(`${correctionUrl}/${submittedData.requestId}/prepare`)
-        .set('Authorization', f.reviewer.auth)
-        .send({
-          expectedBaseSettlementVersionId: timeRevision.settlementVersionId,
-          operationKey: f.key(`human_capacity_${population}_prepare`),
-        })
-        .expect(200);
+      await observeD7Setup(activeSetupObservation, 'humanReview', null, () =>
+        request(httpServer(f.app))
+          .post(`${correctionUrl}/${submittedData.requestId}/review`)
+          .set('Authorization', f.reviewer.auth)
+          .send({
+            actionCode: 'approve',
+            expectedRequestVersion: submittedData.requestVersion,
+            note: '满额事实来源复核通过',
+          })
+          .expect(200),
+      );
+      const prepared = await observeD7Setup(activeSetupObservation, 'humanPrepare', null, () =>
+        request(httpServer(f.app))
+          .post(`${correctionUrl}/${submittedData.requestId}/prepare`)
+          .set('Authorization', f.reviewer.auth)
+          .send({
+            expectedBaseSettlementVersionId: timeRevision.settlementVersionId,
+            operationKey: f.key(`human_capacity_${population}_prepare`),
+          })
+          .expect(200),
+      );
       const preparedData = prepared.body.data as {
         applicationId: string;
         postingBatchId: string;
         settlementVersionId: string;
       };
-      const sourceProof = await f.db.correctionTimeSourceProof.findUniqueOrThrow({
-        where: { applicationId: preparedData.applicationId },
-      });
-      const pendingAllocations = await f.db.correctionPendingTimeAllocation.findMany({
-        where: { applicationId: preparedData.applicationId },
-      });
+      const sourceProof = await observeD7Setup(activeSetupObservation, 'proofRead', null, () =>
+        f.db.correctionTimeSourceProof.findUniqueOrThrow({
+          where: { applicationId: preparedData.applicationId },
+        }),
+      );
+      const pendingAllocations = await observeD7Setup(
+        activeSetupObservation,
+        'proofRead',
+        null,
+        () =>
+          f.db.correctionPendingTimeAllocation.findMany({
+            where: { applicationId: preparedData.applicationId },
+          }),
+      );
       expect(pendingAllocations).toHaveLength(1);
       const expectedSliceCount =
         allocations.reduce((total, row) => total + row.sliceCount, 0) -
@@ -2617,17 +3321,51 @@ describe('D7-1 recognition correction real transaction', () => {
         timeAllocationMaterialization: null as number | null,
         correctionReceipt: null as number | null,
         ledgerCommit: null as number | null,
+        applicationCommitted: null as number | null,
+        requestApplied: null as number | null,
+        finalAudit: null as number | null,
       };
+      const commitPhaseState: Partial<
+        Record<keyof typeof commitPhaseMs, 'ENTERED' | 'RETURNED' | 'THREW'>
+      > = {};
+      activeSetupObservation?.complete();
       const queryTiming = createCommitQueryTiming();
+      let diagnosticErrorCount = 0;
+      const safelyObserve = <T>(work: () => T, fallback: T): T =>
+        collectCommitDiagnostic(work, fallback, () => {
+          diagnosticErrorCount++;
+        });
+      const transactionObservation = createCommitTransactionObservation();
+      const timing = population === 2000 ? new D7CommitTiming() : undefined;
+      type QueryEvent = {
+        category: keyof CommitQueryTiming;
+        control: ReturnType<typeof classifyCommitControl>;
+        durationMs: number;
+        callbackState: CommitCallbackState;
+      };
+      // Query events have no success flag. Keep only fixed categories and a
+      // bounded tail; an observed COMMIT event alone is not a successful commit.
+      const queryEventTail: QueryEvent[] = [];
+      const controlEvents: QueryEvent[] = [];
       let commitHttpStatus: number | null = null;
       let commitResponseCode: number | null = null;
+      let commitRequestRejected = false;
+      let commitRequestFailure: unknown;
+      let observerDisconnectFailure: unknown;
+      let observerDisconnectState: 'NOT_STARTED' | 'RETURNED' | 'THREW' = 'NOT_STARTED';
       const measureCommitPhase = async <T>(
         phase: keyof typeof commitPhaseMs,
         work: () => Promise<T>,
       ): Promise<T> => {
         const startedAt = performance.now();
+        commitPhaseState[phase] = 'ENTERED';
         try {
-          return await work();
+          const value = await observeD7Span(timing, phase, work);
+          commitPhaseState[phase] = 'RETURNED';
+          return value;
+        } catch (error) {
+          commitPhaseState[phase] = 'THREW';
+          throw error;
         } finally {
           commitPhaseMs[phase] = Math.round(performance.now() - startedAt);
         }
@@ -2636,12 +3374,39 @@ describe('D7-1 recognition correction real transaction', () => {
         population === 2000 ? new PrismaClient({ log: [{ emit: 'event', level: 'query' }] }) : null;
       if (observed) {
         await observed.$connect();
-        observed.$on('query', (event) => {
-          recordCommitQueryTiming(queryTiming, event.query, event.duration);
-        });
+        observed.$on('query', (event) =>
+          safelyObserve(() => {
+            const existingListener = () => {
+              recordCommitQueryTiming(queryTiming, event.query, event.duration);
+              const fixedEvent: QueryEvent = {
+                category: classifyCommitQuery(event.query),
+                control: classifyCommitControl(event.query),
+                durationMs: Math.round(event.duration),
+                callbackState: transactionObservation.callbackState,
+              };
+              queryEventTail.push(fixedEvent);
+              if (queryEventTail.length > 16) queryEventTail.shift();
+              if (fixedEvent.control !== null) {
+                controlEvents.push(fixedEvent);
+                if (controlEvents.length > 32) controlEvents.shift();
+              }
+            };
+            if (timing) timing.query(event.query, event.duration, existingListener);
+            else existingListener();
+          }, undefined),
+        );
       }
       const transactionSpy = observed
-        ? jest.spyOn(f.db, '$transaction').mockImplementation(observed.$transaction.bind(observed))
+        ? jest.spyOn(f.db, '$transaction').mockImplementation((body, options) =>
+            observeCommitTransaction(
+              (tx) => observeD7Span(timing, 'callback', () => body(tx)),
+              (callback) =>
+                observeD7Span(timing, 'transaction', () =>
+                  observed.$transaction(callback, options),
+                ),
+              transactionObservation,
+            ),
+          )
         : undefined;
       const correction = f.app.get(CorrectionApplicationService);
       const commit = correction.commit.bind(correction);
@@ -2675,6 +3440,25 @@ describe('D7-1 recognition correction real transaction', () => {
           return assertComplete(...args);
         });
       const ledgerPosting = f.app.get(LedgerPostingService);
+      type LedgerReadMethod = 'readBatchDayDeltas' | 'assertPreparedSetConsistent';
+      const timedLedger = ledgerPosting as unknown as Record<
+        LedgerReadMethod,
+        (this: unknown, ...args: unknown[]) => Promise<unknown>
+      >;
+      const readBatchDayDeltas = timedLedger.readBatchDayDeltas;
+      const assertPreparedSetConsistent = timedLedger.assertPreparedSetConsistent;
+      const deltasSpy = observed
+        ? jest
+            .spyOn(timedLedger, 'readBatchDayDeltas')
+            .mockImplementation(d7ObservedMethod(timing, 'readBatchDayDeltas', readBatchDayDeltas))
+        : undefined;
+      const shapeSpy = observed
+        ? jest
+            .spyOn(timedLedger, 'assertPreparedSetConsistent')
+            .mockImplementation(
+              d7ObservedMethod(timing, 'assertPreparedSetConsistent', assertPreparedSetConsistent),
+            )
+        : undefined;
       const commitBatchWithin = ledgerPosting.commitBatchWithin.bind(ledgerPosting);
       const ledgerSpy = observed
         ? jest
@@ -2683,44 +3467,87 @@ describe('D7-1 recognition correction real transaction', () => {
               measureCommitPhase('ledgerCommit', () => commitBatchWithin(...args)),
             )
         : undefined;
-      jest.spyOn(correction, 'commit').mockImplementation(async (...args) => {
-        const startedAt = performance.now();
-        try {
-          return await commit(...args);
-        } catch (error) {
-          if (population === 2000) {
-            commitPhaseMs.correctionCommit = Math.round(performance.now() - startedAt);
-            // Fixed diagnostic fields only; never expose SQL, IDs, URLs or raw error messages.
-            commitFailure = JSON.stringify({
-              prismaCode: error instanceof Prisma.PrismaClientKnownRequestError ? error.code : null,
-              expiredTransaction:
-                error instanceof Error &&
-                /expired transaction|Transaction already closed/u.test(error.message),
-              transactionTimeoutMs:
-                error instanceof Error
-                  ? Number(
-                      error.message.match(/timeout for this transaction was (\d+) ms/u)?.[1],
-                    ) || null
-                  : null,
-              transactionElapsedMs:
-                error instanceof Error
-                  ? Number(error.message.match(/however (\d+) ms passed/u)?.[1]) || null
-                  : null,
-              knownPrisma: error instanceof Prisma.PrismaClientKnownRequestError,
-              unknownPrisma: error instanceof Prisma.PrismaClientUnknownRequestError,
-              commitPhaseMs,
-              queryTiming,
-            });
+      const correctionWrites = f.app.get(AttendanceCorrectionWriteService);
+      const markApplicationCommitted =
+        correctionWrites.markApplicationCommitted.bind(correctionWrites);
+      const applicationCommittedSpy = observed
+        ? jest
+            .spyOn(correctionWrites, 'markApplicationCommitted')
+            .mockImplementation((...args) =>
+              measureCommitPhase('applicationCommitted', () => markApplicationCommitted(...args)),
+            )
+        : undefined;
+      const markRequestApplied = correctionWrites.markRequestApplied.bind(correctionWrites);
+      const requestAppliedSpy = observed
+        ? jest
+            .spyOn(correctionWrites, 'markRequestApplied')
+            .mockImplementation((...args) =>
+              measureCommitPhase('requestApplied', () => markRequestApplied(...args)),
+            )
+        : undefined;
+      const correctionAudit = f.app.get(CorrectionAuditRecorder);
+      const logCommit = correctionAudit.logCommit.bind(correctionAudit);
+      const finalAuditSpy = observed
+        ? jest
+            .spyOn(correctionAudit, 'logCommit')
+            .mockImplementation((...args) =>
+              measureCommitPhase('finalAudit', () => logCommit(...args)),
+            )
+        : undefined;
+      const correctionCommitSpy = jest
+        .spyOn(correction, 'commit')
+        .mockImplementation(async (...args) => {
+          const startedAt = performance.now();
+          try {
+            return await measureCommitPhase('correctionCommit', () => commit(...args));
+          } catch (error) {
+            if (population === 2000) {
+              commitPhaseMs.correctionCommit = Math.round(performance.now() - startedAt);
+              // Fixed diagnostic fields only; never expose SQL, IDs, URLs or raw error messages.
+              commitFailure = safelyObserve(
+                () =>
+                  JSON.stringify({
+                    prismaCode:
+                      error instanceof Prisma.PrismaClientKnownRequestError &&
+                      /^P\d{4}$/u.test(error.code)
+                        ? error.code
+                        : null,
+                    expiredTransaction:
+                      error instanceof Error &&
+                      /expired transaction|Transaction already closed/u.test(error.message),
+                    transactionTimeoutMs:
+                      error instanceof Error
+                        ? Number(
+                            error.message.match(/timeout for this transaction was (\d+) ms/u)?.[1],
+                          ) || null
+                        : null,
+                    transactionElapsedMs:
+                      error instanceof Error
+                        ? Number(error.message.match(/however (\d+) ms passed/u)?.[1]) || null
+                        : null,
+                    knownPrisma: error instanceof Prisma.PrismaClientKnownRequestError,
+                    unknownPrisma: error instanceof Prisma.PrismaClientUnknownRequestError,
+                    ...commitErrorLocation(error),
+                    commitPhaseMs,
+                    commitPhaseState,
+                    transactionObservation,
+                    controlEvents,
+                    queryEventTail,
+                    queryTiming,
+                  }),
+                '{"diagnostic":"UNAVAILABLE"}',
+              );
+            }
+            throw error;
+          } finally {
+            if (commitPhaseMs.correctionCommit === null)
+              commitPhaseMs.correctionCommit = Math.round(performance.now() - startedAt);
           }
-          throw error;
-        } finally {
-          if (commitPhaseMs.correctionCommit === null)
-            commitPhaseMs.correctionCommit = Math.round(performance.now() - startedAt);
-        }
-      });
+        });
       const committed = await (async () => {
+        let commitResponse: request.Response | undefined;
         try {
-          return await request(httpServer(f.app))
+          commitResponse = await request(httpServer(f.app))
             .post(`${correctionUrl}/${submittedData.requestId}/commit`)
             .set('Authorization', f.reviewer.auth)
             .send({
@@ -2737,57 +3564,106 @@ describe('D7-1 recognition correction real transaction', () => {
               }
               if (response.status !== 200) {
                 // Fixed diagnostic fields only; never expose raw response content, IDs, URLs or errors.
-                console.error('D7 2000-identity commit failure', {
-                  status: response.status,
-                  code: typeof response.body?.code === 'number' ? response.body.code : null,
-                  commitFailure,
-                });
+                safelyObserve(
+                  () =>
+                    deferD7Diagnostic(() =>
+                      console.error('D7 2000-identity commit failure', {
+                        status: response.status,
+                        code: typeof response.body?.code === 'number' ? response.body.code : null,
+                        commitFailure,
+                      }),
+                    ),
+                  undefined,
+                );
               }
             })
             .expect(200);
+        } catch (error) {
+          commitRequestRejected = true;
+          commitRequestFailure = error;
         } finally {
           transactionSpy?.mockRestore();
           timeAllocationSpy?.mockRestore();
           receiptSpy?.mockRestore();
           assertCompleteSpy.mockRestore();
           ledgerSpy?.mockRestore();
+          deltasSpy?.mockRestore();
+          shapeSpy?.mockRestore();
+          applicationCommittedSpy?.mockRestore();
+          requestAppliedSpy?.mockRestore();
+          finalAuditSpy?.mockRestore();
+          correctionCommitSpy.mockRestore();
           if (observed) {
             try {
               await observed.$disconnect();
+              observerDisconnectState = 'RETURNED';
+            } catch (error) {
+              observerDisconnectState = 'THREW';
+              diagnosticErrorCount++;
+              observerDisconnectFailure = error;
             } finally {
-              console.info(
-                '[d7-commit-diagnostic] ' +
-                  JSON.stringify({
-                    population: 2000,
-                    status: commitHttpStatus,
-                    code: commitResponseCode,
-                    outcome: commitHttpStatus === 200 ? 'success' : 'not_success',
-                    commitPhaseMs,
-                    queryTiming,
-                    failure: commitFailure === 'none' ? null : JSON.parse(commitFailure),
-                  }),
+              safelyObserve(
+                () =>
+                  deferD7Diagnostic(() =>
+                    console.info(
+                      '[d7-commit-diagnostic] ' +
+                        JSON.stringify({
+                          population: 2000,
+                          status: commitHttpStatus,
+                          code: commitResponseCode,
+                          outcome: commitHttpStatus === 200 ? 'success' : 'not_success',
+                          commitPhaseMs,
+                          commitPhaseState,
+                          transactionObservation,
+                          timingEvidence: timing?.report() ?? null,
+                          controlEvents,
+                          queryEventTail,
+                          diagnosticErrorCount,
+                          observerDisconnectState,
+                          queryTiming,
+                          failure: commitFailure === 'none' ? null : JSON.parse(commitFailure),
+                        }),
+                    ),
+                  ),
+                undefined,
               );
               if (process.env.SRVF_D7_GUARD_INTERNAL_DIAGNOSTIC === '1') {
                 try {
                   // Outside the original transaction and after observer teardown. This does
                   // not recreate its failed internal state or count as its acceptance.
                   const evidence = await runD7GuardPlanDiagnostic(preparedData.postingBatchId);
-                  console.info('[d7-guard-internal-evidence] ' + JSON.stringify(evidence));
+                  safelyObserve(
+                    () =>
+                      deferD7Diagnostic(() =>
+                        console.info('[d7-guard-internal-evidence] ' + JSON.stringify(evidence)),
+                      ),
+                    undefined,
+                  );
                 } catch {
-                  console.info(
-                    '[d7-guard-internal-evidence] ' +
-                      JSON.stringify({
-                        sample: 'separate_session_rollback',
-                        evidence: 'not_failed_transaction',
-                        channel: 'unavailable',
-                        outcome: 'rejected',
-                      }),
+                  safelyObserve(
+                    () =>
+                      deferD7Diagnostic(() =>
+                        console.info(
+                          '[d7-guard-internal-evidence] ' +
+                            JSON.stringify({
+                              sample: 'separate_session_rollback',
+                              evidence: 'not_failed_transaction',
+                              channel: 'unavailable',
+                              outcome: 'rejected',
+                            }),
+                        ),
+                      ),
+                    undefined,
                   );
                 }
               }
             }
           }
         }
+        if (commitRequestRejected) throw commitRequestFailure;
+        if (observerDisconnectState === 'THREW') throw observerDisconnectFailure;
+        if (commitResponse === undefined) throw new Error('commit observer response unavailable');
+        return commitResponse;
       })();
       expect(lockedCompleteCalls).toBe(0);
       expect(committed.body.data).toMatchObject({
@@ -2819,6 +3695,312 @@ describe('D7-1 recognition correction real transaction', () => {
     },
     600000,
   );
+
+  async function prepareHumanBudgetCorrection(schemaVersion: 2 | 3) {
+    const { p, timeRevision, root, roots, source, allocation } =
+      await createCommittedFactCorrectionBase();
+    if (source.checkOutAt === null) throw new Error('closed source segment required');
+    const url = `${D13_APP}/${p.activityId}/time-corrections`;
+    const submitted = await request(httpServer(f.app))
+      .post(url)
+      .set('Authorization', f.creator.auth)
+      .send({
+        participationIdentityId: source.participationIdentityId,
+        requestTypeCode: 'time',
+        requestedChangeJson: {
+          schemaVersion,
+          results: [],
+          segments:
+            schemaVersion === 3
+              ? [
+                  {
+                    participationIdentityId: source.participationIdentityId,
+                    segmentKey: source.segmentKey,
+                    checkInAt: source.checkInAt.toISOString(),
+                    checkOutAt: new Date(source.checkOutAt.getTime() - 60_000).toISOString(),
+                    resultCode: source.resultCode,
+                    serviceHours: '0.98',
+                  },
+                ]
+              : [],
+          timeCorrection: {
+            baseSettlementVersionId: timeRevision.settlementVersionId,
+            baseTimeLedgerHash: root.contentHash,
+            reason: 'bounded Human commit transaction fixture',
+            items: roots.map((entry) => ({
+              rootEntryId: entry.id,
+              recognizedSeconds:
+                entry.categoryCode === 'volunteer_service' ? 3540 : entry.recognizedSeconds,
+            })),
+          },
+          ...(schemaVersion === 3
+            ? {
+                allocations: [
+                  {
+                    participationIdentityId: source.participationIdentityId,
+                    segmentKey: source.segmentKey,
+                    baseSegmentRevisionId: source.id,
+                    baseAllocationRevisionId: allocation.id,
+                    recognitionModeCode: 'automatic',
+                    manualReason: null,
+                    slices: [],
+                    evidenceAttachmentIds: [],
+                  },
+                ],
+              }
+            : {}),
+        },
+        reason: 'bounded Human commit transaction fixture',
+        operationKey: f.key('budget_submit'),
+      })
+      .expect(201);
+    await request(httpServer(f.app))
+      .post(`${url}/${submitted.body.data.requestId}/review`)
+      .set('Authorization', f.reviewer.auth)
+      .send({ actionCode: 'approve', expectedRequestVersion: submitted.body.data.requestVersion })
+      .expect(200);
+    const prepared = await request(httpServer(f.app))
+      .post(`${url}/${submitted.body.data.requestId}/prepare`)
+      .set('Authorization', f.reviewer.auth)
+      .send({
+        expectedBaseSettlementVersionId: timeRevision.settlementVersionId,
+        operationKey: f.key('budget_prepare'),
+      })
+      .expect(200);
+    const target = prepared.body.data as { applicationId: string; postingBatchId: string };
+    const payload = {
+      expectedBaseSettlementVersionId: timeRevision.settlementVersionId,
+      correctionApplicationId: target.applicationId,
+      postingBatchId: target.postingBatchId,
+      operationKey: f.key('budget_commit'),
+    };
+    return {
+      activityId: p.activityId,
+      ...target,
+      send: () =>
+        request(httpServer(f.app))
+          .post(`${url}/${submitted.body.data.requestId}/commit`)
+          .set('Authorization', f.reviewer.auth)
+          .send(payload),
+    };
+  }
+
+  async function humanBudgetState(activityId: string) {
+    const orderBy = { id: 'asc' as const };
+    return {
+      activity: await f.db.activity.findUniqueOrThrow({ where: { id: activityId } }),
+      run: await f.db.attendanceSettlementRun.findUniqueOrThrow({ where: { activityId } }),
+      versions: await f.db.attendanceSettlementVersion.findMany({
+        where: { settlementRun: { activityId } },
+        orderBy,
+      }),
+      results: await f.db.participantSettlementResultRevision.findMany({
+        where: { settlementVersion: { settlementRun: { activityId } } },
+        orderBy,
+      }),
+      segments: await f.db.participantServiceSegmentRevision.findMany({
+        where: { identity: { activityId } },
+        orderBy,
+      }),
+      allocations: await f.db.participantTimeAllocationRevision.findMany({
+        where: { activityId },
+        include: { slices: { orderBy }, evidence: { orderBy }, commandReceipt: true },
+        orderBy,
+      }),
+      bindings: await f.db.correctionTimeAllocationBinding.findMany({
+        where: { activityId },
+        orderBy,
+      }),
+      proofs: await f.db.correctionTimeSourceProof.findMany({ where: { activityId }, orderBy }),
+      batches: await f.db.ledgerPostingBatch.findMany({
+        where: { settlementVersion: { settlementRun: { activityId } } },
+        orderBy,
+      }),
+      entries: await f.db.participationLedgerEntry.findMany({
+        where: { postingBatch: { settlementVersion: { settlementRun: { activityId } } } },
+        orderBy,
+      }),
+      dayStates: await f.db.memberContributionDayState.findMany({
+        where: { memberId: f.creator.memberId },
+        orderBy,
+      }),
+      closures: await f.db.activitySettlementClosureRevision.findMany({
+        where: { activityId },
+        orderBy,
+      }),
+      requests: await f.db.attendanceCorrectionRequest.findMany({ where: { activityId }, orderBy }),
+      applications: await f.db.correctionApplication.findMany({
+        where: { correctionRequest: { activityId } },
+        orderBy,
+      }),
+      receipts: await f.db.participationTimeCorrectionCommitReceipt.findMany({
+        where: { activityId },
+        orderBy,
+      }),
+      audit: await f.db.auditLog.findMany({ where: { resourceId: activityId }, orderBy }),
+      outbox: await f.db.notificationOutboxIntent.findMany({
+        where: { aggregateId: activityId },
+        orderBy,
+      }),
+    };
+  }
+
+  async function memberBudgetLockAvailable() {
+    const [row] = await f.db.$queryRaw<Array<{ available: boolean }>>`
+      SELECT pg_try_advisory_xact_lock(hashtext(${f.creator.memberId})) AS available
+    `;
+    return row.available;
+  }
+
+  function pauseHumanBudgetCommit(
+    target: Awaited<ReturnType<typeof prepareHumanBudgetCorrection>>,
+    before: Awaited<ReturnType<typeof humanBudgetState>>,
+    seconds: number,
+  ) {
+    const recorder = f.app.get(CorrectionAuditRecorder);
+    const logCommit = recorder.logCommit.bind(recorder);
+    return jest.spyOn(recorder, 'logCommit').mockImplementationOnce(async (args) => {
+      await logCommit(args);
+      // The real last audit and outbox are already written, but a second connection
+      // must still see the old business state while the existing member lock is held.
+      expect(
+        await args.tx.participationTimeCorrectionCommitReceipt.count({
+          where: { postingBatchId: target.postingBatchId },
+        }),
+      ).toBe(1);
+      expect(
+        await args.tx.notificationOutboxIntent.count({
+          where: { eventKey: `settlement-ledger-commit:${target.postingBatchId}` },
+        }),
+      ).toBe(1);
+      expect(
+        await args.tx.auditLog.count({ where: { resourceId: target.activityId } }),
+      ).toBeGreaterThan(before.audit.length);
+      expect(await memberBudgetLockAvailable()).toBe(false);
+      expect(await humanBudgetState(target.activityId)).toEqual(before);
+      await args.tx.$queryRaw`SELECT pg_sleep(${seconds}::double precision)::text`;
+    });
+  }
+
+  it.each([2, 3] as const)(
+    'atomically commits and replays Human V%i beyond seven seconds',
+    async (version) => {
+      const target = await prepareHumanBudgetCorrection(version);
+      const before = await humanBudgetState(target.activityId);
+      const pause = pauseHumanBudgetCommit(target, before, 8);
+      const startedAt = performance.now();
+      const committed = await target.send();
+      expect(pause).toHaveBeenCalledTimes(1);
+      pause.mockRestore();
+      expect(performance.now() - startedAt).toBeGreaterThanOrEqual(8_000);
+      expect({ status: committed.status, code: committed.body.code }).toEqual({
+        status: 200,
+        code: 0,
+      });
+      expect(committed.body.data).toMatchObject({
+        applicationId: target.applicationId,
+        postingBatchId: target.postingBatchId,
+        applicationStatus: 'committed',
+        replayed: false,
+      });
+      const after = await humanBudgetState(target.activityId);
+      expect(after.receipts).toHaveLength(before.receipts.length + 1);
+      expect(after.batches.find((row) => row.id === target.postingBatchId)).toMatchObject({
+        statusCode: 'committed',
+      });
+      expect(after.applications.find((row) => row.id === target.applicationId)).toMatchObject({
+        statusCode: 'committed',
+      });
+      expect(
+        after.outbox.filter(
+          (row) => row.eventKey === `settlement-ledger-commit:${target.postingBatchId}`,
+        ),
+      ).toHaveLength(1);
+      expect(await memberBudgetLockAvailable()).toBe(true);
+
+      // Committed applications have no preparing-proof hint. Their mandatory full
+      // checks still belong to the same operation budget and must not append effects.
+      const corrections = f.app.get(ParticipationTimeCorrectionService);
+      const assertComplete = corrections.assertComplete.bind(corrections);
+      const replayProof = jest
+        .spyOn(corrections, 'assertComplete')
+        .mockImplementationOnce(async (...args) => {
+          const proof = await assertComplete(...args);
+          await args[0].$queryRaw`SELECT pg_sleep(8::double precision)::text`;
+          return proof;
+        });
+      const replayStartedAt = performance.now();
+      const replayed = await target.send();
+      expect(replayProof).toHaveBeenCalled();
+      expect(performance.now() - replayStartedAt).toBeGreaterThanOrEqual(8_000);
+      expect({ status: replayed.status, code: replayed.body.code }).toEqual({
+        status: 200,
+        code: 0,
+      });
+      expect(replayed.body.data).toMatchObject({
+        applicationId: target.applicationId,
+        postingBatchId: target.postingBatchId,
+        replayed: true,
+      });
+      expect(await humanBudgetState(target.activityId)).toEqual(after);
+    },
+    120000,
+  );
+
+  it('rolls back every Human V3 effect beyond fifteen seconds, releases locks and retries once', async () => {
+    const target = await prepareHumanBudgetCorrection(3);
+    const before = await humanBudgetState(target.activityId);
+    const pause = pauseHumanBudgetCommit(target, before, 16);
+    const corrections = f.app.get(CorrectionApplicationService);
+    const commit = corrections.commit.bind(corrections);
+    let transactionFailure: unknown;
+    jest.spyOn(corrections, 'commit').mockImplementationOnce(async (...args) => {
+      try {
+        return await commit(...args);
+      } catch (error) {
+        transactionFailure = error;
+        throw error;
+      }
+    });
+    const startedAt = performance.now();
+    const failed = await target.send();
+    expect(pause).toHaveBeenCalledTimes(1);
+    pause.mockRestore();
+    expect(performance.now() - startedAt).toBeGreaterThanOrEqual(15_000);
+    expect({ status: failed.status, code: failed.body.code }).toEqual({
+      status: BizCode.INTERNAL_ERROR.httpStatus,
+      code: BizCode.INTERNAL_ERROR.code,
+    });
+    expect(transactionFailure).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+    expect(transactionFailure).toMatchObject({ code: 'P2028' });
+    expect((transactionFailure as Error).message).toContain(
+      'timeout for this transaction was 15000 ms',
+    );
+    expect(await humanBudgetState(target.activityId)).toEqual(before);
+    expect(await memberBudgetLockAvailable()).toBe(true);
+    // NOWAIT on another connection proves the aggregate row lock was released too.
+    await f.db
+      .$queryRaw`SELECT id FROM "Activity" WHERE id = ${target.activityId} FOR UPDATE NOWAIT`;
+
+    const retried = await target.send();
+    expect({ status: retried.status, code: retried.body.code }).toEqual({ status: 200, code: 0 });
+    expect(retried.body.data).toMatchObject({
+      applicationId: target.applicationId,
+      postingBatchId: target.postingBatchId,
+      replayed: false,
+    });
+    const after = await humanBudgetState(target.activityId);
+    expect(after.receipts).toHaveLength(before.receipts.length + 1);
+    expect(
+      after.outbox.filter(
+        (row) => row.eventKey === `settlement-ledger-commit:${target.postingBatchId}`,
+      ),
+    ).toHaveLength(1);
+    const replayed = await target.send();
+    expect({ status: replayed.status, code: replayed.body.code }).toEqual({ status: 200, code: 0 });
+    expect(replayed.body.data.replayed).toBe(true);
+    expect(await humanBudgetState(target.activityId)).toEqual(after);
+  }, 120000);
 
   it('serializes concurrent Human commits into one effect and one exact replay', async () => {
     const { p, timeRevision, root, roots, source, allocation } =

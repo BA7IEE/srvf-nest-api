@@ -667,6 +667,24 @@ export class SettlementDraftService {
       if (row.statusCode !== 'superseded') currentByKey.set(key, row);
     }
 
+    // Index the existing prefix predicate once, including identities containing ':'.
+    // Build from the final map so its overwrite rule and iteration order stay intact.
+    const currentRowsByIdentity = new Map<string, ExistingSegmentRow[]>();
+    const selectedIdentityIds = new Set(identityIds);
+    for (const [key, row] of currentByKey) {
+      for (
+        let separator = key.indexOf(':');
+        separator !== -1;
+        separator = key.indexOf(':', separator + 1)
+      ) {
+        const identityId = key.slice(0, separator);
+        if (!selectedIdentityIds.has(identityId)) continue;
+        const rows = currentRowsByIdentity.get(identityId);
+        if (rows === undefined) currentRowsByIdentity.set(identityId, [row]);
+        else rows.push(row);
+      }
+    }
+
     let created = 0;
     let superseded = 0;
     let unchanged = 0;
@@ -713,8 +731,7 @@ export class SettlementDraftService {
       }
 
       // 这个 identity 下"当前还在、但新投影里已经没有"的段 ⇒ 降级,不写替代行。
-      for (const [key, row] of currentByKey) {
-        if (!key.startsWith(`${identityId}:`)) continue;
+      for (const row of currentRowsByIdentity.get(identityId) ?? []) {
         if (projectedKeys.has(row.segmentKey)) continue;
         supersedeIds.push(row.id);
         superseded += 1;

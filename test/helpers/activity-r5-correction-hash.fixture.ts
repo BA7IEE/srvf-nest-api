@@ -11,8 +11,11 @@ import {
   type E4Fixture,
 } from './activity-contribution-policy.fixture';
 
-export async function approvedE4TimeCorrection(f: E4Fixture) {
-  const source = await createE4Source(f);
+export async function approvedE4TimeCorrection(
+  f: E4Fixture,
+  sourceWindow?: { startsAt: Date; endsAt: Date },
+) {
+  const source = await createE4Source(f, sourceWindow);
   const submitted = await submitE4Time(f, source, await prepareE4Time(f, source));
   await postE4Ledger(f, submitted);
   const segment = await f.db.participantServiceSegmentRevision.findFirstOrThrow({

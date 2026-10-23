@@ -830,21 +830,23 @@ export class LedgerPostingService {
       ),
       unreversed_facts AS (
         -- 🔴「只补不冲」的执行位:基础版本下已生效的 credit 分录,只要有一条没被本批次
-        --    冲回,那笔钱就在队员账上留了两遍。反连接避免物化并反复扫描整批分录,
-        --    语义仍是“本批次任意一条记录指向原 entry 即视为已冲回”。
+        --    冲回,那笔钱就在队员账上留了两遍。统计信息未更新时,相关反连接可能为
+        --    每条原分录重新扫描本批次索引。用唯一非 NULL 的原 id 做集合差,
+        --    只取一次本批次引用集合,仍将本批次任意记录对原 entry 的引用视为冲回。
         SELECT count(*)::int AS "unreversedOriginalCount"
-        FROM "ParticipationLedgerEntry" o
-        JOIN "LedgerPostingBatch" ob ON ob.id = o."postingBatchId"
-        JOIN "ParticipantSettlementResultRevision" orr ON orr.id = o."resultRevisionId"
-        WHERE orr."settlementVersionId" IN (SELECT id FROM base)
-          AND ob."statusCode" = 'committed'
-          AND o."entryTypeCode" IN ('service_credit', 'contribution_credit')
-          AND NOT EXISTS (
-            SELECT 1
-            FROM "ParticipationLedgerEntry" r
-            WHERE r."postingBatchId" = ${batch.id}
-              AND r."reversesEntryId" = o.id
-          )
+        FROM (
+          SELECT o.id
+          FROM "ParticipationLedgerEntry" o
+          JOIN "LedgerPostingBatch" ob ON ob.id = o."postingBatchId"
+          JOIN "ParticipantSettlementResultRevision" orr ON orr.id = o."resultRevisionId"
+          WHERE orr."settlementVersionId" IN (SELECT id FROM base)
+            AND ob."statusCode" = 'committed'
+            AND o."entryTypeCode" IN ('service_credit', 'contribution_credit')
+          EXCEPT
+          SELECT r."reversesEntryId"
+          FROM "ParticipationLedgerEntry" r
+          WHERE r."postingBatchId" = ${batch.id}
+        ) AS unreversed_originals
       )
       SELECT mine_facts."creditEntryCount",
              mine_facts."creditPairCount",

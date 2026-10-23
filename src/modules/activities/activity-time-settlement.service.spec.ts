@@ -252,7 +252,7 @@ describe('D4 write orchestration and replay safety', () => {
       expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
         isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
         maxWait: 2000,
-        timeout: method === 'prepare' ? 30000 : SETTLEMENT_SUBMIT_TX_TIMEOUT_MS,
+        timeout: method === 'prepare' ? 60000 : SETTLEMENT_SUBMIT_TX_TIMEOUT_MS,
       });
       expect(receiptLookup).toHaveBeenCalledWith({
         where: {
@@ -380,6 +380,11 @@ describe('D4 write orchestration and replay safety', () => {
       allocationRevisionId: 'allocation',
     });
     expect(transaction).toHaveBeenCalledTimes(1);
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+      maxWait: 2000,
+      timeout: 30000,
+    });
     expect(queries.readDraftContextInTx).toHaveBeenCalledTimes(2);
     expect(queries.readDraftContextInTx).toHaveBeenCalledWith(tx, activityId);
   });
@@ -394,6 +399,21 @@ describe('D4 write orchestration and replay safety', () => {
     const failure = new Error('connection unavailable');
     transaction.mockRejectedValueOnce(failure);
     await expect(service.prepare(activityId, prepare, actor, meta)).rejects.toBe(failure);
+  });
+
+  it('preserves the original transaction-expiry error under the scoped prepare budget', async () => {
+    const failure = new Prisma.PrismaClientKnownRequestError('transaction expired', {
+      code: 'P2028',
+      clientVersion: 'test',
+    });
+    transaction.mockRejectedValueOnce(failure);
+    await expect(service.prepare(activityId, prepare, actor, meta)).rejects.toBe(failure);
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+      maxWait: 2000,
+      timeout: 60000,
+    });
+    expect(audit.log).not.toHaveBeenCalled();
   });
 
   function freshPrepare(regime = 'policy_v1') {
@@ -452,6 +472,62 @@ describe('D4 write orchestration and replay safety', () => {
     contributions.prepareTimeInTx.mockResolvedValue(regime === 'policy_v1' ? proof : null);
     return { response, revision, createRevision, createReceipt, executeRaw, proof };
   }
+
+  it('locks pre-wait references and evaluates only the subsequent complete source read', async () => {
+    const f = freshPrepare('legacy');
+    const raw = jest.spyOn(tx, '$queryRaw');
+    const beforeWait = {
+      population: [],
+      segments: [{ id: 'before-wait-segment' }],
+      latest: [
+        {
+          id: 'before-wait-allocation',
+          participationIdentityId: 'identity',
+          segmentKey: 'key',
+          allocationHash: 'd'.repeat(64),
+          ruleSnapshotId: 'before-wait-snapshot',
+          policyVersionId: 'before-wait-policy',
+          sliceCount: 0,
+        },
+      ],
+      sourceSetHash: 'd'.repeat(64),
+    };
+    const afterWait = {
+      population: [],
+      segments: [],
+      latest: [],
+      sourceSetHash: 'e'.repeat(64),
+    };
+    queries.readSourceSetInTx.mockResolvedValueOnce(beforeWait).mockResolvedValueOnce(afterWait);
+    await expect(service.prepare(activityId, prepare, actor, meta)).resolves.toEqual(f.response);
+    expect(queries.readSourceSetInTx).toHaveBeenNthCalledWith(1, tx, expect.any(Object), true);
+    expect(queries.readSourceSetInTx).toHaveBeenNthCalledWith(2, tx, expect.any(Object));
+    expect(queries.evaluateInTx).toHaveBeenCalledWith(tx, afterWait, false);
+    expect(f.createRevision).toHaveBeenCalledTimes(1);
+    expect(f.createRevision.mock.calls[0]?.[0].data.sourceSetHash).toBe(afterWait.sourceSetHash);
+    const callFor = (table: string) =>
+      raw.mock.calls.find((call) => statement(call[0]).includes('FROM "' + table + '"'));
+    expect(callFor('ParticipantServiceSegmentRevision')?.[1]).toEqual(['before-wait-segment']);
+    expect(callFor('ActivityRuleSnapshot')?.[1]).toEqual(['before-wait-snapshot']);
+    expect(callFor('TimePolicyVersion')?.[1]).toEqual(['before-wait-policy']);
+  });
+
+  it('preserves first-source rejection before acquiring identity locks or evaluating', async () => {
+    const f = freshPrepare('legacy');
+    const raw = jest.spyOn(tx, '$queryRaw');
+    const failure = new Error('fixed first-source validation failure');
+    queries.readSourceSetInTx.mockRejectedValue(failure);
+    await expect(service.prepare(activityId, prepare, actor, meta)).rejects.toBe(failure);
+    expect(queries.readSourceSetInTx).toHaveBeenCalledTimes(1);
+    expect(
+      raw.mock.calls.some((call) =>
+        statement(call[0]).includes('FROM "ActivityParticipationIdentity"'),
+      ),
+    ).toBe(false);
+    expect(queries.evaluateInTx).not.toHaveBeenCalled();
+    expect(f.createRevision).not.toHaveBeenCalled();
+    expect(f.createReceipt).not.toHaveBeenCalled();
+  });
 
   const nativeBarrier =
     'SET CONSTRAINTS public.astr_parent_complete_guard, public.e4_revision_complete_guard IMMEDIATE';
@@ -516,11 +592,51 @@ describe('D4 write orchestration and replay safety', () => {
     ) => Promise<void>;
     await insert.call(service, tx, { ...parent, bucketCount: 2, sourceCount: 2 }, buckets);
     expect(execute).toHaveBeenCalledTimes(2);
-    const first = JSON.parse(execute.mock.calls[0].at(-1) as string) as Record<string, unknown>[];
-    const second = JSON.parse(execute.mock.calls[1].at(-1) as string) as {
-      id: string;
-      sources: Record<string, unknown>[];
-    }[];
+    const keys = [
+      'id',
+      'participationIdentityId',
+      'categoryCode',
+      'calculatedSeconds',
+      'recognizedSeconds',
+      'adjustmentReason',
+      'timePolicyVersionId',
+      'definitionHash',
+      'evaluatorVersion',
+      'quantumSeconds',
+      'rawCalculatedMilliseconds',
+      'rawRecognizedMilliseconds',
+      'emptyReasonCode',
+    ];
+    const sourceKeys = [
+      'allocationRevisionId',
+      'sourceSegmentId',
+      'sourceSegmentRevision',
+      'rawCalculatedMilliseconds',
+      'rawRecognizedMilliseconds',
+    ];
+    const firstWire = JSON.parse(
+      (execute.mock.calls[0][0] as Prisma.Sql).values.at(-1) as string,
+    ) as unknown[][];
+    const adjustmentDictionary = JSON.parse(
+      (execute.mock.calls[0][0] as Prisma.Sql).values.at(-2) as string,
+    ) as unknown[];
+    const secondWire = JSON.parse(
+      (execute.mock.calls[1][0] as Prisma.Sql).values.at(-1) as string,
+    ) as [string, unknown[][]][];
+    const first = firstWire.map((row) =>
+      Object.fromEntries(
+        keys.map((key, index) => [
+          key,
+          key === 'adjustmentReason' ? adjustmentDictionary[row[index] as number] : row[index],
+        ]),
+      ),
+    );
+    const second = secondWire.map(([id, sources]) => ({
+      id,
+      sources: sources.map((row) =>
+        Object.fromEntries(sourceKeys.map((key, index) => [key, row[index]])),
+      ),
+    }));
     expect(new Set(first.map((row) => row.id)).size).toBe(2);
     expect(first).toEqual(
       buckets.map(({ sources: _sources, ...row }, index) => {
@@ -552,6 +668,191 @@ describe('D4 write orchestration and replay safety', () => {
     expect(buckets[0].sources).toBe(sources);
     expect(sources[0].rawRecognizedMilliseconds).toBe(9007199254740993n);
   });
+
+  function emptyWireBucket(overrides: Partial<TimeSettlementBucket> = {}): TimeSettlementBucket {
+    return {
+      participationIdentityId: 'identity',
+      categoryCode: 'training',
+      calculatedSeconds: 0,
+      recognizedSeconds: 0,
+      rawCalculatedMilliseconds: 0n,
+      rawRecognizedMilliseconds: 0n,
+      timePolicyVersionId: null,
+      definitionHash: null,
+      evaluatorVersion: null,
+      quantumSeconds: null,
+      adjustmentReason: null,
+      emptyReasonCode: 'no_valid_segment',
+      sources: [],
+      ...overrides,
+    };
+  }
+
+  it('retains null, empty, duplicate, ordered and escaped reasons while sharing equal ordinary wire values', async () => {
+    const manual = [
+      { allocationRevisionId: 'allocation-a', manualReason: '中文 "quoted" \\ line\nnext' },
+      { allocationRevisionId: 'allocation-b', manualReason: 'another' },
+    ];
+    const reasons = [
+      null,
+      [],
+      manual,
+      manual.map((row) => ({ ...row })),
+      [...manual].reverse(),
+      [manual[0], manual[0]],
+    ];
+    const buckets = reasons.map((adjustmentReason) => emptyWireBucket({ adjustmentReason }));
+    const execute = jest.spyOn(tx, '$executeRaw').mockResolvedValueOnce(6).mockResolvedValueOnce(0);
+    const insert = Reflect.get(service, 'insertBuckets') as (
+      client: Prisma.TransactionClient,
+      revision: ActivitySettlementTimeRevision,
+      rows: readonly TimeSettlementBucket[],
+    ) => Promise<void>;
+    await insert.call(service, tx, { ...parent, bucketCount: 6, sourceCount: 0 }, buckets);
+    expect(execute).toHaveBeenCalledTimes(2);
+    const query = execute.mock.calls[0][0] as Prisma.Sql;
+    const dictionary = JSON.parse(query.values.at(-2) as string) as unknown[];
+    const wire = JSON.parse(query.values.at(-1) as string) as unknown[][];
+    expect(wire.map((row) => dictionary[row[5] as number])).toEqual(reasons);
+    expect(dictionary).toHaveLength(5);
+    expect(wire[2][5]).toBe(wire[3][5]);
+    expect(wire[4][5]).not.toBe(wire[2][5]);
+    expect(wire[5][5]).not.toBe(wire[2][5]);
+    // Parsing the dictionary once must also hold when PostgreSQL uses a generic plan.
+    expect(statement(query)).toContain('WITH adjustment_wire AS MATERIALIZED');
+    expect(statement(query)).toContain('nullif(adjustment_wire.reasons -> ((item->>5)::INTEGER),');
+  });
+
+  it('removes repeated wire keys at the full 8000/40000 scale while retaining two writes and parent links', async () => {
+    const buckets = Array.from({ length: 8000 }, (_, index) =>
+      emptyWireBucket({
+        participationIdentityId: 'identity-' + Math.floor(index / 4),
+        sources: Array.from({ length: 5 }, (_, source) => ({
+          allocationRevisionId: 'allocation-' + index + '-' + source,
+          sourceSegmentId: 'segment-' + index + '-' + source,
+          sourceSegmentRevision: 1,
+          rawCalculatedMilliseconds: null,
+          rawRecognizedMilliseconds: 9007199254740993n,
+        })),
+      }),
+    );
+    const execute = jest
+      .spyOn(tx, '$executeRaw')
+      .mockResolvedValueOnce(8000)
+      .mockResolvedValueOnce(40000);
+    const insert = Reflect.get(service, 'insertBuckets') as (
+      client: Prisma.TransactionClient,
+      revision: ActivitySettlementTimeRevision,
+      rows: readonly TimeSettlementBucket[],
+    ) => Promise<void>;
+    await insert.call(service, tx, { ...parent, bucketCount: 8000, sourceCount: 40000 }, buckets);
+    expect(execute).toHaveBeenCalledTimes(2);
+    const bucketJson = (execute.mock.calls[0][0] as Prisma.Sql).values.at(-1) as string;
+    const sourceJson = (execute.mock.calls[1][0] as Prisma.Sql).values.at(-1) as string;
+    const wire = JSON.parse(bucketJson) as unknown[][];
+    const sourceWire = JSON.parse(sourceJson) as [string, unknown[][]][];
+    expect(wire).toHaveLength(8000);
+    expect(new Set(wire.map((row) => row[0])).size).toBe(8000);
+    expect(sourceWire.map((row) => row[0])).toEqual(wire.map((row) => row[0]));
+    expect(sourceWire.reduce((sum, row) => sum + row[1].length, 0)).toBe(40000);
+    expect(sourceWire[0][1][0][4]).toBe('9007199254740993');
+    const legacySourceJson = JSON.stringify(
+      buckets.map((row, index) => ({
+        id: wire[index][0],
+        sources: row.sources.map((source) => ({
+          ...source,
+          rawCalculatedMilliseconds: null,
+          rawRecognizedMilliseconds: source.rawRecognizedMilliseconds.toString(),
+        })),
+      })),
+    );
+    expect(Buffer.byteLength(sourceJson)).toBeLessThan(Buffer.byteLength(legacySourceJson));
+    expect(sourceJson).not.toContain('rawRecognizedMilliseconds');
+  });
+
+  it('retains key-dependent reason serialization through the original record path', async () => {
+    const reason = [{ allocationRevisionId: 'allocation', manualReason: 'approved' }];
+    const serialize = jest.fn((key: string) => [
+      { allocationRevisionId: 'allocation', manualReason: key },
+    ]);
+    Object.defineProperty(reason, 'toJSON', { value: serialize });
+    const execute = jest.spyOn(tx, '$executeRaw').mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+    const insert = Reflect.get(service, 'insertBuckets') as (
+      client: Prisma.TransactionClient,
+      revision: ActivitySettlementTimeRevision,
+      rows: readonly TimeSettlementBucket[],
+    ) => Promise<void>;
+    await insert.call(service, tx, { ...parent, bucketCount: 1, sourceCount: 0 }, [
+      emptyWireBucket({ adjustmentReason: reason }),
+    ]);
+    const payload = JSON.parse(
+      (execute.mock.calls[0][0] as Prisma.Sql).values.at(-1) as string,
+    ) as { adjustmentReason: unknown }[];
+    expect(payload[0].adjustmentReason).toEqual([
+      { allocationRevisionId: 'allocation', manualReason: 'adjustmentReason' },
+    ]);
+    expect(serialize).toHaveBeenCalledTimes(1);
+    expect(serialize).toHaveBeenCalledWith('adjustmentReason');
+  });
+
+  it('does not invoke reason accessors while deciding whether the compact wire path is safe', async () => {
+    const readReason = jest.fn(() => 'approved');
+    const reason = {
+      allocationRevisionId: 'allocation',
+      get manualReason() {
+        return readReason();
+      },
+    };
+    const execute = jest.spyOn(tx, '$executeRaw').mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+    const insert = Reflect.get(service, 'insertBuckets') as (
+      client: Prisma.TransactionClient,
+      revision: ActivitySettlementTimeRevision,
+      rows: readonly TimeSettlementBucket[],
+    ) => Promise<void>;
+    await insert.call(service, tx, { ...parent, bucketCount: 1, sourceCount: 0 }, [
+      emptyWireBucket({ adjustmentReason: [reason] }),
+    ]);
+    const payload = JSON.parse(
+      (execute.mock.calls[0][0] as Prisma.Sql).values.at(-1) as string,
+    ) as { adjustmentReason: unknown }[];
+    expect(payload[0].adjustmentReason).toEqual([
+      { allocationRevisionId: 'allocation', manualReason: 'approved' },
+    ]);
+    expect(readReason).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['array', 'reason'] as const)(
+    'falls back before invoking a Proxy %s reflection trap that original JSON serialization does not use',
+    async (target) => {
+      const sentinel = new Error('reflection must not run');
+      const reflect = jest.fn(() => {
+        throw sentinel;
+      });
+      const record = { allocationRevisionId: 'allocation', manualReason: 'approved' };
+      const reason =
+        target === 'array'
+          ? new Proxy([record], { getPrototypeOf: reflect })
+          : [new Proxy(record, { getPrototypeOf: reflect })];
+      const execute = jest
+        .spyOn(tx, '$executeRaw')
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0);
+      const insert = Reflect.get(service, 'insertBuckets') as (
+        client: Prisma.TransactionClient,
+        revision: ActivitySettlementTimeRevision,
+        rows: readonly TimeSettlementBucket[],
+      ) => Promise<void>;
+      await insert.call(service, tx, { ...parent, bucketCount: 1, sourceCount: 0 }, [
+        emptyWireBucket({ adjustmentReason: reason }),
+      ]);
+      const payload = JSON.parse(
+        (execute.mock.calls[0][0] as Prisma.Sql).values.at(-1) as string,
+      ) as { adjustmentReason: unknown }[];
+      expect(payload[0].adjustmentReason).toEqual([record]);
+      expect(reflect).not.toHaveBeenCalled();
+      expect(execute).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it('still rejects inconsistent inserted bucket/source counts after both original statements', async () => {
     const execute = jest.spyOn(tx, '$executeRaw').mockResolvedValueOnce(0).mockResolvedValueOnce(0);
@@ -633,7 +934,7 @@ describe('D4 write orchestration and replay safety', () => {
     expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
       isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
       maxWait: 2000,
-      timeout: 30000,
+      timeout: 60000,
     });
   });
 

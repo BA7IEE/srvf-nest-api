@@ -82,6 +82,7 @@ package/lock 精确补丁（维护者确认的仓外送审材料）；候选取�
 - D2：首发范围与 ADV-010 的一个可独立验收 PR（本清单其他源码、全部测试后果、生成物与交接，完整 Goal 在仓内包含全部60路径和授权边界，可追加本阶段事实）。先跑旧路径 characterization 和新缺口红例；随后实现，定向真数据库/HTTP、守护正反例及生成物检查。红区/签字按下段处理，不夹带依赖大版本工作。
 - 发布前验证：在最终合并的实际 main 上运行明确 profile、严格全合同检查、正式生产审计并 dispatch 既有只读 `release-audit.yml` 工作流核验 SHA；核验 main CI 与 ephemeral Docker Smoke。结果附原 PR，不另开纯状态 PR。若发生真正范围外问题，先集中只读排查完整后果再上报。
 - 遵循 process §7.1 两轮失败熔断与精确取证；不加 timeout、不删测试/放宽断言、不盲重跑。输入未变的旧证据仅按 §7.2 明确说明后复用。
+- **D7 精确例外（维护者 2026-10-22 12:01 UTC 明确回复“批准啊”）**：仅 Human 更正提交 V2/V3 首次与重放采用具名 15 秒事务预算；普通操作默认 7 秒、legacy apply、直接账本提交及每次 4 秒取锁均不变。该值是待验证工程余量，不是响应时间或生产容量承诺。所有校验、锁、审计/outbox 与原子回滚保留；增加真实 PostgreSQL 的超过 7 秒完整提交、超过 15 秒全部回滚/锁释放及同目标重试不重复生效验证。仅在同 PR 实施、定向验证、正常推送和必要最终 CI；不扩展其他预算、DDL 或生产权限。
 
 ## 授权清单与精确 grant 委托
 
@@ -313,3 +314,96 @@ AC-064/066/ADV-022 接通(#1194)、万人档 4 条转永久豁免(#1196);**剩 9
 preflight此次续作读取到同一任务原有61份未提交输入，global结果因非clean而exit1，记录保留；远端main经正常fetch核实仍为本轮D1基点且无open PR。维护者此次明确授权基于这些已冻结输入续作，未丢弃或重置原工作，也未把该preflight写成通过；最终提交后再按原入口核验clean及门禁。
 
 本轮总范围78个唯一路径，D2实际65路径；新源码/装配/摘要之外的后果均沿原清单。后续按同一D2 PR完成最终quick、完整Harness、原架构及生成物检查、契约和14组读面/11组native真实PG、固定SHA独立复核及CI/Smoke/Trusted；原最大规模两用例保留NOT_RUN，生产NO_GO与四项延期不变。
+
+
+## R5 后端接续：nightly 精确候选与剩余验收（2026-10-19，仅送审快照）
+
+本节承接 main `7606e1f1f39ec8bef22102e58068dbda34c8ed96` 的D2已合并事实，不把受限500交付称为整个Release5完成。仅推进开发验收，生产、真实数据转换、shadow、开关、tag/Release均不执行。AC013/020/025按原决定后续立项，AC017搁置，四项保持TODO；前端/真实业务验收未完成，不自动扩入后端写集。
+
+原2000身份/10000段/50000物理slice/8000policy units与S13仍未验收，普通CI排除了原最大用例，专用scratch旧额度不恢复。10a/10b和实际目标条件是现场发布项，继续单列NOT_RUN，不以服务器信息缺失阻挡仓内取证。
+
+历史nightly run39162056648/job117777230976绑定c8c15843，实际checkout --depth=1。尾部已见fixture:383固定历史git show失败及bucket canonical的FAIL，最终却为too-slow；4200秒终止不能证明纯慢或句柄泄漏。取回的是完整Actions job日志归档，原tmp/leaks.log只tail200且未上传，尾部外首红和全部因果仍UNKNOWN。新depth1克隆原命令exit128，补全历史后exit0；远端与本地同一blob，前136历史迁移逐份相同。旧分类器输入FAIL+timeout仍给too-slow，仪器问题已复现。
+
+N1候选精确五路径：
+
+| 路径 | 仅授权该目的的候选 | 红区 |
+|---|---|---|
+| `.github/workflows/nightly-e2e-leaks.yml` | depth0，DB前预检固定历史及136个blob，7天完整原日志/诊断副本/独立事实artifact，分列exit/termination/FAIL/summary/handles/OOM，已见FAIL不被timeout覆盖；不改70m/85m/8GiB、矩阵/required名/触发/权限 | 是 |
+| `scripts/harness-guards.selftest.ts` | 执行真实shell判定段的17场景及历史pin/prefix/完整日志守护，原判据不删不松 | 是 |
+| `test/e2e/activity-os-r5-e4-bucket-canonical-migration.e2e-spec.ts` | 失败beforeAll内7阶段start/done/elapsed计数；原30秒hook、全部SQL/语句/断言与事务预算逐字保持 | 否 |
+| `docs/plans/activity-os-r5-limited500-release-readiness.md` | 本节送审快照及本轮真实授权/结果收据 | 否 |
+| `changelog.d/nightly-e4-historical-fixture-diagnostics.md` | 本包fragment，不改已发布版本 | 否 |
+
+这是候选范围，尚不是批准记录。原完整Goal禁止workflow，本包仅提议上述具名例外；两条新grant须维护者精确委托后才由正常CLI代执行，不复用D1/D2已结束grant，不手改令牌。Trusted仍须维护者对新SHA本人批准；既有正常提交推送/条件合并授权不绕过任何门禁。原SQL/500保护/Jest配置/global setup/依赖均不变。
+
+仓外候选17场景shell、追加守护块21项、浅历史拒绝/完整历史通过及4个变异均有实际校准；它们不是正式完整Harness或应用验证。未改main的真实PG bucket141+detectOpenHandles为211.52秒exit1、2 failed：407行beforeAll原30秒hook超时，业务断言未执行。未再出现历史git show错误；同步升级/建夹具/prepare/submit/oracle哪个阶段耗时仍UNKNOWN，故仅新增第五路径定位，不称已修复，不提高timeout。结束后只读观察模板app_test保留、w1/w98不存在且目标client0，仅为资源快照，不是业务回滚证明。
+
+获批后：原完整Harness/typecheck/quick与新增守护 → 具名bucket141在原预算下单轮取证 → 失败/UNKNOWN停后续，全部通过才普通CI五分片/Smoke/新SHA Trusted及既有正常合并。每层按代码、实际测试、推送、合并分别记录；候选应用前均NOT_RUN。
+
+N2完整nightly另需一次执行授权：只有短门/主干通过后才固定新main派发一次，不rerun/扩时/拆片；明确承接既有自动开/评论/关闭Issue的外发副作用。N1实现授权不自动包括N2。runner/job硬终止仍可能阻止always artifact，不保证所有死亡方式都能保留日志。
+
+C1原容量队列仅只读准备，待新scratch与有限次数批准。采用现有原S13一次→全门通过才原maximum一次，严格首停，不追加样本/预热/ANALYZE/换baseline。固定源码/147份SQL/oracle与原预算：prepare/submit30秒、review15秒、summary默认5秒、整例600秒，以及既有独立oracle/native/cleanup预算；不以90秒DIAGNOSTIC_ONLY结果代替验收。具名库拟为app_test/app_test_w1/app_test_w98，先查存在性/连接/owner，来源不明或失败证据库存在即停，不强清；原lease/普通DROP/失败保留/资源观察照旧。阶段JSONL、完整8000文档/袋/NULL/hash/oracle、响应与真实事务终态/副作用/资源分列，首红之后NOT_RUN。该历史fixture容量测试不授权active超500；若需要源码/SQL/断言修复，另给精确候选，不由测量授权自动扩写。
+
+本轮未应用候选、未提交推送/建PR/合并；完整nightly、原满额/S13、前端与真实业务验收、10a/10b和所有生产操作均NOT_RUN。实际后续批准与收据以相应PR的版本化结果核对，本送审快照不倒签。
+
+
+### N1实际批准与候选应用收据（2026-10-19）
+
+维护者对问题call_a9401137246245869f480bf8ee7e5559明确回复：“批准 N1 五路径与两条精确 grant，并附条件批准 C1；完整 nightly 暂缓（推荐）”。据此仅通过正常CLI代执行workflow和harness-guards.selftest两条具名grant，应用冻结patch `0c46ea383cc79703acd3fda46f2a0973594f5b87dd0af131bdf8a58d0f70e1da`；初次应用五文件逐份摘要与送审候选相同。上述送审快照不倒签为实现证据；本节才登记实际批准。
+
+N1清单内实施/修正、原预算验证、正常提交推送同一Draft PR沿批准范围推进；新SHA的Trusted仍须维护者本人批准。C1仅在N1全部门通过后开放原S13一次→全部通过才原满额一次，任一失败/UNKNOWN则后项NOT_RUN。N2完整nightly继续暂缓；生产/真实转换/开关/tag/Release不执行。实际验证、提交推送及合并分别记录，不提前预报通过。
+
+### N1清单内修正与门禁首红（2026-10-19）
+
+仍只修改获批五路径。独立复审先发现两项缺陷，并在修正前实际复现：带前导空白的真实ANSI `FAIL` 被误判为超时；`set -e` 下缺日志会在分类前被未保护的 `tail` 提前终止。现分别容忍FAIL前导空白、将真实分类入口移到显式容错的tail前；原17场景完整保留，追加真实带空格ANSI及缩进FAIL两例，以 `bash -e -c` 执行workflow原段。复审两项均关闭，最终代码复审0 BLOCKER／0 SHOULD-FIX，不代表验收已过。
+
+代码候选固定为 `f9ce7727ac6c3f3e9c0236673548100a56a4fafd`；本节仅追加实际结果，不改变其实现。该候选工作文件在检查期间逐份摘要未变：
+
+| 检查 | 实际结果及边界 |
+|---|---|
+| 真实shell与追加守护 | 19场景／23项通过；6个变异全部检出，包括上述两项回归。不是完整Actions执行或真实日志上传证明 |
+| guards完整自测 | 596 passed／0 failed／1项既有known gap |
+| 完整 `pnpm harness:selftest` | guards完成后按已出现的首红停止后续，exit143；ESLint组已启动后取消、hooks组NOT_RUN，整套记CANCELLED_NOT_COMPLETE，不能记全绿 |
+| `pnpm typecheck` | exit0，应用／test／scripts三组配置全部通过 |
+| 格式／不变性 | 三个代码文件Prettier及diff检查通过；去除22行阶段日志后bucket文件与原main逐字相同；触发、权限、矩阵、70m／85m／8GiB及原业务预算不变 |
+| 历史预检 | 可执行预检段与送审候选逐字相同，明确复用原浅历史exit128拒绝／完整历史exit0通过的校准，不称本轮重跑 |
+| 派生检查 | readtax／counts／migcount／codemap／rbacmap均exit0；147迁移计数一致。CODEMAP原两项WARN保留，不顺手扩围 |
+| 首轮serial quick | 在两项复审修正前实际exit1：2019文件，src1470／test548两个CLI在原300秒窗口被SIGTERM，elapsed分别301126／300728ms，`COLD_LINT_FAIL WINDOW_EXCEEDED`；其后typecheck/unit原链未执行 |
+| 修正后完整quick／单测 | NOT_RUN；这两处分类器修正未解决冷lint超窗，不盲重跑或加时。inputSeal包含scripts，故也不谎称修正前后完整输入摘要相同 |
+
+旧main CI的同2019文件冷lint实际207524ms通过，仅绑定原 `7606e1f1`，不替代本候选，不能据此认定本地超窗原因。收口preflight先因本任务五处dirty而失败；正常提交候选后在clean工作树复核通过，没有绕过守护。这一卫生门通过不解除quick失败。
+
+**N1验收仍BLOCKED，Release5未完成。** 新增阶段日志的bucket141 PG取证、C1原S13／原满额均NOT_RUN；C1附条件额度尚未消费。原211.52秒／30秒hook失败和原容量失败继续保留，具体内层耗时原因仍UNKNOWN。本轮先冻结并正常推送可审阅分支，不启动后续普通CI／Trusted／合并；N2完整nightly继续暂缓。前端与真实业务验收、31类真实映射hold、四项延期及10a／10b现场边界不变；生产、真实数据转换、开关、tag／Release均NOT_RUN。
+
+### N1测试生命周期修复的实际批准（2026-10-19）
+
+维护者已对“只给这个测试设置独立的120秒初始化窗口，先关闭应用再恢复数据库，保留业务时限和全部断言；增加一个现有测试辅助文件到范围，用新隔离测试库验证并保留失败库”明确回复：“批准啊 别问”。本节记录新授权，不把此前原30秒hook保留的送审快照倒签为这次例外。
+
+本次精确四路径：`test/e2e/activity-os-r5-e4-bucket-canonical-migration.e2e-spec.ts`、`test/helpers/activity-contribution-policy.fixture.ts`、本Goal及既有`changelog.d/nightly-e4-historical-fixture-diagnostics.md`。复用migration146的外层owner、内层客户端关闭及pending/UNKNOWN门；bucket141设施beforeAll明确120秒，正文仍用原30秒，业务方法、SQL、所有原断言和隔离不变。现有helper仅给140/141迁移增加可选deadline，零参数保留原同步路径；不新增通用helper或修改全局Jest/workflow/业务服务。
+
+预算更正：源码prepare事务为30000ms，submit引用既有`SETTLEMENT_SUBMIT_TX_TIMEOUT_MS=120000`。此前送审将两者均称为30秒事务不准确；本刀不修改这两个业务预算，C1的提交验收口径不得由初始化窗口推定。原本地冷lint300秒超窗、旧211.52秒hook失败、b672cbb8定向111.840秒exit1及teardown的`client:in_transaction:1`均保留；b672cbb8普通PR CI14 jobs成功独立有效，不代替新候选验证。原`app_test_w1`失败库保留，147迁移和后续零连接不代表业务事务终态，仍UNKNOWN。
+
+新隔离验证路径为`/workspace/r5-n1-lifecycle`，linked worktree派生模板`app_test_r5_n1_lifecycle_64a90c`、worker `app_test_r5_n1_lifecycle_64a90c_w1`，执行前核实实际预览及资源；不创建或重建原失败w1，不使用C1的w98。批准的生命周期unit、单次具名PG+detectOpenHandles、同一Draft PR正常提交推送及原PR CI沿本范围继续，实际结果分别登记；当前新候选检查均NOT_RUN，不预报通过。任何首红/UNKNOWN保留真实输出并停止后续测量，不改断言、追加样本或自动抬预算。
+
+本刀不消费C1额度；C1仍须N1原批准的全部前置满足。N2完整nightly暂缓；新SHA的Trusted必须维护者本人批准，不代批、不Ready、不合并，不部署/开闸/真实转换/tag/Release。AC013/017/020/025、31类真实映射hold、前端及真实业务和10a/10b边界不变。
+
+### N1生命周期候选的实际验证首红（2026-10-19，推送前收据）
+
+本刀代码固定为`8f082d7ac48635d998967682ab5c6c7d6899f34c`；后续本节与同一changelog仅登记事实，不修改受测代码。跨模型复查最终0 BLOCKER／0 SHOULD-FIX，静态比对39个原断言、23个SQL调用／模板和套件／测试名不变，typed corpus前置代码逐字保持。最终spec SHA256为`36c5bc144e32585ec7454c4b11de4c54824051ebf690d3215b21cfc351a66ec3`，fixture为`0f8649041e466aa568885fcd9ac442ef7aeedec2d5bf6f9cdf140f1f3e46e85a`。
+
+| 检查 | 实际结果及边界 |
+| --- | --- |
+| 生命周期unit | 2 suites／17 tests通过，exit0；之后仅移动spec中UNKNOWN抛错位置，受测生命周期helper未改。该unit不替代spec实际PG |
+| scoped ESLint | 首次exit1：`no-unsafe-finally`；同范围修正为finally只登记UNKNOWN、结束后再抛错，保留原异常。最终两文件exit0，无规则禁用 |
+| test类型／格式 | finally修正后`tsc --noEmit -p test/tsconfig.test.json` exit0；两文件Prettier check通过，diff check通过。完整本地quick仍未重跑，不改写旧300秒超窗 |
+| 候选隔离preflight | 新linked worktree安装／Prisma生成均exit0，候选checkout后具名lane preflight exit0；全局preflight因本任务既有Draft PR拒绝的原记录保留，未关闭PR或绕过守护 |
+| 单次PG＋detectOpenHandles | 2026-10-19T10:49:29Z启动，10:55:49Z正常exit1；实际进程墙钟380.188秒、Jest351.667秒、file351.397秒分别记录。新隔离模板／worker是本次唯一写库范围，没有重跑、扩时或追加样本 |
+| 初始化实际阶段 | 七阶段全部完成，累计44743.960ms：140升级4393.250ms、fixture12524.322ms、source2834.721ms、prepare9510.351ms、submit15355.468ms、body25.489ms、oracle83.525ms。设施120秒不改变原正文30秒和业务prepare30秒／submit120秒 |
+| 首个正文失败 | 第一例15847ms，在首次`verifyBusinessRoots(false)`的原5000ms事务内报expired，错误报告累计13296ms，位置spec:167。尚未首次deploy141，不证明非空141升级或完整roots正确；报错请求不等于耗时根因已定位 |
+| 后例与资源 | 第二例被owned首错保护拒绝，typed corpus为NOT_RUN；Jest计2 failed／0 passed，正常写出JSON且`openHandles: []`，未触发外层安全终止。只读观察目标连接0、测试进程组及live Node／迁移engine 0，worker已恢复147迁移、私有oracle schema 0；不是业务正确性或回滚证明 |
+
+本次采用既有`SRVF_KEEP_TEST_DBS=1`保留新worker供失败取证，因此globalTeardown的worker DROP记NOT_EXERCISED，不把保留当成清理通过。新模板OID48651、新worker最终OID55531；原失败`app_test_w1`仍为OID40052，未纳入本刀写库scope，未重建、清理或转换。三库完成迁移的名字／checksum摘要相同仅为catalog资源证据，不关闭旧失败或业务终态UNKNOWN。
+
+完整原日志SHA256为`a91576b3566b0e3ff7c82dd898c6fc65e5139cf8ffcb6e5e6634e4c709082c52`。实际Jest JSON、supervisor启动／退出、阶段结果、只读资源及跨模型收据保存在本云工作区`/workspace/r5-continuation-20261019/evidence/n1-lifecycle-*`；旧日志和原授权记录均保留。本节是推送前事实快照，正常提交推送同一Draft PR #1385并跟进原PR CI的授权继续；其新SHA检查以GitHub终态核对，不预报成功，不Ready或合并。
+
+**N1仍未验收通过，Release5未完成。** 新首红是原oracle事务过期，根因仍UNKNOWN，不调高5秒或其他原预算、不改SQL／断言。首红后Smoke、C1原S13／原满额均NOT_RUN，C1额度未消费；N2完整nightly仍暂缓。Trusted须维护者本人批准，生产NO_GO及四项延期、31类真实映射hold、前端／真实业务、10a／10b边界不变。

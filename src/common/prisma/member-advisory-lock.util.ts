@@ -48,6 +48,16 @@ export const MEMBER_TX_WORK_BUDGET_MS = 3_000;
  */
 export const MEMBER_TX_TIMEOUT_MS = MEMBER_LOCK_WAIT_BUDGET_MS + MEMBER_TX_WORK_BUDGET_MS;
 
+/**
+ * Human 更正提交(V2/V3,含重放)的独立工程预算。维护者 2026-10-22 明确批准:
+ * 完整来源校验与提交实测 3.740/4.080s,不能套用 200 人终审的 3s 工作额度。
+ * 15s 为待验证余量,不是 HTTP SLA;单次取锁仍为 4s,所有写入与校验仍同事务。
+ * 普通成员操作、legacy apply 与直接账本提交继续使用 MEMBER_TX_TIMEOUT_MS。
+ */
+export const HUMAN_CORRECTION_COMMIT_TX_TIMEOUT_MS = 15_000;
+
+type MemberTransactionProfile = 'standard' | 'd7-human-correction-commit';
+
 /** PostgreSQL 55P03 = lock_not_available(等锁超过 lock_timeout)。 */
 function isLockWaitTimeout(err: unknown): boolean {
   if (err instanceof BizException) return false;
@@ -167,10 +177,14 @@ export async function withBoundedMemberLockWait<T>(
 export async function runMemberLinearizedTransaction<T>(
   prisma: InteractiveClient,
   body: (tx: PrismaTx) => Promise<T>,
+  profile: MemberTransactionProfile = 'standard',
 ): Promise<T> {
   return prisma.$transaction((tx) => withBoundedMemberLockWait(tx, () => body(tx)), {
     isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
-    timeout: MEMBER_TX_TIMEOUT_MS,
+    timeout:
+      profile === 'd7-human-correction-commit'
+        ? HUMAN_CORRECTION_COMMIT_TX_TIMEOUT_MS
+        : MEMBER_TX_TIMEOUT_MS,
   });
 }
 

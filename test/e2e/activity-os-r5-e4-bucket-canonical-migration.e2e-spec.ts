@@ -399,41 +399,106 @@ async function verifyTypedCorpus(db: PrismaClient, body: string) {
   );
 }
 
+// Keep database finalization outside the suite so its clients close first.
+let pending = 0;
+let stopped = false;
+let terminalUnknown = false;
+let appClosed = true;
+async function owned<T>(work: () => Promise<T>): Promise<T> {
+  if (pending || stopped || terminalUnknown) {
+    if (pending) terminalUnknown = true;
+    throw new Error('E4 bucket prior work failed or is pending; further work refused');
+  }
+  pending++;
+  try {
+    return await work();
+  } catch (error) {
+    stopped = true;
+    throw error;
+  } finally {
+    pending--;
+  }
+}
+function remaining(deadline: number) {
+  const ms = Math.floor(deadline - performance.now());
+  if (ms < 1) throw new Error('E4 bucket owned execution deadline exceeded');
+  return ms;
+}
+const owner = installE4ValidationDatabase({
+  baselineMigrationCount: 136,
+  boundMigrationProcesses: true,
+  assertReadyToFinalize: () => {
+    if (pending || terminalUnknown || !appClosed)
+      throw new Error('E4 bucket work/resource terminal UNKNOWN; database finalizer refused');
+  },
+});
+
 describe('E4 bucket canonical migration 141 nonempty upgrade', () => {
-  const owner = installE4ValidationDatabase({ baselineMigrationCount: 136 });
   let fixture: E4Fixture | undefined;
   let oracleInstalled = false;
   const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
-  beforeAll(async () => {
-    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
-    owner.deployEvaluationMigrations();
-    fixture = await createE4Fixture();
-    const source = await createE4Source(fixture);
-    const prepared = await prepareE4Time(fixture, source);
-    await submitE4Time(fixture, source, prepared);
-    const db = fixture.db;
-    const before = await installedBody(db);
-    await db.$transaction(
-      async (tx) => {
-        if (!/^e4_bucket_oracle_[a-f0-9]{16}$/u.test(namespace))
-          throw new Error('E4 private oracle namespace invalid');
-        await tx.$executeRawUnsafe('CREATE SCHEMA ' + namespace);
-        await tx.$executeRawUnsafe(
-          frozenDefinition('astr_canonical_json').replaceAll(
-            'astr_canonical_json(',
-            namespace + '.canonical121(',
-          ),
+  beforeAll(
+    async () =>
+      owned(async () => {
+        const deadline = performance.now() + 117_000;
+        // E4_BUCKET141_SETUP_DIAGNOSTIC_BEGIN
+        const setupStarted = performance.now();
+        const markSetup = (stage: string) =>
+          console.info(
+            'E4_BUCKET141_SETUP_STAGE',
+            JSON.stringify({ stage, elapsedMs: performance.now() - setupStarted }),
+          );
+        // E4_BUCKET141_SETUP_DIAGNOSTIC_END
+        process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
+        markSetup('UPGRADE_140_START');
+        await owner.deployEvaluationMigrations(remaining(deadline));
+        markSetup('UPGRADE_140_DONE');
+        markSetup('FIXTURE_START');
+        appClosed = false;
+        fixture = await createE4Fixture();
+        markSetup('FIXTURE_DONE');
+        markSetup('SOURCE_START');
+        const source = await createE4Source(fixture);
+        markSetup('SOURCE_DONE');
+        markSetup('PREPARE_START');
+        const prepared = await prepareE4Time(fixture, source);
+        markSetup('PREPARE_DONE');
+        markSetup('SUBMIT_START');
+        await submitE4Time(fixture, source, prepared);
+        markSetup('SUBMIT_DONE');
+        const db = fixture.db;
+        markSetup('BODY_START');
+        const before = await installedBody(db);
+        markSetup('BODY_DONE');
+        markSetup('ORACLE_START');
+        await db.$transaction(
+          async (tx) => {
+            if (!/^e4_bucket_oracle_[a-f0-9]{16}$/u.test(namespace))
+              throw new Error('E4 private oracle namespace invalid');
+            await tx.$executeRawUnsafe('CREATE SCHEMA ' + namespace);
+            await tx.$executeRawUnsafe(
+              frozenDefinition('astr_canonical_json').replaceAll(
+                'astr_canonical_json(',
+                namespace + '.canonical121(',
+              ),
+            );
+            const old = oracleBody(bodyOf(frozenDefinition('astr_bucket_content_hash')));
+            await createSqlFunction(tx, 'hash121', old);
+            await createSqlFunction(tx, 'document121', documentBody(old));
+            await createSqlFunction(tx, 'document_before', documentBody(before));
+          },
+          { timeout: 5_000 },
         );
-        const old = oracleBody(bodyOf(frozenDefinition('astr_bucket_content_hash')));
-        await createSqlFunction(tx, 'hash121', old);
-        await createSqlFunction(tx, 'document121', documentBody(old));
-        await createSqlFunction(tx, 'document_before', documentBody(before));
-      },
-      { timeout: 5_000 },
-    );
-    oracleInstalled = true;
-  });
+        oracleInstalled = true;
+        markSetup('ORACLE_DONE');
+      }),
+    120_000,
+  );
   afterAll(async () => {
+    if (pending) {
+      terminalUnknown = true;
+      throw new Error('E4 bucket async work pending; close and database finalization refused');
+    }
     try {
       if (oracleInstalled && fixture) {
         // Only the randomly named private test namespace is removed; public objects stay untouched.
@@ -441,71 +506,93 @@ describe('E4 bucket canonical migration 141 nonempty upgrade', () => {
       }
     } finally {
       try {
-        await closeE13Fixture(fixture);
+        if (fixture) {
+          await closeE13Fixture(fixture);
+          appClosed = true;
+        } else if (!appClosed) {
+          terminalUnknown = true;
+        }
       } finally {
         if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
         else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
       }
     }
+    if (terminalUnknown) throw new Error('E4 bucket app initialization close terminal UNKNOWN');
   });
 
-  it('preserves every business table, stored time and contribution roots, catalog, old checksums and no-op across 140 to 141', async () => {
-    if (!fixture) throw new Error('E4 bucket upgrade fixture missing');
-    const db = fixture.db;
-    const beforeMigrations = await migrationRows(db);
-    expect(beforeMigrations).toHaveLength(140);
-    expect(beforeMigrations[139].name).toBe(E4_MIGRATION_140);
-    const beforeCatalog = await functionCatalog(db);
-    const beforeConstraints = await constraints(db);
-    const beforeBusiness = await businessSnapshot(db);
-    const beforeDocuments = await verifyBusinessRoots(db, false);
-    owner.deployBucketMigrations();
-    const afterMigrations = await migrationRows(db);
-    expect(afterMigrations).toHaveLength(141);
-    expect(JSON.stringify(afterMigrations.slice(0, 140)) === JSON.stringify(beforeMigrations)).toBe(
-      true,
-    );
-    expect(afterMigrations[140].name).toBe(E4_MIGRATION_141);
-    const candidate = readFileSync(
-      resolve(__dirname, '../../prisma/migrations', E4_MIGRATION_141, 'migration.sql'),
-      'utf8',
-    );
-    expect(createHash('sha256').update(candidate).digest('hex')).toBe(CANDIDATE_SHA);
-    expect(afterMigrations[140].checksum).toBe(CANDIDATE_SHA);
-    const actualBody = await installedBody(db);
-    expect(actualBody === bodyOf(candidate)).toBe(true);
-    await db.$transaction((tx) => createSqlFunction(tx, 'document141', documentBody(actualBody)), {
-      timeout: 5_000,
-    });
-    expect(JSON.stringify(await functionCatalog(db)) === JSON.stringify(beforeCatalog)).toBe(true);
-    expect(JSON.stringify(await constraints(db)) === JSON.stringify(beforeConstraints)).toBe(true);
-    expect((await businessSnapshot(db)) === beforeBusiness).toBe(true);
-    expect((await verifyBusinessRoots(db, true)) === beforeDocuments).toBe(true);
-    owner.deployBucketMigrations();
-    expect(JSON.stringify(await migrationRows(db)) === JSON.stringify(afterMigrations)).toBe(true);
-    expect(JSON.stringify(await functionCatalog(db)) === JSON.stringify(beforeCatalog)).toBe(true);
-    expect(JSON.stringify(await constraints(db)) === JSON.stringify(beforeConstraints)).toBe(true);
-    expect((await businessSnapshot(db)) === beforeBusiness).toBe(true);
-    expect((await verifyBusinessRoots(db, true)) === beforeDocuments).toBe(true);
-    console.info(
-      'E4_BUCKET141_NONEMPTY_UPGRADE',
-      JSON.stringify({
-        from: 140,
-        to: 141,
-        historicalChecksums: 140,
-        businessUnchanged: true,
-        rootsEquivalent: true,
-        catalogUnchanged: true,
-        noop: true,
-      }),
-    );
-  });
+  it('preserves every business table, stored time and contribution roots, catalog, old checksums and no-op across 140 to 141', async () =>
+    owned(async () => {
+      const deadline = performance.now() + 27_000;
+      if (!fixture) throw new Error('E4 bucket upgrade fixture missing');
+      const db = fixture.db;
+      const beforeMigrations = await migrationRows(db);
+      expect(beforeMigrations).toHaveLength(140);
+      expect(beforeMigrations[139].name).toBe(E4_MIGRATION_140);
+      const beforeCatalog = await functionCatalog(db);
+      const beforeConstraints = await constraints(db);
+      const beforeBusiness = await businessSnapshot(db);
+      const beforeDocuments = await verifyBusinessRoots(db, false);
+      await owner.deployBucketMigrations(remaining(deadline));
+      const afterMigrations = await migrationRows(db);
+      expect(afterMigrations).toHaveLength(141);
+      expect(
+        JSON.stringify(afterMigrations.slice(0, 140)) === JSON.stringify(beforeMigrations),
+      ).toBe(true);
+      expect(afterMigrations[140].name).toBe(E4_MIGRATION_141);
+      const candidate = readFileSync(
+        resolve(__dirname, '../../prisma/migrations', E4_MIGRATION_141, 'migration.sql'),
+        'utf8',
+      );
+      expect(createHash('sha256').update(candidate).digest('hex')).toBe(CANDIDATE_SHA);
+      expect(afterMigrations[140].checksum).toBe(CANDIDATE_SHA);
+      const actualBody = await installedBody(db);
+      expect(actualBody === bodyOf(candidate)).toBe(true);
+      await db.$transaction(
+        (tx) => createSqlFunction(tx, 'document141', documentBody(actualBody)),
+        {
+          timeout: 5_000,
+        },
+      );
+      expect(JSON.stringify(await functionCatalog(db)) === JSON.stringify(beforeCatalog)).toBe(
+        true,
+      );
+      expect(JSON.stringify(await constraints(db)) === JSON.stringify(beforeConstraints)).toBe(
+        true,
+      );
+      expect((await businessSnapshot(db)) === beforeBusiness).toBe(true);
+      expect((await verifyBusinessRoots(db, true)) === beforeDocuments).toBe(true);
+      await owner.deployBucketMigrations(remaining(deadline));
+      expect(JSON.stringify(await migrationRows(db)) === JSON.stringify(afterMigrations)).toBe(
+        true,
+      );
+      expect(JSON.stringify(await functionCatalog(db)) === JSON.stringify(beforeCatalog)).toBe(
+        true,
+      );
+      expect(JSON.stringify(await constraints(db)) === JSON.stringify(beforeConstraints)).toBe(
+        true,
+      );
+      expect((await businessSnapshot(db)) === beforeBusiness).toBe(true);
+      expect((await verifyBusinessRoots(db, true)) === beforeDocuments).toBe(true);
+      console.info(
+        'E4_BUCKET141_NONEMPTY_UPGRADE',
+        JSON.stringify({
+          from: 140,
+          to: 141,
+          historicalChecksums: 140,
+          businessUnchanged: true,
+          rootsEquivalent: true,
+          catalogUnchanged: true,
+          noop: true,
+        }),
+      );
+    }));
 
-  it('compares complete installed canonical bytes and hashes to the frozen 121 chain over typed PostgreSQL scalar and nested JSON bags', async () => {
-    if (!fixture) throw new Error('E4 bucket corpus fixture missing');
-    const migrations = await migrationRows(fixture.db);
-    expect(migrations).toHaveLength(141);
-    expect(migrations[140].name).toBe(E4_MIGRATION_141);
-    await verifyTypedCorpus(fixture.db, await installedBody(fixture.db));
-  });
+  it('compares complete installed canonical bytes and hashes to the frozen 121 chain over typed PostgreSQL scalar and nested JSON bags', async () =>
+    owned(async () => {
+      if (!fixture) throw new Error('E4 bucket corpus fixture missing');
+      const migrations = await migrationRows(fixture.db);
+      expect(migrations).toHaveLength(141);
+      expect(migrations[140].name).toBe(E4_MIGRATION_141);
+      await verifyTypedCorpus(fixture.db, await installedBody(fixture.db));
+    }));
 });

@@ -39,10 +39,10 @@ describe('147 correction source hash constraint on real PostgreSQL', () => {
       f.db
         .$queryRaw`SELECT oid::text,prosrc,proconfig,prosecdef,proowner::text,proacl::text FROM pg_proc WHERE pronamespace='public'::regnamespace ORDER BY oid`;
     const beforeFunctions = await functions();
-    await owner.deployLatestMigrations(60_000);
+    await owner.deployCorrectionHashMigrations(60_000);
     expect(await nativeLaunchBusinessFingerprint(f.db, stage)).toEqual(beforeUpgrade);
     expect(await functions()).toEqual(beforeFunctions);
-    await owner.deployLatestMigrations(60_000);
+    await owner.deployCorrectionHashMigrations(60_000);
     expect(await nativeLaunchBusinessFingerprint(f.db, stage)).toEqual(beforeUpgrade);
     expect(
       await f.db

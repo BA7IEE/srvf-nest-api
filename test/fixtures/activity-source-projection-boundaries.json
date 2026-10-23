@@ -1,0 +1,642 @@
+[
+  {
+    "name": "single",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": 5
+      }
+    ],
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "empty",
+    "input": [],
+    "expectedSum": 0,
+    "expectedMember": false,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "two",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": 5
+      },
+      {
+        "participationIdentityId": "identity-b",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": 2
+      }
+    ],
+    "expectedSum": 7,
+    "expectedMember": true,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "permuted",
+    "input": [
+      {
+        "participationIdentityId": "identity-b",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": 2
+      },
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": 5
+      }
+    ],
+    "expectedSum": 7,
+    "expectedMember": true,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "duplicates-counted",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": 5
+      },
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": 5
+      }
+    ],
+    "expectedSum": 10,
+    "expectedMember": true,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "missing-slice",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a"
+      }
+    ],
+    "expectedSum": 0,
+    "expectedMember": true,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "json-null-slice",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": null
+      }
+    ],
+    "expectedSum": 0,
+    "expectedMember": true,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "missing-pending-fields",
+    "input": [
+      {
+        "sliceCount": 5
+      }
+    ],
+    "expectedSum": 5,
+    "expectedMember": false,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "all-null-fields",
+    "input": [
+      {
+        "participationIdentityId": null,
+        "segmentKey": null,
+        "baseAllocationRevisionId": null,
+        "sliceCount": null
+      }
+    ],
+    "expectedSum": 0,
+    "expectedMember": false,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "nonobjects-only",
+    "input": [null, 1, true, "text", []],
+    "expectedSum": 0,
+    "expectedMember": false,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "mixed-nonobject-fallback",
+    "input": [
+      null,
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": 5
+      },
+      1,
+      true,
+      []
+    ],
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "nested-array-is-not-unwrapped",
+    "input": [
+      [
+        {
+          "participationIdentityId": "identity-a",
+          "segmentKey": "segment-a",
+          "baseAllocationRevisionId": "allocation-a",
+          "sliceCount": 5
+        }
+      ]
+    ],
+    "expectedSum": 0,
+    "expectedMember": false,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "mixed-nested-array",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": 5
+      },
+      [
+        {
+          "sliceCount": 99
+        }
+      ]
+    ],
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "unicode",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "中文🙂é\\\"\n",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": 5
+      }
+    ],
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "中文🙂é\\\"\n",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "array-field-text",
+    "input": [
+      {
+        "participationIdentityId": ["identity-a"],
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": 5
+      }
+    ],
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "[\"identity-a\"]",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "object-field-text",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": {
+          "x": 1
+        },
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": 5
+      }
+    ],
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "{\"x\": 1}",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "boolean-field-text",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": true,
+        "sliceCount": 5
+      }
+    ],
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "true"
+  },
+  {
+    "name": "numeric-field-text",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": 1,
+        "sliceCount": 5
+      }
+    ],
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "1"
+  },
+  {
+    "name": "missing-identity",
+    "input": [
+      {
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": 5
+      }
+    ],
+    "expectedSum": 5,
+    "expectedMember": false,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "null-identity",
+    "input": [
+      {
+        "participationIdentityId": null,
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": 5
+      }
+    ],
+    "expectedSum": 5,
+    "expectedMember": false,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "integer-string",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": "05"
+      }
+    ],
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "integer-whitespace",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": " 5 "
+      }
+    ],
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "integer-negative",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": -1
+      }
+    ],
+    "expectedSum": -1,
+    "expectedMember": true,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "max-int",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": 2147483647
+      }
+    ],
+    "expectedSum": 2147483647,
+    "expectedMember": true,
+    "expectedState": "00000",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "invalid-int",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": "bad"
+      }
+    ],
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "22P02",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "fractional",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": 1.5
+      }
+    ],
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "22P02",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "float-whole",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": 1.0
+      }
+    ],
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "22P02",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "overflow",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": 2147483648
+      }
+    ],
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "22003",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "array-slice",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": [5]
+      }
+    ],
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "22P02",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "object-slice",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": {
+          "x": 5
+        }
+      }
+    ],
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "22P02",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "boolean-slice",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": true
+      }
+    ],
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "22P02",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "sum-overflow",
+    "input": [
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": 2147483647
+      },
+      {
+        "participationIdentityId": "identity-a",
+        "segmentKey": "segment-a",
+        "baseAllocationRevisionId": "allocation-a",
+        "sliceCount": 2147483647
+      }
+    ],
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "22003",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "nonarray-object",
+    "input": {},
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "22023",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "nonarray-scalar",
+    "input": 1,
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "22023",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "json-null-root",
+    "input": null,
+    "expectedSum": 5,
+    "expectedMember": true,
+    "expectedState": "22023",
+    "sqlNull": false,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  },
+  {
+    "name": "sql-null-root",
+    "input": null,
+    "expectedSum": 0,
+    "expectedMember": false,
+    "expectedState": "00000",
+    "sqlNull": true,
+    "pendingIdentity": "identity-a",
+    "pendingSegment": "segment-a",
+    "pendingAllocation": "allocation-a"
+  }
+]

@@ -1,10 +1,43 @@
+import { createHash, type HashOptions } from 'node:crypto';
+import { fingerprintMetricEnvelope } from './activity-metric-definition';
 import {
   activityTimeAllocationRequestHash,
   buildActivityTimeAllocationManifest,
   buildCorrectionTimeAllocationManifest,
   parseActivityTimeAllocationCommand,
   parseActivityTimeAllocationReceipt,
+  type ActivityTimeAllocationSliceInput,
 } from './activity-time-allocation-command';
+
+jest.mock('node:crypto', () => {
+  const actual = jest.requireActual<typeof import('node:crypto')>('node:crypto');
+  return { ...actual, createHash: jest.fn(actual.createHash) };
+});
+
+const actualCrypto = jest.requireActual<typeof import('node:crypto')>('node:crypto');
+
+function captureManifest(slices: readonly ActivityTimeAllocationSliceInput[]) {
+  const chunks: string[] = [];
+  jest.mocked(createHash).mockImplementationOnce((algorithm: string, options?: HashOptions) => {
+    const hash = actualCrypto.createHash(algorithm, options);
+    const update = hash.update.bind(hash);
+    jest.spyOn(hash, 'update').mockImplementation((data, encoding) => {
+      if (typeof data !== 'string') throw new Error('Manifest canonical chunks must be strings');
+      expect(encoding).toBe('utf8');
+      chunks.push(data);
+      return update(data, encoding);
+    });
+    return hash;
+  });
+  const result = buildActivityTimeAllocationManifest(slices);
+  const original = fingerprintMetricEnvelope(
+    'activity-time-allocation-manifest-v1',
+    result.manifest,
+  );
+  expect(chunks.join('')).toBe(original.canonicalText);
+  expect(result.allocationHash).toBe(original.definitionHash);
+  return { ...result, canonical: chunks.join('') };
+}
 
 const automatic = () => ({
   operationKey: 'allocation-operation',
@@ -151,6 +184,106 @@ describe('D3 canonical manifest and receipt', () => {
         ),
       ).toThrow(TypeError);
     }
+  });
+});
+
+describe('D3 complete allocation manifest byte equivalence', () => {
+  const slice = (): ActivityTimeAllocationSliceInput => ({
+    categoryCode: 'training',
+    intervalKindCode: 'service_segment',
+    startAt: '2026-09-12T08:00:00.000Z',
+    endAt: '2026-09-12T09:00:00.000Z',
+  });
+
+  it.each([1, 5, 11, 500])('preserves every canonical byte for %i reversed slices', (count) => {
+    const slices = Array.from({ length: count }, (_, ordinal) => ({
+      ...slice(),
+      startAt: new Date(Date.UTC(2026, 0, 1, 0, ordinal)).toISOString(),
+      endAt: new Date(Date.UTC(2026, 0, 1, 0, ordinal + 1)).toISOString(),
+    })).reverse();
+    const before = JSON.stringify(slices);
+    const result = captureManifest(slices);
+    expect(JSON.stringify(slices)).toBe(before);
+    if (count >= 11)
+      expect(result.canonical.indexOf('"10":{')).toBeLessThan(result.canonical.indexOf('"2":{'));
+  });
+
+  it.each(['', 'quote" slash\\', 'a\nb\tc', '雪🙂', 'é é', '\u2028\u2029', '\ud800'])(
+    'preserves primitive string escaping %j',
+    (text) => {
+      const value = slice();
+      for (const key of ['categoryCode', 'intervalKindCode', 'startAt', 'endAt'])
+        Reflect.set(value, key, text);
+      captureManifest([value]);
+    },
+  );
+
+  it.each([
+    null,
+    undefined,
+    0,
+    false,
+    new Date('2020-01-01T00:00:00.000Z'),
+    { z: [null, '雪'], a: { x: undefined } },
+    new Array<unknown>(2),
+  ])('retains original non-string canonical behavior %j', (value: unknown) => {
+    const input = slice();
+    Reflect.set(input, 'intervalKindCode', value);
+    captureManifest([input]);
+  });
+
+  it('reads caller fields once in the original order, then returns an independent graph', () => {
+    const input = slice();
+    const reads: string[] = [];
+    for (const key of ['categoryCode', 'intervalKindCode', 'startAt', 'endAt'] as const) {
+      const value = input[key];
+      Object.defineProperty(input, key, {
+        enumerable: true,
+        get: () => {
+          reads.push(key);
+          return value;
+        },
+      });
+    }
+    const first = captureManifest([input]);
+    expect(reads).toEqual(['categoryCode', 'intervalKindCode', 'startAt', 'endAt']);
+    const second = captureManifest([input]);
+    expect(second.manifest).toEqual(first.manifest);
+    expect(second.manifest).not.toBe(first.manifest);
+    expect(second.manifest.slices['0']).not.toBe(first.manifest.slices['0']);
+  });
+
+  it('preserves stable sorting when comparison keys are equal', () => {
+    const first = slice(),
+      second = slice();
+    Reflect.set(first, 'intervalKindCode', 'first');
+    Reflect.set(second, 'intervalKindCode', 'second');
+    expect(captureManifest([first, second]).manifest.slices['0'].intervalKindCode).toBe('first');
+    expect(captureManifest([second, first]).manifest.slices['0'].intervalKindCode).toBe('second');
+  });
+
+  it('retains nested accessor rejection without invoking the accessor', () => {
+    const getter = jest.fn();
+    const nested = Object.defineProperty({}, 'value', { enumerable: true, get: getter });
+    const input = slice();
+    Reflect.set(input, 'intervalKindCode', nested);
+    expect(() => buildActivityTimeAllocationManifest([input])).toThrow(
+      'invalid parsed metric metadata',
+    );
+    expect(getter).not.toHaveBeenCalled();
+  });
+
+  it('keeps count bounds and recomputes after caller mutation', () => {
+    expect(() => buildActivityTimeAllocationManifest([])).toThrow('slice count is invalid');
+    expect(() => buildActivityTimeAllocationManifest(Array.from({ length: 501 }, slice))).toThrow(
+      'slice count is invalid',
+    );
+    const input = slice();
+    const first = captureManifest([input]);
+    Reflect.set(input, 'endAt', '2026-09-12T10:00:00.000Z');
+    const second = captureManifest([input]);
+    expect(second.allocationHash).not.toBe(first.allocationHash);
+    expect(first.manifest.slices['0'].endAt).toBe('2026-09-12T09:00:00.000Z');
   });
 });
 

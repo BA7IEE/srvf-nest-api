@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   fingerprintMetricEnvelope,
   metricArray,
@@ -238,9 +239,53 @@ export function buildActivityTimeAllocationManifest(
   };
   return {
     manifest,
-    allocationHash: fingerprintMetricEnvelope('activity-time-allocation-manifest-v1', manifest)
-      .definitionHash,
+    allocationHash: allocationManifestHash(manifest),
   };
+}
+
+/** Only the freshly constructed manifest's primitive string records use the fixed layout. */
+function allocationManifestHash(manifest: ActivityTimeAllocationManifest): string {
+  const keys = Object.keys(manifest.slices).sort();
+  if (
+    keys.some((key) => {
+      const slice = manifest.slices[key];
+      return (
+        typeof slice.categoryCode !== 'string' ||
+        typeof slice.endAt !== 'string' ||
+        typeof slice.intervalKindCode !== 'string' ||
+        typeof slice.startAt !== 'string'
+      );
+    })
+  )
+    return fingerprintMetricEnvelope('activity-time-allocation-manifest-v1', manifest)
+      .definitionHash;
+  // Ordinal keys sort lexically ("10" before "2"), just as C1's generic canonicalizer.
+  const slices = keys
+    .map((key) => {
+      const slice = manifest.slices[key];
+      return (
+        JSON.stringify(key) +
+        ':{"categoryCode":' +
+        JSON.stringify(slice.categoryCode) +
+        ',"endAt":' +
+        JSON.stringify(slice.endAt) +
+        ',"intervalKindCode":' +
+        JSON.stringify(slice.intervalKindCode) +
+        ',"ordinal":' +
+        JSON.stringify(slice.ordinal) +
+        ',"startAt":' +
+        JSON.stringify(slice.startAt) +
+        '}'
+      );
+    })
+    .join(',');
+  const canonical =
+    '{"definition":{"schemaVersion":' +
+    JSON.stringify(manifest.schemaVersion) +
+    ',"slices":{' +
+    slices +
+    '}},"domain":"activity-time-allocation-manifest-v1"}';
+  return createHash('sha256').update(canonical, 'utf8').digest('hex');
 }
 
 /**

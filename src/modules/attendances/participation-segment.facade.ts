@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import type {
+  ActivityParticipationIdentity,
+  AttendancePunchEvent,
+  ParticipantServiceSegmentRevision,
+  Prisma,
+} from '@prisma/client';
 import { AttendanceAccessService } from './attendance-access.service';
 
 export const PARTICIPATION_SEGMENT_FACADE_LIMITS = Object.freeze({
@@ -40,6 +45,33 @@ function isCurrentStatusCode(value: string): value is CurrentParticipationSegmen
   return value === 'draft' || value === 'committed';
 }
 
+type CurrentSegmentRow = Pick<
+  ParticipantServiceSegmentRevision,
+  | 'id'
+  | 'participationIdentityId'
+  | 'segmentKey'
+  | 'revision'
+  | 'sourceCheckInEventId'
+  | 'sourceCloseEventId'
+  | 'resultCode'
+  | 'statusCode'
+  | 'checkInAt'
+  | 'checkOutAt'
+  | 'lateFlag'
+  | 'earlyLeaveFlag'
+  | 'exceptionFlagsJson'
+> & {
+  identity: Pick<ActivityParticipationIdentity, 'id' | 'activityId' | 'sessionId' | 'memberId'>;
+  sourceCheckInEvent: Pick<
+    AttendancePunchEvent,
+    'id' | 'activityId' | 'sessionId' | 'participationIdentityId' | 'memberId' | 'positionId'
+  > | null;
+  sourceCloseEvent: Pick<
+    AttendancePunchEvent,
+    'id' | 'activityId' | 'sessionId' | 'participationIdentityId' | 'memberId'
+  > | null;
+};
+
 /**
  * Internal trusted reader for the persisted current participation-segment facts.
  * The caller owns authorization and any lock required by its later write flow.
@@ -66,56 +98,28 @@ export class ParticipationSegmentFacade {
   ): Promise<readonly CurrentParticipationSegment[]> {
     if (!activityId) throw new TypeError('activity id is required');
 
-    const rows = await tx.participantServiceSegmentRevision.findMany({
-      where: {
-        identity: { activityId },
-        statusCode: { not: 'superseded' },
-      },
-      take: PARTICIPATION_SEGMENT_FACADE_LIMITS.segments + 1,
-      orderBy: [{ participationIdentityId: 'asc' }, { segmentKey: 'asc' }, { revision: 'asc' }],
-      select: {
-        id: true,
-        participationIdentityId: true,
-        segmentKey: true,
-        revision: true,
-        sourceCheckInEventId: true,
-        sourceCloseEventId: true,
-        resultCode: true,
-        statusCode: true,
-        checkInAt: true,
-        checkOutAt: true,
-        lateFlag: true,
-        earlyLeaveFlag: true,
-        exceptionFlagsJson: true,
-        identity: {
-          select: {
-            id: true,
-            activityId: true,
-            sessionId: true,
-            memberId: true,
-          },
-        },
-        sourceCheckInEvent: {
-          select: {
-            id: true,
-            activityId: true,
-            sessionId: true,
-            participationIdentityId: true,
-            memberId: true,
-            positionId: true,
-          },
-        },
-        sourceCloseEvent: {
-          select: {
-            id: true,
-            activityId: true,
-            sessionId: true,
-            participationIdentityId: true,
-            memberId: true,
-          },
-        },
-      },
-    });
+    // Keep the bounded relation projection in one query. Separate ORM relation queries rebuild
+    // the same 10000-row relation graph in the client engine. Every anchor is still checked below;
+    // do not filter mismatched punch anchors out of the result or hide an over-limit row.
+    const rows = await tx.$queryRaw<CurrentSegmentRow[]>`
+      SELECT s.id, s."participationIdentityId", s."segmentKey", s.revision,
+        s."sourceCheckInEventId", s."sourceCloseEventId", s."resultCode", s."statusCode",
+        s."checkInAt", s."checkOutAt", s."lateFlag", s."earlyLeaveFlag", s."exceptionFlagsJson",
+        json_build_object('id', i.id, 'activityId', i."activityId", 'sessionId', i."sessionId", 'memberId', i."memberId") AS identity,
+        CASE WHEN ci.id IS NULL THEN NULL ELSE json_build_object('id', ci.id,
+          'activityId', ci."activityId", 'sessionId', ci."sessionId",
+          'participationIdentityId', ci."participationIdentityId", 'memberId', ci."memberId", 'positionId', ci."positionId") END AS "sourceCheckInEvent",
+        CASE WHEN ce.id IS NULL THEN NULL ELSE json_build_object('id', ce.id,
+          'activityId', ce."activityId", 'sessionId', ce."sessionId",
+          'participationIdentityId', ce."participationIdentityId", 'memberId', ce."memberId") END AS "sourceCloseEvent"
+      FROM "ParticipantServiceSegmentRevision" s
+      JOIN "ActivityParticipationIdentity" i ON i.id = s."participationIdentityId"
+      LEFT JOIN "AttendancePunchEvent" ci ON ci.id = s."sourceCheckInEventId"
+      LEFT JOIN "AttendancePunchEvent" ce ON ce.id = s."sourceCloseEventId"
+      WHERE i."activityId" = ${activityId} AND s."statusCode" <> 'superseded'
+      ORDER BY s."participationIdentityId" ASC, s."segmentKey" ASC, s.revision ASC
+      LIMIT ${PARTICIPATION_SEGMENT_FACADE_LIMITS.segments + 1}
+    `;
     if (rows.length > PARTICIPATION_SEGMENT_FACADE_LIMITS.segments)
       throw new RangeError('participation segment limit exceeded');
 

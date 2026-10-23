@@ -10,6 +10,11 @@ import {
   E4_MIGRATION_144,
   E4_MIGRATION_145,
   E4_MIGRATION_146,
+  E4_MIGRATION_147,
+  E4_MIGRATION_148,
+  E4_MIGRATION_149,
+  E4_MIGRATION_150,
+  E4_MIGRATION_151,
 } from './e4-migration-prefix';
 import type { INestApplication } from '@nestjs/common';
 import { BindingScopeType, PrincipalType, Role, UserStatus, Prisma } from '@prisma/client';
@@ -271,7 +276,22 @@ export function installE4ValidationDatabase(options?: {
       deployFailure(error);
     }
   }
-  type HistoricalCount = 137 | 138 | 139 | 140 | 141 | 142 | 143 | 144 | 145 | 146;
+  type HistoricalCount =
+    | 137
+    | 138
+    | 139
+    | 140
+    | 141
+    | 142
+    | 143
+    | 144
+    | 145
+    | 146
+    | 147
+    | 148
+    | 149
+    | 150
+    | 151;
   function deployHistoricalMigrations(count: HistoricalCount): void;
   function deployHistoricalMigrations(count: HistoricalCount, timeout: number): Promise<void>;
   function deployHistoricalMigrations(
@@ -294,6 +314,11 @@ export function installE4ValidationDatabase(options?: {
       E4_MIGRATION_144,
       E4_MIGRATION_145,
       E4_MIGRATION_146,
+      E4_MIGRATION_147,
+      E4_MIGRATION_148,
+      E4_MIGRATION_149,
+      E4_MIGRATION_150,
+      E4_MIGRATION_151,
     ].slice(0, count - 136);
     for (const name of successors) {
       const directory = join(temporary, 'migrations', name);
@@ -304,6 +329,16 @@ export function installE4ValidationDatabase(options?: {
       );
     }
     return deploy(historicalSchema, timeout);
+  }
+  function deployEvaluationMigrations(): void;
+  function deployEvaluationMigrations(timeout: number): Promise<void>;
+  function deployEvaluationMigrations(timeout?: number) {
+    return deployHistoricalMigrations(140, timeout);
+  }
+  function deployBucketMigrations(): void;
+  function deployBucketMigrations(timeout: number): Promise<void>;
+  function deployBucketMigrations(timeout?: number) {
+    return deployHistoricalMigrations(141, timeout);
   }
   function deployUnitMigrations(): void;
   function deployUnitMigrations(timeout: number): Promise<void>;
@@ -332,6 +367,31 @@ export function installE4ValidationDatabase(options?: {
   function deployPolicyBandMigrations(timeout: number): Promise<void>;
   function deployPolicyBandMigrations(timeout?: number) {
     return deployHistoricalMigrations(146, timeout);
+  }
+  function deployCorrectionHashMigrations(): void;
+  function deployCorrectionHashMigrations(timeout: number): Promise<void>;
+  function deployCorrectionHashMigrations(timeout?: number) {
+    return deployHistoricalMigrations(147, timeout);
+  }
+  function deploySourceEnvelopeMigrations(): void;
+  function deploySourceEnvelopeMigrations(timeout: number): Promise<void>;
+  function deploySourceEnvelopeMigrations(timeout?: number) {
+    return deployHistoricalMigrations(148, timeout);
+  }
+  function deploySingletonMigrations(): void;
+  function deploySingletonMigrations(timeout: number): Promise<void>;
+  function deploySingletonMigrations(timeout?: number) {
+    return deployHistoricalMigrations(149, timeout);
+  }
+  function deploySourceProofCountMigrations(): void;
+  function deploySourceProofCountMigrations(timeout: number): Promise<void>;
+  function deploySourceProofCountMigrations(timeout?: number) {
+    return deployHistoricalMigrations(150, timeout);
+  }
+  function deployBucketGroupedMigrations(): void;
+  function deployBucketGroupedMigrations(timeout: number): Promise<void>;
+  function deployBucketGroupedMigrations(timeout?: number) {
+    return deployHistoricalMigrations(151, timeout);
   }
   const previous = {
     worker: process.env.JEST_WORKER_ID,
@@ -459,12 +519,8 @@ export function installE4ValidationDatabase(options?: {
     deployReferenceMigrations() {
       deployHistoricalMigrations(139);
     },
-    deployEvaluationMigrations() {
-      deployHistoricalMigrations(140);
-    },
-    deployBucketMigrations() {
-      deployHistoricalMigrations(141);
-    },
+    deployEvaluationMigrations,
+    deployBucketMigrations,
     deployUnitMigrations,
     deploySourceReuseMigrations,
     deploySourceBucketMigrations() {
@@ -472,6 +528,11 @@ export function installE4ValidationDatabase(options?: {
     },
     deployEvaluationKeyMigrations,
     deployPolicyBandMigrations,
+    deployCorrectionHashMigrations,
+    deploySourceEnvelopeMigrations,
+    deploySingletonMigrations,
+    deploySourceProofCountMigrations,
+    deployBucketGroupedMigrations,
     deployLatestMigrations,
     async recreateCurrentMigrations() {
       if (!baseline || !initialized || worker === undefined)
