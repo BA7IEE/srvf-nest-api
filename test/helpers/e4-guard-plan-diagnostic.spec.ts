@@ -56,6 +56,34 @@ describe('E4 guard planning diagnostic offline', () => {
       sourceGuardPlanSql(migration.replace('contribution source population mismatch', 'tampered')),
     ).toThrow('GUARD_SOURCE_PIN');
   });
+  it('keeps the historical local scope unless explicitly opted in', () => {
+    expect(resolveE4ValidationScope({}, true)).toBe(
+      'app_test_srvf_nest_api_delivery_flow_pilot_f59fbc_w98',
+    );
+  });
+  it('binds an explicitly declared local test run to the current checkout w98', () => {
+    const local = {
+      APP_ENV: 'test',
+      SRVF_E4_LOCAL_ISOLATED: '1',
+      SRVF_E4_W98: '1',
+      SRVF_TEST_RUN_SCOPE: 'app_test,app_test_w1,app_test_w98',
+    };
+    expect(resolveE4ValidationScope(local, true)).toBe('app_test_w98');
+    for (const invalid of [
+      { ...local, SRVF_E4_LOCAL_ISOLATED: '0' },
+      { ...local, APP_ENV: 'production' },
+      { ...local, SRVF_E4_W98: '0' },
+      { ...local, SRVF_TEST_RUN_SCOPE: 'app_test,app_test_w1' },
+      { ...local, SRVF_TEST_RUN_SCOPE: 'app_test_w98' },
+      { ...local, SRVF_TEST_RUN_SCOPE: 'app_test,*' },
+      { ...local, GITHUB_ACTIONS: 'true' },
+      { ...local, SRVF_E4_GITHUB_ISOLATED: '1' },
+    ])
+      expect(() => resolveE4ValidationScope(invalid, true)).toThrow(
+        'E4 isolated local scope refused',
+      );
+    expect(() => resolveE4ValidationScope(local, false)).toThrow('E4 isolated local scope refused');
+  });
   it('uses the established dedicated D5 entry and exact cloud scope', () => {
     const workflow = fs.readFileSync(
       resolve(__dirname, '../../.github/workflows/activity-os-r5-e4-validation.yml'),
