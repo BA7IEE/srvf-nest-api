@@ -7,7 +7,7 @@
 
 ## 1. 现实世界状态(机器查不到,必须人维护)
 
-> **2026-10-24 普通E4提交预算例外（实施中）**：维护者明确委托普通policy_v1 submitted/time_revision账本提交独立60秒，锁后复核根／父键／更正分类；共享标准7秒、Human D7 15秒、取锁4秒和10槽不变。保留全部完整校验及同事务审计／outbox，不增加封存模型或迁移。更长连接／锁占用是明确代价，非SLA或性能提升；真实61秒回滚／锁释放／重试重放已通过；夹具恢复后8秒完整提交及另三项补验全部通过，原61秒未重跑。全部失败库保留；原满额完成正式记账后因摘要4>3首红，失败保留；精简后在OID312150续验摘要2查询／25.759ms、最终双oracle和PSet全部通过，未重放业务。最终冻结代码原满额全链已一次PASS（430.406秒含初始化、摘要3查询、最终双oracle和PSet均过，OID320811保留）；153真实人工审阅及最终提交／CI／Smoke仍PENDING，生产／active500不动。详见[精确工程合同修订](plans/activity-os-r5-e4-ledger-commit-budget.md)。
+> **R5收口（2026-10-24 UTC）**：原容量隔离全链已PASS，153审阅结论经用户真实认可并已登记；active500不变。prepare／两审／普通policy_v1 E4提交60秒，标准7／D7 15／取锁4／10槽及完整校验、原子审计outbox不变；更长锁连接占用非SLA或性能提升。最终CI／Smoke／Trusted待完成，未Ready、合并、部署或开闸。技术明细及全部旧FAIL见[验收台账](plans/activity-os-r5-limited500-release-readiness.md)，预算见[工程合同](plans/activity-os-r5-e4-ledger-commit-budget.md)。
 
 | 项 | 当前值 |
 |---|---|
@@ -25,9 +25,7 @@
 
 > **E3 当前边界（2026-10-03）**：不可变来源／映射证明、影子对账复核读面、受控窗口与逐项签字已仓内交付，当前主干验收通过；证据见[既有评审稿 §32](plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md#32-e3-当前状态收口2026-10-03)。仍未部署、真实业务未验收，31 类真实映射继续 hold，shadow／Gate 关闭、D8-OPS 未执行。历史未复现性能／隔离根因不因一次 CI 绿而关闭。操作入口及缺口计数见[对账说明](ops/contribution-shadow-reconciliation.md)；生成契约不代表外部端回执或生产批准。
 
-> **E4/E5 当前边界（2026-10-18）**：后端按受限500身份／current段、2500物理slice、2000评价单元推进；原R5最大规模仍未验收，旧满额超30秒的失败不关闭。更正来源hash的数据库NULL缺口已真实复现，新增147 validated CHECK修正，历史SQL／函数／ACL／预算不变。非空146→147、NULL整笔回滚与有效V3/4分录/重放已通过；preparing/pending跨API和实际worker进程重启、native guard后授权callback拒绝的PG回滚已有本轮证据，最终候选检查另记。[续推与审查记录](plans/activity-os-r5-continuation-20261018.md)。默认off，active→off仍恢复旧规则管理写，永久cutover latch未实施；前端、实际目标旧数据盘点／转换／shadow适用性、fleet、worker排空、稳定窗与生产切换均未完成。137–147的3b已由维护者实际审阅认可并登记；最终main CI、Trusted人工批准与实际发布准入分别核对；尚未部署，生产NO_GO。
-
-> **2026-10-20 来源hash候选148**：1c3157e隔离升级6项、普通R4十五项通过；默认CI原R4满额通过，prepare 15882ms，查询334/42/805，预算和断言不变。整体CI仍FAIL：D7 Human V3 2000身份报P2028（7077/7000ms），另有文档治理失败；旧42703及receipt超30秒失败保留。148的3b／Trusted待审，原R5/E4满额与S13未验收，R5未完成、生产NO_GO。见[结果](plans/activity-os-r5-source-hash-envelope-20261019.md)。
+> **E4/E5现场边界**：默认off，active→off恢复旧规则管理写，永久cutover latch未实施。首次上线新空库无旧业务数据转换；前端、fleet、worker排空、稳定窗、10a/10b及生产另验。147／148修复和旧候选失败原文见[台账快照](plans/activity-os-r5-limited500-release-readiness.md#2026-10-24-current-state-历史状态原文迁存)。
 
 <!-- counts:begin -->
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->
