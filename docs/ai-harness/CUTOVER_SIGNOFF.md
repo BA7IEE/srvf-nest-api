@@ -219,7 +219,16 @@ function eviSub(id, kind, title, evidence): SubCheck {
 > 本条是**根本不存在对应读数** —— 过程发生在历史里,仓库是它的产物而不是它的函数。
 > ⇒ 这条**永远**不会因为仓库变化而过期,也就永远不会自动提醒任何人重签。**它就是纯人证。**
 
-### 3b — 「新 schema migrations 经审查」148–152
+### 3b — 「新 schema migrations 经审查」153（此前148–152认可保留）
+
+- **结论**:认可
+- **理由**:在下方保留的148–152既有认可基础上，补录第153条 `20261023170000_activity_contribution_source_parameterized_reads` 的审阅结论。实现候选 `3182ba24f88a7dcd6076f578b34343413ed32c42` 与本地测试修正候选 `e176b0a9a745cc4535bb6e63696c0ad5f9c9ba09` 的该迁移逐字相同，完整SQL SHA-256为 `8be33faf3d4e5cc3f5036117684f620be83f9c9be49acc6c168f5bf894afd0df`。仅参数化两处slice/result JOIN读取，保留time_revision与correction_time_proof分支、12来源列、NULL、重复度、窗口权重及函数属性与权限；历史1–152、表结构和业务上限不变。当前time_revision根的旧144／私有153／实际153三方各50000行、12列双向EXCEPT ALL差集为0；725项PG回归通过、3项既有合法跳过，包含篡改拒绝与回滚回归；原满额全链一次通过，2000身份／10000段／50000明细／8000政策单元，摘要、双oracle及原PSet判据均通过。上述证明不冒称更正分支最大容量、现场生产SLA或最终同SHA CI／Smoke验收；新空库按1–153顺序初始化，无旧业务数据转换要求。实现、预算例外及迁移审阅各自按原批准范围保留，本登记不授予Ready、合并、部署或开闸权限。
+- **签字人**:维护者（本会话用户认可审阅结论；Codex仅代理登记）
+- **日期**:2026-10-25
+- **依据**:维护者于2026-10-24 16:40 UTC（Asia/Shanghai为2026-10-25 00:40）直接回复2026-10-24 16:35 UTC的两项确认消息，原话：「继续推进啊 批准啊」。被回复消息明确包含「认可153迁移审阅结论并允许登记」；消息出处为提问 `Sentinel_695e617001e88191be076445dd0b0029` 与直接回复 `Sentinel_391690dea6688191ad2679d41ab33826`。本条仅据真实回复记录用户认可此前解释的审阅结论，不声称用户亲自逐行审查源码；登记执行者为Codex，不冒充维护者签名。日期字段采用用户UTC+8当地日期；原始UTC时间同时保留。源码推送／候选PR许可另有独立明确回复，本条不替代远端操作安全审查、最终CI／Smoke或Trusted真实人工审批。
+- **对拍**:有 —— `migration-total` = `153`
+
+### 3b 历史签字（2026-10-22） — 「新 schema migrations 经审查」148–152
 
 - **结论**:认可
 - **理由**:固定候选 HEAD `97346196d9d77ce7b07ee8066129aa291ae7cd64` 的第148–152条仅 CREATE OR REPLACE 五次，涉及 astr_source_set_hash、astr_canonical_json、ctsp_assert_complete（150及152）和 astr_bucket_content_hash；历史1–147 SQL、schema、seed逐字未改；函数签名、声明属性、守卫与上限保持。现有CI39743617211中五套升级测试均PASS；不将有限500准备状态视为完整R5或生产验收，不把prepare60候选升级为正式SLA，不提高共享7秒预算。完整SQL SHA-256：148 `bbde4b75459953641dd80a57d83a924b9b7e5068432b54847f08f1ee9f90914d`；149 `997589df6de8900e60d1461c1fc38612937ec62d4c178c0f67c9c96ccb0523a2`；150 `9451091106a43afff7419f6debca85bf29322bbaa19a34bb93924d51bbeff0f0`；151 `7b027fe0764525f7bc23500fd99d01ee363cc21b40c6654e492e4db35e502b54`；152 `ae2b166f5a58b47b5938cde13fa3e9205d01bfa91e30096155aaab04582ed745`。签署仅覆盖上述SQL审阅及migration-total=152；不替代Trusted、Ready、合并、生产、真实转换、shadow、Gate、worker、tag或Release授权。
