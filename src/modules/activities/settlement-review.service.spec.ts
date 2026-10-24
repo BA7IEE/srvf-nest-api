@@ -250,8 +250,8 @@ describe('SettlementReviewService original transaction characterization', () => 
             versionStatusAfter: versionAfter,
             replayed: false,
           });
-          expect(f.transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 15_000 });
-          expect(SETTLEMENT_REVIEW_TX_TIMEOUT_MS).toBe(15_000);
+          expect(f.transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 60_000 });
+          expect(SETTLEMENT_REVIEW_TX_TIMEOUT_MS).toBe(60_000);
           expect(f.events.slice(0, 4)).toEqual([
             'tx:start',
             'lock:activity',
@@ -662,7 +662,7 @@ describe('§12.26 exact first/approve owner orchestration', () => {
       });
       expect(f.full).not.toHaveBeenCalled();
       expect(f.tx.$executeRaw).toHaveBeenCalledTimes(1);
-      expect(f.transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 15_000 });
+      expect(f.transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 60_000 });
     } finally {
       jest.useRealTimers();
     }

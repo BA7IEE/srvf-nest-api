@@ -51,9 +51,6 @@ export const MANUAL_REASON_SPECIAL_DOCUMENT = 'special_document'; // 特殊证�
 export const OCR_DEFER_MAX_ATTEMPTS = 2;
 
 // ===== 淘汰环节(eliminationStage;脱敏留存)=====
-// OCR 改造(2026-06-22 分叉④/⑤):mismatch 不再 rejected(改 manual_review,不误杀),
-// ELIM_STAGE_REALNAME 报名主流程**不再写入**(常量保留仅历史兼容);淘汰仅经人工 resolve(ELIM_STAGE_MANUAL)。
-export const ELIM_STAGE_REALNAME = 'realname'; // 退役:OCR 改造后不再写入(历史兼容)
 export const ELIM_STAGE_MANUAL = 'manual'; // 人工 resolve 不通过
 // 招新二期(评审稿 E-R2-1):+2 值
 export const ELIM_STAGE_EVALUATION = 'evaluation'; // 综合评定不通过

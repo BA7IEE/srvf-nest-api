@@ -407,3 +407,187 @@ N1清单内实施/修正、原预算验证、正常提交推送同一Draft PR沿
 完整原日志SHA256为`a91576b3566b0e3ff7c82dd898c6fc65e5139cf8ffcb6e5e6634e4c709082c52`。实际Jest JSON、supervisor启动／退出、阶段结果、只读资源及跨模型收据保存在本云工作区`/workspace/r5-continuation-20261019/evidence/n1-lifecycle-*`；旧日志和原授权记录均保留。本节是推送前事实快照，正常提交推送同一Draft PR #1385并跟进原PR CI的授权继续；其新SHA检查以GitHub终态核对，不预报成功，不Ready或合并。
 
 **N1仍未验收通过，Release5未完成。** 新首红是原oracle事务过期，根因仍UNKNOWN，不调高5秒或其他原预算、不改SQL／断言。首红后Smoke、C1原S13／原满额均NOT_RUN，C1额度未消费；N2完整nightly仍暂缓。Trusted须维护者本人批准，生产NO_GO及四项延期、31类真实映射hold、前端／真实业务、10a／10b边界不变。
+
+
+### C1-v2：prepare60事务可行性口径的实际批准（2026-10-23）
+
+维护者对父会话 Sentinel_5f559a80524c8191a611fb722dc5099d 的精确六路径提案，直接回复“批准”（Sentinel_445d4e8cf59481918f522234b3e5a474，2026-10-23 11:53 UTC）。本节新增口径版本，不将旧结果倒签为通过。两条已批准云环境适配保持原内容，独立提交 e31753ed；正常preflight因未提交适配先exit1，正常提交后clean预检exit0，未改守护或手写标记。
+
+原C1-v1仍为S13 FAIL：prepare33960.659994ms违反当时严格<30000ms；submit／完整oracle／S13 AB→BA／满额未运行。原日志SHA256为70e0891902bbda9204376f42140a8a8dfd5f891e7d3dd88555e7634a8fc29cbe，原失败w98 OID60829保留。30秒起自D4“先采用”的工程预算，未找到业务SLO、分位或硬件校准；现已批准的60秒仅prepare事务可行性候选，不是响应SLA。
+
+v2仅将scale文件两处prepare方法墙钟<30s改为核验实际引擎start配置timeout60000/maxWait2000/ReadCommitted、唯一成功COMMIT及pending0；方法完整耗时单列记录。完整8000评价、40000关联／50000物理slice、独立全量oracle、全部权限／审计／幂等／查询数量及资源守卫保留。原独立SQL15s／配对30s／probe75s、submit120s、review15s、共享账本7s／取锁4s、摘要默认5s、初始化120s及每容量用例600s均不改。不能将全部30改60。
+
+本次六路径：scale E2E、e4-maximum-stage-receipt helper、其src对应spec、concurrency E2E、本Goal、新changelog.d/r5-c1-prepare-acceptance-v2.md。精确原文逆转将v2还原为完整v1，再沿原冻结hash检查；不删除旧断言或重写历史SQL。复用原八阶段／事务观察器，无新框架。
+
+执行上限：必要离线检查；小规模31秒完整提交、61秒超限全业务／receipt／审计／outbox回滚和锁释放后同键重试／重放各一次；仅两项全通过后，在原实例租约、零连接、源OID及目标不存在核验下正常rename旧w98为app_test_w98_c1_v1_failed_20261023；不FORCE，保留OID和旧证据。新w98由原入口创建，S13一次，全部门通过才原满额一次，任一FAIL／UNKNOWN首停，不追加样本或预热／ANALYZE。边界验证使用明确的模板／w1；失败库保留，成功w1才可由原入口重建。
+
+本节为获批实施前记录：边界／rename／新S13／新满额均NOT_RUN，待实测收据追加；不预写通过。active500、四项延期及生产边界不改，无生产／Ready／合并／PR正文发布授权扩展。
+
+#### C1-v2 当前离线收据（2026-10-23）
+
+六路径实现已写入且尚未提交。定向lint／格式／整份v1逐字逆转与跨模型复核通过；quick的typecheck、466套默认unit（10460 passed／4 todo／8 snapshots）及Harness自测exit0，cached lint在默认约4GiB堆上限OOM exit134，quick整体exit1。沿原正式入口及既有CI 6144MiB设置的冷lint，在quick Harness仍并行时test子进程SIGKILL；cgroup达到16GiB且记录1次OOM kill，src子进程exit0，prisma未启动，冷lint整体exit1。两次失败保留，不记全绿；待重任务完全退出后才可沿原入口、原6144MiB／300秒限制独立补验，不改脚本或门限。
+
+额外选中的观测helper单测为165 passed／4 failed；失败均来自既有VM未提供可选sliceReadDiagnostic，精确v1源文重放同样32 passed／同4 failed，不能冒称新增回归或已修复。该helper不在默认unit配置及已批准六路径内，尚未修改；最小候选仅为test/helpers/e4-prepare-phase-diagnostic.spec.ts的VM上下文补sliceReadDiagnostic: undefined一行，不改断言。预览及基线对照保存在本云工作区r5-closeout-evidence，待精确扩围。
+
+31秒／61秒／rename／S13／满额仍全部NOT_RUN，额度均0。只读核实原失败app_test_w98仍OID60829、连接0，归档目标及w1不存在，实例已授予advisory锁0；未改名、删除或重建原失败库。
+
+2026-10-23 12:36:27 UTC补验：重任务全部退出、cgroup内存946929664字节时，沿原pnpm lint及原6144MiB／300秒窗口单独运行，正式冷lint正常exit0（12:33:13启动，约193.6秒）。原两次资源失败保留，未改规则、输入范围或门限。模板只读预检为197张public表、152条完成migration、边界所需表齐全；仍未运行任何新PG测试。范围外一行沙箱修正尚未应用，四项既有helper失败仍open，不将全部定向检查记绿。
+
+#### 第七路径单行修复的实际授权与补验（2026-10-23）
+
+维护者直接回复父会话Sentinel_bb170d8c33988191903f1019b33c4483的单行请求“批准”（Sentinel_af8ac3e2c0d48191b1e3dd9ed3103ddd；原转交未附精确UTC时刻）。本轮仅在test/helpers/e4-prepare-phase-diagnostic.spec.ts的VM上下文补sliceReadDiagnostic: undefined一行，未改断言或生产代码。四套相关unit现169项全过、0失败；变更文件ESLint／Prettier及test项目TSC均exit0，跨模型复核BLOCKER0／SHOULD-FIX0。原四项沙箱失败和原lint资源失败记录保留；此前其余输入未变的正式冷lint、三项目类型、默认10460项unit及Harness结果复用，未重跑全量。真实31秒／61秒及S13／满额仍为NOT_RUN，按原一次队列继续，原失败库尚未改名。
+
+#### C1-v2 首次31秒PG首红（2026-10-23）
+
+14:23:40 UTC启动唯一一次31秒边界，14:24:23正常exit1；Jest1 failed／6 skipped，整例37388ms不等于prepare方法墙钟。此前实际start的60000／2000／ReadCommitted、唯一成功COMMIT／pending0、方法至少31000ms、真实约束后delay完成、单份time／contribution／evaluation／receipt及1.00总分断言已通过。首错在新增case第443行：bucketCount期望1、实际4。新增测试把四分类桶／来源误写成单条，既有policy的四分类循环及只读失败库均证实四桶四来源（volunteer_service3600秒，其余三类0秒，每桶1来源），不改业务来迎合测试。后续来源／行数／audit／独立锁释放断言NOT_RUN，整例仍FAIL，不能将部分事务断言通过冒充完整验收。
+
+首红已停：boundary31消费1次；61秒、rename、S13、满额均0次。失败w1 OID69446与旧失败w98 OID60829均保留、连接0；实例granted advisory锁0、Jest openHandles空仅为清理后观测，不替代未执行的专门锁释放证明。原始日志SHA256 dd11a5b10bf4e8c626041de15b2aa77c2639354ea741c148d48a2a04607a5307、Jest JSON SHA256 e9473c53ef8cc9f41a9e98b12463c95c5098ca40096a5620871b53516f667ee1及只读诊断保存在本云工作区r5-closeout-evidence/c1-v2-boundary31-20261023T142340Z。
+
+仅准备待确认候选：修正这个新增31秒case四处桶／来源数量预期1→4，保留一份证明、1.00总分、事务档位／时长及所有其他断言；未应用。继续测量须精确认可补一次31秒额度，并在任何下一次globalSetup前先保留归档本次失败w1，不得自动重建吞证据。原61秒／S13／满额均未消费，首红保护未解除；未重跑、未归档或删库、未提交推送、未触生产。
+
+#### C1-v2 四分类预期修正的明确恢复（2026-10-23）
+
+维护者对父会话Sentinel_47ffde50a37c8191a05d1d34e239de50的精确恢复提案回复“批准”（Sentinel_68b1f79b5f548191a0761600443fe8dc），随后对范围澄清明确回复“是”（Sentinel_614755884b4c8191a3bed2b2ca3ef51b；转交未附精确UTC时刻）。仅将新增31秒case的四处桶／来源数量改为严格4，根／评价／receipt／audit、31／61秒、业务及预算不变。定向ESLint、test TSC、格式与diff检查exit0，实际四行差异跨模型复核BLOCKER0／SHOULD-FIX0。
+
+14:54:15 UTC已在同一postgres Unix维护后台PID221652取得既有D3租约，核对源OID69446／owner postgres／连接0／目标不存在，正常将app_test_w1改名为app_test_w1_c1_v2_boundary31_failed_20261023；原OID69446保留，租约正常释放，无FORCE或DROP。原首次31秒FAIL及其消费1次保持在旧ledger不改写；新增恢复ledger单列“额外31秒一次”及未消费61秒／S13／条件满额各一次，首FAIL／UNKNOWN仍停。此时恢复队列均未启动，旧w98 OID60829尚未改名，不预写通过。
+
+#### C1-v2 恢复队列实测终态（2026-10-23）
+
+全部测试进程及命令均已自然返回。31秒补跑14:55:19→14:56:03 UTC，runner43.670秒、方法31591.137946ms，整例PASS；完整写入／四桶四来源／1.00总分及独立锁释放通过。61秒14:57:16→14:58:30，runner74.044秒、方法61654.759692ms，整例PASS；实际P2028、完整public业务快照相等（含receipt／audit／outbox）、锁释放、同目标一次重试及一次重放均通过。两例openHandles空。原首次31秒FAIL仍保留，不改写为PASS。
+
+旧w98已于14:59:55在同一postgres Unix维护后台PID222277、既有D3租约和OID／owner／零连接／目标不存在检查下，正常改名为app_test_w98_c1_v1_failed_20261023，OID60829保留、租约正常释放，无FORCE／DROP。随后原入口创建的新S13库为app_test_w98 OID74631。
+
+S13于14:59:55启动，15:02:24正常exit1（runner148.453秒、Jest144.634秒、单例133576ms分别记录）。prepare方法34018.520667ms，真实start timeout60000／maxWait2000／ReadCommitted及唯一成功COMMIT、pending0，八阶段COMPLETE；查询275、E4查询4、屏障1；8000桶／40000来源、根evaluationCount8000和1000.00总分断言已过。此为局部prepare及根记录断言，不代表独立完整oracle通过。
+
+首红在assertFixedE4Oracle的原只读验证事务：SQL statement_timeout30s与Prisma timeout30000均保持原值，报P2028（30024ms），完整old／candidate／stored差集及rootMatches比较未返回，不能断言真实全量一致；具体SQL内部或环境耗时根因尚无证据。submit与S13独立AB→BA均NOT_RUN，afterAll首错保护及普通DROP拒绝是留证门禁，未绕过。S13整体FAIL（1 failed／222 skipped），满额0次。无重跑、加预算、业务／SQL／断言删改或生产动作。
+
+当前保留模板24577、首个31秒失败归档69446、旧S13归档60829、新S13失败74631；均连接0、实例granted advisory锁0、验证Node进程0、openHandles空。原普通w1已由本次正常globalTeardown清理。恢复队列消费31／61／S13各1、满额0；加上旧31失败，v2的31累计2次。旧v1 33.961秒FAIL另保留，不追溯改绿。新原始日志SHA256 24995a67dd4c1d9bdbad6a2570c3d560c306046632db24c729a12604207b4423，JSON SHA256 548386028c31e3801ebb734f9ba41ea3b2ac5d2c7b25a1e5ae1f6b13de04b905，及结果摘要保存在本云工作区r5-closeout-evidence/c1-v2-resume-S13-20261023T145955Z。
+
+
+### 2026-10-24 source153 参数化来源读取候选（实施中）
+
+- 新增迁移20261023170000_activity_contribution_source_parameterized_reads，仅把 time_revision 的 slice / result 两处 JOIN 改为按 allocation / 根 version 与 identity 参数化读取。历史144、表结构、权限、两来源分支、12列、NULL、重复度和窗口权重保持。
+- SQL SHA256：8be33faf3d4e5cc3f5036117684f620be83f9c9be49acc6c168f5bf894afd0df。精确正常 CLI grant 按维护者明确委托由 AI 代理执行，文件写入后已撤销；不冒称维护者本人执行或审阅签字。
+- 原w98 / OID74631来源完整消费30秒服务端57014失败及全部旧FAIL / UNKNOWN保留。31秒提交、61秒回滚已完整通过，不重复。候选尚不构成容量验收。
+- 一次隔离队列：正常归档和复制失败库、仅升级153、候选计划、完整来源30秒、冻结144与实际153的12列双向EXCEPT ALL；旧参考比较120秒仅为验证器资源预算。定向升级回归通过后S13一次，全绿才原满额一次；首FAIL / UNKNOWN停止。
+- 既有C1-v2逆变换、完整业务oracle30秒、prepare事务60秒、其余独立预算、外层600秒与active500准入保持。153真实3b、最终CI / Smoke及原容量仍按实际结果登记；本轮不操作生产。
+
+### 2026-10-24 来源等价结果与 S13 现行函数绑定恢复
+
+- 固定16组完整桶证明已通过：冻结144、参数化153及预先独立保存的public候选均50000行，完整12列双向差集均0；总57933.293ms。最终ROLLBACK、公共数据／函数元数据不变、PID／锁退出均确认。只证明该time_revision根，不替代更正回归或满额验收。
+- 五套真实PG回归725 passed／3个既有W98／N1专用诊断skipped／0 failed。收集器最初把Jest“有跳过且无失败”的focused标签误判，原记录保留，独立核实后仅离线更正登记，没有重跑PG。31秒／61秒和16组亦不重复。
+- 随后S13业务主体通过，prepare方法32137.743ms、真实60秒档位提交，draft／submitted完整oracle通过；整套仍FAIL：afterAll的live catalog把137历史函数4362字节当现行值，而main及HEAD已有140函数6124字节。独立AB／BA探针尚未运行；DROP正确拒绝，失败库app_test_w98／OID180715保留。原始JSON、stderr及只读catalog保存于本云工作区r5-closeout-evidence/source153-postproof-s13-20261024T045215Z，旧FAIL不改绿，满额仍0次。
+- 本轮仅纠正测试版本绑定：完整140迁移SHA256 `5d7ff28a64a638440aaa1e9a798a2602f933fc9d6f8b23b68355199dad143513`及函数正文SHA256 `bbabd3144fb7639e856b3e4b349e017d0eacad6799bf02b5014b52e6cf521761`独立固定，现行MD5／字节数由此源码计算，再与数据库比较。旧137历史摘要及4044字节opening不变，声明／身份／ACL等检查不减；同一验证器同时用于S13及满额后置探针。新增精确外层逆变换先恢复完整C1-v2源文SHA256 `175a4997a170887daa6095eda23106334534a1756521f7ce0b3d65bca1e79fa4`，再走既有历史逆变换。
+- 父任务明确委托本五路径修复和一次恢复队列。离线检查与独立复核通过后，须核对维护身份、D3租约、OID180715、零连接及归档目标不存在，正常改名保留为app_test_w98_c1_s13_catalog_failed_20261024；原入口建新隔离库补一次完整S13，全绿才原满额一次，首FAIL／UNKNOWN即停。恢复尚未执行，不预写结果。不改业务／迁移／预算／500准入，不代签153，不操作生产或发布被拒绝的PR正文。
+- 独立复核另查明迁移E2E也直接读取scale共享helper，已先报告精确第六路径及补丁；父任务随后要求继续本修复与原队列，本轮一并接入这个必要的测试读取配套。仅在既有迁移E2E导入normalizer、完整源文还原入口和共享比较前接线，不运行新增历史迁移演练。两文件外层逆变换分别恢复完整原scale `175a4997…` 与migration `30a764e2…`，原断言均保留。81项离线单测通过，包含直接执行两份原共享比较callback；独立复核BLOCKER0／SHOULD-FIX0。全新系统无旧业务数据；旧算法清理另作只读盘点，不把它作为本次容量新增门槛。
+
+### 2026-10-24 S13通过、原满额首审失败与失败保留修正
+
+- S13恢复于05:31:03→05:35:13 UTC完整PASS（exit0）；prepare31846.601ms、真实60秒事务提交，draft／submitted完整oracle及独立AB／BA比较通过，全部8000评价无差集。原catalog失败库正常改名保留为app_test_w98_c1_s13_catalog_failed_20261024（OID180715），旧FAIL不改写。
+- 原满额于05:35:53→05:39:27 UTC失败（exit1）。prepare31681ms、完整oracle22748.344ms、submit均已通过；firstReview为P2028，15秒事务在17500ms时已过期，阶段17674.534ms。独立前后及app关闭后均为pending_first_review／submitted，decision／notification／audit均0，支持本次回滚。finalReview、账本过账／重放及最终oracle未运行，不能宣称原容量通过。日志保存在r5-closeout-evidence/live140-binding-20261024/maximum-20261024T053553Z。
+- 本次满额失败库被原专用fixture的默认finalizer删除；此前cleanup收据仅表示交给owner finalizer，并未证明最终保留。原始日志／Jest JSON及四份既有失败归档仍在；不重建或冒称恢复原失败库。
+- 已按本轮明确委托，在现有测试helper及scale接线增加DROP前的纯状态门禁：专用S13／满额必须完整成功，fixture、完整业务callback及四个前置清理hook全部完成且无失败、pending或被吞UNKNOWN才沿原流程清理；partial init、FAIL、UNKNOWN及迟到完成保持拒绝。普通worker透传，独立post-DROP断言保留。离线故障覆盖与独立审阅结果另附实际收据，不以离线通过冒充数据库留证演练。
+- 门禁边界：root的最终post-DROP观测位于删除之后，该阶段故障不能保留已经删除的库，本修正不声称覆盖这一不可逆时点。未改变DROP后检查，未开始任何新数据库或容量执行。
+- 15秒来自2026-08-05提交f05fd92bf的“没有与人数相关步骤”假设；现行policy_v1校验已包含全量来源／评价／摘要。firstReview优化路径只执行一次原生完整校验，现有日志没有该事务的逐段计时，不能把最后报错帧归因为耗时SQL。finalReview和账本路径另有源码可证的重复全量校验，但本次未到达。下一步仅准备有界首审分段取证，不改15秒／共享7秒、业务或500准入。
+- 失败保留修正离线实测：103项单测／格式／定向ESLint／应用及测试TSC／diff均exit0，独立静态复核BLOCKER0；原readiness前缀和完整冻结源文逆变换保持。首轮2项配套失败及后续lint失败原样保存在r5-closeout-evidence/retention-fix-20261024：两处超时参数改由AST分别定位后仍要求篡改被拒绝，中断测试用临时脚本文件避免node -e单参数长度限制，1500ms及全部原断言不变。本轮数据库连接、留证实库演练、S13／满额补跑均0次。153真实维护者审阅、首审修复及后续容量阶段仍未完成，不将此离线通过记作Release 5完整交付。
+
+### 2026-10-24 未上线系统清理首批与有限首审诊断准备
+
+- 首批已删除三个无引用的private snapshot V3／V4／V5构造器、同一providers数组的第二对重复服务及孤立ELIM_STAGE_REALNAME常量。保留现行V7／V8／V9、仍有测试调用的V2／V6、旧parser／hash基础、服务export及仍被实际读取的APP_STATUS_PENDING。未改controller／DTO／业务预算或首审逻辑，独立TS AST／引用审阅BLOCKER0；四套定向unit删除前后均62 passed，定向lint／格式／应用及测试TSC／diff均exit0。
+- CODEMAP已按原生成器刷新。受保护配套尚PENDING、未尝试grant：harness/domain-map.json的模块摘要、harness/state-machines.json中eliminationStage的退役值登记，以及ROUTE_AUTHZ.md的两处inputDigest。现有boundary metadata及authz freshness因前述摘要仍FAIL，不能记作全部门禁通过。精确未应用补丁保存在r5-closeout-evidence/legacy-cleanup-batch1-20261024，非保护的状态机说明已如实列出登记差异；不绕过或放松检查。
+- 首审一次诊断仅完成离线准备：来源归档app_test_w98_c1_s13_catalog_failed_20261024／已记录OID180715、submitted根cmvlxcvpi09ivmw2qal9r3hpy；在线时须重新核身份、租约、根／actor资格、零连接和目标不存在，才克隆到正常派生的新app_test_w98并记录新OID，不改旧归档。不得调用会resetDb的fixture或完整prepareE4Ledger；只用真实依赖调用一次原firstReview，不启动Nest／worker。
+- 业务事务新增SQL为0；观察三把锁、两次catalog、原Version UPDATE、SET及事务终态，原15秒选项不改。到barrier最多13次应用语句，owner成功路径20次，触发器内部语句数量未知。外部最多8个固定核验SELECT、1次克隆DDL；总硬限90秒、首审响应观察25秒；无论PASS／FAIL／UNKNOWN均保留源和新库，不存在DROP分支。观测glue在证据目录，10项离线自测及独立静态复核通过；不是数据库执行结果，本轮在线次数0。
+
+### 2026-10-24 首批机械配套完成与单次克隆首审实际结果
+
+- 按维护者新增精确委托，AI代理逐路径执行正常grant：domain-map仅inputDigest、state-machines仅退役常量inventory登记、ROUTE_AUTHZ仅两处inputDigest；每项应用后正常撤销，无残留grant。独立核对三个candidate全文hash匹配，权限声明、转换及安全策略未变，状态登记仍inventory／no-db-check。boundary metadata及authz freshness均exit0（663端点），CODEMAP此前已通过。原pending记录为前一检查点，不再是当前阻塞。
+- 真实依赖构造离线通过；观测11项、控制器9项离线分支测试及独立静态复核通过。执行前补齐克隆角色／owner／153checksum检查，确保在业务调用前拒绝；预留清理窗口，期限耗尽不派发新查询。
+- 唯一在线包OBSERVED_PASS，总8509.670ms；归档源OID180715／既有submitted根资格及函数hash重新核对后克隆为新app_test_w98，实际新OID206606。不是已被删除满额库的恢复或原故障复现。8次显式外部SELECT、1次克隆、1次首审，业务新增SQL0；实际20次应用请求、含BEGIN／COMMIT共22条查询事件，原15000ms选项未改。
+- 事务start至commit观测6487.779ms；三把锁1.491／0.988／1.110ms，两次catalog5.235／3.440ms，Version UPDATE2.537ms，SET屏障6445.322ms（服务端事件6444ms），commit1.344ms。此次主要耗时集中在完整校验屏障；不能将其移作旧满额17.5秒首错的根因，因为旧失败在SET派发前已过期且缺少同事务分段记录。
+- 首审成功后及业务客户端关闭后均pending_final_review／submitted，decision／exactDecision／notification／audit／freshAudit各1，postingBatch0。源和新库保留且连接0，自有业务／维护PID及锁0；完整stderr为空，完整日志和终态收据在r5-closeout-evidence/first-review-once-20261024。归档仅能核对既有关键事实及本任务未写入的保管链，没有历史全库逐字fingerprint，不冒称已证明所有行未变化。
+- 原满额FAIL及旧日志不改写。此包不包含prepare／submit／S13／满额／终审／过账重跑，未改业务／SQL／15秒／共享7秒／500准入；原完整容量和153真实审阅仍未完成。远端main仍4e77e9f6，本地HEAD仍e31753ed、候选改动未提交，不宣称完整R5交付。
+
+### 2026-10-24 唯一完整满额恢复首红终态
+
+- 维护者／父任务明确恢复一次完整满额，规模、断言、原600秒case及全部事务预算不变，不重复S13／725PG。已验证真实入口的失败保留接线与原103项通过版本完全同hash；新增证据目录观测使用原Promise旁观，6项真实guard离线分支及独立复核通过。原setup／globalSetup保持，仅附加观测setup；无业务SQL增加。启动时无并行重型任务，4vCPU／16GiB配额和PG参数不变。
+- 正常D3租约／身份／OID／零连接及目标不存在核对后，已将首审PASS诊断库OID206606改名保留为app_test_w98_c1_first_review_pass_20261024；原入口新建了本轮库，不冒称恢复已删的原满额失败库。
+- 本轮PID999101，整体247385.810ms，exit1／1 failed／222 unselected，STOPPED_FAIL且不重跑。fixture65572.529ms、prepare33109.657ms及原断言、完整oracle22672.045ms、submit66755.350ms及原断言均通过。首审在LEDGER阶段P2028；终审、记账、最终oracle及后置探针均NOT_RUN。
+- 新分段证据：首审19198.641ms；三把锁1.652／2.319／1.665ms，catalog4.302／10.791ms，Version UPDATE2.287ms。SET请求于事务观测约46.091ms时进入engine，等待19059.336ms后拒绝；原timeout15000未改。此处是客户端请求区间，尚未分离PG执行、等待、JIT或计划成本，不能单凭耗时宣布环境根因；旧克隆6.445秒屏障PASS不替代本失败。
+- DROP前门禁实际拒绝清理，本轮失败app_test_w98／OID206608保留。只读核实run仍pending_first_review、version仍submitted，first decision／notification／audit／postingBatch均0；六个具名失败／诊断归档及工作库均存在且连接0，D3锁0。原日志与本轮完整stderr／stage／trace／终态均保留于r5-closeout-evidence/full-maximum-resume-20261024；不把保留门禁的afterAll拒绝算成新的业务根因，不重写任何旧FAIL。
+
+### 2026-10-24 屏障源码／元数据诊断与孤立探针退役
+
+- 首审Version UPDATE只排队一次137 native guard→146 e4_assert_complete(TRUE)；没有第二次相同fullguard可直接删除。内部依次核frozen selection／policy、151 bucket hash、153一次MATERIALIZED来源、内联expected与8000组day_points及全文差集、实际评价/root摘要与上限、version_content_hash→version_v1_hash。146不调用140 expected函数或148 source-set hash，先前独立oracle不构成跨事务免校验凭据。
+- 在失败OID206608和首审通过归档OID206606各取有界只读pg_proc／pg_trigger／pg_stat快照；14个相关函数、34个归一化trigger定义、119个相关索引及默认规划参数一致。根不同、业务路径不同；clone的统计计数为0不表示数据为空，累计scan／temp计数不能拆成本次屏障耗时。失败库评价／bucket／来源／result的第二次auto-analyze在07:23:52发生，晚于07:23:21首错，当前统计不能回溯失败计划；pg_stat_statements未安装，JIT／缓存／CPU／IO归因仍UNKNOWN。
+- 已备一次原生15秒statement限额、上层20秒接收、整体40秒的UPDATE→SET→始终ROLLBACK诊断SQL，固定失败根／OID、原锁序、原native guard及函数pin；仅准备，未执行。目的为取得服务器SQLSTATE／完整CONTEXT，不能当作放宽应用15秒或原满额已通过。后续修复优先同一次校验内部的投影／规范化复用，保持完整校验和错误语义；若改146实现必须新增前向迁移并同步精确pin，不改历史146或直接skip。
+- 本轮安全清理仅退役无引用且不被现行E2E／unit收集的test/diagnostics/e4-assert143-setup.diagnostic-spec.ts一次性旧探针；其旧源码逐字及SHA已保存在r5-closeout-evidence/barrier-readonly-diagnostic-20261024，并仍可从原Git历史取回。现行独立oracle、143生命周期回归及所有FAIL记录保持；精确引用扫描、测试TSC、CODEMAP与diff均通过。本轮未运行重型校验、EXPLAIN ANALYZE或容量测试，未改业务SQL／预算／准入。
+
+### 2026-10-24 唯一原生回滚屏障诊断实际终态
+
+按维护者／父任务明确执行委托，固定失败OID206608及根cmvm2mh1w09ivmwx6uexczwsd，在真实D3租约、角色／零连接／函数pin及原锁序下执行一次UPDATE＋真实SET屏障。SQLSTATE00000，屏障6859.229ms，整包7084.030ms；锁／UPDATE分别2.596／0.334／0.284／1.597ms。随后始终ROLLBACK，版本整行MD5与基线相同，run仍pending_first_review、version仍submitted，decision／notification／audit／postingBatch均0；库保留、clients／owned PID／locks均0。原生stderr为空，没有错误CONTEXT可定位内部热段；仅证明该根在当前统计、新原生会话下可于15秒内完成，不能关闭原连续满额19.059秒屏障FAIL。完整stdout／stderr／SQLSTATE与时间保存在r5-closeout-evidence/barrier-readonly-diagnostic-20261024/rollback-once-result.json。未重跑满额、改应用15秒／函数／JIT或work_mem；下一最小只读取证是原07:23:01–07:23:22失败时段已存在的PG日志，先区分服务器执行／取消记录与客户端等待，缺少原执行证据时不选择未经证实的SQL修复。
+
+## 2026-10-24 完整守卫 selected 物化候选154
+
+- 仅新增154，将现行146完整函数的 `selected AS MATERIALIZED` 改为 `NOT MATERIALIZED`；`documents` 与全部完整性检查保留，历史1–153不改。当前精确正文 MD5 为 `016fe8c1899166291010545a4f036415`，首审目录绑定同步，未增加兼容白名单。
+- 隔离克隆单次内部计划确认 selected 物化扫描消失、documents 保留；原生屏障6969.386ms、SQLSTATE00000，整体7828.985ms，随后完整回滚并恢复146。该库统计记录500397433字节临时文件；未与同条件旧函数配对，不能宣称提速，也不关闭连续满额首审约19秒FAIL。
+- 旧失败库和本轮克隆均保留。50项旧新语义控制、2项原生拒绝及4项更正回归合计600秒包尚待一次执行；任何FAIL/UNKNOWN停止并留库，不改断言或预算、不重跑满额。已有31/61秒、S13、725项PG与完整来源等价结果不重复。
+- 153及154真实人工审阅、最终候选CI/Smoke尚未完成；不代签，不操作生产或扩大active500，不将候选与有限500既有交付混称完整R5。
+
+- **本轮600秒包终态：FAIL（46888.474ms，未补跑）**。固定153初始化与夹具准备完成后，首个153→154用例被测试helper的旧 `baseline136` owner条件拒绝，尚未调用forward deploy；后两项被首红闸拒绝。50项配对比较／新原生拒绝／4项更正均NOT_RUN。新失败库OID223896保留，原克隆PASS库OID223892正常归档；九个库、连接和租约清理已核对。最小缺口是显式允许已验证fixed153 owner调用latest forward，尚未修改或重跑。此工具失败不判定候选SQL正确或错误。
+
+- **153 owner适配恢复一次：仍FAIL（45972.221ms，首红停止）**。实际153→154迁移进程RESOLVED/CLOSED，升级后整库业务快照断言通过；随后目录逐字比较仅因默认值节点 `:location 281→259` 失败，未复用既有143源位置归一化规则。no-op／50项语义／两项原生拒绝／4项更正均NOT_RUN。新失败库OID232499及九份旧库保留，连接／租约0；尚未改比较规则或再次执行。恢复时须保留完整默认值及默认true语义、仅规范化目标单一location，no-op仍与升级后原目录严格比较，禁止改migration头凑位置。
+
+### 2026-10-24 154语义包通过及原满额实际首红
+
+- 经明确恢复委托，仅复用143既有目标目录规范化：单个数字location可变，默认表达式仍true，默认节点其他字段、类型、参数、owner／ACL／volatility／security等逐项不变；no-op与升级后原始目录严格比较。32项单测、test TSC、lint及独立静态复核通过。OID232499正常改名保留，未改154 SQL摘要或历史失败记录。
+- 唯一恢复600秒语义包于10:47:02→10:49:05 UTC PASS，整体122562.157ms：153→154非空升级／业务快照／目录及no-op、50语义用例共200个旧新结果严格一致、原生INSERT和延迟COMMIT均23514拒绝且回滚、4项真实更正回归全部通过，无失败或跳过。语义库OID241104及更正库OID255247均保留。回执在r5-closeout-evidence/fullguard-selected-semantics-recovery2-20261024；不将此包计作满额通过。
+- 随后按明确委托恢复唯一一次154完整原满额，原规模／全部断言／prepare60秒／两审15秒／case600秒不变，不主动ANALYZE或改变JIT／work_mem；复用原Promise旁观trace，新增业务SQL0。OID255247正常改名保留为app_test_w98_c1_selected154_correction_pass_20261024，原入口新建OID269046；此前全部归档保持。
+- 本轮10:54:10→10:58:24 UTC STOPPED_FAIL，整体253944.089ms，1 failed／222未选中／exit1。fixture64945.284ms、prepare32957ms及原数量／查询断言、完整oracle24265.037ms、submit71011.416ms及原断言通过。首审18714.906ms、SET请求18593.163ms后P2028，原15000ms配置未改；不是单个内部SQL计时，也没有配对收益证据。154未解决连续满额首审问题，终审、记账、最终oracle及后置探针均NOT_RUN。
+- 首审前、失败后与app关闭后独立事实一致：pending_first_review／submitted，decision／exactDecision／notification／audit／freshAudit各0；不能把客户端rollback拒绝误称为已独立证实服务器ROLLBACK命令成功。DROP前门禁真实拒绝，失败OID269046与全部12份旧归档均保留，连接／D3锁0。回执、完整stderr、阶段和首审trace在r5-closeout-evidence/full-maximum-selected154-20261024；首红后未补跑或新增诊断查询。
+- 当前HEAD仍e31753ed，远端main只读核实仍4e77e9f6；67个待提交路径清单及逐文件摘要已保存，未提交／推送或跑最终CI。153／154真实人工审阅仍PENDING，不代签；未生产、扩大500准入、提高预算或发布被拒绝的PR正文。下一步需先解决或形成经证据支持的首审适用预算决策，再做最终候选整合验证，不能将本次语义PASS冒充完整R5交付。
+
+### 2026-10-24 撤回未发布154与审核预算适用规则修正
+
+- 维护者已明确委托实施review-budget-and154-withdrawal-plan-20261024.json的56路径方案。首审／终审统一60秒事务预算，覆盖approve／return／重放，不增加客户端参数、配置档或开关。原15秒来自2026-08-05 f05fd92b“没有一步与人数相关”的假设；2026-10-18 82b5ce1b加入全量贡献校验后，该假设失效。60秒为有界工程资源上限，非HTTP时限／业务SLA／性能提升；共享账本7秒、取锁4秒、prepare60秒、submit120秒和独立验证预算保持。
+- 154及专用源码已可恢复归档到本云工作区r5-closeout-evidence/review60-withdraw154-20261024，正常精确migration grant已撤销。43个路径逐文件恢复为引入154前摘要，保留153有效修复、C1留证／140现行绑定和既有清理。当前迁移总数153，完整守卫恢复146唯一正文；无历史迁移回改、兼容白名单或已有154库降级。旧FAIL／UNKNOWN／语义PASS与对应库全部保留，153真实3b仍PENDING。
+- 新增真实PG边界计划：首审、终审各一次16秒仍完整提交、61秒超限整笔回滚；保持真实全量守卫、锁、决定／审计／outbox，检查全部业务表快照、行锁释放、同目标重试及原有重放审计语义。两项原生INSERT／延迟COMMIT拒绝检查迁入当前测试，独立oracle不删除。先静态／单测／类型／lint及独立复核，通过后一次300秒隔离边界包，全绿才原600秒满额一次，首FAIL／UNKNOWN停止留库；本段写入时均尚未执行，不预填通过。
+
+### 2026-10-24 审核边界完整通过、满额正式账本提交首红
+
+- 类型、定向lint、258项定向单测、20项历史prefix独立入口、AUTHZ／CODEMAP／counts／migcount生成物检查均通过。独立复核纠正了测试w98硬编码、CI客户端入口及派发／清理窗口不一致后为0 BLOCKER／0 SHOULD-FIX；没有变更真实权限、守卫或普通7秒。临时精确grant已撤销；旧库仅正常改名保留。
+- 真实153边界包11:45:33→11:49:03 UTC一次PASS，整体209493.201ms，5项测试／0失败／0跳过。先first61／final61，再first16／final16，四个受控等待各一次；61秒两项均P2028、全业务表快照完全回滚、原三把行锁可独立NOWAIT重取，同目标重试恰好一份决定／通知／批次、重放仅增加既有replayed审计；16秒两项真实提交。原生INSERT／延迟COMMIT均23514拒绝并全表回滚。边界库OID277682保留，旧154满额失败OID269046正常改名保留；回执在r5-closeout-evidence/review60-boundary-20261024。
+- 条件满足后仅运行一次原完整满额，11:49:49→11:55:21 UTC，整体332259.785ms，1 failed／222未选中／exit1，首红后未补跑。新库OID286286为153／完整146正文。prepare33320ms、275查询／4 E4查询／1屏障、独立oracle21304.899ms、submit67690.400ms及原断言通过；首审17811.033ms真实COMMIT（SET17745.029ms），终审35849.319ms真实COMMIT（显式完整校验18051.766ms、commit17757.568ms），原60秒选项均已观测。
+- 首错已进入正式LedgerPostingService.commitBatch：原runMemberLinearizedTransaction的7000ms预算在7563ms时过期，P2028栈为commitBatchProtocol:411→ActivityContributionSettlementService.assertVersionInTx:248。该源码在既有member／day锁内重新执行完整版本／账本校验；当前没有这段提交的细分SQL计时，不能凭错误帧指认某个内部热点或声称SQL优化完成。账本7秒及每次取锁4秒均未改，最终summary／draft及formal oracle／后置探针均NOT_RUN。
+- 保留库上仅做一次有界只读状态核对（OID／角色／零其他连接及D3租约先核，statement_timeout3秒）：run=posting、version=approved，首终审approve各1；批次ready、prepared2000／total2000、committedAt为空，准备分录4000、贡献分录2000、合计1000.00，committed批次关联的正式可见分录0。此为当前状态证据，不冒称有提交前整库快照；原FAIL不改绿。库及全部14份归档均保留，原控制器清理连接／D3锁0，随后只读客户端均正常关闭。
+- 本轮证据在r5-closeout-evidence/full-maximum-review60-153-20261024；153来源修复／审核60可行性与原容量整体FAIL分别登记。下一必要工作是保留完整性、共享7秒和原子切换约束下收敛正式提交校验工作量，未实施新修复或再次测试。153真实3b、最终候选提交／CI／Smoke、全仓兼容清理余项仍未完成；不代签、不生产、不扩大500或发布被拒绝PR正文。
+
+### 2026-10-24 普通E4正式账本具名预算（实施中）
+
+- 维护者明确委托较小9核心路径方案；仅顶层普通policy_v1 E4提交60秒，完整校验／实时基线／权限／锁与原子审计outbox保留。共享7秒、D7 15秒、取锁4秒及10槽不变；这是内部工程合同精确例外，不是性能提升。根与父键持锁后复判，旧批次重放读取自己的根。无seal字段／新迁移，153及全部失败证据保留，154不恢复。
+- [工程合同修订及有限队列](activity-os-r5-e4-ledger-commit-budget.md)：定向静态／独立复核→真实8秒提交／61秒全回滚与锁释放／一次重试重放／分类漂移→全绿一次原满额。当前未运行PG边界／满额，不宣称通过；摘要5秒和oracle SQL30秒未改，PSet历史优化比较单列如实报告，未删断言。
+
+- 本轮真实边界13:01:14 UTC开始，整体109528.253ms后首红停止，未补跑／未运行满额。61秒用例通过：实际调用61327.758ms报P2028、全业务表快照回滚、锁释放、同目标一次重试及重放不重复。随后8秒用例在进入真实审计延时前失败，新增测试复用了同一成员同一2020-03-01 08–09时段；保留库只读核对确认第二ready批次命中既有跨活动已生效段重叠谓词，未改守卫。原服务错误未保存，被注入次数断言遮住，不能冒称已捕获具体业务码。其后三项因首红保护未执行；Jest整包1passed／4failed，不算绿。OID294935保留、连接0／D3锁0，旧账本7秒失败OID286286已正常改名为app_test_w98_c1_ledger7_failed_20261024。下一恢复仅修单测试文件的整日隔离和原错误留证，不重复已通过61秒；完整候选仍未验收。
+
+- 单测试文件恢复已按明确委托执行：完整startsAt／endsAt／全部manualSlices按目标序号整日平移，重试重放复用原输入；断言前保留原Error及完整code／cause。5组离线夹具检查、6组有界自有进程退出检查、受影响类型／lint和独立复核通过。13:16:03→13:17:03 UTC补验整体59507.132ms，4passed／0failed，61秒明确未选中并复用原PASS；8秒实际8176.418ms完整提交、原生守卫与审计outbox保持且锁释放；两种错误分类拒绝并全表未变，标准7秒／Human D7 15秒／RC／4秒原档位验证通过。OID294935正常改名保留，恢复PASS库OID303539亦保留。只在上述通过后启动本候选唯一原满额，结果尚待终态。
+
+### 2026-10-24 普通E4预算候选唯一满额终态
+
+- 仅在补验四项全PASS并复用原61秒PASS后运行一次原完整满额，13:17:45→13:23:32 UTC，整体346293.487ms、1failed／222未选中／exit1。新库OID312150为153／原完整146；所有归档保留、最终连接0／D3锁0，未补跑。
+- prepare阶段33059.392ms（原prepare计时器33070ms、275查询／4E4／1屏障）、完整前置oracle22640.541ms、submit71139.822ms及原断言通过；首审18974.343ms、终审35744.261ms真实提交，观测均60秒。LEDGER完整阶段113855.724ms包含双审／私有准备／正式提交，不能冒称单独commit耗时；服务提交成功、replayed=false，2000条contribution_credit合计1000.00的原断言通过。
+- 首错转移至正式SUMMARY_CHECKS：读取28.037ms成功，但实际4条查询超过原上限3。摘要内容断言、最终draft／formal完整oracle、后置PSet均尚未执行，不能宣称满额或完整R5通过。原3查询／5秒及所有其他预算未改。
+- 只读源码与独立复核确认正式摘要expected为空时仍加载timeRevision.sourceSetHash，却不使用该关联；最小候选为仅expected存在才加载，保留草稿已知／NULL／变化hash防护及所有输出和分页。拟改query service和对应spec两路径，尚未实施；现有日志未保存四条SQL全文，第四条来源不确定，不凭猜测排除计数。先定向验证及保留库一次只读摘要检查，不自动重跑满额。153真实审阅／最终候选提交CI仍待完成。
+
+### 2026-10-24 摘要精简及保留库后置续验
+
+- 明确委托仅在expected存在的草稿来源校验路径加载timeRevision.sourceSetHash；正式HTTP调用不传expected，presenter使用贡献根自己的hash。两源码路径保留原完整根、100条投影、排序、NULL／变化hash拒绝及错误透传，权限调用点不动；167项定向单测（含HTTP权限拒绝、草稿、空／非法读取）、类型和lint通过，独立复核无业务阻断。AUTHZ仅原生成器两摘要、663权限声明不变，grant已撤销；CODEMAP只机械行数刷新。
+- 未改名／复制OID312150，未重放submit／两审／记账。13:47:26起后置包整体80775.264ms全部通过：正式摘要2条业务查询／方法25.759ms、原5秒事务、8000评价／1000.00／hasMore／100条输出；最终draft与formal原完整oracle分别26164.071／24546.797ms通过，完整差集和根hash断言未放宽。原day oracle允许pg_temp函数并强制ROLLBACK，原SQL30秒／day事务60秒／其他事务30秒保持。
+- PSet原AB、BA独立顺序均通过：candidate执行6591.337／6351.934ms分别小于old7262.349／7773.417ms；candidate临时写70055块小于old96088块，8000全行／pairs和差集0均通过。它是历史137优化基准，不是完整现行流程响应SLA。公共根／batch／分录数／提交审计outbox核对不变（非全库快照），原临时对象ABSENT、所有连接0／D3锁0、租约关闭。
+- 本次是明确后置续验，不将原整轮摘要4查询FAIL改记为PASS，不把分段证据冒充最终代码一次全链验收。最终代码绑定全链、153真实人工审阅、候选提交／最终CI／Smoke及全仓兼容清理余项仍分别PENDING；生产／500准入／代签／被拒绝PR正文未动。证据e4-summary-read-20261024。
+
+### 2026-10-24 最终冻结代码原满额全链通过
+
+- HEAD仍e31753ed，73路径工作树候选；测试前后2890文件完整清单SHA256均为7670e2289425e4f236300644eae90aa9a237a8c9f115d7478dbb596d1a2fc60e，代码清单SHA256为a7c761081f275e67a5e3bbc885f059f521e1f18246d4e13b82c7872f456fe58d，期间无源码／预算／断言变更。153唯一新增SQL保持8be33faf摘要，154未恢复。
+- 仅运行一次最终原完整满额，13:58:50→14:06:00 UTC，外层430406.046ms、exit0，1项selectedPASS／0FAIL／222未选中（不是223项全部执行）。2000身份／10000段／50000slice／8000评价；prepare34197.173ms（原计时器另记）、前置oracle24888.568ms、submit71583.499ms；首审19584.643ms／终审39722.521ms均真实60秒事务提交。LEDGER119986.536ms包含双审／私有准备／正式过账，服务与2000条贡献分录合计1000.00断言通过，不冒称单独commit耗时。
+- 正式SUMMARY原同一连续流程为3查询、21.897ms，原三查询／5秒及所有输出断言通过；最终draft／formal完整oracle23682.633／22987.979ms通过，原PSet AB／BA两组速度／临时写及完整性判据通过，最后普通清理完成。prepare60／review60／具名普通E4commit60、默认7／D7 15／取锁4／10槽均保持；不升级为HTTP SLA。
+- 新工作库OID320811保留；OID312150仅正常改名为app_test_w98_c1_summary4_failed_tail_pass_20261024，19个留证库／归档保持，所有连接0／D3锁0。完整原FAIL及后置续验记录均不覆写。结果在r5-final-full-frozen-20261024，已准备精确73路径清单、真实153审阅摘要和同SHA最终CI／Smoke计划，尚未提交／推送或代签。
+- 此次完成原容量完整开发验收，不等于最终集成CI／main审计或生产上线。153真实3b、最终候选提交／CI／Smoke仍PENDING。全仓清理仅首批3构造器／2重复provider／孤立常量／旧诊断入口已完成，其他通知／公开旧API／实际使用版本兼容余项独立列出，不能称整个仓库已清干净。

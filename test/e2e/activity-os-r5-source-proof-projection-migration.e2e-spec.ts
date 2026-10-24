@@ -298,7 +298,7 @@ describe('152 narrow source-proof projection on nonempty151', () => {
         const beforeCatalog = await catalog(db());
         const beforeSettings = await settings(db());
         const beforeRows = await touchedRows(db());
-        await owner.deployLatestMigrations(remaining());
+        await owner.deploySourceProofProjectionMigrations(remaining());
         expect(createHash('sha256').update(migration).digest('hex')).toBe(CANDIDATE_SHA);
         expect(await installedBody(db())).toBe(bodyOf(migration));
         const afterMigrations = await migrationRows(db());
@@ -311,7 +311,7 @@ describe('152 narrow source-proof projection on nonempty151', () => {
         expect(await touchedRows(db())).toEqual(beforeRows);
         await db()
           .$queryRaw`SELECT public.ctsp_assert_complete(${prepared.newPostingBatchId},false)::text`;
-        await owner.deployLatestMigrations(remaining());
+        await owner.deploySourceProofProjectionMigrations(remaining());
         expect(await migrationRows(db())).toEqual(afterMigrations);
         expect((await catalog(db())) === beforeCatalog).toBe(true);
         expect(await settings(db())).toEqual(beforeSettings);

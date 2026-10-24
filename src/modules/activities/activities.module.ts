@@ -463,8 +463,6 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     LegacyConversionRegistrationHeadService,
     LegacyLedgerConversionService,
     LedgerQueryService,
-    ActivityTimeCutoverService,
-    ParticipationTimeTruthQueryService,
     // 活动改造 v1.1 第 2 批第六刀(合同 §5.15 + §3.26):机器关账。
     //
     // 🔴 关账是"这场活动的账算完了"的唯一权威(合同 §1.2 把它从负责人**声明**

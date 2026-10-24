@@ -1,6 +1,6 @@
 # prisma — 本地铁律
 
-> 当前结构计数：152 个 migration，196 个模型；下列有日期的候选记录保留各自范围和验收结论。
+> 当前结构计数：153 个 migration，196 个模型；下列有日期的候选记录保留各自范围和验收结论。
 
 > **2026-10-20 开发候选150**：当前150个migration、196个模型。150仅将`ctsp_assert_complete(text,boolean)`外层JSON数组计数替换为`coalesce(jsonb_array_length(...),0)`；其余body逆向逐字相同，旧1–149不回改。经核实的同范围持续授权，正常CLI精确grant/落地/撤销均已完成；SQL SHA94510911，40路径提案SHA644c7060。原f370 D7仍FAIL（QUERY7212/7000ms）、setup UNKNOWN/faults2保留。20组实际只读计数/SQLSTATE对照、整包跨模型0/0及提案虚拟类型已通过；实际树静态/类型、新非空升级/D7/R4/CI在本固定代码时点尚未验收。完整扫描panel raw3及sum_narrow超时不掩盖；生产NO_GO、不转换真实数据。详见[最小计数修复](../docs/plans/activity-os-r5-source-proof-count-20261020.md)。下方为历史时点。
 

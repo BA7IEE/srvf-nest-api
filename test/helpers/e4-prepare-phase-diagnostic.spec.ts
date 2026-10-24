@@ -460,6 +460,7 @@ function wiredPrepare(error?: Error, missingBinding = false, loggerFails = false
     E4PreparePhaseDiagnostic,
     guardPlanDiagnostic: undefined,
     guardFunctionDiagnostic: undefined,
+    sliceReadDiagnostic: undefined,
     ActivityContributionSettlementQueryService: class {},
     measured,
     contributions,

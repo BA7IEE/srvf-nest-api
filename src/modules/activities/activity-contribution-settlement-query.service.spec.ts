@@ -3,8 +3,8 @@ import type {
   ActivitySettlementTimeRevision,
   CorrectionTimeSourceProof,
   ContributionPolicyVersion,
-  Prisma,
 } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { fingerprintMetricEnvelope } from './activity-metric-definition';
 import { fingerprintContributionPolicyVersion } from './activity-contribution-policy-definition';
 import * as historicalTimePolicy from './activity-time-allocation-policy';
@@ -44,8 +44,131 @@ describe('draft contribution summaries require a known current source hash', () 
         evaluations: [],
       });
       expect(tx.participantContributionEvaluation.findMany).not.toHaveBeenCalled();
+      expect(tx.activitySettlementContributionRevision.findFirst).toHaveBeenCalledWith({
+        where: { settlementVersionId: 'draft', draftContentHash: 'unchanged-content' },
+        orderBy: { revision: 'desc' },
+        include: { timeRevision: { select: { sourceSetHash: true } } },
+      });
     },
   );
+
+  it.each([false, true])(
+    'preserves complete bounded output for a current draft=%s',
+    async (draft) => {
+      const root = {
+        id: 'proof-one',
+        sourceKindCode: 'time_revision',
+        selectionRevisionHash: 'selection',
+        sourceSetHash: 'immutable-root-source',
+        evaluationSetHash: 'evaluations',
+        recognizedPointsTotal: new Prisma.Decimal('2.25'),
+        evaluationCount: 101,
+        ...(draft ? { timeRevision: { sourceSetHash: 'current-source' } } : {}),
+      };
+      const evaluations = Array.from({ length: 101 }, (_, i) => ({
+        participationIdentityId: 'identity-' + String(i),
+        policyVersionId: 'policy',
+        definitionHash: 'definition',
+        evaluatorVersion: 1,
+        attendanceRoleCode: 'service',
+        timeCategoryCode: 'training',
+        durationSeconds: 900,
+        calculatedPoints: new Prisma.Decimal('0.25'),
+        recognizedPoints: new Prisma.Decimal('0.25'),
+        explanationCode: 'band',
+      }));
+      const tx = {
+        activitySettlementContributionRevision: { findFirst: jest.fn().mockResolvedValue(root) },
+        participantContributionEvaluation: { findMany: jest.fn().mockResolvedValue(evaluations) },
+      };
+      const result = await new ActivityContributionSettlementQueryService().readSummaryInTx(
+        tx as unknown as Prisma.TransactionClient,
+        'version-one',
+        draft ? { draftContentHash: 'draft-content', sourceSetHash: 'current-source' } : undefined,
+      );
+      expect(result).toMatchObject({
+        pending: false,
+        revisionId: 'proof-one',
+        sourceKindCode: 'time_revision',
+        selectionHash: 'selection',
+        sourceSetHash: 'immutable-root-source',
+        evaluationSetHash: 'evaluations',
+        recognizedPointsTotal: '2.25',
+        evaluationCount: 101,
+        hasMore: true,
+      });
+      expect(result.evaluations).toHaveLength(100);
+      expect(result.evaluations[0]).toEqual({
+        ...evaluations[0],
+        calculatedPoints: '0.25',
+        recognizedPoints: '0.25',
+      });
+      expect(tx.activitySettlementContributionRevision.findFirst).toHaveBeenCalledWith({
+        where: {
+          settlementVersionId: 'version-one',
+          ...(draft ? { draftContentHash: 'draft-content' } : {}),
+        },
+        orderBy: { revision: 'desc' },
+        include: { timeRevision: draft ? { select: { sourceSetHash: true } } : false },
+      });
+      expect(tx.participantContributionEvaluation.findMany).toHaveBeenCalledWith({
+        where: { contributionRevisionId: 'proof-one' },
+        orderBy: [{ evaluationUnitKey: 'asc' }],
+        take: 100,
+        select: {
+          participationIdentityId: true,
+          policyVersionId: true,
+          definitionHash: true,
+          evaluatorVersion: true,
+          attendanceRoleCode: true,
+          timeCategoryCode: true,
+          durationSeconds: true,
+          calculatedPoints: true,
+          recognizedPoints: true,
+          explanationCode: true,
+        },
+      });
+    },
+  );
+
+  it('keeps an absent or unknown version pending without reading evaluations', async () => {
+    const tx = {
+      activitySettlementContributionRevision: { findFirst: jest.fn().mockResolvedValue(null) },
+      participantContributionEvaluation: { findMany: jest.fn() },
+    };
+    await expect(
+      new ActivityContributionSettlementQueryService().readSummaryInTx(
+        tx as unknown as Prisma.TransactionClient,
+        'unknown-version',
+      ),
+    ).resolves.toEqual({
+      regimeCode: 'policy_v1',
+      pending: true,
+      revisionId: null,
+      sourceKindCode: null,
+      selectionHash: null,
+      sourceSetHash: null,
+      evaluationSetHash: null,
+      recognizedPointsTotal: null,
+      evaluationCount: null,
+      hasMore: false,
+      evaluations: [],
+    });
+    expect(tx.participantContributionEvaluation.findMany).not.toHaveBeenCalled();
+  });
+
+  it('propagates a database rejection rather than inventing an empty or zero proof', async () => {
+    const failure = new Error('database read rejected');
+    const tx = {
+      activitySettlementContributionRevision: { findFirst: jest.fn().mockRejectedValue(failure) },
+    };
+    await expect(
+      new ActivityContributionSettlementQueryService().readSummaryInTx(
+        tx as unknown as Prisma.TransactionClient,
+        'version-one',
+      ),
+    ).rejects.toBe(failure);
+  });
 });
 const positionScope = {
   layerCode: 'position' as const,
