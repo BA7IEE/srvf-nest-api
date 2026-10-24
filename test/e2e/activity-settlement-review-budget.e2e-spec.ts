@@ -161,7 +161,7 @@ async function locksReleased(input: SettlementReviewInput, pid: number) {
   admit();
   const [idle] = await monitor.$queryRaw<
     { transactions: number; locks: number }[]
-  >`SELECT (SELECT count(*)::int FROM pg_stat_activity WHERE pid=${pid} AND xact_start IS NOT NULL) AS transactions,(SELECT count(*)::int FROM pg_locks WHERE pid=${pid}) AS locks`;
+  >`SELECT (SELECT count(*)::int FROM pg_stat_activity WHERE pid=CAST(${pid} AS integer) AND xact_start IS NOT NULL) AS transactions,(SELECT count(*)::int FROM pg_locks WHERE pid=CAST(${pid} AS integer)) AS locks`;
   expect(idle).toEqual({ transactions: 0, locks: 0 });
   await monitor.$transaction(async (tx) => {
     await tx.$executeRaw`SET LOCAL lock_timeout='1s'`;
