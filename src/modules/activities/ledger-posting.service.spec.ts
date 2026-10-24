@@ -21,6 +21,7 @@ describe('ledger posting draft member query characterization', () => {
   const tx = new PrismaClient();
   const database = {
     ledgerPostingBatch: { findUnique: jest.fn() },
+    activitySettlementContributionRevision: { findMany: jest.fn() },
     $transaction: jest.fn((body: (client: Prisma.TransactionClient) => Promise<unknown>) =>
       body(tx),
     ),
@@ -310,22 +311,30 @@ describe('ledger posting draft member query characterization', () => {
   });
 
   it.each([
-    [false, false],
-    [false, true],
-    [true, false],
-    [true, true],
-  ])(
-    'preserves transaction owner, named scope and errors: native=%s fail=%s',
-    async (native, fail) => {
+    [false, 0, false],
+    [false, 0, true],
+    [false, 1, false],
+    [true, 0, false],
+    [true, 1, false],
+    [true, 1, true],
+    [true, 2, false],
+  ] as const)(
+    'preserves transaction owner, named scope and errors: native=%s roots=%s fail=%s',
+    async (native, rootCount, fail) => {
       database.ledgerPostingBatch.findUnique.mockResolvedValue({
         settlementRunId: 'run-one',
         settlementVersionId: 'version-one',
         settlementRun: { activityId: 'activity-one' },
         settlementVersion: {
           contributionRegimeCode: native ? 'policy_v1' : 'legacy',
-          settlementContributionRevisions: native ? [{ id: 'root-one' }] : [],
         },
       });
+      database.activitySettlementContributionRevision.findMany.mockReset().mockResolvedValue(
+        Array.from({ length: rootCount }, (_, index) => ({
+          id: index === 0 ? 'root-one' : `root-${index + 1}`,
+        })),
+      );
+      const ordinaryNative = native && rootCount === 1;
       database.$transaction.mockClear();
       const input = { postingBatchId: 'batch-one', operationKey: 'operation-one' };
       const actor = {
@@ -375,14 +384,14 @@ describe('ledger posting draft member query characterization', () => {
         ordinaryCommitSelection: {
           settlementRunId: 'run-one',
           settlementVersionId: 'version-one',
-          e4RootId: native ? 'root-one' : null,
+          e4RootId: ordinaryNative ? 'root-one' : null,
         },
       });
       if (fail) expect(timeLedger.rethrowConstraint).toHaveBeenCalledWith(failure);
       expect(database.$transaction).toHaveBeenCalledTimes(1);
       expect(database.$transaction).toHaveBeenCalledWith(expect.any(Function), {
         isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
-        timeout: native ? E4_LEDGER_COMMIT_TX_TIMEOUT_MS : MEMBER_TX_TIMEOUT_MS,
+        timeout: ordinaryNative ? E4_LEDGER_COMMIT_TX_TIMEOUT_MS : MEMBER_TX_TIMEOUT_MS,
       });
       expect(database.ledgerPostingBatch.findUnique).toHaveBeenLastCalledWith({
         where: { id: input.postingBatchId },
@@ -393,18 +402,24 @@ describe('ledger posting draft member query characterization', () => {
           settlementVersion: {
             select: {
               contributionRegimeCode: true,
-              settlementContributionRevisions: {
-                where: {
-                  regimeCode: 'policy_v1',
-                  kindCode: 'submitted',
-                  sourceKindCode: 'time_revision',
-                },
-                select: { id: true },
-              },
             },
           },
         },
       });
+      if (native) {
+        expect(database.activitySettlementContributionRevision.findMany).toHaveBeenCalledTimes(1);
+        expect(database.activitySettlementContributionRevision.findMany).toHaveBeenCalledWith({
+          where: {
+            settlementVersionId: 'version-one',
+            regimeCode: 'policy_v1',
+            kindCode: 'submitted',
+            sourceKindCode: 'time_revision',
+          },
+          select: { id: true },
+        });
+      } else {
+        expect(database.activitySettlementContributionRevision.findMany).not.toHaveBeenCalled();
+      }
     },
   );
 });

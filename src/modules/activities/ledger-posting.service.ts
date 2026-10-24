@@ -212,28 +212,30 @@ export class LedgerPostingService {
         settlementVersion: {
           select: {
             contributionRegimeCode: true,
-            settlementContributionRevisions: {
-              where: {
-                regimeCode: 'policy_v1',
-                kindCode: 'submitted',
-                sourceKindCode: 'time_revision',
-              },
-              select: { id: true },
-            },
           },
         },
       },
     });
     if (anchor === null) throw new BizException(BizCode.LEDGER_COMMIT_BATCH_STATUS_INVALID);
     const activityId = anchor.settlementRun.activityId;
+    // Classified D6 commits never use E4 roots. Keep their original query budget;
+    // native candidates still load the complete set before the locked recheck.
+    const roots =
+      anchor.settlementVersion.contributionRegimeCode === 'policy_v1'
+        ? await this.prisma.activitySettlementContributionRevision.findMany({
+            where: {
+              settlementVersionId: anchor.settlementVersionId,
+              regimeCode: 'policy_v1',
+              kindCode: 'submitted',
+              sourceKindCode: 'time_revision',
+            },
+            select: { id: true },
+          })
+        : [];
     const selection: OrdinaryCommitSelection = {
       settlementRunId: anchor.settlementRunId,
       settlementVersionId: anchor.settlementVersionId,
-      e4RootId:
-        anchor.settlementVersion.contributionRegimeCode === 'policy_v1' &&
-        anchor.settlementVersion.settlementContributionRevisions.length === 1
-          ? anchor.settlementVersion.settlementContributionRevisions[0].id
-          : null,
+      e4RootId: roots.length === 1 ? roots[0].id : null,
     };
 
     return await runMemberLinearizedTransaction(
