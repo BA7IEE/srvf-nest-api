@@ -1,3 +1,4 @@
+// E4_C1_V2_IMPORT_BEGIN
 import {
   E4SliceReadDiagnostic,
   e4SliceReadOptions,
@@ -5,9 +6,14 @@ import {
 } from '../helpers/e4-slice-read-diagnostic';
 import {
   createE4MaximumStageReceipt,
+  E4CapacityFinalization,
+  e4CapacityRetentionRequested,
+  assertE4PrepareAcceptanceV2,
   restoreE4MaximumStageOpening,
+  restoreE4LiveCatalog140Opening,
   restoreE4HistoricalCatalogOpening,
 } from '../helpers/e4-maximum-stage-receipt';
+// E4_C1_V2_IMPORT_END
 import { PrismaClient, Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -59,6 +65,7 @@ import {
 } from '../../src/modules/activities/activity-time-settlement-command';
 
 /** Observe the actual instance bridge; preserve this, all arguments, options and the original Promise. */
+// E4_C1_V2_ENGINE_BEGIN
 function observeEngineTransactions(db: PrismaClient) {
   const engine: unknown = Reflect.get(db, '_engine');
   if (engine === null || typeof engine !== 'object')
@@ -67,28 +74,64 @@ function observeEngineTransactions(db: PrismaClient) {
   if (typeof original !== 'function') throw new Error('Actual engine transaction bridge missing');
   const descriptor = Object.getOwnPropertyDescriptor(engine, 'transaction');
   const phases: { phase: string; elapsedMs: number; outcome: string }[] = [];
+  const starts: {
+    timeoutMs: number | null;
+    maxWaitMs: number | null;
+    isolationLevel: string | null;
+  }[] = [];
+  let pending = 0;
+  let unknown = false;
   Object.defineProperty(engine, 'transaction', {
     configurable: true,
     writable: true,
     value: function (this: object, ...args: unknown[]) {
       const started = performance.now();
-      const result = Reflect.apply(original, this, args) as Promise<unknown>;
       const phase = ['start', 'commit', 'rollback'].includes(String(args[0]))
         ? String(args[0])
         : 'other';
-      void result.then(
-        () => {
-          phases.push({ phase, elapsedMs: performance.now() - started, outcome: 'ok' });
-        },
-        () => {
-          phases.push({ phase, elapsedMs: performance.now() - started, outcome: 'error' });
-        },
-      );
-      return result;
+      if (phase === 'start') {
+        const options = args[2];
+        const fields = options !== null && typeof options === 'object' ? options : {};
+        const timeout = Reflect.get(fields, 'timeout');
+        const maxWait = Reflect.get(fields, 'maxWait');
+        const isolation = Reflect.get(fields, 'isolationLevel');
+        if (starts.length < 32)
+          starts.push({
+            timeoutMs: typeof timeout === 'number' ? timeout : null,
+            maxWaitMs: typeof maxWait === 'number' ? maxWait : null,
+            isolationLevel: isolation === 'ReadCommitted' ? isolation : null,
+          });
+        else unknown = true;
+      }
+      pending++;
+      const settle = (outcome: string) => {
+        pending--;
+        if (phases.length < 32)
+          phases.push({ phase, elapsedMs: performance.now() - started, outcome });
+        else unknown = true;
+      };
+      try {
+        const result = Reflect.apply(original, this, args) as Promise<unknown>;
+        void result.then(
+          () => settle('ok'),
+          () => settle('error'),
+        );
+        return result;
+      } catch (error) {
+        settle('error');
+        throw error;
+      }
     },
   });
   return {
     phases,
+    reset: () => {
+      if (pending || unknown) throw new Error('E4 C1-v2 transaction observation UNKNOWN');
+      phases.length = 0;
+      starts.length = 0;
+    },
+    assertPrepare: (methodWallMs: number) =>
+      assertE4PrepareAcceptanceV2({ phases, starts, pending, unknown }, methodWallMs),
     restore: () => {
       if (descriptor) Object.defineProperty(engine, 'transaction', descriptor);
       else Reflect.deleteProperty(engine, 'transaction');
@@ -96,6 +139,7 @@ function observeEngineTransactions(db: PrismaClient) {
     },
   };
 }
+// E4_C1_V2_ENGINE_END
 
 class ObservedE4Database extends PrismaClient<Prisma.PrismaClientOptions, 'query'> {
   async onModuleInit() {
@@ -130,6 +174,30 @@ const E4_TERMINAL_REFS_BODY_MD5 = 'ed1cfd1c84d844d8151401404a32f174';
 const E4_TERMINAL_NEW_BODY_MD5 = '96c7319edc1e1a6c5695d1e649acd87a';
 const E4_TERMINAL_REFS_BODY_BYTES = 4070;
 const E4_TERMINAL_NEW_BODY_BYTES = 4362;
+// E4_LIVE140_CATALOG_BEGIN
+// Frozen137 projections above remain historical inputs; live probes bind the approved140 successor.
+function terminalLiveExpectedCatalog(
+  source = readFileSync(
+    resolve(
+      __dirname,
+      '../../prisma/migrations/20261012020000_activity_contribution_evaluation_canonical_fast_path/migration.sql',
+    ),
+    'utf8',
+  ),
+) {
+  if (terminalHash(source) !== '5d7ff28a64a638440aaa1e9a798a2602f933fc9d6f8b23b68355199dad143513')
+    throw new Error('Terminal live140 migration source mismatch');
+  const from = 'CREATE OR REPLACE FUNCTION e4_expected_evaluations(';
+  if (source.split(from).length !== 2)
+    throw new Error('Terminal live140 function boundary mismatch');
+  const { body } = terminalExpectedDefinition(
+    source.replace(from, 'CREATE FUNCTION e4_expected_evaluations('),
+  );
+  if (terminalHash(body) !== 'bbabd3144fb7639e856b3e4b349e017d0eacad6799bf02b5014b52e6cf521761')
+    throw new Error('Terminal live140 function source mismatch');
+  return { md5: terminalHash(body, 'md5'), bytes: Buffer.byteLength(body, 'utf8') };
+}
+// E4_LIVE140_CATALOG_END
 function terminalExpectedDefinition(source: string) {
   const matches = [
     ...source.matchAll(
@@ -313,8 +381,9 @@ function terminalValidateCatalog(rows: TerminalCatalog[], identity: TerminalIden
     opening.temporary !== true
   )
     throw new Error('Terminal actual catalog namespace mismatch');
+  const live = terminalLiveExpectedCatalog();
   for (const [row, body, bytes] of [
-    [current, E4_TERMINAL_NEW_BODY_MD5, E4_TERMINAL_NEW_BODY_BYTES],
+    [current, live.md5, live.bytes],
     [opening, E4_TERMINAL_OLD_BODY_MD5, 4044],
   ] as const) {
     if (
@@ -3220,9 +3289,11 @@ describe('E4 terminal expected measurement offline', () => {
         'utf8',
       ),
     );
-    const scale = readFileSync(
-      resolve(__dirname, 'activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts'),
-      'utf8',
+    const scale = restoreE4LiveCatalog140Opening(
+      readFileSync(
+        resolve(__dirname, 'activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts'),
+        'utf8',
+      ),
     );
     const local = readFileSync(__filename, 'utf8');
     expect(terminalHash(restoreTerminalScaleOpening(local))).toBe(
@@ -3328,8 +3399,8 @@ describe('E4 terminal expected measurement offline', () => {
         ...base,
         scope: 'public',
         schema: 'public',
-        body: E4_TERMINAL_NEW_BODY_MD5,
-        bytes: E4_TERMINAL_NEW_BODY_BYTES,
+        body: terminalLiveExpectedCatalog().md5,
+        bytes: terminalLiveExpectedCatalog().bytes,
         temporary: false,
       },
       {
@@ -4553,10 +4624,16 @@ describe('E4 S13 historical format source offline', () => {
 // E4_S13_FORMAT_SOURCE_OFFLINE_END
 
 let restoreS13Lifecycle: (() => void) | undefined;
+const capacityFinalization = new E4CapacityFinalization(
+  process.env.SRVF_E4_W98 === '1',
+  e4CapacityRetentionRequested(process.argv),
+);
 beforeAll(() => {
   if (process.env.SRVF_E4_W98 === '1') restoreS13Lifecycle = observeS13Lifecycle();
 });
-installE4ValidationDatabase();
+installE4ValidationDatabase({
+  assertReadyToFinalize: () => capacityFinalization.assertReadyToFinalize(),
+});
 afterAll(async () => {
   try {
     if (s13Probe.monitor) {
@@ -4661,74 +4738,345 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
     });
   }
   const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
-  beforeAll(async () => {
-    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
-    f = await createE4Fixture();
-  }, 120_000);
-  afterAll(async () => {
-    await closeE13Fixture(f);
-    if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
-    else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
-  });
+  beforeAll(
+    () =>
+      capacityFinalization.run('fixture', async () => {
+        process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
+        f = await createE4Fixture();
+      }),
+    120_000,
+  );
+  afterAll(() =>
+    capacityFinalization.run('app-close', async () => {
+      await closeE13Fixture(f);
+      if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
+    }),
+  );
   // Runs after the original app.close(), before the installer's ordinary DROP/lease release.
   // This independent 75-second read-only hook is outside every original business budget.
-  afterAll(async () => {
-    if (!firstReviewOracle) return;
-    try {
-      const facts = await firstReviewFacts();
-      console.info(
-        'E4 first-review after app close',
-        JSON.stringify({ outcome: firstReviewOracle.outcome, ...facts }),
-      );
-      if (firstReviewOracle.outcome === 'pending')
-        throw new Error('First-review response terminal is unknown');
-      assertReviewCounts(facts, firstReviewOracle.outcome === 'fulfilled' ? 1 : 0);
-    } finally {
-      await firstReviewOracle.db.$disconnect();
-    }
-  }, 75_000);
+  afterAll(
+    () =>
+      capacityFinalization.run('review-close', async () => {
+        if (!firstReviewOracle) return;
+        try {
+          const facts = await firstReviewFacts();
+          console.info(
+            'E4 first-review after app close',
+            JSON.stringify({ outcome: firstReviewOracle.outcome, ...facts }),
+          );
+          if (firstReviewOracle.outcome === 'pending')
+            throw new Error('First-review response terminal is unknown');
+          assertReviewCounts(facts, firstReviewOracle.outcome === 'fulfilled' ? 1 : 0);
+        } finally {
+          await firstReviewOracle.db.$disconnect();
+        }
+      }),
+    75_000,
+  );
 
   // Independent receipt after both original fixture and review clients have closed.
-  afterAll(async () => {
-    await sliceReadDiagnostic?.collectCleanup();
-  }, 10_000);
+  afterAll(
+    () =>
+      capacityFinalization.run('observer-cleanup', async () => {
+        await sliceReadDiagnostic?.collectCleanup();
+        if (sliceReadDiagnostic) {
+          const snapshot = sliceReadDiagnostic.snapshot();
+          const cleanup = snapshot.cleanup;
+          if (
+            snapshot.status !== 'OBSERVED' ||
+            snapshot.observedClose !== 'COMPLETE' ||
+            snapshot.appClose !== 'COMPLETE' ||
+            !cleanup ||
+            Reflect.get(cleanup, 'databases') !== 1 ||
+            Reflect.get(cleanup, 'clients') !== 0 ||
+            Reflect.get(cleanup, 'capturedBackends') !== 0
+          )
+            capacityFinalization.fail();
+        }
+      }),
+    10_000,
+  );
 
   // This owner-bound diagnostic is explicitly local-only; CI still runs the unchanged original full chain.
+  // E4_C1_V2_S13_BEGIN
   (process.env.SRVF_E4_W98 === '1' ? it : it.skip)(
     'E4 S13 thin-key exact full-doc probe',
-    async () => {
-      s13Probe.active = true;
-      const originalClose: unknown = Reflect.get(f.app, 'close');
-      if (typeof originalClose !== 'function') throw new Error('S13 original app close missing');
-      const descriptor = Object.getOwnPropertyDescriptor(f.app, 'close');
-      Object.defineProperty(f.app, 'close', {
-        configurable: true,
-        writable: true,
-        value: function (this: object, ...args: unknown[]) {
-          const promise = Reflect.apply(originalClose, this, args) as Promise<void>;
-          void promise.then(
-            () => {
-              s13Probe.appClosed = true;
-            },
-            () => {
-              s13Probe.failed = true;
-            },
+    () =>
+      capacityFinalization.run('s13', async () => {
+        s13Probe.active = true;
+        const originalClose: unknown = Reflect.get(f.app, 'close');
+        if (typeof originalClose !== 'function') throw new Error('S13 original app close missing');
+        const descriptor = Object.getOwnPropertyDescriptor(f.app, 'close');
+        Object.defineProperty(f.app, 'close', {
+          configurable: true,
+          writable: true,
+          value: function (this: object, ...args: unknown[]) {
+            const promise = Reflect.apply(originalClose, this, args) as Promise<void>;
+            void promise.then(
+              () => {
+                s13Probe.appClosed = true;
+              },
+              () => {
+                s13Probe.failed = true;
+              },
+            );
+            return promise;
+          },
+        });
+        s13Probe.restoreApp = () => {
+          if (descriptor) Object.defineProperty(f.app, 'close', descriptor);
+          else Reflect.deleteProperty(f.app, 'close');
+          expect(Reflect.get(f.app, 'close')).toBe(originalClose);
+        };
+        // E4_TERMINAL_REPLACE_S13_PRINCIPAL_BEGIN
+        terminalS13Principal = await terminalBusinessPrincipal(f.db);
+        let observedForClose: ObservedE4Database | undefined;
+        // E4_TERMINAL_REPLACE_S13_PRINCIPAL_END
+        let restoreEngine: (() => void) | undefined;
+        try {
+          const source = await createMaximumE4Source(f);
+          expect(
+            await f.db.activityParticipationIdentity.count({
+              where: { activityId: source.activityId },
+            }),
+          ).toBe(2000);
+          expect(
+            await f.db.participantTimeAllocationRevision.count({
+              where: { activityId: source.activityId },
+            }),
+          ).toBe(10000);
+          expect(
+            await f.db.participantTimeAllocationSlice.count({
+              where: { activityId: source.activityId },
+            }),
+          ).toBe(50000);
+          const observed = new ObservedE4Database({ log: [{ emit: 'event', level: 'query' }] });
+          const engineObserver = observeEngineTransactions(observed);
+          let queries = 0;
+          let e4Queries = 0;
+          let barrierQueries = 0;
+          const timing = { readMs: 0, writeMs: 0, largestMs: 0 };
+          let s13PhaseDiagnostic: E4PreparePhaseDiagnostic | undefined;
+          observed.$on('query', (event) => {
+            if (!/^\s*(BEGIN|COMMIT|ROLLBACK|SET TRANSACTION)\b/iu.test(event.query)) {
+              queries++;
+              s13PhaseDiagnostic?.query(
+                /^\s*(SELECT|WITH)\b/iu.test(event.query) ? 'READ' : 'WRITE',
+                event.duration,
+              );
+            }
+            if (
+              /(?:ActivitySettlementContributionRevision|ParticipantContributionEvaluation|e4_assert_|e4_revision_complete_guard)/u.test(
+                event.query,
+              )
+            )
+              e4Queries++;
+            if (/^\s*SET CONSTRAINTS public\.astr_parent_complete_guard,/u.test(event.query))
+              barrierQueries++;
+            if (/^\s*(SELECT|WITH)\b/iu.test(event.query)) timing.readMs += event.duration;
+            else timing.writeMs += event.duration;
+            timing.largestMs = Math.max(timing.largestMs, event.duration);
+          });
+          const reset = () => {
+            queries = 0;
+            e4Queries = 0;
+            barrierQueries = 0;
+            timing.readMs = 0;
+            timing.writeMs = 0;
+            timing.largestMs = 0;
+            engineObserver.reset();
+          };
+          const contributions = f.app.get(ActivityContributionSettlementService);
+          const access = f.app.get(ActivityTimeSettlementAccessService);
+          const segments = f.app.get(ParticipationSegmentFacade);
+          const reader = new ActivityTimeSettlementQueryService(
+            observed,
+            access,
+            segments,
+            f.app.get(ActivityContributionSettlementQueryService),
           );
-          return promise;
-        },
-      });
-      s13Probe.restoreApp = () => {
-        if (descriptor) Object.defineProperty(f.app, 'close', descriptor);
-        else Reflect.deleteProperty(f.app, 'close');
-        expect(Reflect.get(f.app, 'close')).toBe(originalClose);
-      };
-      // E4_TERMINAL_REPLACE_S13_PRINCIPAL_BEGIN
-      terminalS13Principal = await terminalBusinessPrincipal(f.db);
-      let observedForClose: ObservedE4Database | undefined;
-      // E4_TERMINAL_REPLACE_S13_PRINCIPAL_END
-      let restoreEngine: (() => void) | undefined;
-      try {
-        const source = await createMaximumE4Source(f);
+          const measured = new ActivityTimeSettlementService(
+            observed,
+            access,
+            reader,
+            segments,
+            f.app.get(ActivityTimeAllocationService),
+            f.app.get(SettlementSubmitService),
+            f.app.get(ActivityTimeSettlementAuditRecorder),
+            f.app.get(ActivityWorkflowGate),
+            contributions,
+          );
+
+          observedForClose = observed;
+          restoreEngine = engineObserver.restore;
+          await assertConnectedTestDatabase(observed);
+          reset();
+          const phaseDiagnostic = new E4PreparePhaseDiagnostic([
+            { phase: 'C3_PROOF', target: measured, method: 'lockedProof' },
+            { phase: 'C3_SOURCE', target: measured, method: 'lockedSources' },
+            { phase: 'C3_EVAL', target: reader, method: 'evaluateInTx' },
+            { phase: 'C3_BUCKET_WRITE', target: measured, method: 'insertBuckets' },
+            { phase: 'E4_PREPARE', target: contributions, method: 'prepareTimeInTx' },
+            {
+              phase: 'E4_EVAL',
+              target: f.app.get(ActivityContributionSettlementQueryService),
+              method: 'readTimeEvaluationInTx',
+            },
+            { phase: 'E4_EVAL_WRITE', target: contributions, method: 'insertEvaluations' },
+            { phase: 'C3_RECEIPT', target: measured, method: 'receipt' },
+          ]);
+          s13PhaseDiagnostic = phaseDiagnostic;
+          let prepared: Awaited<ReturnType<ActivityTimeSettlementService['prepare']>>;
+          let prepareMs = 0;
+          phaseDiagnostic.begin();
+          const started = performance.now();
+          try {
+            prepared = await measured.prepare(
+              source.activityId,
+              {
+                expectedDraftVersion: source.expectation.expectedDraftVersion,
+                expectedEvidenceSealId: source.expectation.expectedEvidenceSealId,
+                operationKey: f.key('s13_prepare'),
+                expectedTimeRevision: 0,
+              },
+              e4Actor(f.creator, true),
+              E4_META,
+            );
+            prepareMs = performance.now() - started;
+            phaseDiagnostic.finish('OK');
+          } catch (error) {
+            prepareMs = performance.now() - started;
+            phaseDiagnostic.finish('FAIL');
+            throw error;
+          } finally {
+            phaseDiagnostic.restore();
+            s13PhaseDiagnostic = undefined;
+            phaseDiagnostic.emitTo((safeJson) => console.info('E4_C1_V2_S13_PHASES', safeJson));
+            console.info('E4_C1_V2_S13_METHOD', JSON.stringify({ methodWallMs: prepareMs }));
+          }
+          console.info(
+            'E4_S13_FRESH_PREPARE',
+            JSON.stringify({
+              prepareMs,
+              queries,
+              e4Queries,
+              barrierQueries,
+              ...timing,
+              enginePhases: engineObserver.phases,
+            }),
+          );
+          expect(phaseDiagnostic.snapshot().status).toBe('COMPLETE');
+          console.info('E4_C1_V2_PREPARE', JSON.stringify(engineObserver.assertPrepare(prepareMs)));
+          expect(queries).toBeGreaterThan(0);
+          expect(queries).toBeLessThanOrEqual(400);
+          expect(e4Queries).toBeLessThanOrEqual(12);
+          expect(barrierQueries).toBe(1);
+          expect(prepared.bucketCount).toBe(8000);
+          expect(prepared.sourceCount).toBe(40000);
+          const proof = await f.db.activitySettlementContributionRevision.findFirstOrThrow({
+            where: { settlementVersionId: prepared.settlementVersionId },
+          });
+          expect(proof.evaluationCount).toBe(8000);
+          expect(proof.recognizedPointsTotal.toFixed(2)).toBe('1000.00');
+          await assertFixedE4Oracle(f.db, proof.id, 8000);
+          reset();
+          const submitted = await measured.submit(
+            source.activityId,
+            {
+              expectedDraftVersion: source.expectation.expectedDraftVersion,
+              expectedEvidenceSealId: source.expectation.expectedEvidenceSealId,
+              operationKey: f.key('s13_submit'),
+              timeRevisionId: prepared.timeRevisionId,
+              expectedBucketContentHash: prepared.bucketContentHash,
+            },
+            e4Actor(f.creator, true),
+            E4_META,
+          );
+          console.info(
+            'E4_S13_FRESH_SUBMIT',
+            JSON.stringify({
+              queries,
+              e4Queries,
+              ...timing,
+              enginePhases: engineObserver.phases,
+            }),
+          );
+          expect(queries).toBeGreaterThan(0);
+          expect(queries).toBeLessThanOrEqual(950);
+          expect(e4Queries).toBeLessThanOrEqual(12);
+          expect(submitted.kindCode).toBe('submitted');
+          const submittedProofs = await f.db.activitySettlementContributionRevision.findMany({
+            where: {
+              activityId: source.activityId,
+              settlementRunId: submitted.settlementRunId,
+              settlementVersionId: submitted.settlementVersionId,
+              timeRevisionId: submitted.timeRevisionId,
+              kindCode: 'submitted',
+              sourceKindCode: 'time_revision',
+              sourceDraftContributionRevisionId: proof.id,
+            },
+            take: 2,
+          });
+          expect(submittedProofs).toHaveLength(1);
+          const submittedProof = submittedProofs[0];
+          expect(submittedProof.evaluationCount).toBe(8000);
+          expect(submittedProof.recognizedPointsTotal.toFixed(2)).toBe('1000.00');
+          await assertFixedE4Oracle(f.db, submittedProof.id, 8000);
+          s13Probe.rootId = submittedProof.id;
+          s13Probe.businessPassed = true;
+        } catch (error) {
+          s13Probe.failed = true;
+          throw error;
+        } finally {
+          restoreEngine?.();
+          if (observedForClose) {
+            try {
+              await observedForClose.$disconnect();
+              s13Probe.measuredClosed = true;
+            } catch {
+              s13Probe.failed = true;
+              s13Probe.expired = true;
+            }
+          }
+        }
+      }),
+    600_000,
+  );
+  // E4_C1_V2_S13_END
+
+  afterAll(
+    () =>
+      capacityFinalization.run('s13-probe', async () => {
+        if (!s13Probe.active) return;
+        if (s13Probe.failed)
+          throw new Error('S13 business first red; no plan rerun or cleanup allowed');
+        await runS13IndependentProbe();
+        if (
+          s13Probe.failed ||
+          s13Probe.expired ||
+          s13Probe.pending !== 0 ||
+          !s13Probe.appClosed ||
+          !s13Probe.measuredClosed ||
+          !s13Probe.planClosed
+        ) {
+          capacityFinalization.fail();
+          throw new Error('S13 terminal state UNKNOWN; preserve database');
+        }
+      }),
+    75_000,
+  );
+
+  it(
+    '2,000 identities / 10,000 segments / 50,000 slices yield 8,000 policy units without repeated awards',
+    () =>
+      capacityFinalization.run('maximum', async () => {
+        const sliceObservationDeadline = performance.now() + 600_000;
+        const sliceOptions = e4SliceReadOptions();
+        await preflightE4SliceReadDiagnostic(f.db, sliceOptions);
+        const stages = createE4MaximumStageReceipt();
+        const source = await stages.run('FIXTURE', () => createMaximumE4Source(f));
+        stages.enter('FIXTURE_CHECKS');
         expect(
           await f.db.activityParticipationIdentity.count({
             where: { activityId: source.activityId },
@@ -4744,14 +5092,43 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
             where: { activityId: source.activityId },
           }),
         ).toBe(50000);
-        const observed = new ObservedE4Database({ log: [{ emit: 'event', level: 'query' }] });
+        stages.complete('FIXTURE_CHECKS');
+        stages.enter('PREPARE_SETUP');
+        const observed = new ObservedE4Database({
+          log: [{ emit: 'event', level: 'query' }],
+          ...sliceOptions.clientOptions,
+        });
+        try {
+          sliceReadDiagnostic = new E4SliceReadDiagnostic(observed, f.db, f.app, {
+            scope: sliceOptions.scope,
+            applicationName: sliceOptions.applicationName,
+            deadlineMs: sliceObservationDeadline,
+            dedicatedLease: process.env.SRVF_E4_W98 === '1',
+          });
+          observed.$on('query', (event) =>
+            sliceReadDiagnostic?.queryEvent(event.query, event.duration),
+          );
+        } catch {
+          capacityFinalization.fail();
+          console.info('E4_SLICE_READ', '{"status":"UNKNOWN","reason":"INSTALL"}');
+        }
         const engineObserver = observeEngineTransactions(observed);
+        const engineRequests = new E4EngineRequestWaitDiagnostic(
+          Reflect.get(observed, '_engine') as object,
+        );
         let queries = 0;
         let e4Queries = 0;
         let barrierQueries = 0;
         const timing = { readMs: 0, writeMs: 0, largestMs: 0 };
+        let preparePhaseDiagnostic: E4PreparePhaseDiagnostic | undefined;
         observed.$on('query', (event) => {
-          if (!/^\s*(BEGIN|COMMIT|ROLLBACK|SET TRANSACTION)\b/iu.test(event.query)) queries++;
+          if (!/^\s*(BEGIN|COMMIT|ROLLBACK|SET TRANSACTION)\b/iu.test(event.query)) {
+            queries++;
+            preparePhaseDiagnostic?.query(
+              /^\s*(SELECT|WITH)\b/iu.test(event.query) ? 'READ' : 'WRITE',
+              event.duration,
+            );
+          }
           if (
             /(?:ActivitySettlementContributionRevision|ParticipantContributionEvaluation|e4_assert_|e4_revision_complete_guard)/u.test(
               event.query,
@@ -4771,7 +5148,9 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
           timing.readMs = 0;
           timing.writeMs = 0;
           timing.largestMs = 0;
-          engineObserver.phases.length = 0;
+          // E4_C1_V2_MAX_RESET_BEGIN
+          engineObserver.reset();
+          // E4_C1_V2_MAX_RESET_END
         };
         const contributions = f.app.get(ActivityContributionSettlementService);
         const access = f.app.get(ActivityTimeSettlementAccessService);
@@ -4793,339 +5172,142 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
           f.app.get(ActivityWorkflowGate),
           contributions,
         );
-
-        observedForClose = observed;
-        restoreEngine = engineObserver.restore;
-        await assertConnectedTestDatabase(observed);
-        reset();
-        const started = performance.now();
-        const prepared = await measured.prepare(
-          source.activityId,
-          {
-            expectedDraftVersion: source.expectation.expectedDraftVersion,
-            expectedEvidenceSealId: source.expectation.expectedEvidenceSealId,
-            operationKey: f.key('s13_prepare'),
-            expectedTimeRevision: 0,
-          },
-          e4Actor(f.creator, true),
-          E4_META,
-        );
-        const prepareMs = performance.now() - started;
-        console.info(
-          'E4_S13_FRESH_PREPARE',
-          JSON.stringify({
-            prepareMs,
-            queries,
-            e4Queries,
-            barrierQueries,
-            ...timing,
-            enginePhases: engineObserver.phases,
-          }),
-        );
-        expect(prepareMs).toBeLessThan(30_000);
-        expect(queries).toBeGreaterThan(0);
-        expect(queries).toBeLessThanOrEqual(400);
-        expect(e4Queries).toBeLessThanOrEqual(12);
-        expect(barrierQueries).toBe(1);
-        expect(prepared.bucketCount).toBe(8000);
-        expect(prepared.sourceCount).toBe(40000);
-        const proof = await f.db.activitySettlementContributionRevision.findFirstOrThrow({
-          where: { settlementVersionId: prepared.settlementVersionId },
-        });
-        expect(proof.evaluationCount).toBe(8000);
-        expect(proof.recognizedPointsTotal.toFixed(2)).toBe('1000.00');
-        await assertFixedE4Oracle(f.db, proof.id, 8000);
-        reset();
-        const submitted = await measured.submit(
-          source.activityId,
-          {
-            expectedDraftVersion: source.expectation.expectedDraftVersion,
-            expectedEvidenceSealId: source.expectation.expectedEvidenceSealId,
-            operationKey: f.key('s13_submit'),
-            timeRevisionId: prepared.timeRevisionId,
-            expectedBucketContentHash: prepared.bucketContentHash,
-          },
-          e4Actor(f.creator, true),
-          E4_META,
-        );
-        console.info(
-          'E4_S13_FRESH_SUBMIT',
-          JSON.stringify({
-            queries,
-            e4Queries,
-            ...timing,
-            enginePhases: engineObserver.phases,
-          }),
-        );
-        expect(queries).toBeGreaterThan(0);
-        expect(queries).toBeLessThanOrEqual(950);
-        expect(e4Queries).toBeLessThanOrEqual(12);
-        expect(submitted.kindCode).toBe('submitted');
-        const submittedProofs = await f.db.activitySettlementContributionRevision.findMany({
-          where: {
-            activityId: source.activityId,
-            settlementRunId: submitted.settlementRunId,
-            settlementVersionId: submitted.settlementVersionId,
-            timeRevisionId: submitted.timeRevisionId,
-            kindCode: 'submitted',
-            sourceKindCode: 'time_revision',
-            sourceDraftContributionRevisionId: proof.id,
-          },
-          take: 2,
-        });
-        expect(submittedProofs).toHaveLength(1);
-        const submittedProof = submittedProofs[0];
-        expect(submittedProof.evaluationCount).toBe(8000);
-        expect(submittedProof.recognizedPointsTotal.toFixed(2)).toBe('1000.00');
-        await assertFixedE4Oracle(f.db, submittedProof.id, 8000);
-        s13Probe.rootId = submittedProof.id;
-        s13Probe.businessPassed = true;
-      } catch (error) {
-        s13Probe.failed = true;
-        throw error;
-      } finally {
-        restoreEngine?.();
-        if (observedForClose) {
-          try {
-            await observedForClose.$disconnect();
-            s13Probe.measuredClosed = true;
-          } catch {
-            s13Probe.failed = true;
-            s13Probe.expired = true;
-          }
-        }
-      }
-    },
-    600_000,
-  );
-  afterAll(async () => {
-    if (!s13Probe.active) return;
-    if (s13Probe.failed)
-      throw new Error('S13 business first red; no plan rerun or cleanup allowed');
-    await runS13IndependentProbe();
-  }, 75_000);
-
-  it('2,000 identities / 10,000 segments / 50,000 slices yield 8,000 policy units without repeated awards', async () => {
-    const sliceObservationDeadline = performance.now() + 600_000;
-    const sliceOptions = e4SliceReadOptions();
-    await preflightE4SliceReadDiagnostic(f.db, sliceOptions);
-    const stages = createE4MaximumStageReceipt();
-    const source = await stages.run('FIXTURE', () => createMaximumE4Source(f));
-    stages.enter('FIXTURE_CHECKS');
-    expect(
-      await f.db.activityParticipationIdentity.count({ where: { activityId: source.activityId } }),
-    ).toBe(2000);
-    expect(
-      await f.db.participantTimeAllocationRevision.count({
-        where: { activityId: source.activityId },
-      }),
-    ).toBe(10000);
-    expect(
-      await f.db.participantTimeAllocationSlice.count({ where: { activityId: source.activityId } }),
-    ).toBe(50000);
-    stages.complete('FIXTURE_CHECKS');
-    stages.enter('PREPARE_SETUP');
-    const observed = new ObservedE4Database({
-      log: [{ emit: 'event', level: 'query' }],
-      ...sliceOptions.clientOptions,
-    });
-    try {
-      sliceReadDiagnostic = new E4SliceReadDiagnostic(observed, f.db, f.app, {
-        scope: sliceOptions.scope,
-        applicationName: sliceOptions.applicationName,
-        deadlineMs: sliceObservationDeadline,
-        dedicatedLease: process.env.SRVF_E4_W98 === '1',
-      });
-      observed.$on('query', (event) =>
-        sliceReadDiagnostic?.queryEvent(event.query, event.duration),
-      );
-    } catch {
-      console.info('E4_SLICE_READ', '{"status":"UNKNOWN","reason":"INSTALL"}');
-    }
-    const engineObserver = observeEngineTransactions(observed);
-    const engineRequests = new E4EngineRequestWaitDiagnostic(
-      Reflect.get(observed, '_engine') as object,
-    );
-    let queries = 0;
-    let e4Queries = 0;
-    let barrierQueries = 0;
-    const timing = { readMs: 0, writeMs: 0, largestMs: 0 };
-    let preparePhaseDiagnostic: E4PreparePhaseDiagnostic | undefined;
-    observed.$on('query', (event) => {
-      if (!/^\s*(BEGIN|COMMIT|ROLLBACK|SET TRANSACTION)\b/iu.test(event.query)) {
-        queries++;
-        preparePhaseDiagnostic?.query(
-          /^\s*(SELECT|WITH)\b/iu.test(event.query) ? 'READ' : 'WRITE',
-          event.duration,
-        );
-      }
-      if (
-        /(?:ActivitySettlementContributionRevision|ParticipantContributionEvaluation|e4_assert_|e4_revision_complete_guard)/u.test(
-          event.query,
-        )
-      )
-        e4Queries++;
-      if (/^\s*SET CONSTRAINTS public\.astr_parent_complete_guard,/u.test(event.query))
-        barrierQueries++;
-      if (/^\s*(SELECT|WITH)\b/iu.test(event.query)) timing.readMs += event.duration;
-      else timing.writeMs += event.duration;
-      timing.largestMs = Math.max(timing.largestMs, event.duration);
-    });
-    const reset = () => {
-      queries = 0;
-      e4Queries = 0;
-      barrierQueries = 0;
-      timing.readMs = 0;
-      timing.writeMs = 0;
-      timing.largestMs = 0;
-      engineObserver.phases.length = 0;
-    };
-    const contributions = f.app.get(ActivityContributionSettlementService);
-    const access = f.app.get(ActivityTimeSettlementAccessService);
-    const segments = f.app.get(ParticipationSegmentFacade);
-    const reader = new ActivityTimeSettlementQueryService(
-      observed,
-      access,
-      segments,
-      f.app.get(ActivityContributionSettlementQueryService),
-    );
-    const measured = new ActivityTimeSettlementService(
-      observed,
-      access,
-      reader,
-      segments,
-      f.app.get(ActivityTimeAllocationService),
-      f.app.get(SettlementSubmitService),
-      f.app.get(ActivityTimeSettlementAuditRecorder),
-      f.app.get(ActivityWorkflowGate),
-      contributions,
-    );
-    try {
-      await assertConnectedTestDatabase(observed);
-      const prepareCommand = {
-        expectedDraftVersion: source.expectation.expectedDraftVersion,
-        expectedEvidenceSealId: source.expectation.expectedEvidenceSealId,
-        operationKey: f.key('maximum_prepare'),
-        expectedTimeRevision: 0,
-      };
-      const prepareRequestHash = timeSettlementPrepareRequestHash(
-        source.activityId,
-        f.creator.id,
-        prepareCommand,
-      );
-      reset();
-      const started = Date.now();
-      // E4_GUARD_FUNCTION_INSTANCE_BEGIN
-      const guardFunctionDiagnostic = guardFunctionDiagnosticEnabled()
-        ? new E4GuardFunctionDiagnostic(
-            contributions,
-            resolve(process.cwd(), 'tmp/e4-guard-functions-evidence/functions.json'),
-          )
-        : undefined;
-      // E4_GUARD_FUNCTION_INSTANCE_END
-      // E4_GUARD_PLAN_INSTANCE_BEGIN
-      const guardPlanDiagnostic = guardPlanDiagnosticEnabled()
-        ? new E4GuardPlanDiagnostic(
-            contributions,
-            resolve(process.cwd(), 'tmp/e4-guard-plan-evidence/guard-plan.json'),
-          )
-        : undefined;
-      // E4_GUARD_PLAN_INSTANCE_END
-      let prepared;
-      const phaseDiagnostic = new E4PreparePhaseDiagnostic([
-        { phase: 'C3_PROOF', target: measured, method: 'lockedProof' },
-        { phase: 'C3_SOURCE', target: measured, method: 'lockedSources' },
-        { phase: 'C3_EVAL', target: reader, method: 'evaluateInTx' },
-        { phase: 'C3_BUCKET_WRITE', target: measured, method: 'insertBuckets' },
-        { phase: 'E4_PREPARE', target: contributions, method: 'prepareTimeInTx' },
-        {
-          phase: 'E4_EVAL',
-          target: f.app.get(ActivityContributionSettlementQueryService),
-          method: 'readTimeEvaluationInTx',
-        },
-        { phase: 'E4_EVAL_WRITE', target: contributions, method: 'insertEvaluations' },
-        { phase: 'C3_RECEIPT', target: measured, method: 'receipt' },
-      ]);
-      preparePhaseDiagnostic = phaseDiagnostic;
-      let prepareBusinessFailure: { error: unknown } | undefined;
-      try {
-        sliceReadDiagnostic?.arm();
-        engineRequests.begin();
-        phaseDiagnostic.begin();
-        stages.complete('PREPARE_SETUP');
-        let prepareOutcome: 'OK' | 'FAIL' = 'FAIL';
         try {
-          prepared = await stages.run('PREPARE', async () => {
+          await assertConnectedTestDatabase(observed);
+          const prepareCommand = {
+            expectedDraftVersion: source.expectation.expectedDraftVersion,
+            expectedEvidenceSealId: source.expectation.expectedEvidenceSealId,
+            operationKey: f.key('maximum_prepare'),
+            expectedTimeRevision: 0,
+          };
+          const prepareRequestHash = timeSettlementPrepareRequestHash(
+            source.activityId,
+            f.creator.id,
+            prepareCommand,
+          );
+          reset();
+          const started = Date.now();
+          // E4_GUARD_FUNCTION_INSTANCE_BEGIN
+          const guardFunctionDiagnostic = guardFunctionDiagnosticEnabled()
+            ? new E4GuardFunctionDiagnostic(
+                contributions,
+                resolve(process.cwd(), 'tmp/e4-guard-functions-evidence/functions.json'),
+              )
+            : undefined;
+          // E4_GUARD_FUNCTION_INSTANCE_END
+          // E4_GUARD_PLAN_INSTANCE_BEGIN
+          const guardPlanDiagnostic = guardPlanDiagnosticEnabled()
+            ? new E4GuardPlanDiagnostic(
+                contributions,
+                resolve(process.cwd(), 'tmp/e4-guard-plan-evidence/guard-plan.json'),
+              )
+            : undefined;
+          // E4_GUARD_PLAN_INSTANCE_END
+          let prepared;
+          const phaseDiagnostic = new E4PreparePhaseDiagnostic([
+            { phase: 'C3_PROOF', target: measured, method: 'lockedProof' },
+            { phase: 'C3_SOURCE', target: measured, method: 'lockedSources' },
+            { phase: 'C3_EVAL', target: reader, method: 'evaluateInTx' },
+            { phase: 'C3_BUCKET_WRITE', target: measured, method: 'insertBuckets' },
+            { phase: 'E4_PREPARE', target: contributions, method: 'prepareTimeInTx' },
+            {
+              phase: 'E4_EVAL',
+              target: f.app.get(ActivityContributionSettlementQueryService),
+              method: 'readTimeEvaluationInTx',
+            },
+            { phase: 'E4_EVAL_WRITE', target: contributions, method: 'insertEvaluations' },
+            { phase: 'C3_RECEIPT', target: measured, method: 'receipt' },
+          ]);
+          preparePhaseDiagnostic = phaseDiagnostic;
+          // E4_C1_V2_MAX_METHOD_STATE_BEGIN
+          let prepareBusinessFailure: { error: unknown } | undefined;
+          let prepareMethodWallMs = 0;
+          // E4_C1_V2_MAX_METHOD_STATE_END
+          try {
+            sliceReadDiagnostic?.arm();
+            engineRequests.begin();
+            phaseDiagnostic.begin();
+            stages.complete('PREPARE_SETUP');
+            let prepareOutcome: 'OK' | 'FAIL' = 'FAIL';
             try {
-              const result = await measured.prepare(
-                source.activityId,
-                prepareCommand,
-                e4Actor(f.creator, true),
-                E4_META,
+              // E4_C1_V2_MAX_METHOD_CALL_BEGIN
+              prepared = await stages.run('PREPARE', async () => {
+                const methodStarted = Date.now();
+                try {
+                  const result = await measured.prepare(
+                    source.activityId,
+                    prepareCommand,
+                    e4Actor(f.creator, true),
+                    E4_META,
+                  );
+                  prepareOutcome = 'OK';
+                  return result;
+                } catch (error) {
+                  prepareBusinessFailure = { error };
+                  throw error;
+                } finally {
+                  prepareMethodWallMs = Date.now() - methodStarted;
+                }
+              });
+              // E4_C1_V2_MAX_METHOD_CALL_END
+
+              stages.enter('PREPARE_RECEIPT');
+            } finally {
+              engineRequests.finish();
+              engineRequests.restore();
+              sliceReadDiagnostic?.restoreEngine();
+              console.info(
+                'E4 maximum engine request waits (fixed counters)',
+                JSON.stringify(engineRequests.snapshot()),
               );
-              prepareOutcome = 'OK';
-              return result;
-            } catch (error) {
-              prepareBusinessFailure = { error };
-              throw error;
+              phaseDiagnostic.finish(prepareOutcome);
+              phaseDiagnostic.restore();
+              // E4_GUARD_FUNCTION_RESTORE_BEGIN
+              guardFunctionDiagnostic?.restore();
+              await guardFunctionDiagnostic?.collect(observed);
+              guardFunctionDiagnostic?.emit();
+              // E4_GUARD_FUNCTION_RESTORE_END
+              // E4_GUARD_PLAN_RESTORE_BEGIN
+              guardPlanDiagnostic?.restore();
+              guardPlanDiagnostic?.emit();
+              // E4_GUARD_PLAN_RESTORE_END
+              preparePhaseDiagnostic = undefined;
+              phaseDiagnostic.emitTo((safeJson) =>
+                console.info('E4 maximum prepare phases (fixed counters)', safeJson),
+              );
             }
-          });
-          stages.enter('PREPARE_RECEIPT');
-        } finally {
-          engineRequests.finish();
-          engineRequests.restore();
-          sliceReadDiagnostic?.restoreEngine();
-          console.info(
-            'E4 maximum engine request waits (fixed counters)',
-            JSON.stringify(engineRequests.snapshot()),
-          );
-          phaseDiagnostic.finish(prepareOutcome);
-          phaseDiagnostic.restore();
-          // E4_GUARD_FUNCTION_RESTORE_BEGIN
-          guardFunctionDiagnostic?.restore();
-          await guardFunctionDiagnostic?.collect(observed);
-          guardFunctionDiagnostic?.emit();
-          // E4_GUARD_FUNCTION_RESTORE_END
-          // E4_GUARD_PLAN_RESTORE_BEGIN
-          guardPlanDiagnostic?.restore();
-          guardPlanDiagnostic?.emit();
-          // E4_GUARD_PLAN_RESTORE_END
-          preparePhaseDiagnostic = undefined;
-          phaseDiagnostic.emitTo((safeJson) =>
-            console.info('E4 maximum prepare phases (fixed counters)', safeJson),
-          );
-        }
-      } catch (error) {
-        // A receipt failure after COMMIT must not enter business rollback diagnostics.
-        if (!prepareBusinessFailure || !Object.is(prepareBusinessFailure.error, error)) throw error;
-        const prismaCode =
-          error instanceof Prisma.PrismaClientKnownRequestError ? error.code : 'other';
-        console.info(
-          'E4 maximum prepare failure (fixed redacted counters)',
-          JSON.stringify({
-            elapsedMs: Date.now() - started,
-            queries,
-            e4Queries,
-            barrierQueries,
-            ...timing,
-            enginePhases: engineObserver.phases,
-            prismaCode: ['P2028', 'P2010', 'P2002', 'P2003'].includes(prismaCode)
-              ? prismaCode
-              : 'other',
-          }),
-        );
-        // Independent connection, exact original actor/command/hash/version anchors; counters only.
-        const [sameCommandFacts] = await f.db.$queryRaw<
-          {
-            roots: number;
-            evaluations: number;
-            timeRoots: number;
-            buckets: number;
-            sources: number;
-            receipts: number;
-            audits: number;
-          }[]
-        >`
+          } catch (error) {
+            // A receipt failure after COMMIT must not enter business rollback diagnostics.
+            if (!prepareBusinessFailure || !Object.is(prepareBusinessFailure.error, error))
+              throw error;
+            const prismaCode =
+              error instanceof Prisma.PrismaClientKnownRequestError ? error.code : 'other';
+            console.info(
+              'E4 maximum prepare failure (fixed redacted counters)',
+              JSON.stringify({
+                elapsedMs: Date.now() - started,
+                queries,
+                e4Queries,
+                barrierQueries,
+                ...timing,
+                enginePhases: engineObserver.phases,
+                prismaCode: ['P2028', 'P2010', 'P2002', 'P2003'].includes(prismaCode)
+                  ? prismaCode
+                  : 'other',
+              }),
+            );
+            // Independent connection, exact original actor/command/hash/version anchors; counters only.
+            const [sameCommandFacts] = await f.db.$queryRaw<
+              {
+                roots: number;
+                evaluations: number;
+                timeRoots: number;
+                buckets: number;
+                sources: number;
+                receipts: number;
+                audits: number;
+              }[]
+            >`
           WITH roots AS MATERIALIZED (
             SELECT id,"timeRevisionId" FROM "ActivitySettlementContributionRevision"
             WHERE "activityId"=${source.activityId}
@@ -5162,285 +5344,299 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
                 AND context->'extra'->>'timeRevisionId' IN (SELECT id FROM time_roots)
                 AND context->'extra'->>'contributionRevisionId' IN (SELECT id FROM roots)) AS audits
         `;
-        console.info(
-          'E4 maximum failure exact same-command facts',
-          JSON.stringify(sameCommandFacts),
-        );
-        if (sameCommandFacts.roots === 1) {
-          const roots = await f.db.activitySettlementContributionRevision.findMany({
-            where: {
-              activityId: source.activityId,
-              settlementRunId: source.generated.settlementRunId,
-              settlementVersionId: source.generated.settlementVersionId,
-              createdByUserId: f.creator.id,
-              operationKey: prepareCommand.operationKey,
-              requestHash: prepareRequestHash,
-            },
-            select: { id: true, sourceKindCode: true },
-            take: 2,
-          });
-          expect(roots).toHaveLength(1);
-          const actualRoot = roots[0];
-          const candidate = fixedE4RootAggregateSql(
-            actualRoot.id,
-            actualRoot.sourceKindCode,
-          ).candidate;
-          const probes = [
-            {
-              name: 'actual_complete_false',
-              sql: Prisma.sql`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT e4_assert_complete(${actualRoot.id},FALSE)`,
-            },
-            {
-              name: 'actual_root_aggregate',
-              sql: Prisma.sql`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${candidate}`,
-            },
-          ];
-          // At most two plans on this same failed root. READ ONLY and explicit rollback;
-          // never reproduce INSERT/COMMIT, create a new root or alter the business budget.
-          for (const probe of probes) {
-            let plan: unknown;
-            const rollback = new Error('E4 authorized read-only plan rollback');
-            try {
-              await f.db.$transaction(
-                async (tx) => {
-                  await tx.$executeRaw`SET TRANSACTION READ ONLY`;
-                  await tx.$executeRaw`SET LOCAL statement_timeout='30s'`;
-                  plan = await tx.$queryRaw(probe.sql);
-                  throw rollback;
+            console.info(
+              'E4 maximum failure exact same-command facts',
+              JSON.stringify(sameCommandFacts),
+            );
+            if (sameCommandFacts.roots === 1) {
+              const roots = await f.db.activitySettlementContributionRevision.findMany({
+                where: {
+                  activityId: source.activityId,
+                  settlementRunId: source.generated.settlementRunId,
+                  settlementVersionId: source.generated.settlementVersionId,
+                  createdByUserId: f.creator.id,
+                  operationKey: prepareCommand.operationKey,
+                  requestHash: prepareRequestHash,
                 },
-                { timeout: 35_000 },
-              );
-            } catch (diagnosticError) {
-              if (diagnosticError !== rollback) {
-                const code =
-                  diagnosticError instanceof Prisma.PrismaClientKnownRequestError
-                    ? diagnosticError.code
-                    : 'other';
-                console.info(
-                  'E4 bounded same-root plan not completed',
-                  JSON.stringify({
-                    name: probe.name,
-                    code: ['P2028', 'P2010'].includes(code) ? code : 'other',
-                  }),
-                );
-                continue;
+                select: { id: true, sourceKindCode: true },
+                take: 2,
+              });
+              expect(roots).toHaveLength(1);
+              const actualRoot = roots[0];
+              const candidate = fixedE4RootAggregateSql(
+                actualRoot.id,
+                actualRoot.sourceKindCode,
+              ).candidate;
+              const probes = [
+                {
+                  name: 'actual_complete_false',
+                  sql: Prisma.sql`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT e4_assert_complete(${actualRoot.id},FALSE)`,
+                },
+                {
+                  name: 'actual_root_aggregate',
+                  sql: Prisma.sql`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${candidate}`,
+                },
+              ];
+              // At most two plans on this same failed root. READ ONLY and explicit rollback;
+              // never reproduce INSERT/COMMIT, create a new root or alter the business budget.
+              for (const probe of probes) {
+                let plan: unknown;
+                const rollback = new Error('E4 authorized read-only plan rollback');
+                try {
+                  await f.db.$transaction(
+                    async (tx) => {
+                      await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+                      await tx.$executeRaw`SET LOCAL statement_timeout='30s'`;
+                      plan = await tx.$queryRaw(probe.sql);
+                      throw rollback;
+                    },
+                    { timeout: 35_000 },
+                  );
+                } catch (diagnosticError) {
+                  if (diagnosticError !== rollback) {
+                    const code =
+                      diagnosticError instanceof Prisma.PrismaClientKnownRequestError
+                        ? diagnosticError.code
+                        : 'other';
+                    console.info(
+                      'E4 bounded same-root plan not completed',
+                      JSON.stringify({
+                        name: probe.name,
+                        code: ['P2028', 'P2010'].includes(code) ? code : 'other',
+                      }),
+                    );
+                    continue;
+                  }
+                  const rows = Array.isArray(plan) ? plan : [];
+                  const row = rows[0] as Record<string, unknown> | undefined;
+                  const documents = row?.['QUERY PLAN'];
+                  const document = Array.isArray(documents)
+                    ? (documents[0] as Record<string, unknown> | undefined)
+                    : undefined;
+                  const rootPlan = document?.Plan as Record<string, unknown> | undefined;
+                  // Fixed numeric fields only, not SQL text, parameter values or arbitrary plan strings.
+                  const numeric = (value: unknown) =>
+                    typeof value === 'number' && Number.isFinite(value) ? value : null;
+                  console.info(
+                    'E4 bounded same-root rollback plan',
+                    JSON.stringify({
+                      name: probe.name,
+                      planningMs: numeric(document?.['Planning Time']),
+                      executionMs: numeric(document?.['Execution Time']),
+                      actualTotalMs: numeric(rootPlan?.['Actual Total Time']),
+                      rows: numeric(rootPlan?.['Actual Rows']),
+                      loops: numeric(rootPlan?.['Actual Loops']),
+                      sharedHit: numeric(rootPlan?.['Shared Hit Blocks']),
+                      sharedRead: numeric(rootPlan?.['Shared Read Blocks']),
+                      tempRead: numeric(rootPlan?.['Temp Read Blocks']),
+                      tempWritten: numeric(rootPlan?.['Temp Written Blocks']),
+                    }),
+                  );
+                }
               }
-              const rows = Array.isArray(plan) ? plan : [];
-              const row = rows[0] as Record<string, unknown> | undefined;
-              const documents = row?.['QUERY PLAN'];
-              const document = Array.isArray(documents)
-                ? (documents[0] as Record<string, unknown> | undefined)
-                : undefined;
-              const rootPlan = document?.Plan as Record<string, unknown> | undefined;
-              // Fixed numeric fields only, not SQL text, parameter values or arbitrary plan strings.
-              const numeric = (value: unknown) =>
-                typeof value === 'number' && Number.isFinite(value) ? value : null;
-              console.info(
-                'E4 bounded same-root rollback plan',
-                JSON.stringify({
-                  name: probe.name,
-                  planningMs: numeric(document?.['Planning Time']),
-                  executionMs: numeric(document?.['Execution Time']),
-                  actualTotalMs: numeric(rootPlan?.['Actual Total Time']),
-                  rows: numeric(rootPlan?.['Actual Rows']),
-                  loops: numeric(rootPlan?.['Actual Loops']),
-                  sharedHit: numeric(rootPlan?.['Shared Hit Blocks']),
-                  sharedRead: numeric(rootPlan?.['Shared Read Blocks']),
-                  tempRead: numeric(rootPlan?.['Temp Read Blocks']),
-                  tempWritten: numeric(rootPlan?.['Temp Written Blocks']),
-                }),
-              );
             }
+            expect(
+              await f.db.activitySettlementContributionRevision.count({
+                where: { activityId: source.activityId },
+              }),
+            ).toBe(0);
+            expect(
+              await f.db.activitySettlementTimeRevision.count({
+                where: { activityId: source.activityId },
+              }),
+            ).toBe(0);
+            throw error;
           }
-        }
-        expect(
-          await f.db.activitySettlementContributionRevision.count({
-            where: { activityId: source.activityId },
-          }),
-        ).toBe(0);
-        expect(
-          await f.db.activitySettlementTimeRevision.count({
-            where: { activityId: source.activityId },
-          }),
-        ).toBe(0);
-        throw error;
-      }
-      expect(phaseDiagnostic.snapshot().status).toBe('COMPLETE');
-      if (engineRequests.snapshot().status !== 'COMPLETE')
-        throw new Error('E4 engine request waits UNKNOWN; stop before next stage');
-      const prepareMs = Date.now() - started;
-      console.info(
-        'E4 maximum prepare',
-        JSON.stringify({
-          prepareMs,
-          queries,
-          e4Queries,
-          barrierQueries,
-          ...timing,
-          enginePhases: engineObserver.phases,
-        }),
-      );
-      stages.complete('PREPARE_RECEIPT');
-      stages.enter('PREPARE_CHECKS');
-      expect(prepareMs).toBeLessThan(30_000);
-      expect(queries).toBeGreaterThan(0);
-      expect(queries).toBeLessThanOrEqual(400);
-      expect(e4Queries).toBeLessThanOrEqual(12);
-      expect(barrierQueries).toBe(1);
-      expect(prepared.bucketCount).toBe(8000);
-      expect(prepared.sourceCount).toBe(40000);
-      stages.complete('PREPARE_CHECKS');
-      const proof = await stages.run('PROOF_READ', () =>
-        f.db.activitySettlementContributionRevision.findFirstOrThrow({
-          where: { settlementVersionId: prepared.settlementVersionId },
-        }),
-      );
-      stages.enter('PROOF_CHECKS');
-      expect(proof.evaluationCount).toBe(8000);
-      expect(proof.recognizedPointsTotal.toFixed(2)).toBe('1000.00');
-      // Full old expected documents and the independent abc actual-row root oracle,
-      // before any submit/review/ledger stage. These reads are outside the measured command.
-      stages.complete('PROOF_CHECKS');
-      await stages.run('ORACLE', () => assertFixedE4Oracle(f.db, proof.id, 8000));
-      reset();
-      const submitted = await stages.run('SUBMIT', () =>
-        measured.submit(
-          source.activityId,
-          {
-            expectedDraftVersion: source.expectation.expectedDraftVersion,
-            expectedEvidenceSealId: source.expectation.expectedEvidenceSealId,
-            operationKey: f.key('maximum_submit'),
-            timeRevisionId: prepared.timeRevisionId,
-            expectedBucketContentHash: prepared.bucketContentHash,
-          },
-          e4Actor(f.creator, true),
-          E4_META,
-        ),
-      );
-      stages.enter('SUBMIT_CHECKS');
-      console.info('E4 maximum submit', JSON.stringify({ queries, e4Queries, ...timing }));
-      expect(queries).toBeGreaterThan(0);
-      expect(queries).toBeLessThanOrEqual(950);
-      expect(e4Queries).toBeLessThanOrEqual(12);
-      expect(submitted.kindCode).toBe('submitted');
-      const review = f.app.get(SettlementReviewService);
-      const originalFirstReview = review.firstReview.bind(review);
-      const capture = jest.spyOn(review, 'firstReview').mockImplementation(async function (
-        this: SettlementReviewService,
-        ...args
-      ) {
-        const [originalInput] = args;
-        // Capture the actual helper-generated key; never call f.key a second time.
-        const input = {
-          ...originalInput,
-          expectedSettlementVersionId: submitted.settlementVersionId,
-        };
-        const db = new PrismaClient();
-        firstReviewOracle = { db, input, runId: submitted.settlementRunId, outcome: 'pending' };
-        await assertConnectedTestDatabase(db);
-        const before = await firstReviewFacts();
-        console.info('E4 first-review before request', JSON.stringify(before));
-        assertReviewCounts(before, 0);
-        expect(before.runStatus).toBe('pending_first_review');
-        const started = performance.now();
-        try {
-          // Original this/arguments/options; the original service owns its unchanged 15s tx.
-          expect(this).toBe(review);
-          const result = await originalFirstReview(...args);
-          firstReviewOracle.outcome = 'fulfilled';
+          expect(phaseDiagnostic.snapshot().status).toBe('COMPLETE');
+          if (engineRequests.snapshot().status !== 'COMPLETE')
+            throw new Error('E4 engine request waits UNKNOWN; stop before next stage');
+          const prepareMs = Date.now() - started;
           console.info(
-            'E4 first-review response',
-            JSON.stringify({ outcome: 'fulfilled', elapsedMs: performance.now() - started }),
-          );
-          const after = await firstReviewFacts();
-          console.info('E4 first-review after response', JSON.stringify(after));
-          assertReviewCounts(after, 1);
-          expect(after.runStatus).toBe('pending_final_review');
-          expect(after.versionStatus).toBe('submitted');
-          return result;
-        } catch (error) {
-          // Do not convert a failed transaction to success; independently retain its real facts.
-          if (firstReviewOracle.outcome !== 'fulfilled') firstReviewOracle.outcome = 'rejected';
-          const code = error instanceof Prisma.PrismaClientKnownRequestError ? error.code : 'other';
-          console.info(
-            'E4 first-review response',
+            'E4 maximum prepare',
             JSON.stringify({
-              outcome: firstReviewOracle.outcome,
-              elapsedMs: performance.now() - started,
-              code: ['P2028', 'P2010', 'P2004'].includes(code) ? code : 'other',
+              prepareMs,
+              queries,
+              e4Queries,
+              barrierQueries,
+              ...timing,
+              enginePhases: engineObserver.phases,
             }),
           );
-          console.info('E4 first-review after response', JSON.stringify(await firstReviewFacts()));
-          throw error;
+          stages.complete('PREPARE_RECEIPT');
+          stages.enter('PREPARE_CHECKS');
+          // E4_C1_V2_MAX_ACCEPTANCE_BEGIN
+          console.info(
+            'E4_C1_V2_PREPARE',
+            JSON.stringify(engineObserver.assertPrepare(prepareMethodWallMs)),
+          );
+          // E4_C1_V2_MAX_ACCEPTANCE_END
+          expect(queries).toBeGreaterThan(0);
+          expect(queries).toBeLessThanOrEqual(400);
+          expect(e4Queries).toBeLessThanOrEqual(12);
+          expect(barrierQueries).toBe(1);
+          expect(prepared.bucketCount).toBe(8000);
+          expect(prepared.sourceCount).toBe(40000);
+          stages.complete('PREPARE_CHECKS');
+          const proof = await stages.run('PROOF_READ', () =>
+            f.db.activitySettlementContributionRevision.findFirstOrThrow({
+              where: { settlementVersionId: prepared.settlementVersionId },
+            }),
+          );
+          stages.enter('PROOF_CHECKS');
+          expect(proof.evaluationCount).toBe(8000);
+          expect(proof.recognizedPointsTotal.toFixed(2)).toBe('1000.00');
+          // Full old expected documents and the independent abc actual-row root oracle,
+          // before any submit/review/ledger stage. These reads are outside the measured command.
+          stages.complete('PROOF_CHECKS');
+          await stages.run('ORACLE', () => assertFixedE4Oracle(f.db, proof.id, 8000));
+          reset();
+          const submitted = await stages.run('SUBMIT', () =>
+            measured.submit(
+              source.activityId,
+              {
+                expectedDraftVersion: source.expectation.expectedDraftVersion,
+                expectedEvidenceSealId: source.expectation.expectedEvidenceSealId,
+                operationKey: f.key('maximum_submit'),
+                timeRevisionId: prepared.timeRevisionId,
+                expectedBucketContentHash: prepared.bucketContentHash,
+              },
+              e4Actor(f.creator, true),
+              E4_META,
+            ),
+          );
+          stages.enter('SUBMIT_CHECKS');
+          console.info('E4 maximum submit', JSON.stringify({ queries, e4Queries, ...timing }));
+          expect(queries).toBeGreaterThan(0);
+          expect(queries).toBeLessThanOrEqual(950);
+          expect(e4Queries).toBeLessThanOrEqual(12);
+          expect(submitted.kindCode).toBe('submitted');
+          const review = f.app.get(SettlementReviewService);
+          const originalFirstReview = review.firstReview.bind(review);
+          const capture = jest.spyOn(review, 'firstReview').mockImplementation(async function (
+            this: SettlementReviewService,
+            ...args
+          ) {
+            const [originalInput] = args;
+            // Capture the actual helper-generated key; never call f.key a second time.
+            const input = {
+              ...originalInput,
+              expectedSettlementVersionId: submitted.settlementVersionId,
+            };
+            const db = new PrismaClient();
+            firstReviewOracle = { db, input, runId: submitted.settlementRunId, outcome: 'pending' };
+            await assertConnectedTestDatabase(db);
+            const before = await firstReviewFacts();
+            console.info('E4 first-review before request', JSON.stringify(before));
+            assertReviewCounts(before, 0);
+            expect(before.runStatus).toBe('pending_first_review');
+            const started = performance.now();
+            try {
+              // Original this/arguments/options; the original service owns its unchanged 15s tx.
+              expect(this).toBe(review);
+              const result = await originalFirstReview(...args);
+              firstReviewOracle.outcome = 'fulfilled';
+              console.info(
+                'E4 first-review response',
+                JSON.stringify({ outcome: 'fulfilled', elapsedMs: performance.now() - started }),
+              );
+              const after = await firstReviewFacts();
+              console.info('E4 first-review after response', JSON.stringify(after));
+              assertReviewCounts(after, 1);
+              expect(after.runStatus).toBe('pending_final_review');
+              expect(after.versionStatus).toBe('submitted');
+              return result;
+            } catch (error) {
+              // Do not convert a failed transaction to success; independently retain its real facts.
+              if (firstReviewOracle.outcome !== 'fulfilled') firstReviewOracle.outcome = 'rejected';
+              const code =
+                error instanceof Prisma.PrismaClientKnownRequestError ? error.code : 'other';
+              console.info(
+                'E4 first-review response',
+                JSON.stringify({
+                  outcome: firstReviewOracle.outcome,
+                  elapsedMs: performance.now() - started,
+                  code: ['P2028', 'P2010', 'P2004'].includes(code) ? code : 'other',
+                }),
+              );
+              console.info(
+                'E4 first-review after response',
+                JSON.stringify(await firstReviewFacts()),
+              );
+              throw error;
+            }
+          });
+          stages.complete('SUBMIT_CHECKS');
+          let posted: Awaited<ReturnType<typeof postE4Ledger>>;
+          try {
+            posted = await stages.run('LEDGER', () => postE4Ledger(f, submitted));
+          } finally {
+            capture.mockRestore();
+          }
+          stages.enter('LEDGER_CHECKS');
+          expect(posted.committed.replayed).toBe(false);
+          expect(
+            await f.db.participationLedgerEntry.count({
+              where: { postingBatchId: posted.batchId, entryTypeCode: 'contribution_credit' },
+            }),
+          ).toBe(2000);
+          const total = await f.db.participationLedgerEntry.aggregate({
+            where: { postingBatchId: posted.batchId, entryTypeCode: 'contribution_credit' },
+            _sum: { recognizedPointsDelta: true },
+          });
+          expect(total._sum.recognizedPointsDelta?.toFixed(2)).toBe('1000.00');
+          reset();
+          stages.complete('LEDGER_CHECKS');
+          const summary = await stages.run('SUMMARY', () =>
+            observed.$transaction((tx) =>
+              f.app
+                .get(ActivityContributionSettlementQueryService)
+                .readSummaryInTx(tx, submitted.settlementVersionId),
+            ),
+          );
+          stages.enter('SUMMARY_CHECKS');
+          console.info('E4 maximum formal summary', JSON.stringify({ queries, e4Queries }));
+          expect(queries).toBeGreaterThan(0);
+          expect(queries).toBeLessThanOrEqual(3);
+          expect(summary).toMatchObject({
+            evaluationCount: 8000,
+            recognizedPointsTotal: '1000.00',
+            hasMore: true,
+          });
+          stages.complete('SUMMARY_CHECKS');
+          const formalProof = await stages.run('FORMAL_PROOF_READ', () =>
+            f.db.activitySettlementContributionRevision.findFirstOrThrow({
+              where: { settlementVersionId: submitted.settlementVersionId },
+            }),
+          );
+          // Outside all measured business operations; compares every complete JSON, not a sample.
+          await stages.run('FINAL_ORACLE_DRAFT', () => assertFixedE4Oracle(f.db, proof.id, 8000));
+          await stages.run('FINAL_ORACLE_FORMAL', () =>
+            assertFixedE4Oracle(f.db, formalProof.id, 8000),
+          );
+          console.info(
+            'E4 maximum independent old/new oracle',
+            JSON.stringify({ evaluations: 8000, differences: 0 }),
+          );
+          // Only after every original business budget and full draft/formal oracle has passed.
+          // Reuses this exact immutable root; no extra fixture, prepare, INSERT or pre-business warming.
+          await stages.run('POST_BUSINESS_PROBE', () =>
+            assertPostBusinessPSetProbe(f.db, proof.id),
+          );
+        } finally {
+          engineRequests.restore();
+          sliceReadDiagnostic?.restoreEngine();
+          engineObserver.restore();
+          try {
+            await sliceReadDiagnostic?.finishObservation();
+          } catch {
+            capacityFinalization.fail();
+            console.info('E4_SLICE_READ', '{"status":"UNKNOWN","reason":"COLLECTION"}');
+          } finally {
+            await stages.cleanup(() => observed.$disconnect());
+          }
         }
-      });
-      stages.complete('SUBMIT_CHECKS');
-      let posted: Awaited<ReturnType<typeof postE4Ledger>>;
-      try {
-        posted = await stages.run('LEDGER', () => postE4Ledger(f, submitted));
-      } finally {
-        capture.mockRestore();
-      }
-      stages.enter('LEDGER_CHECKS');
-      expect(posted.committed.replayed).toBe(false);
-      expect(
-        await f.db.participationLedgerEntry.count({
-          where: { postingBatchId: posted.batchId, entryTypeCode: 'contribution_credit' },
-        }),
-      ).toBe(2000);
-      const total = await f.db.participationLedgerEntry.aggregate({
-        where: { postingBatchId: posted.batchId, entryTypeCode: 'contribution_credit' },
-        _sum: { recognizedPointsDelta: true },
-      });
-      expect(total._sum.recognizedPointsDelta?.toFixed(2)).toBe('1000.00');
-      reset();
-      stages.complete('LEDGER_CHECKS');
-      const summary = await stages.run('SUMMARY', () =>
-        observed.$transaction((tx) =>
-          f.app
-            .get(ActivityContributionSettlementQueryService)
-            .readSummaryInTx(tx, submitted.settlementVersionId),
-        ),
-      );
-      stages.enter('SUMMARY_CHECKS');
-      console.info('E4 maximum formal summary', JSON.stringify({ queries, e4Queries }));
-      expect(queries).toBeGreaterThan(0);
-      expect(queries).toBeLessThanOrEqual(3);
-      expect(summary).toMatchObject({
-        evaluationCount: 8000,
-        recognizedPointsTotal: '1000.00',
-        hasMore: true,
-      });
-      stages.complete('SUMMARY_CHECKS');
-      const formalProof = await stages.run('FORMAL_PROOF_READ', () =>
-        f.db.activitySettlementContributionRevision.findFirstOrThrow({
-          where: { settlementVersionId: submitted.settlementVersionId },
-        }),
-      );
-      // Outside all measured business operations; compares every complete JSON, not a sample.
-      await stages.run('FINAL_ORACLE_DRAFT', () => assertFixedE4Oracle(f.db, proof.id, 8000));
-      await stages.run('FINAL_ORACLE_FORMAL', () =>
-        assertFixedE4Oracle(f.db, formalProof.id, 8000),
-      );
-      console.info(
-        'E4 maximum independent old/new oracle',
-        JSON.stringify({ evaluations: 8000, differences: 0 }),
-      );
-      // Only after every original business budget and full draft/formal oracle has passed.
-      // Reuses this exact immutable root; no extra fixture, prepare, INSERT or pre-business warming.
-      await stages.run('POST_BUSINESS_PROBE', () => assertPostBusinessPSetProbe(f.db, proof.id));
-    } finally {
-      engineRequests.restore();
-      sliceReadDiagnostic?.restoreEngine();
-      engineObserver.restore();
-      try {
-        await sliceReadDiagnostic?.finishObservation();
-      } catch {
-        console.info('E4_SLICE_READ', '{"status":"UNKNOWN","reason":"COLLECTION"}');
-      } finally {
-        await stages.cleanup(() => observed.$disconnect());
-      }
-    }
-    stages.assertReliable();
-  }, 600_000);
+        stages.assertReliable();
+      }),
+    600_000,
+  );
 });

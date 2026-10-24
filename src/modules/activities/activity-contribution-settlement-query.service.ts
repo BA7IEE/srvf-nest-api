@@ -547,7 +547,9 @@ export class ActivityContributionSettlementQueryService {
         ...(expected ? { draftContentHash: expected.draftContentHash } : {}),
       },
       orderBy: { revision: 'desc' },
-      include: { timeRevision: { select: { sourceSetHash: true } } },
+      // Only draft callers supply an expected current source. Formal summaries
+      // use the immutable contribution root's own hashes, not this association.
+      include: { timeRevision: expected ? { select: { sourceSetHash: true } } : false },
     });
     const current =
       !expected ||

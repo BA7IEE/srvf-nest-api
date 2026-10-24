@@ -169,11 +169,12 @@ const REQUIRED_RUN_STATUS: Record<SettlementReviewStage, string> = {
 /**
  * 审核事务的显式预算。
  *
- * 本刀的事务里**没有一步与人数相关**(全是单行读写 + 几条聚合计数),所以不需要
- * 第三刀那样的 120s。取 15s 是因为它要在**并发排队**下跑得完:两条审核撞同一版本时,
- * 后到者要先等前者走完整个事务。Prisma 默认 5s 里还包含等锁时间,压测边缘会假红。
+ * E4 加入后，审核事务包含随来源／评价规模增长的完整校验；原15s依据的
+ * 「没有与人数相关步骤」前提已失效。首审、终审及其重放统一使用60s工程预算，
+ * 包含事务内等锁、完整守卫、决定／通知／审计与提交，不是HTTP响应时间或SLA。
+ * 不改锁序、原子性、校验或账本提交的独立7s／取锁4s限制；超限仍整笔回滚。
  */
-export const SETTLEMENT_REVIEW_TX_TIMEOUT_MS = 15_000;
+export const SETTLEMENT_REVIEW_TX_TIMEOUT_MS = 60_000;
 
 @Injectable()
 export class SettlementReviewService {

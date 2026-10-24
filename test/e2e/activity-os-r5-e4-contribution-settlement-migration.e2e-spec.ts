@@ -44,6 +44,7 @@ import {
 } from '../../src/modules/activities/settlement-content-hash';
 import { buildParticipationTimeLedger } from '../../src/modules/activities/participation-time-ledger-policy';
 import { hashCanonical } from '../../src/modules/activities/activity-publish-review-idempotency';
+import { restoreE4LiveCatalog140Opening } from '../helpers/e4-maximum-stage-receipt';
 
 // E4_TERMINAL_HELPERS_BEGIN
 import { e4NativeMeasurementDatabase } from '../helpers/e4-native-measurement-owner';
@@ -1655,6 +1656,7 @@ const E4_TERMINAL_OPENING_BINDINGS: TerminalOpeningBinding[] = [
   },
 ];
 function restoreTerminalMigrationOpening(source: string) {
+  source = restoreE4LiveCatalog140Opening(source, 'migration');
   return restoreTerminalSource(
     source,
     E4_TERMINAL_OPENING_BINDINGS,
@@ -4397,9 +4399,11 @@ describe('E4 terminal expected source offline', () => {
       resolve(__dirname, 'activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts'),
       'utf8',
     );
-    const scale = readFileSync(
-      resolve(__dirname, 'activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts'),
-      'utf8',
+    const scale = restoreE4LiveCatalog140Opening(
+      readFileSync(
+        resolve(__dirname, 'activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts'),
+        'utf8',
+      ),
     );
     const local = readFileSync(__filename, 'utf8');
     expect(terminalHash(restoreTerminalMigrationOpening(local))).toBe(

@@ -306,10 +306,14 @@ commit 在原事务中先替代旧 committed 段、再创建并提交新段。Co
 ### 5.3 闭集含已退役值
 
 - `RecruitmentApplication.statusCode`:`APP_STATUS_PENDING='pending_verification'` 注释自述
-  "退役:OCR 改造后报名不再产生(历史兼容)"。
-- `RecruitmentApplication.eliminationStage`:`ELIM_STAGE_REALNAME='realname'` 同样自述已退役。
+  "退役:OCR 改造后报名不再产生(历史兼容)"；但当前人工复核及进度展示仍读取它，本轮保留。
+- 2026-10-24 未上线系统清理：`RecruitmentApplication.eliminationStage` 的
+  `ELIM_STAGE_REALNAME='realname'` 无代码或测试引用，已删除该常量；现行淘汰写者使用
+  `manual`、`evaluation`、`threshold-timeout`。受保护的 `harness/state-machines.json`
+  已按维护者明确委托经正常精确grant同步，随后撤销grant；仍为inventory且缺DB CHECK，不提升 governed。
 
-两者仍在闭集内(历史数据需要),但"闭集"因此不等于"当前流程可达的状态集"。4-1b 若要做可达性检查,须先分离这两个概念。
+系统尚未上线、没有旧业务数据；不能用“历史数据需要”证明保留兼容代码的必要性。
+`APP_STATUS_PENDING` 的现行读取依赖与无引用的 `ELIM_STAGE_REALNAME` 分开处理。
 
 ## 6. 老表零 CHECK:哪些实体的闭集只活在应用层
 

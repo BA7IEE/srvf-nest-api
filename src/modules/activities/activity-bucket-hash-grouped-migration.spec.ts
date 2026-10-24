@@ -48,7 +48,7 @@ describe('bucket hash grouped forward migration scope', () => {
       .filter((e) => e.isDirectory())
       .map((e) => e.name)
       .sort();
-    expect(names).toHaveLength(152);
+    expect(names).toHaveLength(153);
     expect(names[150]).toBe(E4_MIGRATION_151);
     expect(e4HistoricalMigrationPrefix(names)).toHaveLength(137);
     const unknown = [...names];
