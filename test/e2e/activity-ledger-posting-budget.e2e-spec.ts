@@ -314,27 +314,22 @@ describe('ordinary E4 ledger named transaction resource boundary', () => {
         const t = await target(),
           before = await snapshot();
         const prisma = f.app.get(PrismaService),
-          original = prisma.ledgerPostingBatch.findUnique.bind(prisma.ledgerPostingBatch);
+          original = prisma.activitySettlementContributionRevision.findMany.bind(
+            prisma.activitySettlementContributionRevision,
+          );
         for (const mode of ['wrong-root', 'missing-root'] as const) {
           const selector = jest
             .spyOn(
-              prisma.ledgerPostingBatch as unknown as {
-                findUnique: (...args: Parameters<typeof original>) => Promise<unknown>;
+              prisma.activitySettlementContributionRevision as unknown as {
+                findMany: (...args: Parameters<typeof original>) => Promise<unknown>;
               },
-              'findUnique',
+              'findMany',
             )
             .mockImplementation(async (...args) => {
               const value = await original(...args);
-              if (!value) return value;
+              expect(value).toHaveLength(1);
               // Simulate a stale unlocked selector. All locked reads and native business guards stay real.
-              return {
-                ...value,
-                settlementVersion: {
-                  contributionRegimeCode: 'policy_v1',
-                  settlementContributionRevisions:
-                    mode === 'wrong-root' ? [{ id: 'stale-root' }] : [],
-                },
-              };
+              return mode === 'wrong-root' ? [{ id: 'stale-root' }] : [];
             });
           try {
             await expect(
@@ -344,6 +339,7 @@ describe('ordinary E4 ledger named transaction resource boundary', () => {
             ).rejects.toMatchObject<Partial<BizException>>({
               biz: BizCode.LEDGER_COMMIT_BATCH_STATUS_INVALID,
             });
+            expect(selector).toHaveBeenCalledTimes(1);
             expect(await snapshot()).toBe(before);
           } finally {
             selector.mockRestore();
