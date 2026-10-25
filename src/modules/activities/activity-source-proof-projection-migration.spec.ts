@@ -59,7 +59,7 @@ describe('source proof narrow forward migration scope', () => {
       .filter((e) => e.isDirectory())
       .map((e) => e.name)
       .sort();
-    expect(names).toHaveLength(152);
+    expect(names).toHaveLength(153);
     expect(names[151]).toBe(E4_MIGRATION_152);
     expect(e4HistoricalMigrationPrefix(names)).toHaveLength(137);
     const bad = [...names];

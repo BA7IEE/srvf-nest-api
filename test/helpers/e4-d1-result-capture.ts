@@ -36,6 +36,19 @@ export function resolveE4ValidationScope(
   env: NodeJS.ProcessEnv = process.env,
   normalCheckout = statSync(resolve(__dirname, '../../.git')).isDirectory(),
 ): 'app_test_w98' | typeof E4_D1_LOCAL_SCOPE {
+  if (env.SRVF_E4_LOCAL_ISOLATED !== undefined && env.SRVF_E4_LOCAL_ISOLATED !== '') {
+    if (
+      env.SRVF_E4_LOCAL_ISOLATED !== '1' ||
+      env.APP_ENV !== 'test' ||
+      env.SRVF_E4_W98 !== '1' ||
+      Boolean(env.GITHUB_ACTIONS) ||
+      Boolean(env.SRVF_E4_GITHUB_ISOLATED) ||
+      env.SRVF_TEST_RUN_SCOPE !== 'app_test,app_test_w1,app_test_w98' ||
+      !normalCheckout
+    )
+      throw new Error('E4 isolated local scope refused');
+    return 'app_test_w98';
+  }
   if (env.SRVF_E4_GITHUB_ISOLATED === undefined || env.SRVF_E4_GITHUB_ISOLATED === '')
     return E4_D1_LOCAL_SCOPE;
   if (

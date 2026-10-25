@@ -160,6 +160,13 @@ interface LockedBatch {
   committedAt: Date | null;
 }
 
+/** Server-read classification, rechecked after the original four aggregate locks. */
+interface OrdinaryCommitSelection {
+  settlementRunId: string;
+  settlementVersionId: string;
+  e4RootId: string | null;
+}
+
 interface DayDelta {
   memberId: string;
   ledgerDate: string;
@@ -198,14 +205,47 @@ export class LedgerPostingService {
     // 全部结论都在下面的事务里持锁重读之后才做。
     const anchor = await this.prisma.ledgerPostingBatch.findUnique({
       where: { id: input.postingBatchId },
-      select: { settlementRun: { select: { activityId: true } } },
+      select: {
+        settlementRunId: true,
+        settlementVersionId: true,
+        settlementRun: { select: { activityId: true } },
+        settlementVersion: {
+          select: {
+            contributionRegimeCode: true,
+          },
+        },
+      },
     });
     if (anchor === null) throw new BizException(BizCode.LEDGER_COMMIT_BATCH_STATUS_INVALID);
     const activityId = anchor.settlementRun.activityId;
+    // Classified D6 commits never use E4 roots. Keep their original query budget;
+    // native candidates still load the complete set before the locked recheck.
+    const roots =
+      anchor.settlementVersion.contributionRegimeCode === 'policy_v1'
+        ? await this.prisma.activitySettlementContributionRevision.findMany({
+            where: {
+              settlementVersionId: anchor.settlementVersionId,
+              regimeCode: 'policy_v1',
+              kindCode: 'submitted',
+              sourceKindCode: 'time_revision',
+            },
+            select: { id: true },
+          })
+        : [];
+    const selection: OrdinaryCommitSelection = {
+      settlementRunId: anchor.settlementRunId,
+      settlementVersionId: anchor.settlementVersionId,
+      e4RootId: roots.length === 1 ? roots[0].id : null,
+    };
 
     return await runMemberLinearizedTransaction(
       this.prisma,
-      async (tx) => await this.commitBatchWithin(tx, activityId, input, currentUser, auditMeta),
+      async (tx) =>
+        await this.commitBatchProtocol(tx, activityId, input, currentUser, auditMeta, {
+          conversion: false,
+          ordinaryCommitSelection: selection,
+        }).catch((error: unknown) => this.timeLedger.rethrowConstraint(error)),
+      selection.e4RootId === null ? 'standard' : 'e4-native-ledger-commit',
     );
   }
 
@@ -275,7 +315,11 @@ export class LedgerPostingService {
     input: LedgerCommitInput,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
-    options: { conversion: boolean; readyV3CorrectionReceipt?: ReadyV3CorrectionReceiptAnchor },
+    options: {
+      conversion: boolean;
+      readyV3CorrectionReceipt?: ReadyV3CorrectionReceiptAnchor;
+      ordinaryCommitSelection?: OrdinaryCommitSelection;
+    },
   ): Promise<LedgerCommitResult> {
     {
       let readyV3ReceiptMatches = false;
@@ -286,6 +330,46 @@ export class LedgerPostingService {
       const batch = await this.lockBatch(tx, input.postingBatchId);
       const correctionFact = await this.timeCorrection.classifyBatch(tx, batch.id);
       const correction = correctionFact.required;
+      if (options.ordinaryCommitSelection) {
+        const expected = options.ordinaryCommitSelection;
+        // A committed batch may be replayed after the run advances to another
+        // version. Classify its own immutable proof, preserving that replay path.
+        const ownRegime =
+          batch.settlementVersionId === version.id
+            ? version.contributionRegimeCode
+            : (
+                await tx.attendanceSettlementVersion.findUnique({
+                  where: { id: batch.settlementVersionId },
+                  select: { contributionRegimeCode: true },
+                })
+              )?.contributionRegimeCode;
+        const ordinaryNative =
+          ownRegime === 'policy_v1' &&
+          !correction &&
+          !correctionFact.hasApplication &&
+          !correctionFact.nativeUnchanged;
+        const root = ordinaryNative
+          ? await tx.activitySettlementContributionRevision.findFirst({
+              where: {
+                settlementVersionId: batch.settlementVersionId,
+                regimeCode: 'policy_v1',
+                kindCode: 'submitted',
+                sourceKindCode: 'time_revision',
+              },
+              select: { id: true },
+            })
+          : null;
+        // This also runs before committed replay. A classification change cannot
+        // inherit a larger deadline, and a standard transaction cannot upgrade itself.
+        if (
+          batch.settlementRunId !== expected.settlementRunId ||
+          batch.settlementVersionId !== expected.settlementVersionId ||
+          batch.settlementRunId !== run.id ||
+          (root?.id ?? null) !== expected.e4RootId
+        ) {
+          throw new BizException(BizCode.LEDGER_COMMIT_BATCH_STATUS_INVALID);
+        }
+      }
       if (correctionFact.nativeUnchanged) {
         if (options.conversion) throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_SOURCE_INVALID);
         await this.timeLedgerAccess.authorizeCorrection(tx, currentUser.id);

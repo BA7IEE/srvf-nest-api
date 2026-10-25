@@ -52,11 +52,22 @@ export const MEMBER_TX_TIMEOUT_MS = MEMBER_LOCK_WAIT_BUDGET_MS + MEMBER_TX_WORK_
  * Human 更正提交(V2/V3,含重放)的独立工程预算。维护者 2026-10-22 明确批准:
  * 完整来源校验与提交实测 3.740/4.080s,不能套用 200 人终审的 3s 工作额度。
  * 15s 为待验证余量,不是 HTTP SLA;单次取锁仍为 4s,所有写入与校验仍同事务。
- * 普通成员操作、legacy apply 与直接账本提交继续使用 MEMBER_TX_TIMEOUT_MS。
+ * 普通成员操作、legacy apply 与非普通E4的直接账本提交继续使用 MEMBER_TX_TIMEOUT_MS。
  */
 export const HUMAN_CORRECTION_COMMIT_TX_TIMEOUT_MS = 15_000;
 
-type MemberTransactionProfile = 'standard' | 'd7-human-correction-commit';
+/**
+ * 普通 policy_v1 E4 提交的具名工程例外（2026-10-24 明确委托）。
+ * 完整贡献校验与原子发布仍在锁内，不能套用200人考勤的3s工作假设。
+ * 60s不是响应SLA；连接及锁可能占用更久。共享默认7s、D7 15s、单次取锁4s不变。
+ * 只有 LedgerPostingService 顶层普通提交选择此档，持锁后必须重新确认原分类。
+ */
+export const E4_LEDGER_COMMIT_TX_TIMEOUT_MS = 60_000;
+
+type MemberTransactionProfile =
+  | 'standard'
+  | 'd7-human-correction-commit'
+  | 'e4-native-ledger-commit';
 
 /** PostgreSQL 55P03 = lock_not_available(等锁超过 lock_timeout)。 */
 function isLockWaitTimeout(err: unknown): boolean {
@@ -184,7 +195,9 @@ export async function runMemberLinearizedTransaction<T>(
     timeout:
       profile === 'd7-human-correction-commit'
         ? HUMAN_CORRECTION_COMMIT_TX_TIMEOUT_MS
-        : MEMBER_TX_TIMEOUT_MS,
+        : profile === 'e4-native-ledger-commit'
+          ? E4_LEDGER_COMMIT_TX_TIMEOUT_MS
+          : MEMBER_TX_TIMEOUT_MS,
   });
 }
 

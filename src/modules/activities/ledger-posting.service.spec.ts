@@ -10,7 +10,10 @@ import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-wo
 import { ParticipationTimeLedgerService } from './participation-time-ledger.service';
 import { ParticipationTimeCorrectionService } from './participation-time-correction.service';
 import { ParticipationTimeLedgerAccessService } from './participation-time-ledger-access.service';
-import { MEMBER_TX_TIMEOUT_MS } from '../../common/prisma/member-advisory-lock.util';
+import {
+  E4_LEDGER_COMMIT_TX_TIMEOUT_MS,
+  MEMBER_TX_TIMEOUT_MS,
+} from '../../common/prisma/member-advisory-lock.util';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { CorrectionPostingShapeFacts } from './correction-posting-shape';
 
@@ -18,11 +21,17 @@ describe('ledger posting draft member query characterization', () => {
   const tx = new PrismaClient();
   const database = {
     ledgerPostingBatch: { findUnique: jest.fn() },
+    activitySettlementContributionRevision: { findMany: jest.fn() },
     $transaction: jest.fn((body: (client: Prisma.TransactionClient) => Promise<unknown>) =>
       body(tx),
     ),
   };
   let service: LedgerPostingService;
+  const timeLedger = {
+    rethrowConstraint: jest.fn((error: unknown): never => {
+      throw error;
+    }),
+  };
   beforeAll(async () => {
     const module = await Test.createTestingModule({
       providers: [
@@ -33,7 +42,10 @@ describe('ledger posting draft member query characterization', () => {
           ParticipationTimeLedgerService,
           ParticipationTimeCorrectionService,
           ParticipationTimeLedgerAccessService,
-        ].map((provide) => ({ provide, useValue: {} })),
+        ].map((provide) => ({
+          provide,
+          useValue: provide === ParticipationTimeLedgerService ? timeLedger : {},
+        })),
         { provide: PrismaService, useValue: database },
         { provide: ActivityWorkflowGate, useValue: { assertV11WriteAllowed: jest.fn() } },
       ],
@@ -42,6 +54,137 @@ describe('ledger posting draft member query characterization', () => {
   });
   afterEach(() => jest.restoreAllMocks());
   afterAll(() => tx.$disconnect());
+
+  it.each(['root', 'parent', 'standard-upgrade', 'correction', 'native-unchanged'])(
+    'rejects locked classification drift before any complete check: %s',
+    async (change) => {
+      const checkpoint = new Error('must not reach a complete check');
+      const fakeTx = {
+        activitySettlementContributionRevision: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValue({ id: change === 'root' ? 'different-root' : 'root-one' }),
+        },
+      };
+      const context = {
+        lockActivity: jest.fn().mockResolvedValue({ id: 'activity-one' }),
+        lockRun: jest.fn().mockResolvedValue({ id: 'run-one' }),
+        lockVersion: jest
+          .fn()
+          .mockResolvedValue({ id: 'version-one', contributionRegimeCode: 'policy_v1' }),
+        lockBatch: jest.fn().mockResolvedValue({
+          ...correctionBatch,
+          id: 'batch-one',
+          settlementVersionId: change === 'parent' ? 'wrong-version' : 'version-one',
+        }),
+        timeCorrection: {
+          classifyBatch: jest.fn().mockResolvedValue({
+            required: change === 'correction',
+            hasApplication: false,
+            nativeUnchanged: change === 'native-unchanged',
+          }),
+        },
+        timeLedger: { hasClassifiedSource: jest.fn().mockRejectedValue(checkpoint) },
+      };
+      // The parent drift is rejected even if its own regime can still be read.
+      const client = {
+        ...fakeTx,
+        attendanceSettlementVersion: {
+          findUnique: jest.fn().mockResolvedValue({ contributionRegimeCode: 'policy_v1' }),
+        },
+      };
+      await expect(
+        service['commitBatchProtocol'].call(
+          context as unknown as LedgerPostingService,
+          client as unknown as Prisma.TransactionClient,
+          'activity-one',
+          { postingBatchId: 'batch-one', operationKey: 'operation-one' },
+          {
+            id: 'actor-one',
+            memberId: null,
+            username: 'actor',
+            role: Role.USER,
+            status: UserStatus.ACTIVE,
+          },
+          { requestId: 'scope-unit', ip: null, ua: null },
+          {
+            conversion: false,
+            ordinaryCommitSelection: {
+              settlementRunId: 'run-one',
+              settlementVersionId: 'version-one',
+              e4RootId: change === 'standard-upgrade' ? null : 'root-one',
+            },
+          },
+        ),
+      ).rejects.toMatchObject({ biz: BizCode.LEDGER_COMMIT_BATCH_STATUS_INVALID });
+      expect(context.timeLedger.hasClassifiedSource).not.toHaveBeenCalled();
+    },
+  );
+
+  it('replays a committed batch against its own root after the run advances versions', async () => {
+    const result = { replayed: true };
+    const fakeTx = {
+      attendanceSettlementVersion: {
+        findUnique: jest.fn().mockResolvedValue({ contributionRegimeCode: 'policy_v1' }),
+      },
+      activitySettlementContributionRevision: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'old-root' }),
+      },
+    };
+    const context = {
+      lockActivity: jest.fn().mockResolvedValue({ id: 'activity-one' }),
+      lockRun: jest.fn().mockResolvedValue({ id: 'run-one' }),
+      lockVersion: jest
+        .fn()
+        .mockResolvedValue({ id: 'new-version', contributionRegimeCode: 'policy_v1' }),
+      lockBatch: jest.fn().mockResolvedValue({
+        ...correctionBatch,
+        id: 'batch-one',
+        statusCode: 'committed',
+        settlementVersionId: 'old-version',
+      }),
+      timeCorrection: {
+        classifyBatch: jest
+          .fn()
+          .mockResolvedValue({ required: false, hasApplication: false, nativeUnchanged: false }),
+      },
+      timeLedger: { hasClassifiedSource: jest.fn().mockResolvedValue(false) },
+      replayResult: jest.fn().mockResolvedValue(result),
+    };
+    await expect(
+      service['commitBatchProtocol'].call(
+        context as unknown as LedgerPostingService,
+        fakeTx as unknown as Prisma.TransactionClient,
+        'activity-one',
+        { postingBatchId: 'batch-one', operationKey: 'replay-one' },
+        {
+          id: 'actor-one',
+          memberId: null,
+          username: 'actor',
+          role: Role.USER,
+          status: UserStatus.ACTIVE,
+        },
+        { requestId: 'scope-unit', ip: null, ua: null },
+        {
+          conversion: false,
+          ordinaryCommitSelection: {
+            settlementRunId: 'run-one',
+            settlementVersionId: 'old-version',
+            e4RootId: 'old-root',
+          },
+        },
+      ),
+    ).resolves.toBe(result);
+    expect(fakeTx.activitySettlementContributionRevision.findFirst).toHaveBeenCalledWith({
+      where: {
+        settlementVersionId: 'old-version',
+        regimeCode: 'policy_v1',
+        kindCode: 'submitted',
+        sourceKindCode: 'time_revision',
+      },
+      select: { id: true },
+    });
+  });
 
   const correctionBatch = {
     id: 'correction-batch',
@@ -167,12 +310,31 @@ describe('ledger posting draft member query characterization', () => {
     expect(sql).not.toContain('ctid');
   });
 
-  it.each([false, true])(
-    'preserves the public transaction owner, arguments and failure propagation: fail=%s',
-    async (fail) => {
+  it.each([
+    [false, 0, false],
+    [false, 0, true],
+    [false, 1, false],
+    [true, 0, false],
+    [true, 1, false],
+    [true, 1, true],
+    [true, 2, false],
+  ] as const)(
+    'preserves transaction owner, named scope and errors: native=%s roots=%s fail=%s',
+    async (native, rootCount, fail) => {
       database.ledgerPostingBatch.findUnique.mockResolvedValue({
+        settlementRunId: 'run-one',
+        settlementVersionId: 'version-one',
         settlementRun: { activityId: 'activity-one' },
+        settlementVersion: {
+          contributionRegimeCode: native ? 'policy_v1' : 'legacy',
+        },
       });
+      database.activitySettlementContributionRevision.findMany.mockReset().mockResolvedValue(
+        Array.from({ length: rootCount }, (_, index) => ({
+          id: index === 0 ? 'root-one' : `root-${index + 1}`,
+        })),
+      );
+      const ordinaryNative = native && rootCount === 1;
       database.$transaction.mockClear();
       const input = { postingBatchId: 'batch-one', operationKey: 'operation-one' };
       const actor = {
@@ -205,7 +367,10 @@ describe('ledger posting draft member query characterization', () => {
       jest.spyOn(tx, '$queryRawUnsafe').mockImplementation(() => {
         throw new Error('unexpected database read in unit test');
       });
-      const protocol = jest.spyOn(service, 'commitBatchWithin');
+      const protocol = jest.spyOn(
+        service as unknown as { commitBatchProtocol: LedgerPostingService['commitBatchWithin'] },
+        'commitBatchProtocol',
+      );
       if (fail) protocol.mockRejectedValue(failure);
       else protocol.mockResolvedValue(result);
       const pending = service.commitBatch(input, actor, meta);
@@ -214,16 +379,47 @@ describe('ledger posting draft member query characterization', () => {
       expect(protocol).toHaveBeenCalledTimes(1);
       expect(lockSetting).toHaveBeenCalledTimes(1);
       expect(lockSetting).toHaveBeenCalledWith('SET LOCAL lock_timeout = 4000');
-      expect(protocol).toHaveBeenCalledWith(tx, 'activity-one', input, actor, meta);
+      expect(protocol).toHaveBeenCalledWith(tx, 'activity-one', input, actor, meta, {
+        conversion: false,
+        ordinaryCommitSelection: {
+          settlementRunId: 'run-one',
+          settlementVersionId: 'version-one',
+          e4RootId: ordinaryNative ? 'root-one' : null,
+        },
+      });
+      if (fail) expect(timeLedger.rethrowConstraint).toHaveBeenCalledWith(failure);
       expect(database.$transaction).toHaveBeenCalledTimes(1);
       expect(database.$transaction).toHaveBeenCalledWith(expect.any(Function), {
         isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
-        timeout: MEMBER_TX_TIMEOUT_MS,
+        timeout: ordinaryNative ? E4_LEDGER_COMMIT_TX_TIMEOUT_MS : MEMBER_TX_TIMEOUT_MS,
       });
       expect(database.ledgerPostingBatch.findUnique).toHaveBeenLastCalledWith({
         where: { id: input.postingBatchId },
-        select: { settlementRun: { select: { activityId: true } } },
+        select: {
+          settlementRunId: true,
+          settlementVersionId: true,
+          settlementRun: { select: { activityId: true } },
+          settlementVersion: {
+            select: {
+              contributionRegimeCode: true,
+            },
+          },
+        },
       });
+      if (native) {
+        expect(database.activitySettlementContributionRevision.findMany).toHaveBeenCalledTimes(1);
+        expect(database.activitySettlementContributionRevision.findMany).toHaveBeenCalledWith({
+          where: {
+            settlementVersionId: 'version-one',
+            regimeCode: 'policy_v1',
+            kindCode: 'submitted',
+            sourceKindCode: 'time_revision',
+          },
+          select: { id: true },
+        });
+      } else {
+        expect(database.activitySettlementContributionRevision.findMany).not.toHaveBeenCalled();
+      }
     },
   );
 });

@@ -1301,15 +1301,15 @@
       "governanceStatus": "inventory",
       "layer": "L1",
       "stateSet": {
-        "values": ["realname", "manual", "evaluation", "threshold-timeout"],
+        "values": ["manual", "evaluation", "threshold-timeout"],
         "source": "ts-constant",
-        "sourceRef": "ELIM_STAGE_* @ recruitment.constants.ts:57-62"
+        "sourceRef": "ELIM_STAGE_* @ recruitment.constants.ts"
       },
       "transitions": "unconstrained",
       "wrongStateBizCode": "none",
       "implementation": "rejected 时记录淘汰环节的标注列(非生命周期)",
-      "governedBlockers": ["no-db-check", "retired-value-in-set"],
-      "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。 ELIM_STAGE_REALNAME='realname' 自述「退役,不再写入」仍在闭集内。",
+      "governedBlockers": ["no-db-check"],
+      "notes": "登记≠已治理；2026-10-24未上线系统清理删除无引用的ELIM_STAGE_REALNAME，闭集仅保留现行三个常量；仍无DB CHECK，不提升governed。",
       "transitionsRationale": "L1 配置/标注列:取值由配置或 CRUD 决定,无流程语义,故不声明迁移边。"
     },
     {
