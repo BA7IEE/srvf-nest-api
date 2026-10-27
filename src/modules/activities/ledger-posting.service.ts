@@ -709,10 +709,10 @@ export class LedgerPostingService {
    * AC-058:成员锁内比较“本活动待生效段”与“其他活动已生效段”。区间统一按
    * [checkInAt, checkOutAt) 左闭右开;同活动修订由既有 correction 流程处理,不在此误杀。
    *
-   * 从已生效段出发再连接本活动候选段，和原来的候选段相关 EXISTS 是同一存在性关系：
-   * 候选身份已限定为 activityId，故另一个身份的 activityId 不等于候选活动，等价于
-   * 不等于这里的 activityId。这样在没有其他活动已生效段时，status 索引可直接空返回，
-   * 不会对每个待生效候选重复做一次相关探测。
+   * 先按本活动身份的 memberId 关联其他身份，再按身份键读两侧服务段。普通 JOIN
+   * 的书写顺序不约束执行计划；沿用 readDraftSegmentMemberIds 的 OFFSET 0 边界，
+   * 避免状态过滤被下推为先扫描全表再连接。边界只限制拉平，不保证索引或耗时。
+   * 所有冲突条件成立后才取唯一 LIMIT 1，不能提前截断身份或服务段。
    */
   private async assertNoCrossActivitySegmentOverlap(
     tx: PrismaTx,
@@ -720,21 +720,43 @@ export class LedgerPostingService {
   ): Promise<void> {
     const rows = await tx.$queryRaw<Array<{ conflict: number }>>`
       SELECT 1 AS conflict
-      FROM "ParticipantServiceSegmentRevision" existing
-      JOIN "ActivityParticipationIdentity" existing_identity
-        ON existing_identity.id = existing."participationIdentityId"
-      JOIN "ActivityParticipationIdentity" candidate_identity
-        ON candidate_identity."memberId" = existing_identity."memberId"
-          AND candidate_identity."activityId" = ${activityId}
-      JOIN "ParticipantServiceSegmentRevision" candidate
-        ON candidate."participationIdentityId" = candidate_identity.id
-      WHERE existing_identity."activityId" <> ${activityId}
-        AND existing."statusCode" = 'committed'
-        AND existing."resultCode" NOT IN ('voided', 'replaced')
-        AND existing."checkOutAt" IS NOT NULL
-        AND candidate."statusCode" = 'draft'
-        AND candidate."resultCode" NOT IN ('voided', 'replaced')
-        AND candidate."checkOutAt" IS NOT NULL
+      FROM "ActivityParticipationIdentity" candidate_identity
+      CROSS JOIN LATERAL (
+        SELECT existing_identity.id, existing_identity."activityId"
+        FROM "ActivityParticipationIdentity" existing_identity
+        WHERE existing_identity."memberId" = candidate_identity."memberId"
+        OFFSET 0
+      ) existing_identity
+      CROSS JOIN LATERAL (
+        SELECT existing."checkInAt", existing."checkOutAt"
+        FROM (
+          SELECT existing."statusCode", existing."resultCode",
+                 existing."checkInAt", existing."checkOutAt"
+          FROM "ParticipantServiceSegmentRevision" existing
+          WHERE existing."participationIdentityId" = existing_identity.id
+          OFFSET 0
+        ) existing
+        WHERE existing."statusCode" = 'committed'
+          AND existing."resultCode" NOT IN ('voided', 'replaced')
+          AND existing."checkOutAt" IS NOT NULL
+        OFFSET 0
+      ) existing
+      CROSS JOIN LATERAL (
+        SELECT candidate."checkInAt", candidate."checkOutAt"
+        FROM (
+          SELECT candidate."statusCode", candidate."resultCode",
+                 candidate."checkInAt", candidate."checkOutAt"
+          FROM "ParticipantServiceSegmentRevision" candidate
+          WHERE candidate."participationIdentityId" = candidate_identity.id
+          OFFSET 0
+        ) candidate
+        WHERE candidate."statusCode" = 'draft'
+          AND candidate."resultCode" NOT IN ('voided', 'replaced')
+          AND candidate."checkOutAt" IS NOT NULL
+        OFFSET 0
+      ) candidate
+      WHERE candidate_identity."activityId" = ${activityId}
+        AND existing_identity."activityId" <> ${activityId}
         AND candidate."checkInAt" < existing."checkOutAt"
         AND existing."checkInAt" < candidate."checkOutAt"
       LIMIT 1

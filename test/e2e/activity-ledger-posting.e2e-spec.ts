@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
-import { Role, UserStatus } from '@prisma/client';
+import { Prisma, Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { BizException } from '../../src/common/exceptions/biz.exception';
@@ -910,6 +910,240 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
         BizCode.ATTENDANCE_TIME_OVERLAP,
       );
       await expectNothingTookEffect(overlapping);
+    });
+
+    it('matches the original overlap relation across status, NULL, interval and duplicate-identity cases', async () => {
+      const candidate = await createPostingFixture({ memberCount: 1, sessionsPerMember: 2 });
+      const existing = await createPostingFixture({
+        memberIds: candidate.memberIds,
+        sessionsPerMember: 2,
+      });
+      const other = await createPostingFixture({ memberCount: 1 });
+      const identities = [...candidate.identityIds, ...existing.identityIds, ...other.identityIds];
+      const segments = await prisma.participantServiceSegmentRevision.findMany({
+        where: { participationIdentityId: { in: identities } },
+        orderBy: { id: 'asc' },
+      });
+      const byIdentity = (identityId: string) => {
+        const segment = segments.find((row) => row.participationIdentityId === identityId);
+        if (!segment) throw new Error('missing overlap equivalence fixture segment');
+        return segment;
+      };
+      const c = byIdentity(candidate.identityIds[0]);
+      const c2 = byIdentity(candidate.identityIds[1]);
+      const e = byIdentity(existing.identityIds[0]);
+      const e2 = byIdentity(existing.identityIds[1]);
+      const unrelated = byIdentity(other.identityIds[0]);
+      const at = (hours: number) => new Date(SESSION_START.getTime() + hours * 3600_000);
+      const cases: Array<{
+        name: string;
+        conflict: boolean;
+        activityId?: string;
+        extra?: 'candidate' | 'existing';
+        changes?: Array<{ id: string; data: Prisma.ParticipantServiceSegmentRevisionUpdateInput }>;
+      }> = [
+        { name: 'empty candidate activity', conflict: false, activityId: 'no-such-activity' },
+        { name: 'same member and overlapping activities', conflict: true },
+        {
+          name: 'no committed existing segment',
+          conflict: false,
+          changes: [{ id: e.id, data: { statusCode: 'draft' } }],
+        },
+        {
+          name: 'different member only',
+          conflict: false,
+          changes: [
+            { id: e.id, data: { statusCode: 'draft' } },
+            { id: unrelated.id, data: { statusCode: 'committed' } },
+          ],
+        },
+        {
+          name: 'same activity only',
+          conflict: false,
+          changes: [
+            { id: e.id, data: { statusCode: 'draft' } },
+            { id: c2.id, data: { statusCode: 'committed', checkInAt: at(0), checkOutAt: at(2) } },
+          ],
+        },
+        {
+          name: 'candidate committed',
+          conflict: false,
+          changes: [{ id: c.id, data: { statusCode: 'committed' } }],
+        },
+        {
+          name: 'candidate superseded',
+          conflict: false,
+          changes: [{ id: c.id, data: { statusCode: 'superseded' } }],
+        },
+        {
+          name: 'existing superseded',
+          conflict: false,
+          changes: [{ id: e.id, data: { statusCode: 'superseded' } }],
+        },
+        ...(['voided', 'replaced', 'early_departure_zero', 'valid'] as const).flatMap(
+          (resultCode) =>
+            [c, e].map((segment) => ({
+              name: `${segment.id === c.id ? 'candidate' : 'existing'} result ${resultCode}`,
+              conflict: resultCode !== 'voided' && resultCode !== 'replaced',
+              changes: [{ id: segment.id, data: { resultCode } }],
+            })),
+        ),
+        ...[c, e].map((segment) => ({
+          name: `${segment.id === c.id ? 'candidate' : 'existing'} open segment`,
+          conflict: false,
+          changes: [{ id: segment.id, data: { checkOutAt: null, serviceHours: null } }],
+        })),
+        ...[
+          { name: 'left touch', start: -2, end: 0, conflict: false },
+          { name: 'right touch', start: 2, end: 4, conflict: false },
+          { name: 'left disjoint', start: -3, end: -1, conflict: false },
+          { name: 'right disjoint', start: 3, end: 5, conflict: false },
+          { name: 'left crossing', start: -1, end: 1, conflict: true },
+          { name: 'right crossing', start: 1, end: 3, conflict: true },
+          { name: 'existing contains candidate', start: -1, end: 3, conflict: true },
+          { name: 'candidate contains existing', start: 0.5, end: 1.5, conflict: true },
+          { name: 'zero length inside', start: 1, end: 1, conflict: true },
+          { name: 'zero length at endpoint', start: 0, end: 0, conflict: false },
+        ].flatMap(({ name, start, end, conflict }) =>
+          [c, e].map((segment) => ({
+            name: `${segment.id === c.id ? 'candidate' : 'existing'} ${name}`,
+            conflict,
+            changes: [
+              {
+                id: segment.id,
+                data: {
+                  checkInAt: at(start),
+                  checkOutAt: at(end),
+                  serviceHours: Math.max(0, end - start),
+                },
+              },
+            ],
+          })),
+        ),
+        {
+          name: 'later existing identity conflicts',
+          conflict: true,
+          changes: [
+            { id: e.id, data: { checkInAt: at(3), checkOutAt: at(5) } },
+            { id: e2.id, data: { statusCode: 'committed', checkInAt: at(0), checkOutAt: at(2) } },
+          ],
+        },
+        {
+          name: 'later candidate identity conflicts',
+          conflict: true,
+          changes: [
+            { id: c.id, data: { checkInAt: at(3), checkOutAt: at(5) } },
+            { id: c2.id, data: { statusCode: 'draft', checkInAt: at(0), checkOutAt: at(2) } },
+          ],
+        },
+        {
+          name: 'later existing segment conflicts',
+          conflict: true,
+          extra: 'existing',
+          changes: [{ id: e.id, data: { checkInAt: at(3), checkOutAt: at(5) } }],
+        },
+        {
+          name: 'later candidate segment conflicts',
+          conflict: true,
+          extra: 'candidate',
+          changes: [{ id: c.id, data: { checkInAt: at(3), checkOutAt: at(5) } }],
+        },
+      ];
+      const rollback = new Error('rollback overlap equivalence matrix');
+      await expect(
+        prisma.$transaction(
+          async (tx) => {
+            for (const scenario of cases) {
+              await tx.$executeRaw`SAVEPOINT overlap_case`;
+              await tx.participantServiceSegmentRevision.updateMany({
+                where: { id: { in: segments.map((row) => row.id) } },
+                data: { statusCode: 'superseded' },
+              });
+              await tx.participantServiceSegmentRevision.update({
+                where: { id: c.id },
+                data: { statusCode: 'draft' },
+              });
+              await tx.participantServiceSegmentRevision.update({
+                where: { id: e.id },
+                data: { statusCode: 'committed' },
+              });
+              for (const change of scenario.changes ?? []) {
+                await tx.participantServiceSegmentRevision.update({
+                  where: { id: change.id },
+                  data: change.data,
+                });
+              }
+              if (scenario.extra) {
+                const base = scenario.extra === 'candidate' ? c : e;
+                await tx.participantServiceSegmentRevision.create({
+                  data: {
+                    participationIdentityId: base.participationIdentityId,
+                    sourceCheckInEventId: base.sourceCheckInEventId,
+                    segmentKey: 'overlap-extra',
+                    revision: 0,
+                    resultCode: base.resultCode,
+                    checkInAt: base.checkInAt,
+                    checkOutAt: base.checkOutAt,
+                    serviceHours: base.serviceHours,
+                    statusCode: scenario.extra === 'candidate' ? 'draft' : 'committed',
+                  },
+                });
+              }
+              const activityId = scenario.activityId ?? candidate.activityId;
+              // Frozen pre-fix relation; the candidate is the actual service call below.
+              const original = await tx.$queryRaw<Array<{ conflict: number }>>`
+              SELECT 1 AS conflict
+              FROM "ParticipantServiceSegmentRevision" existing
+              JOIN "ActivityParticipationIdentity" existing_identity
+                ON existing_identity.id = existing."participationIdentityId"
+              JOIN "ActivityParticipationIdentity" candidate_identity
+                ON candidate_identity."memberId" = existing_identity."memberId"
+                  AND candidate_identity."activityId" = ${activityId}
+              JOIN "ParticipantServiceSegmentRevision" candidate
+                ON candidate."participationIdentityId" = candidate_identity.id
+              WHERE existing_identity."activityId" <> ${activityId}
+                AND existing."statusCode" = 'committed'
+                AND existing."resultCode" NOT IN ('voided', 'replaced')
+                AND existing."checkOutAt" IS NOT NULL
+                AND candidate."statusCode" = 'draft'
+                AND candidate."resultCode" NOT IN ('voided', 'replaced')
+                AND candidate."checkOutAt" IS NOT NULL
+                AND candidate."checkInAt" < existing."checkOutAt"
+                AND existing."checkInAt" < candidate."checkOutAt"
+              LIMIT 1
+            `;
+              expect({ name: scenario.name, conflict: original.length > 0 }).toEqual({
+                name: scenario.name,
+                conflict: scenario.conflict,
+              });
+              const snapshot = () =>
+                tx.participantServiceSegmentRevision.findMany({
+                  where: { participationIdentityId: { in: identities } },
+                  orderBy: { id: 'asc' },
+                });
+              const before = await snapshot();
+              const result = posting['assertNoCrossActivitySegmentOverlap'](tx, activityId);
+              if (scenario.conflict)
+                await expect(result).rejects.toMatchObject({
+                  biz: BizCode.ATTENDANCE_TIME_OVERLAP,
+                });
+              else await expect(result).resolves.toBeUndefined();
+              expect(await snapshot()).toEqual(before);
+              await tx.$executeRaw`ROLLBACK TO SAVEPOINT overlap_case`;
+              await tx.$executeRaw`RELEASE SAVEPOINT overlap_case`;
+            }
+            console.info(`[ledger-overlap-equivalence] ${cases.length} cases passed`);
+            throw rollback;
+          },
+          { timeout: 7_000 },
+        ),
+      ).rejects.toBe(rollback);
+      expect(
+        await prisma.participantServiceSegmentRevision.findMany({
+          where: { participationIdentityId: { in: identities } },
+          orderBy: { id: 'asc' },
+        }),
+      ).toEqual(segments);
     });
   });
 
