@@ -14,6 +14,14 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
+import {
+  isOverlapStatement,
+  LedgerOverlapObservation,
+  observeLazyQuery,
+  type OverlapTarget,
+} from '../helpers/ledger-overlap-observation';
+import { deriveTestDbName } from '../setup/worktree-db';
+import '../helpers/ledger-overlap-observation.spec';
 
 // ===== 活动改造 v1.1 第 2 批第五刀:bind 参数上限的规模判据(goal DoD 13)=====
 //
@@ -116,6 +124,7 @@ function redactLedgerPlan(value: unknown): unknown {
     'Join Type',
     'Relation Name',
     'Index Name',
+    'Alias',
     'Scan Direction',
     'Strategy',
     'Startup Cost',
@@ -150,7 +159,14 @@ function redactLedgerPlan(value: unknown): unknown {
   ]);
   return Object.fromEntries(
     Object.entries(value)
-      .filter(([key]) => allowed.has(key))
+      .filter(
+        ([key, child]) =>
+          allowed.has(key) &&
+          (key !== 'Alias' ||
+            ['existing', 'existing_identity', 'candidate', 'candidate_identity'].includes(
+              String(child),
+            )),
+      )
       .map(([key, child]) => [key, redactLedgerPlan(child)]),
   );
 }
@@ -306,6 +322,11 @@ function installStatementRecorder(
   rows: DiagnosticRow[],
   plans: PlanDiagnostic[],
   rollbackProbe?: Error,
+  overlap?: {
+    sampler: LedgerOverlapObservation;
+    extraQueries: number;
+    setupMs: number;
+  },
 ): {
   reset: () => void;
   statements: () => StatementRecord[];
@@ -338,6 +359,38 @@ function installStatementRecorder(
             records.push(bindCountOf(args));
             const label = diagnosticSqlLabel(args);
             const result = fn.apply(target, args);
+            if (overlap && Array.isArray(args[0]) && isOverlapStatement(args[0])) {
+              let binding: OverlapTarget;
+              return observeLazyQuery(
+                timedQuery(result, label, rows) as PromiseLike<unknown>,
+                async () => {
+                  const began = performance.now();
+                  try {
+                    overlap.extraQueries++;
+                    const [identity] = await (target as Prisma.TransactionClient).$queryRaw<
+                      Array<{
+                        database: string;
+                        oid: number;
+                        pid: number;
+                        backendStart: string;
+                      }>
+                    >`SELECT current_database() AS database,
+                    (SELECT oid::int FROM pg_database WHERE datname=current_database()) AS oid,
+                    pg_backend_pid() AS pid,
+                    (SELECT backend_start::text FROM pg_stat_activity WHERE pid=pg_backend_pid()) AS "backendStart"`;
+                    if (!identity || identity.database !== deriveTestDbName())
+                      throw new Error('Overlap recorder database mismatch');
+                    binding = identity;
+                    overlap.extraQueries++;
+                    await collectLedgerPlan(target, args, 'overlap.exact-query', plans, rows);
+                  } finally {
+                    overlap.setupMs = performance.now() - began;
+                  }
+                },
+                () => overlap.sampler.start(binding),
+                () => overlap.sampler.stop(),
+              );
+            }
             const isMemberRead =
               label ===
                 'raw.SELECT.ParticipantServiceSegmentRevision.ActivityParticipationIdentity' &&
@@ -710,13 +763,20 @@ describe('ledger posting scale —— 8192 人越过 bind 上限(goal DoD 13)', 
     `;
     const diagnosticRows: DiagnosticRow[] = [];
     const plans: PlanDiagnostic[] = [];
+    // The existing nightly entry provides this flag; ordinary CI does not acquire a sampler.
+    const overlap = process.argv.includes('--detectOpenHandles')
+      ? { sampler: new LedgerOverlapObservation(), extraQueries: 0, setupMs: 0 }
+      : undefined;
     const restoreStages = installStageTimers(posting, diagnosticRows);
-    const recorder = installStatementRecorder(prisma, diagnosticRows, plans);
+    const recorder = installStatementRecorder(prisma, diagnosticRows, plans, undefined, overlap);
     recorder.reset();
     const commitStartedAt = Date.now();
     const result = await posting
       .commitBatch({ postingBatchId: batch.id, operationKey: 'scale-commit' }, actor, auditMeta)
-      .finally(() => {
+      .finally(async () => {
+        const observerFinishBegan = performance.now();
+        await overlap?.sampler.finish();
+        const observerFinishMs = performance.now() - observerFinishBegan;
         recorder.restore();
         restoreStages();
         // 阶段包含其内部查询，不能将两层耗时相加；失败也保留现场并原样抛出。
@@ -727,10 +787,20 @@ describe('ledger posting scale —— 8192 人越过 bind 上限(goal DoD 13)', 
               budgetMs: MEMBER_TX_TIMEOUT_MS,
               elapsedMs: Date.now() - commitStartedAt,
               queries: recorder.statements().length,
-              // Original query count above excludes the two non-executing plans.
+              // Original calls exclude plans/identity diagnostics and native sampler commands.
               plannerStats,
               plans,
               rows: diagnosticRows,
+              overlapObservation: overlap
+                ? {
+                    extraTransactionQueries: overlap.extraQueries,
+                    setupMs: overlap.setupMs,
+                    finishMs: observerFinishMs,
+                    receipt: overlap.sampler.receipt,
+                    frames: overlap.sampler.frames,
+                    limits: { samples: 20, windowMs: 10000, responseMs: 750, sqlMs: 100 },
+                  }
+                : { status: 'NOT_ENABLED' },
             }),
         );
       });
