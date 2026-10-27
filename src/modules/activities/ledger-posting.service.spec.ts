@@ -288,6 +288,56 @@ describe('ledger posting draft member query characterization', () => {
     await expect(service['readDraftSegmentMemberIds'](tx, 'activity-one')).rejects.toBe(error);
   });
 
+  it.each([false, true])(
+    'preserves the overlap existence decision: conflict=%s',
+    async (conflict) => {
+      const query = jest
+        .spyOn(tx, '$queryRaw')
+        .mockResolvedValue(conflict ? [{ conflict: 1 }] : []);
+      const result = service['assertNoCrossActivitySegmentOverlap'](tx, 'activity-one');
+      if (conflict)
+        await expect(result).rejects.toMatchObject({ biz: BizCode.ATTENDANCE_TIME_OVERLAP });
+      else await expect(result).resolves.toBeUndefined();
+      expect(query).toHaveBeenCalledTimes(1);
+      const [parts, ...values] = query.mock.calls[0];
+      expect(values).toEqual(['activity-one', 'activity-one']);
+      const sql = Array.isArray(parts) ? parts.join('?') : '';
+      expect(sql).toMatch(/^\s*SELECT 1 AS conflict/);
+      expect(sql).toContain('FROM "ActivityParticipationIdentity" candidate_identity');
+      expect(sql).toContain(
+        'WHERE existing_identity."memberId" = candidate_identity."memberId"\n        OFFSET 0',
+      );
+      expect(sql).toContain(
+        'WHERE existing."participationIdentityId" = existing_identity.id\n          OFFSET 0',
+      );
+      expect(sql).toContain(
+        'WHERE candidate."participationIdentityId" = candidate_identity.id\n          OFFSET 0',
+      );
+      for (const [alias, status] of [
+        ['existing', 'committed'],
+        ['candidate', 'draft'],
+      ]) {
+        expect(sql).toContain(`${alias}."statusCode" = '${status}'`);
+        expect(sql).toContain(`${alias}."resultCode" NOT IN ('voided', 'replaced')`);
+        expect(sql).toContain(`${alias}."checkOutAt" IS NOT NULL`);
+      }
+      expect(sql).toContain('existing_identity."activityId" <> ?');
+      expect(sql).toContain('candidate."checkInAt" < existing."checkOutAt"');
+      expect(sql).toContain('existing."checkInAt" < candidate."checkOutAt"');
+      expect(sql.match(/\bLIMIT\b/g)).toHaveLength(1);
+      expect(sql).toMatch(/LIMIT 1\s*$/);
+    },
+  );
+
+  it('propagates the native overlap query error without accepting an unknown result', async () => {
+    const error = new Error('synthetic overlap query failure');
+    const query = jest.spyOn(tx, '$queryRaw').mockRejectedValue(error);
+    await expect(service['assertNoCrossActivitySegmentOverlap'](tx, 'activity-one')).rejects.toBe(
+      error,
+    );
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps two scalar bindings and all target qualifications in the final update', () => {
     // This is a structural tripwire, not a substitute for the real database
     // equivalence, empty-set and row-lock/EPQ tests in the scale E2E.
