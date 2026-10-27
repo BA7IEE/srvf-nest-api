@@ -32,6 +32,7 @@ import {
 } from './activity-contribution-settlement-policy';
 import { TIME_SETTLEMENT_LIMITS } from './activity-time-settlement-policy';
 import {
+  NATIVE_CONTRIBUTION_LAUNCH_LIMITS,
   assertNativeContributionLaunchCount as launchCount,
   assertNativeContributionLaunchEvaluations as launchEvaluations,
   assertNativeContributionLaunchJson as launchJson,
@@ -363,7 +364,7 @@ export class ActivityContributionSettlementQueryService {
     const currentSegments = await tx.participantServiceSegmentRevision.findMany({
       where: { identity: { activityId }, statusCode: { not: 'superseded' } },
       select: { checkInAt: true, checkOutAt: true },
-      take: 501,
+      take: NATIVE_CONTRIBUTION_LAUNCH_LIMITS.segments + 1,
     });
     launchCount(currentSegments.length, 'segments');
     launchSpans(
@@ -372,14 +373,6 @@ export class ActivityContributionSettlementQueryService {
       ),
     );
     launchCount(await tx.attendancePunchEvent.count({ where: { activityId } }), 'punchEvents');
-    launchCount(
-      await tx.participantServiceSegmentRevision.count({ where: { identity: { activityId } } }),
-      'segmentRevisions',
-    );
-    launchCount(
-      await tx.participantTimeAllocationRevision.count({ where: { activityId } }),
-      'allocationRevisions',
-    );
   }
 
   async assertLaunchDraftInTx(
@@ -498,7 +491,7 @@ export class ActivityContributionSettlementQueryService {
       return unavailable();
     const evaluations = await tx.participantContributionEvaluation.findMany({
       where: { contributionRevisionId: previous.id },
-      take: 2_001,
+      take: NATIVE_CONTRIBUTION_LAUNCH_LIMITS.evaluations + 1,
     });
     if (evaluations.length !== previous.evaluationCount) return unavailable();
     launchJson(evaluations, 'evaluationBytes');

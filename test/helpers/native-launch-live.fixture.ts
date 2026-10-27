@@ -256,18 +256,7 @@ export async function assertNativeLaunchFrozenOracle(
   expectedCount: number,
   stage: NativeLaunchStage,
 ): Promise<NativeLaunchOracleResult> {
-  const source = readFileSync(
-    resolve(__dirname, '../e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts'),
-    'utf8',
-  );
-  const extract = (name: string, pin: string) => {
-    const matches = [
-      ...source.matchAll(new RegExp('const ' + name + ' = String.raw`([\\s\\S]*?)`;', 'g')),
-    ];
-    assert.equal(matches.length, 1);
-    assert.equal(hash(matches[0][1]), pin);
-    return matches[0][1];
-  };
+  const extract = nativeFrozenOracleSql();
   const quote = (value: string) => "'" + value.replaceAll("'", "''") + "'";
   const canonical = extract(
     'E4_P_CANONICAL_ORACLE_SQL',
@@ -354,6 +343,33 @@ export async function assertNativeLaunchFrozenOracle(
     storedDifferences: 0,
     rootMatches: true,
   });
+  const day = await assertNativeLaunchFrozenDayOracle(db, root, expectedCount, stage);
+  return { ...result, day };
+}
+
+function nativeFrozenOracleSql() {
+  const source = readFileSync(
+    resolve(__dirname, '../e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts'),
+    'utf8',
+  );
+  return (name: string, pin: string) => {
+    const matches = [
+      ...source.matchAll(new RegExp('const ' + name + ' = String.raw`([\\s\\S]*?)`;', 'g')),
+    ];
+    assert.equal(matches.length, 1);
+    assert.equal(hash(matches[0][1]), pin);
+    return matches[0][1];
+  };
+}
+
+export async function assertNativeLaunchFrozenDayOracle(
+  db: PrismaClient,
+  root: { id: string },
+  expectedCount: number,
+  stage: NativeLaunchStage,
+) {
+  const extract = nativeFrozenOracleSql();
+  const quote = (value: string) => "'" + value.replaceAll("'", "''") + "'";
   const daySql = extract(
     'E4_P_DAY_ORACLE_SQL',
     'a8cdf667c0632e832d10ea2912ebd510e84163097ddfc594f55d000746446274',
@@ -383,5 +399,5 @@ export async function assertNativeLaunchFrozenOracle(
     functionDifferences: 0,
     storedDifferences: 0,
   });
-  return { ...result, day };
+  return day;
 }

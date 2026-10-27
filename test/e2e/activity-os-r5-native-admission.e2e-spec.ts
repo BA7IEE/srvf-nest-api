@@ -9,10 +9,12 @@ import {
   type E4Fixture,
 } from '../helpers/activity-contribution-policy.fixture';
 import {
-  runNativeLaunch500Boundary,
+  runNativeLaunchCapacityBoundary,
+  assertNativeCapacityPostConditions,
   runNativeLaunchSmallAdmission,
   type NativeAdmissionResult,
 } from '../helpers/native-launch-admission.cases';
+import { createNativeCapacityCorrectionCases } from '../helpers/native-capacity-corrections.cases';
 import type { NativeLaunchStage } from '../helpers/native-launch-live.fixture';
 
 let f: E4Fixture | undefined;
@@ -20,6 +22,9 @@ let observer: PrismaClient | undefined;
 let pending = 0;
 let unknown = false;
 let started = 0;
+let capacityPhase = 0;
+let capacity: Awaited<ReturnType<typeof runNativeLaunchCapacityBoundary>> | undefined;
+let correctionCases: Awaited<ReturnType<typeof createNativeCapacityCorrectionCases>> | undefined;
 const previousDatabaseUrl = process.env.DATABASE_URL;
 if (previousDatabaseUrl) {
   const url = new URL(previousDatabaseUrl);
@@ -43,6 +48,10 @@ const stage: NativeLaunchStage = async (label, work) => {
   const available = 510_000 - (performance.now() - started);
   if (available < 30_000 || (label.startsWith('PUBLICATION_') && available < 90_000))
     throw new Error('Native launch 600-second window cleanup reserve reached');
+  console.info(
+    'NATIVE_LAUNCH_STAGE_BEGIN',
+    JSON.stringify({ label, elapsedMs: performance.now() - started }),
+  );
   pending++;
   try {
     return await work();
@@ -60,10 +69,17 @@ stage.observe = (event) => console.info('NATIVE_LAUNCH_OBSERVATION', JSON.string
 stage.snapshot = (label, fingerprint) =>
   console.info('NATIVE_LAUNCH_FINGERPRINT', JSON.stringify({ label, ...fingerprint }));
 
-describe('active native limited launch: applicable business boundaries, original guards and budgets', () => {
+describe('active native full capacity: applicable business boundaries, original guards and budgets', () => {
   beforeEach(async () => {
-    assert(!unknown && pending === 0 && !f && !observer);
+    assert(!unknown && pending === 0);
     started = performance.now();
+    // One private fixture is retained across these explicitly ordered acceptances.
+    // Each original600s envelope and every business/SQL timeout remain unchanged.
+    if (capacityPhase > 0 && capacityPhase < 3) {
+      assert(f && observer);
+      return;
+    }
+    assert(!f && !observer);
     pending++;
     try {
       // This fixture publishes an owner and writes the real v1.1 seal/settlement chain.
@@ -112,6 +128,8 @@ describe('active native limited launch: applicable business boundaries, original
       throw new Error('Native launch body pending; cleanup refused');
     }
     try {
+      assert(performance.now() - started < 600_000);
+      if (!unknown && capacityPhase > 0 && capacityPhase < 3) return;
       await observer?.$disconnect();
       observer = undefined;
       await closeE13Fixture(f);
@@ -122,11 +140,53 @@ describe('active native limited launch: applicable business boundaries, original
       throw error;
     }
   }, 90_000);
-  it('accepts 500/500/2500/2000 and rejects501/501/2501 with all196 rollback, frozen oracle and actual ledger COMMIT', async () => {
+  it('native2000 main accepts2000/10000/50000/8000, rejects2001/10001/50001 with all196 rollback and actual ledger COMMIT', async () => {
     assert(f && observer);
     pending++;
     try {
-      await runNativeLaunch500Boundary(f, observer, stage, emit);
+      capacity = await runNativeLaunchCapacityBoundary(f, observer, stage, emit);
+      capacityPhase = 1;
+    } catch (error) {
+      unknown = true;
+      throw error;
+    } finally {
+      pending--;
+    }
+  }, 600_000);
+
+  it('native2000 complete formal readback and unchanged_time copy/replay', async () => {
+    assert(f && observer && capacity && capacityPhase === 1);
+    pending++;
+    try {
+      await assertNativeCapacityPostConditions(f, observer, stage, emit, capacity);
+      correctionCases = await createNativeCapacityCorrectionCases(
+        f,
+        observer,
+        stage,
+        emit,
+        capacity.source,
+        capacity.submitted,
+        capacity.posted,
+      );
+      await correctionCases.unchanged();
+      capacityPhase = 2;
+    } catch (error) {
+      unknown = true;
+      throw error;
+    } finally {
+      pending--;
+    }
+  }, 600_000);
+
+  it('native2000 correction_time_proof full HumanV3 and exact replay with original15s commit', async () => {
+    assert(correctionCases && capacityPhase === 2);
+    pending++;
+    try {
+      await correctionCases.timeChanged();
+      capacityPhase = 3;
+    } catch (error) {
+      unknown = true;
+      throw error;
     } finally {
       pending--;
     }
@@ -137,8 +197,21 @@ describe('active native limited launch: applicable business boundaries, original
     pending++;
     try {
       await runNativeLaunchSmallAdmission(f, observer, stage, emit);
+    } catch (error) {
+      unknown = true;
+      throw error;
     } finally {
       pending--;
     }
   }, 600_000);
+  afterAll(async () => {
+    if (pending) {
+      unknown = true;
+      throw new Error('Native acceptance still pending; close refused');
+    }
+    await observer?.$disconnect();
+    observer = undefined;
+    await closeE13Fixture(f);
+    f = undefined;
+  }, 90_000);
 });
