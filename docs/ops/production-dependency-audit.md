@@ -38,6 +38,24 @@
 
 同批仅将测试库重建接入既有同快照严格分类器，原CI短暂连接来源仍UNKNOWN；该测试设施改动不代表生产数据库根因或发布条件已验证。固定修复SHA及main的完整检查仍须分别完成，生产NO_GO，受限500不变。
 
+## 2026-10-25 UTC 请求解析与 URI 安全补丁候选
+
+`main@310be65f11309674538414228b4c901024869e5a` 的 CI 与 Smoke 已成功，但[正式生产依赖审计 40216895550](https://github.com/BA7IEE/srvf-nest-api/actions/runs/40216895550)为 exit 1：2 high、5 moderate、2 low。该提交没有修改 package/lock；这是既存依赖风险，不能据此豁免最终 SHA 的审计门禁。
+
+候选只提高三个既有 override：body-parser `^2.4.0`、multer `^2.5.0`、fast-uri `^3.1.9`，实际锁定 2.4.0、2.5.0、3.1.9。body-parser 新声明要求的 content-type `^2.1.0`、iconv-lite `^0.7.3` 随同正常解析；没有升级 Nest、Express、COS SDK、conf 或 AJV，也没有新增 override 或改变业务上传限额。
+
+- body-parser 通过 Nest 默认 Express JSON/urlencoded 解析进入请求链，修复依据为 [GHSA-27r3-jxmh-p828](https://github.com/advisories/GHSA-27r3-jxmh-p828)。
+- multer 被头像、标准照、证件、报名和现场上传入口使用，修复依据为 [GHSA-q7qp-rjg7-q26m](https://github.com/advisories/GHSA-q7qp-rjg7-q26m)。仓内未发现自定义异步 fileFilter，当前可利用性未获证明；不以此忽略 advisory 或跳过 multipart 的鉴权、文件数、大小与 MIME 回归。
+- fast-uri 的四项新 moderate/low 经 `COS SDK → conf → AJV → fast-uri` 引入，3.1.9 为同主版本补丁；修复 [GHSA-w74x-v6f9-j3xg](https://github.com/advisories/GHSA-w74x-v6f9-j3xg)、[GHSA-wjr9-j795-jxcr](https://github.com/advisories/GHSA-wjr9-j795-jxcr)、[GHSA-xhq7-xmqj-769h](https://github.com/advisories/GHSA-xhq7-xmqj-769h)、[GHSA-333x-w4r6-6crp](https://github.com/advisories/GHSA-333x-w4r6-6crp)，不把新告警冒作此前已接受的三项 moderate。
+
+Node 22.23.3 / pnpm 10.14.0 下正常 frozen install 通过；正式 `pnpm audit:production` exit 0，0 critical / 0 high / 0 low / 3 moderate。完整 JSON 报告 `pnpm audit --prod --json` exit 1，剩余 advisory ID、版本、路径仍逐字对应上表 request、fast-xml-parser、uuid 三项；接受边界没有扩大，不宣称零漏洞。
+
+本地验证：468 单测套件 / 10,536 passed / 4 todo；类型检查通过；原冷 lint 完整覆盖 2,038 文件、0 error / 0 warning、176.8 秒，独立执行前后 OOM 计数未增加。普通 UTF-8 JSON、原始 gzip JSON、非法 JSON 的 400/40000 三项真实 HTTP 探针通过；九个上传/存储 E2E 套件 201 passed、0 skipped、0 failed。原 SIGKILL、探针转译失败及客户端误将 gzip Buffer 序列化为 JSON 的失败均留证，没有修改业务断言或工具窗口来覆盖失败。
+
+候选 package SHA256 `94746156e49dc62a51e7c443a07d82d991081ea7d185b673f8c0713cc44f8789`；lock SHA256 `32992f6b131f28cdadd34861648d2b130fb72b317ece1ce4bc68b1e500fb8e0a`。本节记录的是本地依赖候选；它尚未推送或通过该候选的 GitHub CI/Smoke/Trusted，不代表上述 main 审计已修复，也没有生产部署。
+
+补充验证：同一候选四文件逐字复制到独立测试检出后，1,092 项契约测试和 2 个快照通过。首次缺少库范围声明的拒绝保留；随后使用正常守卫和明确的新库清单执行，没有关闭守卫或复用上传回归库。原 31 个库名/OID 未变，四个新测试库均保留，最终连接、事务和 advisory lock 为零。
+
 ## 每次 release
 
 1. 在最终候选 SHA 上运行 `pnpm audit:production`。
