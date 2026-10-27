@@ -16,6 +16,7 @@ import { loadTestEnv } from '../setup/load-env';
 import { assertTestDatabaseUrl } from '../setup/test-db';
 import { deriveTestDbName, deriveWorkerTestDbName } from '../setup/worktree-db';
 import { createTestApp } from '../setup/test-app';
+import { resetDb } from '../setup/reset-db';
 import { PrismaService } from '../../src/database/prisma.service';
 import { truncateAuditLogsTestOnly } from '../helpers/audit-logs-cleanup';
 import appConfig from '../../src/config/app.config';
@@ -1090,6 +1091,15 @@ describe('E3-2 D2 mapping schema construction', () => {
         ['exec', 'prisma', 'migrate', 'deploy', '--schema', 'prisma/schema.prisma'],
         { env: process.env, stdio: 'pipe' },
       );
+    } else {
+      // Serial nightly suites share a worker database. Start this SQL fixture
+      // suite from the same complete business-data boundary as other E2E suites.
+      const app = await createTestApp();
+      try {
+        await resetDb(app);
+      } finally {
+        await app.close();
+      }
     }
     assertTestDatabaseUrl(process.env.DATABASE_URL);
   }, 120_000);

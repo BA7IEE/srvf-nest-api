@@ -29,6 +29,8 @@ import {
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 import { httpServer } from '../helpers/http-server';
 import { waitFor } from '../helpers/wait-for';
+import { linuxProcessPeakRssBytes } from '../helpers/linux-process-peak-rss';
+import '../helpers/linux-process-peak-rss.spec';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import appConfig, { type AppConfig } from '../../src/config/app.config';
 
@@ -1358,7 +1360,10 @@ describe('large settlement draft: real HTTP and PostgreSQL worker receipts', () 
             result = {httpStatus:response.status,code:body.code,...body.data};
           } else result = await app.get(ActivityBatchWorker).drainOnce();
           const elapsedMs = performance.now() - started;
-          console.log(JSON.stringify({result,queries,elapsedMs,peakRssBytes:process.resourceUsage().maxRSS*1024}));
+          const peakRssBytes = process.platform === 'linux'
+            ? (${linuxProcessPeakRssBytes.toString()})(require('node:fs').readFileSync('/proc/self/status', 'utf8'))
+            : process.resourceUsage().maxRSS * 1024;
+          console.log(JSON.stringify({result,queries,elapsedMs,peakRssBytes}));
         } finally { await app.close(); await db.$disconnect(); }
       })().catch(() => { console.error('ResourceProbeFailed'); process.exitCode=1; });
     `;
