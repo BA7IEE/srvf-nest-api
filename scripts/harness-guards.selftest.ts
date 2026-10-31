@@ -796,6 +796,80 @@ checkEq(
       `e2e-shard-plan.mjs --verify 退出码 ${String(r.status)}:${(r.stderr || '').trim()}`,
     );
   }
+  // Exercise the actual ESM planner/sequencer without invoking Jest setup or a DB.
+  // The digest pins the complete order shared by saved runs 40230772672/40411677209.
+  {
+    const r = spawnSync(
+      'node',
+      [
+        '--input-type=module',
+        '--eval',
+        `
+        import assert from 'node:assert/strict';
+        import path from 'node:path';
+        import {createHash} from 'node:crypto';
+        import {pathToFileURL} from 'node:url';
+        const {default: Sequencer, CONTEXT_ORDER, SHARD_COUNT, allSpecs, specsFor,
+          shardFor, familyFor, patternFor} = await import(pathToFileURL(${JSON.stringify(shardPlan)}));
+        assert.equal(SHARD_COUNT, 4);
+        assert.equal(CONTEXT_ORDER.length, 42);
+        assert.equal(createHash('sha256').update(CONTEXT_ORDER.join('\\n')).digest('hex'),
+          'aabcb0685f8bbb6db785a7820d6e737457c733230466a95ddffca6ed3b04ac93');
+        const all = allSpecs();
+        const groups = [1,2,3,4].map(specsFor);
+        const union = groups.flat().sort();
+        assert.deepEqual(union, all);
+        assert.equal(new Set(union).size, union.length);
+        assert.deepEqual(groups[0], [...CONTEXT_ORDER].sort());
+        const familyShards = new Map();
+        for (const spec of all.filter(s => !CONTEXT_ORDER.includes(s))) {
+          const family = familyFor(spec), shard = shardFor(spec);
+          if (familyShards.has(family)) assert.equal(shard, familyShards.get(family));
+          familyShards.set(family, shard);
+          assert.equal(new RegExp(patternFor(shard)).test('/'+spec), true);
+          assert.equal(new RegExp(patternFor(shard)).test('/'+spec+'/nested.e2e-spec.ts'), false);
+        }
+        assert.deepEqual(Object.fromEntries(familyShards), {
+          'activity-application':2,'activity-batches':2,'settlement-ledger-attendance':3,
+          'r1-r2':3,'r3':3,'r4':2,'r5-other':2,'r5-e4':3,'v11':2,'people':3,'platform':4
+        });
+        // Unknown new suites remain covered by a family/catch-all rather than silently excluded.
+        assert.equal(shardFor('test/e2e/activity-new-feature.e2e-spec.ts'), 2);
+        assert.equal(shardFor('test/e2e/new-platform-feature.e2e-spec.ts'), 4);
+        assert.throws(() => patternFor(0), /未知分片/);
+        assert.throws(() => patternFor(5), /未知分片/);
+        const tests = CONTEXT_ORDER.map(spec => ({path:path.join(${JSON.stringify(repoRoot)},spec)}));
+        const sequencer = new Sequencer();
+        const expected = [...tests];
+        assert.deepEqual(sequencer.sort([...tests].reverse()), expected);
+        assert.deepEqual(sequencer.sort([...tests.slice(13),...tests.slice(0,13)]), expected);
+        assert.throws(() => sequencer.sort(tests.slice(1)), /缺少套件/);
+        assert.throws(() => sequencer.sort([...tests,tests[0]]), /输入异常/);
+        assert.throws(() => sequencer.sort([...tests,{path:path.join(${JSON.stringify(repoRoot)},'test/e2e/extra.e2e-spec.ts')}]), /输入异常/);
+        assert.throws(() => sequencer.sort([{path:path.join(${JSON.stringify(repoRoot)},'elsewhere',path.basename(tests[0].path))},...tests.slice(1)]), /输入异常/);
+        sequencer.cacheResults(tests, {});
+        console.log('planner and actual sequencer positive/negative cases passed');
+        `,
+      ],
+      { encoding: 'utf-8', cwd: repoRoot },
+    );
+    check(
+      'P1 leak:四片完整覆盖、完整业务族与历史42顺序正反例实际执行',
+      r.status === 0,
+      `${r.stdout}${r.stderr}`,
+    );
+  }
+  check(
+    'P1 leak:固定排序仅核心片显式启用,保留70分钟与8GiB边界',
+    nightly.includes('if [ "$SHARD" = 1 ]; then') &&
+      nightly.includes('sequencer=(--testSequencer ./scripts/e2e-shard-plan.mjs)') &&
+      nightly.includes('"${sequencer[@]}" > tmp/leaks.log') &&
+      nightly.includes('--kill-after=60s 70m pnpm test:e2e:leaks') &&
+      nightly.includes("NODE_OPTIONS='--max-old-space-size=8192'") &&
+      nightly.includes('fail-fast: false') &&
+      !nightly.includes('--forceExit'),
+    '核心排序接线或原执行边界发生变化',
+  );
   check(
     'P1 leak:nightly 开跑前先核分片清单完整性',
     // ⚠️ 不能只 grep `e2e-shard-plan.mjs --verify`:该串在本文件的 ::error:: 文案与

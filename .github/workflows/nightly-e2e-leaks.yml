@@ -31,17 +31,18 @@ name: Nightly E2E leaks
 #   哈希均分会把「同族共享的单例 / 缓存」这类泄漏的两端拆到不同片里,片内看不见。
 #   故按**域**切(scripts/e2e-shard-plan.mjs),同域 spec 仍连续跑在同一个 node 进程里。
 #
-# 为什么是 2 片(不是 3、4):片数是与检出能力的**直接权衡** —— 片越多,每个进程
-#   能观察到的累积状态越少。实测:activity 族单族就约 29 分钟,是不可再分的地板,
-#   **切到 4 片一秒都省不下来**,3 片相对 2 片也只买到约 10 分钟墙钟。故取「够用
-#   就好」的最小值 2:每个进程仍连续跑 ~145 个 spec。
+# 2026-10-27:旧 activity 29 分钟估算已失效,286 个套件在 4200 秒内只见 52 个完成。
+# 改为四片(当前 42/136/108/166):核心片固定两次慢现场共有的 42 套件完整前序链,
+# 其它活动套件按完整业务族分两片,原平台片不拆。并发 2→4,每片仍 70m / job 85m。
+# 历史/当前/CI 代理耗时用于规划,不保证未来耗时或慢现场复现。
 #
 # 本次切法**保住了什么**:
 #   - 单 spec 泄漏:100% 保留 —— 每个 spec 都在某一片的进程里,它漏的句柄会在那一片
 #     结束时被 detectOpenHandles 抓到。分片不改变这一点。
-#   - 同域跨 spec 泄漏:保留 —— 同域 spec 仍在同一进程连续跑(这正是按域切的理由)。
+#   - 已知 42 套件前序链精确顺序、其余完整业务族、平台片内连续状态。
 # 本次切法**放弃了什么**(有意为之,记下来以免下次误判):
 #   - 跨域跨 spec 交互泄漏:片 1 的 spec 埋下、片 2 的 spec 才暴露的那类,看不见了。
+#   - 原活动 286 套件跨新分组的未知交互也不能再由本线观测。
 #   - 整套内存累积 → OOM 的灵敏度:每片只累积约一半,OOM 分支更难触发。
 #     ⇒ 若哪天怀疑内存累积,手动跑一次不带 --testPathPatterns 的全量串行才是权威判据。
 # ──────────────────────────────────────────────────────────────────────────
@@ -76,11 +77,10 @@ jobs:
     name: E2E serial + detectOpenHandles (片 ${{ matrix.shard }})
     runs-on: ubuntu-latest
     strategy:
-      # 一片红**不许**掐掉另一片:两片的判定各自独立,掐掉就丢了另一半的读数,
-      # 而「另一半是什么颜色」恰恰是分片后判断「这是局部问题还是全局问题」的依据。
+      # 一片红不许掐掉其它片:各片判定独立,须保留完整覆盖与失败读数。
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     # 串行基线随 spec 数增长,须与内层 timeout 一起复核(见下方 Run E2E 步骤的注释)。
     # 恒保持 job timeout > 内层 timeout,否则内层的「超时/泄漏」判别拿不到执行机会。
     # 差值 15m 覆盖装依赖 / 起 PostgreSQL / 迁移 / 上传结论(实测约 4–5 分钟)。
@@ -185,8 +185,14 @@ jobs:
           # (两处各列一份迟早分叉,那时「跑了什么」和「以为跑了什么」不是一回事)。
           pattern="$(node scripts/e2e-shard-plan.mjs --shard "$SHARD" --pattern)"
           planned="$(node scripts/e2e-shard-plan.mjs --shard "$SHARD" --count)"
+          node scripts/e2e-shard-plan.mjs --shard "$SHARD" --list > tmp/planned-specs.txt
+          sequencer=()
+          if [ "$SHARD" = 1 ]; then
+            sequencer=(--testSequencer ./scripts/e2e-shard-plan.mjs)
+          fi
           echo "片 ${SHARD}:预算 ${planned} 个 spec"
-          echo "pattern = ${pattern}"
+          echo "candidate = ${GITHUB_SHA}; sequencer = ${sequencer[*]:-Jest default}"
+          cat tmp/planned-specs.txt
           started=$(date +%s)
           # --runInBand 把本片全部 spec 跑在**一个** node 进程里,堆占用只增不减地累积。
           # 2026-08-16 实测(当时单进程 279 spec):3.9GB 撞上 node 默认 ~4GB 上限,
@@ -194,7 +200,7 @@ jobs:
           # 分片后每片只累积约一半,更不易撞 —— 但这**不等于问题解决了**:
           # 若哪天又撞满,不要继续加码,去查累积源(见下方 oom 分支的处置文案)。
           NODE_OPTIONS='--max-old-space-size=8192' \
-            timeout --signal=TERM --kill-after=60s 70m pnpm test:e2e:leaks --testPathPatterns "$pattern" > tmp/leaks.log 2>&1
+            timeout --signal=TERM --kill-after=60s 70m pnpm test:e2e:leaks --testPathPatterns "$pattern" "${sequencer[@]}" > tmp/leaks.log 2>&1
           rc=$?
           set -e
           elapsed=$(( $(date +%s) - started ))
@@ -340,6 +346,7 @@ jobs:
             tmp/leaks.log
             tmp/leaks-normalized.log
             tmp/leaks-facts.txt
+            tmp/planned-specs.txt
           if-no-files-found: warn
           retention-days: 7
 
