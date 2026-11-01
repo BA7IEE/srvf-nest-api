@@ -142,6 +142,10 @@ describe('static SQL proof refuses unknown structure and preserves raw enforceme
   it.each([
     'SELECT 1 FROM pg_catalog.pg_class c JOIN "Member" m ON true',
     'SELECT 1 FROM pg_catalog.pg_class c, attachments a',
+    'SELECT 1 FROM pg_catalog.pg_class *, "Member"',
+    'SELECT 1 FROM pg_catalog.pg_class * AS c, "Member" m',
+    'SELECT 1 FROM pg_catalog.pg_class c *, attachments a',
+    'SELECT 1 FROM pg_catalog.pg_class TABLESAMPLE SYSTEM (10), "Member" m',
     'WITH changed AS (DELETE FROM "Member" RETURNING id) SELECT * FROM pg_catalog.pg_class',
     "SELECT query_to_xml('DELETE FROM \"Member\" RETURNING id',true,false,'')",
     'SELECT pg_catalog.pg_advisory_lock(1)',
@@ -160,5 +164,8 @@ describe('static SQL proof refuses unknown structure and preserves raw enforceme
     'SELECT 1 FROM pg_catalog.pg_class /* unfinished',
   ])('retains enforcement for writes, unknown functions and non-catalog sources: %s', (sql) => {
     expect(isReadOnlyCatalogSql(sql)).toBe(false);
+    expect(
+      rawSqlDisposition({ text: sql, hasInterpolation: false, catalogProofEligible: true }),
+    ).toBe('inspect');
   });
 });

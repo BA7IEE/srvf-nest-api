@@ -504,8 +504,15 @@ export function installE4ValidationDatabase(options?: {
     try {
       if (dedicated && worker !== undefined && lifecyclePlan.databaseFinalizer === 'DROP')
         await lifecycle.drop(worker);
-      // CI retains its assigned worker, restored to the current schema even after a failed fixture.
+      // CI restores only its assigned worker after the historical assertions
+      // and clients have closed.155 requires a genuinely empty install, so do
+      // not apply it over historical correction data or weaken its prerequisite.
       else if ((baseline || historical137) && initialized) {
+        if (!dedicated) {
+          if (worker === undefined) throw new Error('E4 restore worker ownership unavailable');
+          await lifecycle.drop(worker);
+          await lifecycle.create(deriveTestDbName());
+        }
         const remaining = 117_000 - Math.ceil(performance.now() - started);
         if (options?.boundMigrationProcesses && remaining < 1)
           throw new Error('E4 restore migration hook execution deadline exceeded');

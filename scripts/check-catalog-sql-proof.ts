@@ -237,7 +237,12 @@ export function isReadOnlyCatalogSql(sql: string): boolean {
           at = end + 1;
         }
       }
-      if (value(at) !== ',') break;
+      if (value(at) !== ',') {
+        // An unconsumed relation suffix must not hide a later comma source.
+        // This closed subset deliberately excludes inheritance and sampling.
+        if (at < tokens.length && !terminators.has(value(at))) return false;
+        break;
+      }
       at++;
     }
   }

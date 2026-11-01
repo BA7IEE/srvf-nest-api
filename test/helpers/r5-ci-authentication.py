@@ -30,6 +30,11 @@ PG_MEMORY_BYTES = 1536 * 1024**2
 NODE_MEMORY_BYTES = 2 * 1024**3
 PG_DATA_TMPFS_BYTES = 1024**3
 FIXTURE_MEMORY_BUDGET_BYTES = 3584 * 1024**2
+# PG16's default WAL checkpoint target alone equals the whole data tmpfs.
+# These smaller targets belong only to this disposable postmaster. WAL still
+# has a soft limit, and durability, business timeouts and container caps stay on.
+PG_MAX_WAL_BYTES = 128 * 1024**2
+PG_MIN_WAL_BYTES = 32 * 1024**2
 parser = argparse.ArgumentParser()
 parser.add_argument('--checkout', required=True)
 parser.add_argument('--evidence', required=True)
@@ -176,12 +181,14 @@ def authenticated(role, password, db, text, stem, allow=False):
 try:
     assert PG_MEMORY_BYTES + NODE_MEMORY_BYTES == FIXTURE_MEMORY_BUDGET_BYTES
     assert PG_DATA_TMPFS_BYTES < PG_MEMORY_BYTES
+    assert 0 < PG_MIN_WAL_BYTES <= PG_MAX_WAL_BYTES < PG_DATA_TMPFS_BYTES
     free = shutil.disk_usage(repo).free
     memory = memory_admission()
     save('ADMISSION.json', {'diskFreeBytes': free, **memory,
                            'pgCpu': 1, 'pgMemoryBytes': PG_MEMORY_BYTES,
                            'nodeCpu': 1, 'nodeMemoryBytes': NODE_MEMORY_BYTES, 'pidsPerContainer': 128,
                            'dataTmpfsBytes': PG_DATA_TMPFS_BYTES,
+                           'maxWalBytes': PG_MAX_WAL_BYTES, 'minWalBytes': PG_MIN_WAL_BYTES,
                            'combinedMemoryBudgetBytes': FIXTURE_MEMORY_BUDGET_BYTES})
     assert free > 10 * 1024**3, 'DISK_ADMISSION_REJECTED_GT_10GIB'
     assert memory['memoryAvailableBytes'] > 4 * 1024**3, 'MEMORY_ADMISSION_REJECTED_GT_4GIB'
@@ -218,6 +225,8 @@ try:
              "printf '%s' '" + hba + "' > /var/lib/postgresql/data/pg_hba.conf; "
              'chown postgres:postgres /var/lib/postgresql/data/pg_hba.conf; '
              'exec su-exec postgres postgres -D /var/lib/postgresql/data '
+             '-c max_wal_size=' + str(PG_MAX_WAL_BYTES // 1024**2) + 'MB '
+             '-c min_wal_size=' + str(PG_MIN_WAL_BYTES // 1024**2) + 'MB '
              '-c listen_addresses=127.0.0.1 -c unix_socket_directories=' + socket)
     cid = docker(['run', '--detach', '--pull=never', '--name', name, '--label', label,
                   '--network', 'none', '--cpus', '1', '--memory', str(PG_MEMORY_BYTES), '--pids-limit', '128',
@@ -247,6 +256,10 @@ try:
         assert docker(['exec', cid, 'stat', '-f', '-c', '%T', socket], 'socket-filesystem').stdout.strip() == 'tmpfs'
     save('ISOLATION.json', {'network': network, 'ports': ports, 'mounts': mounts, 'tmpfs': tmpfs, 'filesystem': fs})
     sql('CREATE DATABASE ' + DB + ';', 'create-db', db='postgres')
+    storage_settings = query("SELECT jsonb_build_object('maxWalBytes',pg_size_bytes(current_setting('max_wal_size')),'minWalBytes',pg_size_bytes(current_setting('min_wal_size')),'fsync',current_setting('fsync'),'fullPageWrites',current_setting('full_page_writes'),'synchronousCommit',current_setting('synchronous_commit'));", 'pg-storage-settings')
+    assert storage_settings == {'maxWalBytes': PG_MAX_WAL_BYTES, 'minWalBytes': PG_MIN_WAL_BYTES,
+                                'fsync': 'on', 'fullPageWrites': 'on', 'synchronousCommit': 'on'}
+    docker(['exec', cid, 'stat', '-f', '-c', '%S %b %f %a', '/var/lib/postgresql/data'], 'data-tmpfs-capacity')
     roles_sql = ['BEGIN;']
     for role in ROLES:
         inherit = 'INHERIT' if role == ROLES[3] else 'NOINHERIT'
