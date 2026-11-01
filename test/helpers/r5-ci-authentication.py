@@ -77,8 +77,13 @@ def clean(value):
 
 def regression_failure_tail(stderr, stdout):
     # Sanitize before truncating: cutting a secret first could hide its prefix
-    # from the redactor. Only failures are emitted, bounded to 12KiB.
-    return clean(stderr + '\n' + stdout)[-12288:]
+    # from the redactor. Preserve the first cause as well as the final summary;
+    # fixture timing output can otherwise displace every error from the tail.
+    text = clean(stderr + '\n' + stdout)
+    if len(text) <= 12288:
+        return text
+    marker = '\n[... bounded middle omitted ...]\n'
+    return text[:8192] + marker + text[-(4096 - len(marker)):]
 
 
 def run(argv, stem, text=None, allow=False, cleanup=False, timeout=30, persist=True):
@@ -318,7 +323,7 @@ except BaseException as error:
     receipt.update(status='FAIL', error={'type': type(error).__name__, 'safeReason': clean(str(error))},
                    elapsedSeconds=time.monotonic() - started)
 finally:
-    cleanup = {'status': 'NOT_CREATED'}
+    cleanup = {'status': 'NOT_CREATED', 'phase': 'RESOLVE_CREATE'}
     try:
         # Resolve a timed-out Docker create before deciding that nothing ran.
         if not cid:
@@ -335,29 +340,37 @@ finally:
                 assert re.fullmatch('[a-f0-9]{64}', found)
                 app_cid = found
         if app_cid:
+            cleanup['phase'] = 'STOP_NODE'
             docker(['stop', '--time', '10', app_cid], 'node-stop', cleanup=True, timeout=15)
             docker(['rm', app_cid], 'node-remove', cleanup=True)
         if cid:
+            cleanup['phase'] = 'SEAL_ROLES'
             sql('BEGIN;\n' + '\n'.join('ALTER ROLE ' + r + ' NOLOGIN PASSWORD NULL;' for r in ROLES[3:]) + '\nCOMMIT;', 'seal', cleanup=True)
+            cleanup['phase'] = 'INDEPENDENT_CLOSEOUT'
             state = query("SELECT jsonb_build_object('rolesSealed',(SELECT bool_and(NOT rolcanlogin AND rolpassword IS NULL) FROM pg_authid WHERE rolname LIKE 'r5_%'),'otherClients',(SELECT count(*) FROM pg_stat_activity WHERE backend_type='client backend' AND pid<>pg_backend_pid()),'prepared',(SELECT count(*) FROM pg_prepared_xacts));", 'independent-closeout', cleanup=True)
+            cleanup['observedState'] = state
             assert state['rolesSealed'] and state['otherClients'] == state['prepared'] == 0
+            cleanup['phase'] = 'STOP_PG'
             docker(['exec', '--user', 'postgres', cid, 'pg_ctl', '-D', '/var/lib/postgresql/data', '-m', 'fast', '-w', '-t', '10', 'stop'], 'pg-normal-stop', cleanup=True, timeout=15, allow=True)
             exited = docker(['wait', cid], 'pg-wait', cleanup=True, timeout=10)
             assert exited.stdout.strip() == '0'
+            cleanup['phase'] = 'REMOVE_PG'
             docker(['rm', cid], 'pg-remove', cleanup=True)
             left = docker(['ps', '-aq', '--filter', 'label=' + label], 'no-containers', cleanup=True).stdout.strip()
             assert not left
             cleanup = {'status': 'PASS', 'sealed': state, 'matchingContainers': 0, 'persistentVolumes': 0}
         if socket_volume:
+            cleanup['phase'] = 'REMOVE_SOCKET_VOLUME'
             docker(['volume', 'rm', socket_volume], 'socket-tmpfs-remove', cleanup=True)
             left = docker(['volume', 'ls', '--quiet', '--filter', 'label=' + label], 'no-socket-volumes', cleanup=True).stdout.strip()
             assert not left
             cleanup['ephemeralSocketVolumesRemaining'] = 0
     except BaseException as error:
-        cleanup = {'status': 'UNKNOWN_REQUIRES_INSPECTION_NO_REPLAY', 'type': type(error).__name__, 'safeReason': clean(str(error))}
+        cleanup.update(status='UNKNOWN_REQUIRES_INSPECTION_NO_REPLAY', type=type(error).__name__, safeReason=clean(str(error)))
     save('CLEANUP.json', cleanup)
     receipt['cleanup'] = cleanup
     save('RESULT.json', receipt)
     print(json.dumps({'status': receipt['status'], 'error': receipt.get('error'),
-                      'cleanup': cleanup['status'], 'elapsedSeconds': time.monotonic() - started}), flush=True)
+                      'cleanup': cleanup['status'], 'cleanupDetails': cleanup,
+                      'elapsedSeconds': time.monotonic() - started}), flush=True)
 raise SystemExit(0 if receipt['status'].startswith('PASS') and receipt['cleanup']['status'] == 'PASS' else 1)

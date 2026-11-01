@@ -17,7 +17,7 @@ with tempfile.TemporaryDirectory(prefix='r5-memory-test-') as directory:
  try: print(json.dumps(module.memory_admission(root,root/'meminfo')))
  except (ValueError,FileNotFoundError) as error: print(json.dumps({'error':str(error)}))
 `;
-function readMemory(input: Record<string, string>): Record<string, unknown> {
+function readMemory(input: Record<string, string | undefined>): Record<string, unknown> {
   return JSON.parse(
     execFileSync('python3', ['-B', '-c', probe, memoryReader], {
       input: JSON.stringify(input),

@@ -17,7 +17,7 @@ describe('isolated Human CI supplies a complete legal nonsecret app configuratio
     expect(config.corsOrigin).toEqual(['http://localhost:5173']);
     expect(config.swaggerEnabled).toBe(true);
     expect(config.loginThrottle.limit).toBe(50);
-    expect(config.humanCorrectionBackground.mode).toBe('off');
+    expect(config.humanCorrectionBackground).toEqual({ mode: 'off' });
     expect(Object.keys(R5_CI_NONSECRET_APP_ENV).sort()).toEqual([
       'APP_CORS_ORIGIN',
       'APP_ENV',

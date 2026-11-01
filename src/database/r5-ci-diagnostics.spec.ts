@@ -55,4 +55,11 @@ describe('bounded CI regression diagnostics expose the original failure safely',
     expect(result).not.toContain('straddle-the-limit');
     expect(result).toContain('SQLSTATE 23514');
   });
+  it('retains the original cause when verbose fixture output follows it', () => {
+    const result = diagnostic('FAIL D7\nSQLSTATE 42501\n' + 'x'.repeat(20_000), '51 tests');
+    expect(result).toContain('SQLSTATE 42501');
+    expect(result).toContain('51 tests');
+    expect(result).toContain('bounded middle omitted');
+    expect(result.length).toBeLessThanOrEqual(12_288);
+  });
 });
