@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { CorrectionApplicationService } from '../../src/modules/activities/correction-application.service';
+import { humanCorrectionTestService } from '../helpers/r5-ci-authenticated-runtime';
 import { ActivityTimeAllocationService } from '../../src/modules/activities/activity-time-allocation.service';
 import {
   createE4Fixture,
@@ -236,6 +237,7 @@ describe('E4 current correction contribution proof: actual predecessor and actua
   }, 120_000);
   afterEach(async () => {
     assertE5MatrixSettled();
+    await f?.humanApp?.close();
     await closeE5MatrixApp(f?.app);
     if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
     else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
@@ -370,7 +372,7 @@ describe('E4 current correction contribution proof: actual predecessor and actua
     const roots = await f.db.participationTimeLedgerEntry.findMany({
       where: { manifestId: original.id },
     });
-    const correction = f.app.get(CorrectionApplicationService);
+    const correction = humanCorrectionTestService(f, CorrectionApplicationService);
     const requested = await correction.submit(
       {
         activityId: b.source.activityId,
@@ -569,7 +571,7 @@ describe('E4 current correction contribution proof: actual predecessor and actua
       where: { manifestId: root.id },
     });
     const correctedEnd = new Date(b.source.endsAt.getTime() - 60_000);
-    const correction = f.app.get(CorrectionApplicationService);
+    const correction = humanCorrectionTestService(f, CorrectionApplicationService);
     const requested = await correction.submit(
       {
         activityId: b.source.activityId,

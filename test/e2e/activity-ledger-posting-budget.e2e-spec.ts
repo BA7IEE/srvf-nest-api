@@ -21,6 +21,7 @@ import {
 } from '../helpers/activity-contribution-policy.fixture';
 import { createDiagnosticE4Source } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
 import { assertConnectedTestDatabase } from '../setup/test-db';
+import { r5CurrentE4SourcePins } from '../helpers/r5-current-source-pins';
 
 let f: E4Fixture, monitor: PrismaClient;
 let pending = 0,
@@ -155,7 +156,7 @@ describe('ordinary E4 ledger named transaction resource boundary', () => {
         const [catalog] = await monitor.$queryRaw<
           { count: number; pin: string }[]
         >`SELECT (SELECT count(*)::int FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL) AS count,(SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure) AS pin`;
-        expect(catalog).toEqual({ count: 153, pin: '40b56bac5a571c56e589cbc549419bfa' });
+        expect(catalog).toEqual(r5CurrentE4SourcePins());
       }),
     120_000,
   );

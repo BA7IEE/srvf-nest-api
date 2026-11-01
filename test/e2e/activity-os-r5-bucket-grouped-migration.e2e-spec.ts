@@ -215,7 +215,7 @@ describe('151 bucket grouped hash on nonempty150', () => {
         expect(beforeMigrations).toHaveLength(150);
         expect(beforeMigrations[149].name).toBe(E4_MIGRATION_150);
         const beforeCatalog = await catalog(db);
-        const beforeRows = await nativeLaunchBusinessFingerprint(db, stage);
+        const beforeRows = await nativeLaunchBusinessFingerprint(db, stage, 'pre155');
         const beforeRoots = await verifyRoots(db);
         await owner.deployBucketGroupedMigrations(remaining());
         const afterMigrations = await migrationRows(db);
@@ -225,12 +225,12 @@ describe('151 bucket grouped hash on nonempty150', () => {
         ]);
         expect(await installedBody(db)).toBe(bodyOf(migration));
         expect(await catalog(db)).toBe(beforeCatalog);
-        expect(await nativeLaunchBusinessFingerprint(db, stage)).toEqual(beforeRows);
+        expect(await nativeLaunchBusinessFingerprint(db, stage, 'pre155')).toEqual(beforeRows);
         expect(await verifyRoots(db)).toBe(beforeRoots);
         await owner.deployBucketGroupedMigrations(remaining());
         expect(await migrationRows(db)).toEqual(afterMigrations);
         expect(await catalog(db)).toBe(beforeCatalog);
-        expect(await nativeLaunchBusinessFingerprint(db, stage)).toEqual(beforeRows);
+        expect(await nativeLaunchBusinessFingerprint(db, stage, 'pre155')).toEqual(beforeRows);
         expect(await verifyRoots(db)).toBe(beforeRoots);
         console.info(
           'BUCKET151_NONEMPTY_UPGRADE',
@@ -317,7 +317,7 @@ describe('151 bucket grouped hash on nonempty150', () => {
         });
         expect(buckets).toHaveLength(4);
         expect(sources).toHaveLength(4);
-        const before = await nativeLaunchBusinessFingerprint(db, stage);
+        const before = await nativeLaunchBusinessFingerprint(db, stage, 'pre155');
         const sentinel = new Error('Bucket151 complete receipt positive verified; rollback');
         const safeJson = (v: unknown) =>
           JSON.stringify(v, (_key, item: unknown) =>
@@ -364,7 +364,7 @@ describe('151 bucket grouped hash on nonempty150', () => {
         };
         expect(parent.bucketContentHash).not.toBe('f'.repeat(64));
         await expect(probe(false)).rejects.toBe(sentinel);
-        expect(await nativeLaunchBusinessFingerprint(db, stage)).toEqual(before);
+        expect(await nativeLaunchBusinessFingerprint(db, stage, 'pre155')).toEqual(before);
         const error: unknown = await probe(true).then(
           () => null,
           (cause: unknown) => cause,
@@ -377,7 +377,7 @@ describe('151 bucket grouped hash on nonempty150', () => {
         expect(String(error.meta?.message)).toContain(
           'classified settlement population, source fingerprint, child count or bucket hash mismatch',
         );
-        expect(await nativeLaunchBusinessFingerprint(db, stage)).toEqual(before);
+        expect(await nativeLaunchBusinessFingerprint(db, stage, 'pre155')).toEqual(before);
         const submitted = await submitE4Time(f(), source, prepared);
         expect(submitted.kindCode).toBe('submitted');
         expect(
@@ -395,7 +395,7 @@ describe('151 bucket grouped hash on nonempty150', () => {
     async () =>
       owned(async () => {
         const db = f().db;
-        const beforeRows = await nativeLaunchBusinessFingerprint(db, stage);
+        const beforeRows = await nativeLaunchBusinessFingerprint(db, stage, 'pre155');
         const beforeCatalog = await catalog(db);
         const beforeMigrations = await migrationRows(db);
         const sentinel = new Error('Bucket151 old body restoration verified; rollback');
@@ -417,7 +417,7 @@ describe('151 bucket grouped hash on nonempty150', () => {
         expect(await installedBody(db)).toBe(bodyOf(migration));
         expect(await catalog(db)).toBe(beforeCatalog);
         expect(await migrationRows(db)).toEqual(beforeMigrations);
-        expect(await nativeLaunchBusinessFingerprint(db, stage)).toEqual(beforeRows);
+        expect(await nativeLaunchBusinessFingerprint(db, stage, 'pre155')).toEqual(beforeRows);
       }),
     120000,
   );

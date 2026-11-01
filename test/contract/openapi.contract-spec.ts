@@ -95,6 +95,18 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/resubmit'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/prepare'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/commit'],
+  [
+    'post',
+    '/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/commit-jobs',
+  ],
+  [
+    'get',
+    '/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/commit-jobs/{jobId}',
+  ],
+  [
+    'post',
+    '/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/commit-jobs/{jobId}/retry',
+  ],
   // D4: explicit Human/App classified-settlement commands and bounded frozen read models.
   ['get', '/api/app/v1/my/managed-activities/{activityId}/time-settlement'],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/time-settlement/sources'],
@@ -1210,7 +1222,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 663; // E3-2 D3 adds exactly five System evidence GETs.
+const EXPECTED_ROUTE_COUNT = 666; // Human background correction adds three explicit App routes.
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -1227,6 +1239,7 @@ function schemaAllowsNull(schema: OpenApiSchema | undefined): boolean {
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
 const EXPECTED_SCHEMAS: readonly string[] = [
+  'AppActivityTimeCorrectionJobDto',
   'LoginDto',
   'CreateUserDto',
   'UpdateUserDto',
@@ -3413,6 +3426,9 @@ describe('OpenAPI 契约快照', () => {
       [prefix + '/{requestId}/resubmit', 'post', '201'],
       [prefix + '/{requestId}/prepare', 'post', '200'],
       [prefix + '/{requestId}/commit', 'post', '200'],
+      [prefix + '/{requestId}/commit-jobs', 'post', '201'],
+      [prefix + '/{requestId}/commit-jobs/{jobId}', 'get', '200'],
+      [prefix + '/{requestId}/commit-jobs/{jobId}/retry', 'post', '200'],
     ] as const;
     expect(
       Object.keys(doc.paths)

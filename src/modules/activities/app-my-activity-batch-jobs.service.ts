@@ -1,3 +1,4 @@
+import { HUMAN_CORRECTION_JOB_TYPE } from './correction-background-job';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { toMemberLabelFields } from '../../common/identity/member-label.util';
@@ -43,6 +44,7 @@ export class AppMyActivityBatchJobsService {
     query: ListAppMyActivityBatchJobsQueryDto,
   ): Promise<PageResultDto<AppMyActivityBatchJobListItemDto>> {
     const where: Prisma.ActivityBatchJobWhereInput = {
+      jobTypeCode: { not: HUMAN_CORRECTION_JOB_TYPE },
       activity: scopedActivityWhere(memberId),
       ...(query.activityId === undefined ? {} : { activityId: query.activityId }),
     };
@@ -67,7 +69,11 @@ export class AppMyActivityBatchJobsService {
 
   async detail(memberId: string, jobId: string): Promise<AppMyActivityBatchJobDetailDto> {
     const row = await this.prisma.activityBatchJob.findFirst({
-      where: { id: jobId, activity: scopedActivityWhere(memberId) },
+      where: {
+        id: jobId,
+        jobTypeCode: { not: HUMAN_CORRECTION_JOB_TYPE },
+        activity: scopedActivityWhere(memberId),
+      },
       select: JOB_SELECT,
     });
     if (row === null) throw new BizException(BizCode.NOT_FOUND);
@@ -86,7 +92,11 @@ export class AppMyActivityBatchJobsService {
     // 先确认 job 在责任范围内 —— 否则「越权但 jobId 存在」会返回空页而不是 404,
     // 空页与「你的任务恰好没有失败项」不可区分,等于把存在性泄露成一个时序差。
     const job = await this.prisma.activityBatchJob.findFirst({
-      where: { id: jobId, activity: scopedActivityWhere(memberId) },
+      where: {
+        id: jobId,
+        jobTypeCode: { not: HUMAN_CORRECTION_JOB_TYPE },
+        activity: scopedActivityWhere(memberId),
+      },
       select: { id: true },
     });
     if (job === null) throw new BizException(BizCode.NOT_FOUND);
@@ -198,9 +208,10 @@ export class AppMyActivityBatchJobsService {
   ): Promise<{ id: string; activityId: string; statusCode: string }> {
     const located = await tx.activityBatchJob.findUnique({
       where: { id: jobId },
-      select: { activityId: true },
+      select: { activityId: true, jobTypeCode: true },
     });
-    if (located === null) throw new BizException(BizCode.NOT_FOUND);
+    if (located === null || located.jobTypeCode === HUMAN_CORRECTION_JOB_TYPE)
+      throw new BizException(BizCode.NOT_FOUND);
 
     // ① Activity 根锁(§10.1 第 1 层),与 worker 的 lockActivityRoot 同一把锁。
     const activities = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
@@ -214,7 +225,7 @@ export class AppMyActivityBatchJobsService {
     const jobs = await tx.$queryRaw<Array<{ id: string; activityId: string; statusCode: string }>>(
       Prisma.sql`
         SELECT "id", "activityId", "statusCode" FROM "ActivityBatchJob"
-        WHERE "id" = ${jobId} AND "activityId" = ${located.activityId}
+        WHERE "id" = ${jobId} AND "activityId" = ${located.activityId} AND "jobTypeCode" <> ${HUMAN_CORRECTION_JOB_TYPE}
         FOR UPDATE
       `,
     );

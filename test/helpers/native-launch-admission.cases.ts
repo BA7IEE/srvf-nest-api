@@ -1,5 +1,7 @@
+import { createNativeCapacityLiveSource } from './native-capacity-live.fixture';
 import { strict as assert } from 'node:assert';
-import type { PrismaClient, Prisma } from '@prisma/client';
+import { humanCorrectionTestService, r5CiOwnerClient } from './r5-ci-authenticated-runtime';
+import { PrismaClient, type Prisma } from '@prisma/client';
 import { ActivityTimeSettlementService } from '../../src/modules/activities/activity-time-settlement.service';
 import { ActivityContributionSettlementService } from '../../src/modules/activities/activity-contribution-settlement.service';
 import { ActivityContributionSettlementQueryService } from '../../src/modules/activities/activity-contribution-settlement-query.service';
@@ -140,7 +142,7 @@ export async function runNativeLaunchSmallAdmission(
 
   const correction = f.app.get(CorrectionApplicationService);
   const contributions = f.app.get(ActivityContributionSettlementService);
-  const gate = jest.spyOn(contributions, 'assertNewNativeCorrectionInTx');
+  let gate = jest.spyOn(contributions, 'assertNewNativeCorrectionInTx');
   const copy = jest.spyOn(queries, 'assertLaunchCopyInTx');
   const assertCommitted = async (
     prepared: CorrectionPrepareResult,
@@ -281,6 +283,13 @@ export async function runNativeLaunchSmallAdmission(
       }),
     );
     assert.equal(roots.length, 4);
+    const humanCorrection = humanCorrectionTestService(f, CorrectionApplicationService);
+    const humanQueries = humanCorrectionTestService(f, ActivityContributionSettlementQueryService);
+    gate.mockRestore();
+    gate = jest.spyOn(
+      humanCorrectionTestService(f, ActivityContributionSettlementService),
+      'assertNewNativeCorrectionInTx',
+    );
     const buildTimeRequest = async (versionId: string, long: boolean) => {
       const previous = await stage('ADMISSION_IO_202', () =>
         observer.activitySettlementContributionRevision.findFirstOrThrow({
@@ -333,7 +342,7 @@ export async function runNativeLaunchSmallAdmission(
         non_creditable: 4,
       };
       const receipt = await stage('ADMISSION_IO_243', () =>
-        correction.submit(
+        humanCorrection.submit(
           {
             activityId: source.activityId,
             participationIdentityId: source.raw.people[0].identityId,
@@ -383,7 +392,7 @@ export async function runNativeLaunchSmallAdmission(
         ),
       );
       await stage('ADMISSION_IO_291', () =>
-        correction.review(
+        humanCorrection.review(
           { correctionRequestId: receipt.correctionRequestId, actionCode: 'approve' },
           e4Actor(f.finalReviewer),
           E4_META,
@@ -399,11 +408,11 @@ export async function runNativeLaunchSmallAdmission(
     const v3command = await stage('V3_SUBMIT_REVIEW', () =>
       buildTimeRequest(unchanged.newSettlementVersionId, false),
     );
-    const changedEvaluation = jest.spyOn(queries, 'readCorrectionEvaluationInTx');
+    const changedEvaluation = jest.spyOn(humanQueries, 'readCorrectionEvaluationInTx');
     let changed: Awaited<ReturnType<CorrectionApplicationService['prepare']>>;
     try {
       changed = await stage('V3_PREPARE', () =>
-        correction.prepare(v3command, e4Actor(f.finalReviewer), E4_META),
+        humanCorrection.prepare(v3command, e4Actor(f.finalReviewer), E4_META),
       );
       assert(changedEvaluation.mock.calls.some((call) => call.at(-1) === true));
     } finally {
@@ -418,7 +427,7 @@ export async function runNativeLaunchSmallAdmission(
     assert(changedProof.correctionTimeSourceProofId);
     await assertNativeLaunchFrozenOracle(observer, changedProof, 4, stage);
     const changedCommitted = await stage('V3_COMMIT', () =>
-      correction.commit(v3command, e4Actor(f.finalReviewer), E4_META),
+      humanCorrection.commit(v3command, e4Actor(f.finalReviewer), E4_META),
     );
     const changedLedger = await assertCommitted(changed, changedCommitted, 'V3_COMMIT');
     const evaluations = await stage('ADMISSION_IO_323', () =>
@@ -462,7 +471,7 @@ export async function runNativeLaunchSmallAdmission(
     try {
       await stage('LONG_FULL_SOURCE_PREPARE_REJECT', () =>
         assert.rejects(
-          () => correction.prepare(longCommand, e4Actor(f.finalReviewer), E4_META),
+          () => humanCorrection.prepare(longCommand, e4Actor(f.finalReviewer), E4_META),
           (error: unknown) => {
             prepareRejection = error;
             if (typeof error !== 'object' || error === null) return false;
@@ -524,33 +533,35 @@ export async function runNativeLaunchSmallAdmission(
 }
 
 /** Regular CI's applicable capacity: original 30s, 500/500/2500/2000, four real prepares. */
-export async function runNativeLaunch500Boundary(
+export async function runNativeLaunchCapacityBoundary(
   f: E4Fixture,
   observer: PrismaClient,
   stage: NativeLaunchStage,
   emit: (result: NativeAdmissionResult) => void,
 ) {
-  const source = await createNativeLaunchLiveSource(f, 500, stage);
-  const prepared = (await stage('BOUNDARY500_PREPARE_HTTP', () =>
+  const source = await createNativeCapacityLiveSource(f, stage);
+  const prepared = (await stage('BOUNDARY2000_PREPARE_HTTP', () =>
     source.post('/time-settlement/prepare', source.prepare),
   )) as TimeSettlementReceiptResult;
+  assert.equal(prepared.bucketCount, 8000);
+  assert.equal(prepared.sourceCount, 40000);
   const root = await stage('ADMISSION_IO_383', () =>
     observer.activitySettlementContributionRevision.findFirstOrThrow({
       where: { timeRevisionId: prepared.timeRevisionId, kindCode: 'draft' },
     }),
   );
-  assert.equal(root.evaluationCount, 2000);
-  assert.equal(source.raw.identities.length, 500);
-  assert.equal(source.segments.length, 500);
+  assert.equal(root.evaluationCount, 8000);
+  assert.equal(source.raw.identities.length, 2000);
+  assert.equal(source.segments.length, 10000);
   assert.equal(
     await stage('ADMISSION_IO_389', () => observer.participantTimeAllocationSlice.count()),
-    2500,
+    50000,
   );
   assert.equal(
     await stage('ADMISSION_IO_390', () => observer.participantSettlementTimeBucket.count()),
-    2000,
+    8000,
   );
-  await assertNativeLaunchFrozenOracle(observer, root, 2000, stage);
+  await assertNativeLaunchFrozenOracle(observer, root, 8000, stage);
   const baseline = await nativeLaunchBusinessFingerprint(observer, stage);
   const time = f.app.get(ActivityTimeSettlementService);
   const originalTransaction = f.db.$transaction.bind(f.db);
@@ -600,8 +611,8 @@ export async function runNativeLaunch500Boundary(
     assert.equal(after.hash, baseline.hash);
     emit({ label, value: { bizCode: 20225, all196Unchanged: true, baseline: baseline.hash } });
   };
-  await stage('BOUNDARY501_IDENTITIES', () =>
-    negative('501 identities including excluded/no-source', async (tx) => {
+  await stage('BOUNDARY2001_IDENTITIES', () =>
+    negative('2001 identities including excluded/no-source', async (tx) => {
       const member = await tx.member.create({
         data: { memberNo: f.key('boundary_member'), ...memberIdentityData('Isolated boundary') },
       });
@@ -621,8 +632,8 @@ export async function runNativeLaunch500Boundary(
       });
     }),
   );
-  await stage('BOUNDARY501_SEGMENTS', () =>
-    negative('501 current segments including voided', async (tx) => {
+  await stage('BOUNDARY10001_SEGMENTS', () =>
+    negative('10001 current segments including voided', async (tx) => {
       const person = source.raw.people[0];
       const events = [];
       for (const [eventTypeCode, occurredAt] of [
@@ -666,8 +677,8 @@ export async function runNativeLaunch500Boundary(
       });
     }),
   );
-  await stage('BOUNDARY2501_SLICES', () =>
-    negative('2501 physical slices after actual allocate', () =>
+  await stage('BOUNDARY50001_SLICES', () =>
+    negative('50001 physical slices after actual allocate', () =>
       time.allocate(
         source.activityId,
         {
@@ -677,7 +688,11 @@ export async function runNativeLaunch500Boundary(
           expectedRevision: 1,
           recognitionModeCode: 'manual',
           manualReason: 'Isolated physical slice overflow',
-          slices: nativeLaunchSlices(source.startsAt, source.endsAt, 6),
+          slices: nativeLaunchSlices(
+            source.segments[0].checkInAt,
+            source.segments[0].checkOutAt!,
+            6,
+          ),
           evidenceAttachmentIds: [],
         },
         e4Actor(f.creator, true),
@@ -685,7 +700,7 @@ export async function runNativeLaunch500Boundary(
       ),
     ),
   );
-  const submitted = (await stage('BOUNDARY500_SUBMIT_HTTP', () =>
+  const submitted = (await stage('BOUNDARY2000_SUBMIT_HTTP', () =>
     source.post('/time-settlement/submit', {
       expectedDraftVersion: source.draft.version,
       expectedEvidenceSealId: source.expectation.expectedEvidenceSealId,
@@ -694,20 +709,74 @@ export async function runNativeLaunch500Boundary(
       expectedBucketContentHash: prepared.bucketContentHash,
     }),
   )) as TimeSettlementReceiptResult;
-  const posted = await stage('BOUNDARY500_LEDGER_COMMIT', () => postE4Ledger(f, submitted));
+  const posted = await stage('BOUNDARY2000_LEDGER_COMMIT', () => postE4Ledger(f, submitted));
   assert.equal(posted.committed.batchStatus, 'committed');
+  return { source, submitted, posted };
+}
+
+export async function assertNativeCapacityPostConditions(
+  f: E4Fixture,
+  observer: PrismaClient,
+  stage: NativeLaunchStage,
+  emit: (result: NativeAdmissionResult) => void,
+  context: Awaited<ReturnType<typeof runNativeLaunchCapacityBoundary>>,
+) {
+  const { submitted } = context;
   const formal = await stage('ADMISSION_IO_537', () =>
     observer.activitySettlementContributionRevision.findFirstOrThrow({
       where: { settlementVersionId: submitted.settlementVersionId, kindCode: 'submitted' },
     }),
   );
-  await assertNativeLaunchFrozenOracle(observer, formal, 2000, stage);
+  await assertNativeLaunchFrozenOracle(observer, formal, 8000, stage);
+  return assertNativeCapacityLedgerReadback(f, observer, stage, emit, context);
+}
+
+export async function assertNativeCapacityLedgerReadback(
+  f: E4Fixture,
+  observer: PrismaClient,
+  stage: NativeLaunchStage,
+  emit: (result: NativeAdmissionResult) => void,
+  context: Awaited<ReturnType<typeof runNativeLaunchCapacityBoundary>>,
+) {
+  const { source, submitted, posted } = context;
+  const summaryDb = r5CiOwnerClient({
+    log: [{ emit: 'event', level: 'query' }],
+  });
+  let summaryQueries = 0;
+  summaryDb.$on('query', (event) => {
+    if (!/^(BEGIN|COMMIT|ROLLBACK)\b/.test(event.query.trim())) summaryQueries++;
+  });
+  try {
+    await summaryDb.$connect();
+    const began = performance.now();
+    const summary = await stage('NATIVE2000_FORMAL_SUMMARY', () =>
+      summaryDb.$transaction(
+        (tx) =>
+          f.app
+            .get(ActivityContributionSettlementQueryService)
+            .readSummaryInTx(tx, submitted.settlementVersionId),
+        { timeout: 5000 },
+      ),
+    );
+    const elapsedMs = performance.now() - began;
+    assert(elapsedMs < 5000);
+    assert(summaryQueries > 0 && summaryQueries <= 3);
+    assert.equal(summary.evaluationCount, 8000);
+    assert.equal(summary.recognizedPointsTotal, '1000.00');
+    assert.equal(summary.hasMore, true);
+    emit({
+      label: 'native2000 formal summary original3queries/5s',
+      value: { queries: summaryQueries, elapsedMs },
+    });
+  } finally {
+    await summaryDb.$disconnect();
+  }
   const entries = await stage('ADMISSION_IO_541', () =>
     observer.participationLedgerEntry.findMany({
       where: { postingBatchId: posted.batchId },
     }),
   );
-  assert.equal(entries.length, 1000);
+  assert.equal(entries.length, 4000);
   const pairs = new Map<string, Set<string>>();
   for (const row of entries) {
     const key = JSON.stringify([row.resultRevisionId, row.ledgerDate]);
@@ -716,13 +785,13 @@ export async function runNativeLaunch500Boundary(
     kinds.add(row.entryTypeCode);
     pairs.set(key, kinds);
   }
-  assert.equal(pairs.size, 500);
+  assert.equal(pairs.size, 2000);
   for (const kinds of pairs.values())
     assert.deepEqual([...kinds].sort(), ['contribution_credit', 'service_credit']);
   const services = entries.filter((row) => row.entryTypeCode === 'service_credit');
   const credits = entries.filter((row) => row.entryTypeCode === 'contribution_credit');
-  assert.equal(services.length, 500);
-  assert.equal(credits.length, 500);
+  assert.equal(services.length, 2000);
+  assert.equal(credits.length, 2000);
   const expectedMembers = new Set(source.raw.people.map((person) => person.memberId));
   for (const credit of credits) {
     assert(expectedMembers.has(credit.memberId));
@@ -741,26 +810,26 @@ export async function runNativeLaunch500Boundary(
     assert.equal(service.memberId, credit.memberId);
     assert.equal(service.participationIdentityId, credit.participationIdentityId);
     assert.equal(service.reversesEntryId, null);
-    assert.equal(service.serviceHoursDelta.toFixed(2), '0.01');
+    assert.equal(service.serviceHoursDelta.toFixed(2), '0.05');
     assert.equal(service.recognizedPointsDelta.toFixed(2), '0.00');
     assert.equal(service.creditedPointsDelta.toFixed(2), '0.00');
     assert.equal(service.cappedOutPointsDelta.toFixed(2), '0.00');
   }
   assert.equal(
     services.reduce((sum, row) => sum + Math.round(Number(row.serviceHoursDelta) * 100), 0),
-    500,
+    10000,
   );
   assert.equal(
     credits.reduce((sum, row) => sum + Math.round(Number(row.creditedPointsDelta) * 100), 0),
-    25_000,
+    100_000,
   );
   const days = await stage('ADMISSION_IO_591', () =>
     observer.memberContributionDayState.findMany({
       where: { latestBatchId: posted.batchId },
     }),
   );
-  assert.equal(days.length, 500);
-  assert.equal(new Set(days.map((row) => row.memberId)).size, 500);
+  assert.equal(days.length, 2000);
+  assert.equal(new Set(days.map((row) => row.memberId)).size, 2000);
   for (const day of days) {
     assert(expectedMembers.has(day.memberId));
     assert.equal(day.version, 1);
@@ -789,9 +858,9 @@ export async function runNativeLaunch500Boundary(
       where: { manifestId: manifest.id },
     }),
   );
-  assert.equal(buckets.length, 2000);
-  assert.equal(timeEntries.length, 2000);
-  assert.equal(manifest.expectedEntryCount, 2000);
+  assert.equal(buckets.length, 8000);
+  assert.equal(timeEntries.length, 8000);
+  assert.equal(manifest.expectedEntryCount, 8000);
   const bucketMap = new Map(buckets.map((row) => [row.id, row]));
   const seenBuckets = new Set<string>();
   for (const entry of timeEntries) {
@@ -806,10 +875,10 @@ export async function runNativeLaunch500Boundary(
   }
   assert.equal(
     timeEntries.reduce((sum, row) => sum + BigInt(row.recognizedSeconds), 0n),
-    17_500n,
+    200_000n,
   );
   emit({
-    label: '500/500/2500/2000 real active boundary, frozen oracle and ledger COMMIT',
-    value: { capacityPrepareCalls: 4, evaluations: 2000, ledgerPairs: 500 },
+    label: '2000/10000/50000/8000 real active boundary, frozen oracle and ledger COMMIT',
+    value: { capacityPrepareCalls: 4, evaluations: 8000, ledgerPairs: 2000 },
   });
 }

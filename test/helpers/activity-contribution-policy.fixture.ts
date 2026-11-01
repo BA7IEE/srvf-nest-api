@@ -16,6 +16,7 @@ import {
   E4_MIGRATION_150,
   E4_MIGRATION_151,
   E4_MIGRATION_152,
+  E4_MIGRATION_153,
 } from './e4-migration-prefix';
 import type { INestApplication } from '@nestjs/common';
 import { BindingScopeType, PrincipalType, Role, UserStatus, Prisma } from '@prisma/client';
@@ -51,6 +52,8 @@ import { memberIdentityData } from './member-identity.fixture';
 import { httpServer } from './http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { r5CiAuthenticated } from '../setup/r5-ci-instance-scope';
+import { assertR5CiActorsWithoutPositions } from './r5-ci-authenticated-runtime';
 import { installScratchDatabaseLease } from './scratch-database-lease';
 import { loadTestEnv } from '../setup/load-env';
 import { assertTestDatabaseUrl } from '../setup/test-db';
@@ -293,7 +296,8 @@ export function installE4ValidationDatabase(options?: {
     | 149
     | 150
     | 151
-    | 152;
+    | 152
+    | 153;
   function deployHistoricalMigrations(count: HistoricalCount): void;
   function deployHistoricalMigrations(count: HistoricalCount, timeout: number): Promise<void>;
   function deployHistoricalMigrations(
@@ -322,6 +326,7 @@ export function installE4ValidationDatabase(options?: {
       E4_MIGRATION_150,
       E4_MIGRATION_151,
       E4_MIGRATION_152,
+      E4_MIGRATION_153,
     ].slice(0, count - 136);
     for (const name of successors) {
       const directory = join(temporary, 'migrations', name);
@@ -400,6 +405,11 @@ export function installE4ValidationDatabase(options?: {
   function deploySourceProofProjectionMigrations(timeout: number): Promise<void>;
   function deploySourceProofProjectionMigrations(timeout?: number) {
     return deployHistoricalMigrations(152, timeout);
+  }
+  function deploySourceParameterizedMigrations(): void;
+  function deploySourceParameterizedMigrations(timeout: number): Promise<void>;
+  function deploySourceParameterizedMigrations(timeout?: number) {
+    return deployHistoricalMigrations(153, timeout);
   }
   const previous = {
     worker: process.env.JEST_WORKER_ID,
@@ -494,8 +504,15 @@ export function installE4ValidationDatabase(options?: {
     try {
       if (dedicated && worker !== undefined && lifecyclePlan.databaseFinalizer === 'DROP')
         await lifecycle.drop(worker);
-      // CI retains its assigned worker, restored to the current schema even after a failed fixture.
+      // CI restores only its assigned worker after the historical assertions
+      // and clients have closed.155 requires a genuinely empty install, so do
+      // not apply it over historical correction data or weaken its prerequisite.
       else if ((baseline || historical137) && initialized) {
+        if (!dedicated) {
+          if (worker === undefined) throw new Error('E4 restore worker ownership unavailable');
+          await lifecycle.drop(worker);
+          await lifecycle.create(deriveTestDbName());
+        }
         const remaining = 117_000 - Math.ceil(performance.now() - started);
         if (options?.boundMigrationProcesses && remaining < 1)
           throw new Error('E4 restore migration hook execution deadline exceeded');
@@ -542,6 +559,7 @@ export function installE4ValidationDatabase(options?: {
     deploySourceProofCountMigrations,
     deployBucketGroupedMigrations,
     deploySourceProofProjectionMigrations,
+    deploySourceParameterizedMigrations,
     deployLatestMigrations,
     async recreateCurrentMigrations() {
       if (!baseline || !initialized || worker === undefined)
@@ -560,6 +578,7 @@ export function installE4ValidationDatabase(options?: {
 
 export interface E13Fixture {
   readonly app: INestApplication;
+  readonly humanApp?: INestApplication;
   readonly db: PrismaService;
   readonly creator: { readonly id: string; readonly memberId: string; readonly auth: string };
   readonly reviewer: { readonly id: string; readonly memberId: string; readonly auth: string };
@@ -662,6 +681,7 @@ async function grantOrganizationPermissions(
 
 export async function createE13Fixture(): Promise<E13Fixture> {
   const app = await createTestApp();
+  let humanApp: INestApplication | undefined;
   try {
     await resetDb(app);
     const db = app.get(PrismaService);
@@ -739,9 +759,12 @@ export async function createE13Fixture(): Promise<E13Fixture> {
       CONTRIBUTION_POLICY_SELECTION_PERMISSIONS,
     );
     await grantOrganizationPermissions(fixture, reviewerUser.id, REVIEWER_PERMISSIONS);
+    await assertR5CiActorsWithoutPositions(db);
+    if (r5CiAuthenticated()) humanApp = await createTestApp({ r5Human: true });
 
     return {
       ...fixture,
+      humanApp,
       creator: {
         id: creatorUser.id,
         memberId: creatorMember.id,
@@ -755,6 +778,7 @@ export async function createE13Fixture(): Promise<E13Fixture> {
     };
   } catch (error) {
     try {
+      await humanApp?.close();
       await app.close();
     } catch (closeError) {
       throw new AggregateError([error, closeError], 'Fixture initialization and cleanup failed');
@@ -764,6 +788,7 @@ export async function createE13Fixture(): Promise<E13Fixture> {
 }
 
 export async function closeE13Fixture(fixture: E13Fixture | undefined): Promise<void> {
+  await fixture?.humanApp?.close();
   await fixture?.app.close();
 }
 
@@ -978,6 +1003,7 @@ export async function createE4Fixture(): Promise<E4Fixture> {
         scopeType: BindingScopeType.GLOBAL,
       },
     });
+    await assertR5CiActorsWithoutPositions(fixture.db);
     return {
       ...fixture,
       finalReviewer: {

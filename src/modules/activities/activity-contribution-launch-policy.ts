@@ -8,17 +8,15 @@ import { parseTimePolicyDefinition } from './activity-time-policy-definition';
 
 /** Active new-business admission only. Fixture correctness limits and frozen proofs stay separate. */
 export const NATIVE_CONTRIBUTION_LAUNCH_LIMITS = Object.freeze({
-  identities: 500,
-  segments: 500,
-  allocations: 500,
-  punchEvents: 2_000,
-  segmentRevisions: 1_000,
-  allocationRevisions: 1_000,
-  slices: 2_500,
-  buckets: 2_000,
-  bucketSources: 2_000,
-  evaluations: 2_000,
-  sourceRefs: 2_500,
+  identities: 2_000,
+  segments: 10_000,
+  allocations: 10_000,
+  punchEvents: 20_000,
+  slices: 50_000,
+  buckets: 8_000,
+  bucketSources: 40_000,
+  evaluations: 8_000,
+  sourceRefs: 50_000,
   policyVersions: 1,
   policyRoles: 1,
   policyCategories: 4,
@@ -31,10 +29,11 @@ export const NATIVE_CONTRIBUTION_LAUNCH_LIMITS = Object.freeze({
   policyBytes: 8_192,
   snapshotBytes: 262_144,
   selectionBytes: 65_536,
-  sourceBytes: 4_194_304,
-  evaluationBytes: 8_388_608,
+  // Single fixed-input calibration +25%, rounded up to whole MiB (2026-10-27).
+  sourceBytes: 49_283_072,
+  evaluationBytes: 53_477_376,
   daysPerSlice: 2,
-  dayPieces: 5_000,
+  dayPieces: 50_000,
 });
 
 type Limit = keyof typeof NATIVE_CONTRIBUTION_LAUNCH_LIMITS;

@@ -935,7 +935,7 @@ describe('D4 historical-role reuse stays inside one evaluation', () => {
   }
   it('checks pending/zero-source population before reading any physical slices', async () => {
     const f = roleFixture();
-    f.set.population = Array.from({ length: 501 }, (_, i) => ({
+    f.set.population = Array.from({ length: 2001 }, (_, i) => ({
       participationIdentityId: String(i),
       memberId: String(i),
       pending: true,
@@ -960,7 +960,7 @@ describe('D4 historical-role reuse stays inside one evaluation', () => {
   it('counts manifests belonging to invalid/excluded segments before result filtering', async () => {
     const f = roleFixture();
     f.set.population = [];
-    f.rows[0].sliceCount = 2501;
+    f.rows[0].sliceCount = 50001;
     await expect(
       f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set, true),
     ).rejects.toThrow('scale_limit');
@@ -981,7 +981,7 @@ describe('D4 historical-role reuse stays inside one evaluation', () => {
       startAt: new Date('2026-01-01'),
       endAt: new Date('2026-01-02'),
     };
-    f.tx.$queryRaw.mockResolvedValue(Array.from({ length: 2501 }, () => slice));
+    f.tx.$queryRaw.mockResolvedValue(Array.from({ length: 50001 }, () => slice));
     await expect(
       f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set, true),
     ).rejects.toThrow('scale_limit');

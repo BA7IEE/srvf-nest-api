@@ -384,6 +384,20 @@ export function restoreE4OrdinaryOracleOpening(source: string): string {
   const hash = (text: string) => createHash('sha256').update(text).digest('hex');
   const opening = '46c31154bfa284f923ab34ca8be651573a8fe3a1f6d6035e1010265371a17e72';
   if (hash(source) === opening) return source;
+  // Inverse only the exact source-qualified155 test declaration change. The
+  // resulting predecessor must still pass the existing whole-file pin below.
+  if (hash(source) === '67c39b5bb346c1cd0618c3c1df7a67d9fc71964cc8aa39d416a3c06a6c1f2cfc') {
+    const importLine =
+      "import { r5CurrentE4SourcePins } from '../helpers/r5-current-source-pins';\n";
+    if (
+      source.split(importLine).length !== 2 ||
+      source.split('r5CurrentE4SourcePins().pin').length !== 4
+    )
+      throw new Error('E4 ordinary current source inverse refused');
+    source = source
+      .replace(importLine, '')
+      .replaceAll('r5CurrentE4SourcePins().pin', "'40b56bac5a571c56e589cbc549419bfa'");
+  }
   if (hash(source) !== '4285d78205ab48726173b228e43ca9669438b060327a06603cdb8e9e87e0e27e')
     throw new Error('E4 ordinary frozen oracle mirror source refused');
   const candidatePin = '40b56bac5a571c56e589cbc549419bfa';

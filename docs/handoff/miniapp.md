@@ -1,5 +1,21 @@
 # 交接:后端 ↔ 小程序前端 / 招新 H5
 
+## Human 更正后台提交（2026-10-30 云端候选，未安装、未部署）
+
+原准备人完成既有准备后，可受理后台提交、查询进度，并在服务端已独立确认未生效时人工重试原任务。新增 controller 为 `AppManagedActivityTimeCorrectionJobsController`，调用签名和字段见本候选生成的 OpenAPI 与 App client。受理及轮询均重新判当前资格；受理成功、排队、执行、核对都不表示业务已经生效。
+
+整次更正统一生效；只有权威已提交结果才显示完成。增量段数不能当作逐段已发布进度。结果未知时继续显示核对中，不自动重发提交或准备请求。当前不提供新任务取消入口。
+
+六个指定源码／生成文件的修改范围已获批准；仍待维护者本人在对应 worktree 发放逐文件 grant，迁移和 contract 草稿尚未落入正式路径。真实数据库联调与大样本性能尚未验证，不得上线启用或把后台化当作容量通过。实现和恢复边界见[后台提交候选](../plans/activity-os-r5-human-correction-background.md)。
+
+**实际客户端状态（2026-10-30）**：本候选已有三个生成 App client 方法，但没有接通的 Human App 页面。现有 `srvf-admin-web/main@e9da19ec…` 可复用登录、Bearer HTTP 和活动详情容器 `src/views/srvf/activities-domain/activities/cockpit.vue`；该仓也确有本人改密的 App 调用，不能仅按仓名排除。当前[活动调用](https://github.com/BA7IEE/srvf-admin-web/blob/e9da19ec0a937708d535f2d58677101affc4d0e9/src/api/srvf-activity.ts)仍使用 `/api/admin/v1/activities`，旧审批工作台也不是 Human 更正。新增页面须按 App 资格接本节接口，不造 Admin 镜像或用旧考勤终审替代。[H5 路由](https://github.com/BA7IEE/srvf-h5/blob/1d38dae2450af129eccc18976816c5e3f0cc6ef3/src/router/index.ts)仅提供公开招新页面。SDK 生成成功不代表界面完成。
+
+具备真实 App 登录和原准备人资格的调用方，使用 `createAppClient(fetcher)` 的 `AppManagedActivityTimeCorrectionJobsControllerEnqueue(activityId, requestId, body)` 受理。`body` 复用原 Human commit 的四个字段：`operationKey`、`correctionApplicationId`、`postingBatchId`、`expectedBaseSettlementVersionId`；不得提交 actor、来源 hash、租约或内部 payload。响应在统一 `ApiEnvelope.data` 中，HTTP 201 只代表持久受理。
+
+保留原意图四字段和返回的 `jobId`，再调用 `AppManagedActivityTimeCorrectionJobsControllerDetail(activityId, requestId, jobId)`。`queued`／`executing`／`verifying` 分别显示排队中／执行中／核对中，提交前的 `completedUnits` 恒为 0、`totalUnits` 恒为 1；不得用 `segmentCount`、`attempt` 或等待时间推算百分比。只有服务端的 `stage='applied' && applied=true && completedUnits=1` 才显示整次已生效；这个响应已经核对权威业务状态。
+
+读取失败或 `verifying` 时保留原任务并重新查询，不切回同步 commit、不重新 prepare、不换操作键重发。受理响应丢失时只允许以原四字段核对同一意图。仅当服务端 `retryAllowed=true` 且操作者明确重试时，调用 `AppManagedActivityTimeCorrectionJobsControllerRetry(activityId, requestId, jobId)`；不实现自动重试或取消。客户端离开页面或进入终态后停止轮询；原 actor 失效或权限撤销按服务端拒绝处理，不用管理员账号接替。
+
 ## E4 负责人工作台贡献证明（Draft PR1380，未合并、未部署）
 
 三个既有Human App managed GET增加可选 `contributionProof`，不新增路由或写入参数：

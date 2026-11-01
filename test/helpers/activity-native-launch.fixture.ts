@@ -181,9 +181,12 @@ export async function createNativeLaunchPublication(
   fixture: E4Fixture,
   population: number,
   stage: <T>(label: string, work: () => Promise<T>) => Promise<T>,
-  options: { contributionDefinition?: ContributionPolicyDefinition } = {},
+  options: {
+    contributionDefinition?: ContributionPolicyDefinition;
+    sourceDurationMs?: 36000 | 112000;
+  } = {},
 ) {
-  assert(Number.isInteger(population) && population >= 1 && population <= 500);
+  assert(Number.isInteger(population) && population >= 1 && population <= 2000);
   const request = (await import('supertest')).default;
   const { httpServer } = await import('./http-server');
   const {
@@ -211,11 +214,12 @@ export async function createNativeLaunchPublication(
   const post = (path: string, auth: string, body: object = {}) =>
     request(server).post(path).set('Authorization', auth).send(body);
   const now = Date.now();
+  const duration = options.sourceDurationMs ?? 36000;
   const nextDay = (Math.floor((now + 8 * 3_600_000) / 86_400_000) + 1) * 86_400_000 - 8 * 3_600_000;
   const startsAt = new Date(
-    now + 51_000 >= nextDay ? Math.max(nextDay + 1_000, now + 15_000) : now + 15_000,
+    now + 15000 + duration >= nextDay ? Math.max(nextDay + 1_000, now + 15_000) : now + 15_000,
   );
-  const endsAt = new Date(startsAt.getTime() + 36_000);
+  const endsAt = new Date(startsAt.getTime() + duration);
   const activity = data(
     await post(`${E13_ADMIN}/activities`, fixture.creator.auth, {
       title: fixture.key('native_launch'),
@@ -343,9 +347,19 @@ export async function createNativeLaunchPublication(
   await stage('REAL_SOURCE_WINDOW', async () => {
     while (Date.now() <= endsAt.getTime() + 500) {
       const delay = endsAt.getTime() + 501 - Date.now();
-      assert(delay <= 90_000);
+      assert(delay <= duration + 30_000);
       await new Promise<void>((done) => setTimeout(done, Math.min(delay, 20_000)));
     }
   });
-  return { activityId, appUrl, sessionId, positionId, startsAt, endsAt, contribution, snapshot };
+  return {
+    activityId,
+    appUrl,
+    sessionId,
+    positionId,
+    startsAt,
+    endsAt,
+    contribution,
+    time,
+    snapshot,
+  };
 }

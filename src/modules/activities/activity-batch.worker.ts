@@ -1,3 +1,6 @@
+import { HumanCorrectionItemAuthority } from './human-correction-item-authority';
+import { ActivityTimeCorrectionBackgroundService } from './activity-time-correction-background.service';
+import { HUMAN_CORRECTION_JOB_TYPE } from './correction-background-job';
 import { randomUUID } from 'node:crypto';
 import {
   Inject,
@@ -132,7 +135,16 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
     // B6 import execute 复用同一个 ActivityBatchJob lease/fence，不允许直接从 controller 写 event。
     @Optional() private readonly importPreviews?: AttendanceImportPreviewService,
     @Optional() private readonly settlementDrafts?: SettlementDraftBatchService,
+    @Optional() private readonly humanCorrections?: ActivityTimeCorrectionBackgroundService,
+    @Optional() private readonly humanItems?: HumanCorrectionItemAuthority,
   ) {}
+
+  /** A configured protected Human connection owns only that durable family.
+   * The two existing process loops use the same selection via drainOnce; this
+   * is not a caller/HTTP-selected test filter or a new scheduler/process. */
+  get executionScope(): 'human-correction' | 'general' {
+    return this.humanItems?.hasConnectionBinding ? 'human-correction' : 'general';
+  }
 
   onApplicationShutdown(): Promise<void> {
     return this.stopAndDrain();
@@ -166,6 +178,7 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
    */
   async drainOnce(options: { now?: Date } = {}): Promise<ActivityBatchDrainResult> {
     const now = options.now ?? new Date();
+    if (this.executionScope === 'human-correction') return this.drainHumanCorrection(now);
     // Preserve the existing settlement worker's two-round protocol: `ensurePrepareJob` stamps
     // `availableAt = now + 1ms` off **this** round's clock, so a job created here is claimed on
     // the next immediate round rather than this one.  (It used to rely on the database clock
@@ -396,7 +409,19 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
         where: {
           jobTypeCode: LEDGER_PREPARE_JOB_TYPE,
           statusCode: 'succeeded',
-          postingBatch: { statusCode: 'ready' },
+          postingBatch: {
+            statusCode: 'ready',
+            correctionApplied: {
+              none: {
+                correctionRequest: {
+                  OR: [
+                    { requestedChangeJson: { path: ['schemaVersion'], equals: 2 } },
+                    { requestedChangeJson: { path: ['schemaVersion'], equals: 3 } },
+                  ],
+                },
+              },
+            },
+          },
           OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { lte: now } }],
         },
         data: {
@@ -409,6 +434,16 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
     const batches = await this.prisma.ledgerPostingBatch.findMany({
       where: {
         statusCode: 'preparing',
+        correctionApplied: {
+          none: {
+            correctionRequest: {
+              OR: [
+                { requestedChangeJson: { path: ['schemaVersion'], equals: 2 } },
+                { requestedChangeJson: { path: ['schemaVersion'], equals: 3 } },
+              ],
+            },
+          },
+        },
         batchJobs: { none: { jobTypeCode: LEDGER_PREPARE_JOB_TYPE } },
       },
       select: { id: true },
@@ -439,7 +474,10 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
    *   - 跑了一半但**租约已过期**(`processing` + `leaseExpiresAt <= now`)—— 持有者已经死了。
    * `attempts` 用尽的任务不再取(由 `sweepDead` 收成 `dead`)。
    */
-  private async claimJob(now: Date): Promise<{
+  private async claimJob(
+    now: Date,
+    humanOnly = false,
+  ): Promise<{
     id: string;
     activityId: string;
     jobTypeCode: string;
@@ -451,28 +489,31 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
     const leaseExpiresAt = new Date(now.getTime() + ACTIVITY_BATCH_LEASE_MS);
 
     return await this.prisma.$transaction(async (tx) => {
-      await this.sweepDead(tx, now);
+      if (humanOnly) {
+        if (!this.humanItems) throw new Error('HumanCorrectionAuthorityUnavailable');
+        await this.humanItems.assertCallerInTx(tx);
+      } else await this.sweepDead(tx, now);
+
+      const family = humanOnly
+        ? Prisma.sql`"jobTypeCode" = ${HUMAN_CORRECTION_JOB_TYPE}`
+        : Prisma.sql`
+          "jobTypeCode" IN (${LEDGER_PREPARE_JOB_TYPE}, ${ACTIVITY_RECONCILIATION_JOB_TYPE})
+          OR ("jobTypeCode" = ${ONSITE_BULK_PUNCH_JOB_TYPE} AND "payload"->>'action' = ${ONSITE_BULK_PUNCH_JOB_ACTION})
+          OR ("jobTypeCode" = ${SETTLEMENT_DRAFT_GENERATE_JOB_TYPE}
+            AND "payload"->>'action' = ${SETTLEMENT_DRAFT_GENERATE_JOB_ACTION} AND "payload"->>'executionMode' = 'async')
+          OR ("jobTypeCode" = ${ATTENDANCE_IMPORT_EXECUTE_JOB_TYPE} AND "payload"->>'action' = ${ATTENDANCE_IMPORT_EXECUTE_ACTION})`;
 
       const candidates = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
         SELECT id
         FROM "ActivityBatchJob"
-        WHERE (
-          "jobTypeCode" IN (${LEDGER_PREPARE_JOB_TYPE}, ${ACTIVITY_RECONCILIATION_JOB_TYPE})
-          OR (
-            "jobTypeCode" = ${ONSITE_BULK_PUNCH_JOB_TYPE}
-            AND "payload"->>'action' = ${ONSITE_BULK_PUNCH_JOB_ACTION}
-          )
-          OR (
-            "jobTypeCode" = ${SETTLEMENT_DRAFT_GENERATE_JOB_TYPE}
-            AND "payload"->>'action' = ${SETTLEMENT_DRAFT_GENERATE_JOB_ACTION}
-            AND "payload"->>'executionMode' = 'async'
-          )
-          OR (
-            "jobTypeCode" = ${ATTENDANCE_IMPORT_EXECUTE_JOB_TYPE}
-            AND "payload"->>'action' = ${ATTENDANCE_IMPORT_EXECUTE_ACTION}
-          )
-        )
-          AND "attempts" < ${ACTIVITY_BATCH_MAX_ATTEMPTS}
+        WHERE (${family})
+          AND NOT ("jobTypeCode" = ${LEDGER_PREPARE_JOB_TYPE}
+            AND EXISTS (SELECT 1 FROM "CorrectionApplication" app
+              JOIN "AttendanceCorrectionRequest" request ON request.id=app."correctionRequestId"
+              WHERE app."newPostingBatchId" = "ActivityBatchJob"."postingBatchId"
+                AND request."requestedChangeJson"->>'schemaVersion' IN ('2','3')))
+          AND ("attempts" < ${ACTIVITY_BATCH_MAX_ATTEMPTS}
+            OR "jobTypeCode" = ${HUMAN_CORRECTION_JOB_TYPE})
           AND (
             ("statusCode" = 'pending' AND "availableAt" <= ${now})
             OR ("statusCode" = 'processing'
@@ -515,6 +556,8 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
           payload: true,
         },
       });
+      if ((updated.jobTypeCode === HUMAN_CORRECTION_JOB_TYPE) !== humanOnly)
+        throw new Error('ActivityBatchClaimScopeMismatch');
       return {
         id: updated.id,
         activityId: updated.activityId,
@@ -532,6 +575,42 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
     });
   }
 
+  /** Human acceptance already created Job+protected Item atomically. It needs
+   * neither ledger job synthesis, unrelated expiry scans nor another family's
+   * dead sweep. Original lease recovery, identity qualification and the whole
+   * Human marker/authorization/native commit/reconciliation handler remain. */
+  private async drainHumanCorrection(now: Date): Promise<ActivityBatchDrainResult> {
+    if (!this.humanCorrections || !this.humanItems?.hasConnectionBinding)
+      throw new Error('HumanCorrectionHandlerUnavailable');
+    this.humanItems.assertClient(this.prisma);
+    const claimed = await this.claimJob(now, true);
+    const empty: ActivityBatchDrainResult = {
+      jobsEnqueued: 0,
+      jobClaimed: false,
+      jobId: null,
+      itemsProcessed: 0,
+      itemsSkipped: 0,
+      itemsFailed: 0,
+      batchStatus: null,
+      commitAttempted: false,
+      commitErrorCode: null,
+    };
+    if (claimed === null) return empty;
+    const applied = await this.humanCorrections.process({
+      jobId: claimed.id,
+      activityId: claimed.activityId,
+      leaseOwner: claimed.leaseOwner,
+      leaseGeneration: claimed.leaseGeneration,
+    });
+    return {
+      ...empty,
+      jobClaimed: true,
+      jobId: claimed.id,
+      itemsProcessed: applied ? 1 : 0,
+      batchStatus: applied ? 'committed' : null,
+    };
+  }
+
   /**
    * 租约到期但尝试次数已用尽 ⇒ 原子标 `dead`。
    *
@@ -540,7 +619,31 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
    */
   private async sweepDead(tx: Prisma.TransactionClient, now: Date): Promise<void> {
     // Expired final attempts must finish the item as well, so the existing retry endpoint works.
-    await tx.$executeRaw(Prisma.sql`
+    const draftSweep = Prisma.sql`
+      WITH expired AS (
+        UPDATE "ActivityBatchJob" SET "statusCode" = 'dead', "failed" = 1,
+          "succeeded" = 0, "skipped" = 0, "completedAt" = ${now},
+          "leaseOwner" = NULL, "leaseExpiresAt" = NULL, "lastErrorCode" = 'DraftJobAttemptsExhausted'
+        WHERE "jobTypeCode" = ${SETTLEMENT_DRAFT_GENERATE_JOB_TYPE}
+          AND "payload"->>'action' = ${SETTLEMENT_DRAFT_GENERATE_JOB_ACTION}
+          AND "payload"->>'executionMode' = 'async'
+          AND "statusCode" = 'processing' AND "attempts" >= ${ACTIVITY_BATCH_MAX_ATTEMPTS}
+          AND "leaseExpiresAt" <= ${now} RETURNING id
+      ) UPDATE "ActivityBatchJobItem" SET "statusCode" = 'failed',
+        "lastErrorCode" = 'DraftJobAttemptsExhausted', "safeMessage" = '草稿生成重试次数已用尽'
+        WHERE "jobId" IN (SELECT id FROM expired) AND "itemKey" = 'generate' AND "statusCode" <> 'succeeded'
+    `;
+    if (this.humanItems?.hasConnectionBinding) {
+      await this.humanItems.sweepDraftGenerateDeadInTx(
+        this.prisma,
+        tx,
+        now,
+        ACTIVITY_BATCH_MAX_ATTEMPTS,
+        draftSweep,
+      );
+    } else {
+      // Existing seven-family permissions, never an admin fallback for Human.
+      await tx.$executeRaw(Prisma.sql`
       WITH expired AS (
         UPDATE "ActivityBatchJob" SET "statusCode" = 'dead', "failed" = 1,
           "succeeded" = 0, "skipped" = 0, "completedAt" = ${now},
@@ -554,6 +657,7 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
         "lastErrorCode" = 'DraftJobAttemptsExhausted', "safeMessage" = '草稿生成重试次数已用尽'
         WHERE "jobId" IN (SELECT id FROM expired) AND "itemKey" = 'generate' AND "statusCode" <> 'succeeded'
     `);
+    }
     for (const [jobTypeCode, lastErrorCode] of [
       [LEDGER_PREPARE_JOB_TYPE, 'LEDGER_PREPARE_MAX_ATTEMPTS_EXHAUSTED'],
       [ACTIVITY_RECONCILIATION_JOB_TYPE, 'ACTIVITY_RECONCILIATION_MAX_ATTEMPTS_EXHAUSTED'],

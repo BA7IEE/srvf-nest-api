@@ -866,11 +866,24 @@ describe('E4 frozen ordinary oracle after the approved146 pin mirrors', () => {
     );
     expect(restoreE4OrdinaryOracleOpening(opening)).toBe(opening);
     expect(readFileSync(path, 'utf8')).toBe(source);
-    expect(source.split('40b56bac5a571c56e589cbc549419bfa')).toHaveLength(4);
+    expect(source.split('r5CurrentE4SourcePins().pin')).toHaveLength(4);
+    const predecessor = source
+      .replace("import { r5CurrentE4SourcePins } from '../helpers/r5-current-source-pins';\n", '')
+      .replaceAll('r5CurrentE4SourcePins().pin', "'40b56bac5a571c56e589cbc549419bfa'");
+    expect(createHash('sha256').update(predecessor).digest('hex')).toBe(
+      '4285d78205ab48726173b228e43ca9669438b060327a06603cdb8e9e87e0e27e',
+    );
+    expect(predecessor.split('40b56bac5a571c56e589cbc549419bfa')).toHaveLength(4);
+    expect(restoreE4OrdinaryOracleOpening(predecessor)).toBe(opening);
+    expect(() =>
+      restoreE4OrdinaryOracleOpening(
+        predecessor.replace('40b56bac5a571c56e589cbc549419bfa', '0'.repeat(32)),
+      ),
+    ).toThrow('source refused');
   });
   it.each([
     ['oracle', 'function fixedE4RootAggregateSql(', 'function changedOracle('],
-    ['pin', '40b56bac5a571c56e589cbc549419bfa', '0'.repeat(32)],
+    ['pin', 'r5CurrentE4SourcePins().pin', "'" + '0'.repeat(32) + "'"],
   ])('refuses changed %s source', (_label, before, after) => {
     const source = readFileSync(path, 'utf8');
     const changed = source.replace(before, after);

@@ -75,7 +75,18 @@ function projection(value: ExistingRow, patch: Partial<ProjectedSegment> = {}): 
 function fixture(existing: ExistingRow[]) {
   const calls: { kind: string; input: unknown }[] = [];
   const model = {
-    findMany: jest.fn().mockResolvedValue(existing),
+    findMany: jest.fn(
+      (input: {
+        where: { participationIdentityId: { in: string[] }; statusCode?: { not: string } };
+      }) =>
+        Promise.resolve(
+          existing.filter(
+            (row) =>
+              input.where.participationIdentityId.in.includes(row.participationIdentityId) &&
+              (!input.where.statusCode || row.statusCode !== input.where.statusCode.not),
+          ),
+        ),
+    ),
     updateMany: jest.fn((input: unknown) => {
       calls.push({ kind: 'supersede', input });
       return Promise.resolve({ count: 1 });
@@ -87,9 +98,43 @@ function fixture(existing: ExistingRow[]) {
   };
   // Exercise the real persistence method and segmentMatches, without constructing Nest or a DB.
   const service = Object.create(SettlementDraftService.prototype) as Persistence;
-  const tx = { participantServiceSegmentRevision: model } as unknown as Prisma.TransactionClient;
+  const history = jest.fn((_query: TemplateStringsArray, serialized: string) => {
+    const keys: unknown = JSON.parse(serialized);
+    if (!Array.isArray(keys)) throw new TypeError('history keys must be an array');
+    const rows = keys.flatMap((key: unknown) => {
+      if (
+        !key ||
+        typeof key !== 'object' ||
+        !('identity' in key) ||
+        !('segment' in key) ||
+        typeof key.identity !== 'string' ||
+        typeof key.segment !== 'string'
+      )
+        throw new TypeError('invalid history key');
+      const matches = existing
+        .filter(
+          (row) => row.participationIdentityId === key.identity && row.segmentKey === key.segment,
+        )
+        .sort((a, b) => b.revision - a.revision);
+      return matches[0]
+        ? [
+            {
+              participationIdentityId: key.identity,
+              segmentKey: key.segment,
+              revision: matches[0].revision,
+            },
+          ]
+        : [];
+    });
+    return Promise.resolve(rows);
+  });
+  const tx = {
+    participantServiceSegmentRevision: model,
+    $queryRaw: history,
+  } as unknown as Prisma.TransactionClient;
   return {
     model,
+    history,
     calls,
     run: (identities: string[], projections = new Map<string, ProjectedSegment[]>()) =>
       service.persistSegments(tx, identities, projections),
@@ -325,6 +370,74 @@ describe('settlement segment persistence semantics', () => {
       currentCount: 1,
     });
     expect(next.exceptionFlags).toEqual(['z', 'a']);
+    expect(f.calls).toEqual([]);
+  });
+
+  it('keeps more than1000 historical revisions without loading their full payloads', async () => {
+    const previous = Array.from({ length: 1200 }, (_, revision) =>
+      row('a', '0001', {
+        id: `old-${revision}`,
+        revision,
+        statusCode: 'superseded',
+      }),
+    );
+    const current = row('a', '0001', { revision: 1200 });
+    const f = fixture([...previous, current]);
+    await expect(
+      f.run(['a'], new Map([['a', [projection(current, { serviceHours: 2 })]]])),
+    ).resolves.toEqual({ created: 1, superseded: 1, unchanged: 0, currentCount: 1 });
+    expect(f.model.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          participationIdentityId: { in: ['a'] },
+          statusCode: { not: 'superseded' },
+        },
+      }),
+    );
+    expect(f.history).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(f.history.mock.calls[0][1])).toEqual([{ identity: 'a', segment: '0001' }]);
+    expect(f.model.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ revision: 1201 })],
+    });
+  });
+
+  it('a projected key with only superseded history resurfaces at max plus one', async () => {
+    const old = row('a', '0001', { revision: 41, statusCode: 'superseded' });
+    const f = fixture([old]);
+    await expect(f.run(['a'], new Map([['a', [projection(old)]]]))).resolves.toEqual({
+      created: 1,
+      superseded: 0,
+      unchanged: 0,
+      currentCount: 1,
+    });
+    expect(f.model.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          revision: 42,
+          baseRevisionId: null,
+        }),
+      ],
+    });
+  });
+
+  it('preserves historical maximums for the original colon-composite collision', async () => {
+    const old = row('a:0001', 'x', { revision: 9, statusCode: 'superseded' });
+    const current = row('a', '0001:x', { revision: 3 });
+    const f = fixture([old, current]);
+    await f.run(['a', 'a:0001'], new Map([['a', [projection(current, { serviceHours: 2 })]]]));
+    expect(f.model.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ revision: 10 })],
+    });
+  });
+
+  it('a lower committed row cannot be hidden behind a newer draft', async () => {
+    const committed = row('a', '0001', { revision: 1, statusCode: 'committed' });
+    const current = row('a', '0001', { revision: 2 });
+    const f = fixture([committed, current]);
+    await expect(f.run(['a'], new Map([['a', [projection(current)]]]))).rejects.toBeInstanceOf(
+      BizException,
+    );
+    expect(f.history).not.toHaveBeenCalled();
     expect(f.calls).toEqual([]);
   });
 

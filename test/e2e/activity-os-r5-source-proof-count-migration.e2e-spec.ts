@@ -212,7 +212,7 @@ describe('150 outer proof-array count on nonempty149', () => {
         process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
         appClosed = false;
         fixture = await createE4Fixture();
-        correction = await approvedE4TimeCorrection(fixture);
+        correction = await approvedE4TimeCorrection(fixture, undefined, 149);
         prepared = await correction.correction.prepare(
           correction.input,
           e4Actor(fixture.finalReviewer),
@@ -278,7 +278,7 @@ describe('150 outer proof-array count on nonempty149', () => {
         ).toBe('1e48ec063dbf452210a1c7dd9a0159ff');
         const beforeCatalog = await catalog(db());
         const beforeSettings = await settings(db());
-        const beforeRows = await nativeLaunchBusinessFingerprint(db(), stage);
+        const beforeRows = await nativeLaunchBusinessFingerprint(db(), stage, 'pre155');
         await owner.deploySourceProofCountMigrations(remaining());
         expect(createHash('sha256').update(migration).digest('hex')).toBe(CANDIDATE_SHA);
         expect(await installedBody(db())).toBe(bodyOf(migration));
@@ -289,14 +289,14 @@ describe('150 outer proof-array count on nonempty149', () => {
         ]);
         expect((await catalog(db())) === beforeCatalog).toBe(true);
         expect(await settings(db())).toEqual(beforeSettings);
-        expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(beforeRows);
+        expect(await nativeLaunchBusinessFingerprint(db(), stage, 'pre155')).toEqual(beforeRows);
         await db()
           .$queryRaw`SELECT public.ctsp_assert_complete(${prepared.newPostingBatchId},false)::text`;
         await owner.deploySourceProofCountMigrations(remaining());
         expect(await migrationRows(db())).toEqual(afterMigrations);
         expect((await catalog(db())) === beforeCatalog).toBe(true);
         expect(await settings(db())).toEqual(beforeSettings);
-        expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(beforeRows);
+        expect(await nativeLaunchBusinessFingerprint(db(), stage, 'pre155')).toEqual(beforeRows);
         upgraded = true;
       }),
     120_000,
@@ -354,7 +354,7 @@ describe('150 outer proof-array count on nonempty149', () => {
     'compares full original and installed guards on rollback-only temporary copies with positive and independent negative controls',
     async () =>
       owned(async () => {
-        const before = await nativeLaunchBusinessFingerprint(db(), stage);
+        const before = await nativeLaunchBusinessFingerprint(db(), stage, 'pre155');
         assertTestDatabaseUrl(process.env.DATABASE_URL);
         const proof = await db().correctionTimeSourceProof.findFirstOrThrow({
           where: { postingBatchId: prepared.newPostingBatchId },
@@ -487,7 +487,7 @@ describe('150 outer proof-array count on nonempty149', () => {
             ),
           ).rejects.toBe(rollback);
         }
-        expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(before);
+        expect(await nativeLaunchBusinessFingerprint(db(), stage, 'pre155')).toEqual(before);
       }),
     120_000,
   );
@@ -496,7 +496,7 @@ describe('150 outer proof-array count on nonempty149', () => {
     'rehearses the prior body transactionally and retains150, catalog and rows after forced rollback',
     async () =>
       owned(async () => {
-        const before = await nativeLaunchBusinessFingerprint(db(), stage);
+        const before = await nativeLaunchBusinessFingerprint(db(), stage, 'pre155');
         const beforeCatalog = await catalog(db());
         const beforeMigrations = await migrationRows(db());
         const rollback = new Error('Prior function body verified; roll back rehearsal');
@@ -517,7 +517,7 @@ describe('150 outer proof-array count on nonempty149', () => {
         expect(await installedBody(db())).toBe(bodyOf(migration));
         expect((await catalog(db())) === beforeCatalog).toBe(true);
         expect(await migrationRows(db())).toEqual(beforeMigrations);
-        expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(before);
+        expect(await nativeLaunchBusinessFingerprint(db(), stage, 'pre155')).toEqual(before);
       }),
     120_000,
   );
@@ -526,10 +526,14 @@ describe('150 outer proof-array count on nonempty149', () => {
     'prepares and commits a fresh real source under150 with the original service budgets and guards',
     async () =>
       owned(async () => {
-        const next = await approvedE4TimeCorrection(f(), {
-          startsAt: new Date('2020-03-02T08:00:00.000Z'),
-          endsAt: new Date('2020-03-02T09:00:00.000Z'),
-        });
+        const next = await approvedE4TimeCorrection(
+          f(),
+          {
+            startsAt: new Date('2020-03-02T08:00:00.000Z'),
+            endsAt: new Date('2020-03-02T09:00:00.000Z'),
+          },
+          150,
+        );
         const nextPrepared = await next.correction.prepare(
           next.input,
           e4Actor(f().finalReviewer),

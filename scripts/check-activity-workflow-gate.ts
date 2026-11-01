@@ -107,6 +107,10 @@ export const DECLARED_TEST_CONFIGS: Record<string, string> = {
   // 旅程金五条:独立 project,被 e2e 配置的 testPathIgnorePatterns **显式排除**
   // ⇒ 必须单独跑、单独复核。其中「考勤修正全链」走结算真相链,已声明闸开;另 4 条默认闸关。
   'jest-journeys.config.ts': 'journeys —— 考勤修正全链声明闸开,另 4 条默认闸关',
+  'jest-r5-ci-authenticated.config.ts':
+    '独立真实认证首发CI —— 四文件沿D13/E4显式闸开夹具,含小规模V3;不执行Native历史容量三例',
+  'jest-r5-ci-authenticated-historical.config.ts':
+    '显式历史容量入口 —— Native原用例保留闸开姿态,默认拒绝且不接首发required CI',
 };
 
 export const REVERSE_GATE_MARKERS = ['contribution-calculator'];

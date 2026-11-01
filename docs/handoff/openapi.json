@@ -39734,6 +39734,870 @@
         ]
       }
     },
+    "/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/commit-jobs": {
+      "post": {
+        "operationId": "AppManagedActivityTimeCorrectionJobsController_enqueue",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "requestId",
+            "required": true,
+            "in": "path",
+            "description": "不可变更正申请 ID",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppCommitActivityTimeCorrectionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppActivityTimeCorrectionJobDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000) / 更正内容的格式或取值不合法(code=20102)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000,
+                        20102
+                      ],
+                      "description": "40000: 请求参数错误; 20102: 更正内容的格式或取值不合法",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300,
+                        30100
+                      ],
+                      "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在(code=40400) / 活动分类结算引用不存在或不可访问(code=20219)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40400,
+                        20219
+                      ],
+                      "description": "40400: 资源不存在; 20219: 活动分类结算引用不存在或不可访问",
+                      "example": 40400
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "资源不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "相同操作标识已用于该活动的其它更正内容,请更换操作标识(code=20111) / 该更正申请当前状态不可应用(code=20106)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20111,
+                        20106
+                      ],
+                      "description": "20111: 相同操作标识已用于该活动的其它更正内容,请更换操作标识; 20106: 该更正申请当前状态不可应用",
+                      "example": 20111
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "相同操作标识已用于该活动的其它更正内容,请更换操作标识"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "活动 v1.1 工作流未启用(code=20153) / 本实例处于活动结算只读维护态,暂不接受考勤与结算写入(code=20158)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20153,
+                        20158
+                      ],
+                      "description": "20153: 活动 v1.1 工作流未启用; 20158: 本实例处于活动结算只读维护态,暂不接受考勤与结算写入",
+                      "example": 20153
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动 v1.1 工作流未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "后台受理精确 prepared 更正；受理不代表已生效 [rbac: activity.settlement-final-review.record]",
+        "tags": [
+          "Mobile - Managed Activity Fact Corrections"
+        ]
+      }
+    },
+    "/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/commit-jobs/{jobId}": {
+      "get": {
+        "operationId": "AppManagedActivityTimeCorrectionJobsController_detail",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "requestId",
+            "required": true,
+            "in": "path",
+            "description": "不可变更正申请 ID",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppActivityTimeCorrectionJobDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000) / 更正内容的格式或取值不合法(code=20102)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000,
+                        20102
+                      ],
+                      "description": "40000: 请求参数错误; 20102: 更正内容的格式或取值不合法",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300,
+                        30100
+                      ],
+                      "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在(code=40400) / 活动分类结算引用不存在或不可访问(code=20219)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40400,
+                        20219
+                      ],
+                      "description": "40400: 资源不存在; 20219: 活动分类结算引用不存在或不可访问",
+                      "example": 40400
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "资源不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "相同操作标识已用于该活动的其它更正内容,请更换操作标识(code=20111) / 该更正申请当前状态不可应用(code=20106)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20111,
+                        20106
+                      ],
+                      "description": "20111: 相同操作标识已用于该活动的其它更正内容,请更换操作标识; 20106: 该更正申请当前状态不可应用",
+                      "example": 20111
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "相同操作标识已用于该活动的其它更正内容,请更换操作标识"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "活动 v1.1 工作流未启用(code=20153) / 本实例处于活动结算只读维护态,暂不接受考勤与结算写入(code=20158)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20153,
+                        20158
+                      ],
+                      "description": "20153: 活动 v1.1 工作流未启用; 20158: 本实例处于活动结算只读维护态,暂不接受考勤与结算写入",
+                      "example": 20153
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动 v1.1 工作流未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "原准备人查询后台更正进度和权威生效结果 [rbac: activity.settlement-final-review.record]",
+        "tags": [
+          "Mobile - Managed Activity Fact Corrections"
+        ]
+      }
+    },
+    "/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/commit-jobs/{jobId}/retry": {
+      "post": {
+        "operationId": "AppManagedActivityTimeCorrectionJobsController_retry",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "requestId",
+            "required": true,
+            "in": "path",
+            "description": "不可变更正申请 ID",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppActivityTimeCorrectionJobDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000) / 更正内容的格式或取值不合法(code=20102)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000,
+                        20102
+                      ],
+                      "description": "40000: 请求参数错误; 20102: 更正内容的格式或取值不合法",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300,
+                        30100
+                      ],
+                      "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在(code=40400) / 活动分类结算引用不存在或不可访问(code=20219)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40400,
+                        20219
+                      ],
+                      "description": "40400: 资源不存在; 20219: 活动分类结算引用不存在或不可访问",
+                      "example": 40400
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "资源不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "相同操作标识已用于该活动的其它更正内容,请更换操作标识(code=20111) / 该更正申请当前状态不可应用(code=20106)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20111,
+                        20106
+                      ],
+                      "description": "20111: 相同操作标识已用于该活动的其它更正内容,请更换操作标识; 20106: 该更正申请当前状态不可应用",
+                      "example": 20111
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "相同操作标识已用于该活动的其它更正内容,请更换操作标识"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "活动 v1.1 工作流未启用(code=20153) / 本实例处于活动结算只读维护态,暂不接受考勤与结算写入(code=20158)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20153,
+                        20158
+                      ],
+                      "description": "20153: 活动 v1.1 工作流未启用; 20158: 本实例处于活动结算只读维护态,暂不接受考勤与结算写入",
+                      "example": 20153
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动 v1.1 工作流未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "重新判权后重试已确认未生效的原任务；未知结果拒绝 [rbac: activity.settlement-final-review.record]",
+        "tags": [
+          "Mobile - Managed Activity Fact Corrections"
+        ]
+      }
+    },
     "/api/app/v1/my/managed-activities/{activityId}/outcomes": {
       "post": {
         "operationId": "AppManagedActivityOutcomesController_record",
@@ -150052,6 +150916,72 @@
           "operationKey",
           "correctionApplicationId",
           "postingBatchId"
+        ]
+      },
+      "AppActivityTimeCorrectionJobDto": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "correctionApplicationId": {
+            "type": "string"
+          },
+          "postingBatchId": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "executing",
+              "verifying",
+              "failed",
+              "applied"
+            ]
+          },
+          "applied": {
+            "type": "boolean",
+            "description": "仅权威业务结果已提交时为 true"
+          },
+          "completedUnits": {
+            "type": "number",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "整次更正统一发布；提交前始终为 0"
+          },
+          "totalUnits": {
+            "type": "number",
+            "enum": [
+              1
+            ]
+          },
+          "segmentCount": {
+            "type": "number",
+            "description": "本次更正增量段数，不表示已生效进度"
+          },
+          "attempt": {
+            "type": "number",
+            "description": "受保护的执行／恢复围栏轮次，不表示业务提交次数"
+          },
+          "retryAllowed": {
+            "type": "boolean",
+            "description": "仅已独立确认未生效且旧 worker 已失效时允许人工重试"
+          }
+        },
+        "required": [
+          "jobId",
+          "correctionApplicationId",
+          "postingBatchId",
+          "stage",
+          "applied",
+          "completedUnits",
+          "totalUnits",
+          "segmentCount",
+          "attempt",
+          "retryAllowed"
         ]
       },
       "AppActivityOutcomeSummaryDto": {

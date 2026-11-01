@@ -1,3 +1,6 @@
+import { HumanCorrectionItemAuthority } from './human-correction-item-authority';
+import { HumanCorrectionExecutionModule } from './human-correction-execution.module';
+import { humanCorrectionHttpProviders } from './human-correction-http-providers';
 import { forwardRef, Module } from '@nestjs/common';
 import { ActivityWorkflowModule } from '../../common/activity-workflow/activity-workflow.module';
 import { DatabaseModule } from '../../database/database.module';
@@ -65,7 +68,7 @@ import { ActivityTimeAllocationAuditRecorder } from './activity-time-allocation-
 import { ActivityTimeAllocationService } from './activity-time-allocation.service';
 import { ActivityTimeSettlementAccessService } from './activity-time-settlement-access.service';
 import { ActivityTimeCorrectionAccessService } from './activity-time-correction-access.service';
-import { ActivityTimeCorrectionCommandService } from './activity-time-correction-command.service';
+import { AppManagedActivityTimeCorrectionJobsController } from './controllers/app-managed-activity-time-correction-jobs.controller';
 import { ActivityTimeCorrectionQueryService } from './activity-time-correction-query.service';
 import { ActivityTimeSettlementAuditRecorder } from './activity-time-settlement-audit-recorder';
 import { ActivityTimeSettlementQueryService } from './activity-time-settlement-query.service';
@@ -227,6 +230,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
   // 统一通知 S4/L2-L3:活动发布/变更/取消/审核结果及责任委托/移交都在主业务
   // transaction 内 enqueue durable intent；独立 worker 仅在 commit 后执行 Effect。
   imports: [
+    HumanCorrectionExecutionModule,
     // 活动 v1.1 cutover gate(合同 §16.2 单轨):两个模块 import 同一个模块 ⇒ 同一个闸实例。
     ActivityWorkflowModule,
     DatabaseModule,
@@ -252,6 +256,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
   controllers: [
     AppManagedActivityTimeSettlementController,
     AppManagedActivityTimeCorrectionController,
+    AppManagedActivityTimeCorrectionJobsController,
     AppManagedActivityOutcomesController,
     AppManagedActivityOutcomeFinalizationsController,
     AdminActivityMetricRuleBindingsController,
@@ -304,7 +309,8 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityTimeAllocationService,
     ActivityTimeSettlementAccessService,
     ActivityTimeCorrectionAccessService,
-    ActivityTimeCorrectionCommandService,
+    HumanCorrectionItemAuthority,
+    ...humanCorrectionHttpProviders,
     ActivityTimeCorrectionQueryService,
     ActivityTimeSettlementAuditRecorder,
     ActivityTimeSettlementQueryService,

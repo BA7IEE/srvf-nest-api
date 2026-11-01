@@ -1,7 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
-import type { AttachmentsService } from '../attachments/attachments.service';
 import { fingerprintMetricEnvelope } from './activity-metric-definition';
 import { fingerprintTimePolicyVersion } from './activity-time-policy-definition';
 import {
@@ -224,7 +223,7 @@ function fixture() {
     lockOwnerReferenceStorageBoundaryTrusted: jest.fn(),
     findOwnedAttachmentsTrusted: jest.fn(),
   };
-  const service = new CorrectionTimeAllocationService(attachments as unknown as AttachmentsService);
+  const service = new CorrectionTimeAllocationService(attachments);
   return {
     tx,
     service,
@@ -266,6 +265,81 @@ function frozenProof(prepared: Awaited<ReturnType<typeof prepare>>) {
     expectedBindingCount: prepared.proofData.expectedBindingCount,
     formatVersion: 1,
   };
+}
+
+async function changedAllocationFixture(count: number) {
+  const f = fixture();
+  const prepared = await prepare(f);
+  const [pending] = f.pendingCreateData() ?? [];
+  if (!isRecord(pending)) throw new Error('pending allocation row is required');
+  const snapshots = prepared.proofData.sourceSnapshotJson as Array<Record<string, unknown>>;
+  const source = snapshots.find((row) => row.pendingAllocationId === pending.id);
+  if (!source) throw new Error('changed source is required');
+  const sourceWithoutHash = { ...source };
+  delete sourceWithoutHash.sourceHash;
+  const rows = Array.from({ length: count }, (_, index) => {
+    const suffix = String(index).padStart(5, '0');
+    const identity = `identity-${suffix}`;
+    const segmentKey = `segment-${suffix}`;
+    const id = `pending-${suffix}`;
+    return {
+      ...pending,
+      id,
+      participationIdentityId: identity,
+      segmentKey,
+      baseAllocationRevisionId: `base-allocation-${suffix}`,
+      targetAllocationRevisionId: `target-allocation-${suffix}`,
+      targetSegmentRevisionId: `target-segment-${suffix}`,
+      evidence: [0, 999, 1000, count - 1].includes(index)
+        ? [0, 1].map((ordinal) => ({
+            pendingAllocationId: id,
+            activityId,
+            attachmentId: `attachment-${suffix}-${ordinal}`,
+            ordinal,
+          }))
+        : [],
+      baseAllocationRevision: {
+        ...f.changedAllocation,
+        id: `base-allocation-${suffix}`,
+        participationIdentityId: identity,
+        segmentKey,
+      },
+    };
+  });
+  const fullSources = rows.map((row) => {
+    const value = {
+      ...sourceWithoutHash,
+      participationIdentityId: row.participationIdentityId,
+      segmentKey: row.segmentKey,
+      baseAllocationRevisionId: row.baseAllocationRevisionId,
+      allocationRevisionId: row.targetAllocationRevisionId,
+      sourceSegmentId: row.targetSegmentRevisionId,
+      pendingAllocationId: row.id,
+    };
+    return {
+      ...value,
+      sourceHash: fingerprintMetricEnvelope('correction-time-source-row-v1', value).definitionHash,
+    };
+  });
+  f.tx.correctionTimeSourceProof.findUnique.mockResolvedValue({
+    ...frozenProof(prepared),
+    sourceSnapshotJson: fullSources,
+    expectedSegmentCount: count,
+    expectedPendingCount: count,
+    expectedBindingCount: count,
+    expectedSliceCount: 0,
+  });
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  f.tx.correctionPendingTimeAllocation.findMany.mockImplementation(
+    (args: { select?: { id: boolean }; where: { id?: { in: string[] } } }) => {
+      if (args.select) return rows.map((row) => ({ id: row.id }));
+      return (args.where.id?.in ?? rows.map((row) => row.id)).map((id) => byId.get(id));
+    },
+  );
+  f.tx.participantTimeAllocationEvidence.createMany.mockImplementation(
+    ({ data }: { data: unknown[] }) => ({ count: data.length }),
+  );
+  return { f, rows };
 }
 
 describe('D7-2 full correction-time source proof', () => {
@@ -545,6 +619,128 @@ describe('D7-2 full correction-time source proof', () => {
     expect(identityIds).toHaveLength(expandedSnapshots.length);
     expect(new Set(identityIds).size).toBe(expandedSnapshots.length);
     expect(identityIds).toContain('identity-c-0999');
+  });
+
+  it('materializes 10,000 changed allocations with bounded composite reads and exact evidence and binding coverage', async () => {
+    const { f, rows } = await changedAllocationFixture(10_000);
+    await expect(
+      f.service.materialize(f.tx as unknown as Prisma.TransactionClient, {
+        applicationId: 'application-one',
+        activityId,
+        actorUserId: 'reviewer-one',
+      }),
+    ).resolves.toBe(10_000);
+
+    const reads = f.tx.correctionPendingTimeAllocation.findMany.mock.calls as Array<
+      [
+        {
+          where: { applicationId: string; activityId: string; id?: { in: string[] } };
+          select?: { id: boolean };
+          include?: unknown;
+          orderBy: unknown;
+        },
+      ]
+    >;
+    expect(reads).toHaveLength(11);
+    expect(reads[0][0].select).toEqual({ id: true });
+    expect(reads[0][0].include).toBeUndefined();
+    expect(reads.slice(1).flatMap(([read]) => read.where.id?.in ?? [])).toEqual(
+      rows.map((row) => row.id),
+    );
+    for (const [read] of reads.slice(1)) {
+      expect(read.where.applicationId).toBe('application-one');
+      expect(read.where.activityId).toBe(activityId);
+      expect(read.where.id?.in).toHaveLength(1000);
+      expect(read.include).toEqual({
+        evidence: { orderBy: { ordinal: 'asc' } },
+        baseAllocationRevision: true,
+      });
+      expect(read.orderBy).toEqual([{ participationIdentityId: 'asc' }, { segmentKey: 'asc' }]);
+    }
+    const created = f.tx.participantTimeAllocationRevision.createMany.mock.calls.flatMap(
+      ([call]) => call.data,
+    );
+    expect(created).toHaveLength(10_000);
+    expect(created.map((row) => (row as { id: string }).id)).toEqual(
+      rows.map((row) => row.targetAllocationRevisionId),
+    );
+    const evidence = f.tx.participantTimeAllocationEvidence.createMany.mock.calls.flatMap(
+      ([call]: [
+        { data: Array<{ allocationRevisionId: string; attachmentId: string; ordinal: number }> },
+      ]) => call.data,
+    );
+    expect(
+      evidence.map(({ allocationRevisionId, attachmentId, ordinal }) => ({
+        allocationRevisionId,
+        attachmentId,
+        ordinal,
+      })),
+    ).toEqual(
+      rows.flatMap((row) =>
+        row.evidence.map(({ attachmentId, ordinal }) => ({
+          allocationRevisionId: row.targetAllocationRevisionId,
+          attachmentId,
+          ordinal,
+        })),
+      ),
+    );
+    const bindings = f.bindingStatementPayloads().flat();
+    expect(bindings).toHaveLength(10_000);
+    expect(
+      bindings.map((row) => (row as { pendingAllocationId: string }).pendingAllocationId),
+    ).toEqual(rows.map((row) => row.id));
+    expect(
+      f.tx.participantTimeAllocationCommandReceipt.createMany.mock.calls.flatMap(
+        ([call]) => call.data,
+      ),
+    ).toHaveLength(10_000);
+  });
+
+  it.each(['missing', 'duplicate', 'reordered', 'unexpected'] as const)(
+    'rejects a %s scoped row before any materialization write',
+    async (kind) => {
+      const { f, rows } = await changedAllocationFixture(3);
+      const wrong =
+        kind === 'missing'
+          ? rows.slice(1)
+          : kind === 'duplicate'
+            ? [rows[0], rows[0], rows[2]]
+            : kind === 'reordered'
+              ? [rows[1], rows[0], rows[2]]
+              : [rows[0], rows[1], { ...rows[2], id: 'unrequested' }];
+      f.tx.correctionPendingTimeAllocation.findMany
+        .mockReset()
+        .mockResolvedValueOnce(rows.map((row) => ({ id: row.id })))
+        .mockResolvedValueOnce(wrong);
+      await expect(
+        f.service.materialize(f.tx as unknown as Prisma.TransactionClient, {
+          applicationId: 'application-one',
+          activityId,
+          actorUserId: 'reviewer-one',
+        }),
+      ).rejects.toThrow(new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID));
+      expect(f.tx.participantTimeAllocationRevision.createMany).not.toHaveBeenCalled();
+      expect(f.tx.$executeRaw).not.toHaveBeenCalled();
+    },
+  );
+
+  it('propagates a required composite relation error without materializing partial rows', async () => {
+    const { f, rows } = await changedAllocationFixture(1001);
+    const error = new Error('Inconsistent required baseAllocationRevision relation');
+    f.tx.correctionPendingTimeAllocation.findMany
+      .mockReset()
+      .mockResolvedValueOnce(rows.map((row) => ({ id: row.id })))
+      .mockResolvedValueOnce(rows.slice(0, 1000))
+      .mockRejectedValueOnce(error);
+    await expect(
+      f.service.materialize(f.tx as unknown as Prisma.TransactionClient, {
+        applicationId: 'application-one',
+        activityId,
+        actorUserId: 'reviewer-one',
+      }),
+    ).rejects.toBe(error);
+    expect(f.tx.participantTimeAllocationRevision.createMany).not.toHaveBeenCalled();
+    expect(f.tx.$executeRaw).not.toHaveBeenCalled();
   });
 });
 

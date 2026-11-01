@@ -1,0 +1,26 @@
+[
+  {
+    "file": "activity-os-r5-human-correction-background.e2e-spec.ts",
+    "config": "test/helpers/r5-human-correction-async.jest.config.ts"
+  },
+  {
+    "file": "activity-os-r5-human-correction-background-capacity1000.e2e-spec.ts",
+    "config": "test/helpers/r5-human-correction-async-capacity1000.jest.config.ts"
+  },
+  {
+    "file": "activity-os-r5-setmat-capacity.e2e-spec.ts",
+    "config": "test/helpers/r5-setmat-capacity.jest.config.ts"
+  },
+  {
+    "file": "activity-os-r5-setmat-component-continuation.e2e-spec.ts",
+    "config": "test/helpers/r5-setmat-component-continuation.jest.config.ts"
+  },
+  {
+    "file": "activity-os-r5-setmat-native-only.e2e-spec.ts",
+    "config": "test/helpers/r5-setmat-native-only.jest.config.ts"
+  },
+  {
+    "file": "activity-os-r5-setmat-separated-component.e2e-spec.ts",
+    "config": "test/helpers/r5-setmat-separated-component.jest.config.ts"
+  }
+]

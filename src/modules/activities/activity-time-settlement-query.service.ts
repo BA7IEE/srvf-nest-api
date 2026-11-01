@@ -318,8 +318,9 @@ export class ActivityTimeSettlementQueryService {
     const keys = JSON.stringify(
       segments.map((row) => ({ identity: row.participationIdentityId, segment: row.segmentKey })),
     );
-    // Bound the allocation manifest before reading any slices/definition JSON. Distinct is done
-    // by PostgreSQL, not Prisma's in-memory distinct over an unbounded historical revision chain.
+    // Read only the absolute latest allocation for each current segment key in PostgreSQL.
+    // Never filter for source/policy compatibility before LIMIT 1: a stale latest row must fail,
+    // not fall back to a matching historical allocation. Deduplicate input keys as before.
     // The pre-lock collection is discarded after waiting. Keep its original hash validation,
     // but read only the allocation fields needed by that hash, the locks and the slice cap.
     const columns = forLocking
@@ -334,20 +335,36 @@ export class ActivityTimeSettlementQueryService {
         a."settlementPopulationRevision", a."settlementWorkflowRevision", a."settlementDraftContentHash"`;
     const latest = forLocking
       ? await tx.$queryRaw<LockAllocation[]>`
-      SELECT DISTINCT ON (a."participationIdentityId", a."segmentKey") ${columns}
-      FROM "ParticipantTimeAllocationRevision" a
-      JOIN jsonb_to_recordset(${keys}::jsonb) AS k(identity TEXT, segment TEXT)
-        ON a."participationIdentityId" = k.identity AND a."segmentKey" = k.segment
-      WHERE a."activityId" = ${proof.activityId}
-      ORDER BY a."participationIdentityId", a."segmentKey", a.revision DESC
+      SELECT a.*
+      FROM (
+        SELECT DISTINCT identity, segment
+        FROM jsonb_to_recordset(${keys}::jsonb) AS input(identity TEXT, segment TEXT)
+      ) k
+      CROSS JOIN LATERAL (
+        SELECT ${columns}
+        FROM "ParticipantTimeAllocationRevision" a
+        WHERE a."activityId" = ${proof.activityId}
+          AND a."participationIdentityId" = k.identity AND a."segmentKey" = k.segment
+        ORDER BY a.revision DESC
+        LIMIT 1
+      ) a
+      ORDER BY a."participationIdentityId", a."segmentKey"
     `
       : await tx.$queryRaw<AllocationBasis[]>`
-      SELECT DISTINCT ON (a."participationIdentityId", a."segmentKey") ${columns}
-      FROM "ParticipantTimeAllocationRevision" a
-      JOIN jsonb_to_recordset(${keys}::jsonb) AS k(identity TEXT, segment TEXT)
-        ON a."participationIdentityId" = k.identity AND a."segmentKey" = k.segment
-      WHERE a."activityId" = ${proof.activityId}
-      ORDER BY a."participationIdentityId", a."segmentKey", a.revision DESC
+      SELECT a.*
+      FROM (
+        SELECT DISTINCT identity, segment
+        FROM jsonb_to_recordset(${keys}::jsonb) AS input(identity TEXT, segment TEXT)
+      ) k
+      CROSS JOIN LATERAL (
+        SELECT ${columns}
+        FROM "ParticipantTimeAllocationRevision" a
+        WHERE a."activityId" = ${proof.activityId}
+          AND a."participationIdentityId" = k.identity AND a."segmentKey" = k.segment
+        ORDER BY a.revision DESC
+        LIMIT 1
+      ) a
+      ORDER BY a."participationIdentityId", a."segmentKey"
     `;
     if (latest.reduce((sum, row) => sum + row.sliceCount, 0) > TIME_SETTLEMENT_LIMITS.slices)
       throw new TimeSettlementPolicyError('scale_limit');

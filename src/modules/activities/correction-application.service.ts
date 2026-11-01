@@ -1,4 +1,17 @@
-import { Injectable, Optional } from '@nestjs/common';
+import { HumanCorrectionItemAuthority } from './human-correction-item-authority';
+import {
+  lockHumanCorrectionJob,
+  HumanCorrectionAuthorityUnavailableError,
+  finishHumanCorrectionJob,
+  type HumanCorrectionJobFence,
+} from './correction-background-job';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import {
+  HUMAN_CORRECTION_BACKGROUND_BUDGET,
+  HUMAN_BACKGROUND_PREPARE_CANDIDATE_MS,
+  isHumanBackgroundBulk,
+  type HumanCorrectionBackgroundBudget,
+} from './human-correction-background-budget';
 import {
   ActivityContributionSettlementService,
   frozenContributionRegime,
@@ -37,6 +50,11 @@ import {
   type CorrectionSegmentChange,
 } from './correction-change-set';
 import { evaluateCorrectionReviewSeparation } from './correction-review-separation';
+import {
+  beginCorrectionWritePhase,
+  materializeCorrectionWritePhase,
+  sealCorrectionWritePhase,
+} from './correction-write-phase';
 import {
   allocateDailyCredit,
   decimalToHundredths,
@@ -272,6 +290,10 @@ export interface CorrectionApplyInput {
  * narrower activity/base-version qualification inside the same transaction.
  */
 export interface CorrectionHumanExecutionOptions {
+  /** Trusted Human command bootstrap supplies this source binding; never a DTO field. */
+  readonly backgroundBulkPrepare?: { readonly segmentCount: number; readonly requestHash: string };
+  /** Internal worker fence, never accepted from HTTP input. */
+  readonly backgroundJob?: HumanCorrectionJobFence;
   readonly human: true;
   /** Human route activityId must remain bound to the immutable request owner. */
   readonly expectedActivityId?: string;
@@ -451,6 +473,10 @@ export class CorrectionApplicationService {
     private readonly rbac: RbacService,
     private readonly identities: AppIdentityResolver,
     @Optional() private readonly contributions?: ActivityContributionSettlementService,
+    @Optional() private readonly humanItems?: HumanCorrectionItemAuthority,
+    @Optional()
+    @Inject(HUMAN_CORRECTION_BACKGROUND_BUDGET)
+    private readonly backgroundBudget?: HumanCorrectionBackgroundBudget,
   ) {}
 
   // =========================================================================
@@ -899,6 +925,11 @@ export class CorrectionApplicationService {
     // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
     this.activityWorkflowGate.assertV11WriteAllowed();
     const anchor = await this.readRequestAnchor(input.correctionRequestId);
+    const bulkPrepare =
+      this.backgroundBudget?.bulkPrepare === true &&
+      options?.human === true &&
+      options.backgroundBulkPrepare !== undefined &&
+      isHumanBackgroundBulk(3, options.backgroundBulkPrepare.segmentCount);
 
     return await this.prisma
       .$transaction(
@@ -926,6 +957,13 @@ export class CorrectionApplicationService {
 
           // 幂等:已有 `preparing` / `committed` 的应用 ⇒ 原样返回(不再准备第二遍)。
           const changeSet = parseCorrectionChangeSet(request.requestedChangeJson);
+          if (
+            bulkPrepare &&
+            (changeSet.schemaVersion !== 3 ||
+              changeSet.segments.length !== options?.backgroundBulkPrepare?.segmentCount ||
+              request.requestHash !== options?.backgroundBulkPrepare?.requestHash)
+          )
+            throw new BizException(BizCode.CORRECTION_OPERATION_KEY_CONFLICT);
           const baseVersion = await this.readVersionById(tx, request.baseSettlementVersionId);
           const native =
             frozenContributionRegime(baseVersion.contributionRegimeCode) === 'policy_v1';
@@ -1028,6 +1066,7 @@ export class CorrectionApplicationService {
               newResultRevisionIds: resolved.map((row) => row.newResultRevisionId),
               newPostingBatchId: batch.id,
             });
+            await beginCorrectionWritePhase(tx, application.id, 'prepare');
             pendingSegmentRevisionCount = await this.prepareV3PendingSegments(
               tx,
               application.id,
@@ -1265,6 +1304,9 @@ export class CorrectionApplicationService {
                 request.baseSettlementVersionId,
               )
             : request.actor;
+          if (changeSet.schemaVersion === 3) {
+            await sealCorrectionWritePhase(tx, application.id, 'prepare');
+          }
           await this.audit.logPrepare({
             ...result,
             operationKey: input.operationKey,
@@ -1276,7 +1318,11 @@ export class CorrectionApplicationService {
           });
           return result;
         },
-        { timeout: CORRECTION_PREPARE_TX_TIMEOUT_MS },
+        {
+          timeout: bulkPrepare
+            ? HUMAN_BACKGROUND_PREPARE_CANDIDATE_MS
+            : CORRECTION_PREPARE_TX_TIMEOUT_MS,
+        },
       )
       .catch(async (error: unknown) => {
         // 基础版本漂移:置 voided 必须**落库**,所以它在准备事务之外独立完成。
@@ -1300,14 +1346,23 @@ export class CorrectionApplicationService {
     // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
     // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
     this.activityWorkflowGate.assertV11WriteAllowed();
+    const bulkBackground =
+      this.backgroundBudget?.bulkCommit === true &&
+      options?.human === true &&
+      options.backgroundJob !== undefined &&
+      isHumanBackgroundBulk(
+        options.backgroundJob.payload.schemaVersion,
+        options.backgroundJob.payload.segmentCount,
+      );
+    if (options?.backgroundJob) {
+      if (!this.humanItems) throw new HumanCorrectionAuthorityUnavailableError();
+      this.humanItems.assertClient(this.prisma);
+    }
     const anchor = await this.readRequestAnchor(input.correctionRequestId);
-    const prevalidatedTimeProof = await this.correctionTimeAllocation.prevalidateFrozenSourceProof(
-      this.prisma,
-      {
-        correctionRequestId: input.correctionRequestId,
-        activityId: anchor.activityId,
-      },
-    );
+    await this.correctionTimeAllocation.prevalidateFrozenSourceProof(this.prisma, {
+      correctionRequestId: input.correctionRequestId,
+      activityId: anchor.activityId,
+    });
 
     const commitWithin = async (tx: PrismaTx): Promise<CorrectionCommitResult> => {
       // ① Activity → ② run → ③ correction request(本刀新增的唯一一把,插在 run 之后)
@@ -1350,6 +1405,42 @@ export class CorrectionApplicationService {
       if (options?.human && application.preparedByUserId !== application.actor.id) {
         throw new BizException(BizCode.CORRECTION_APPLY_STATUS_INVALID);
       }
+      if (options?.backgroundJob) {
+        this.humanItems?.assertClient(this.prisma);
+        const p = options.backgroundJob.payload;
+        if (
+          bulkBackground &&
+          (changeSet.schemaVersion !== 3 || changeSet.segments.length !== p.segmentCount)
+        )
+          throw new BizException(BizCode.CORRECTION_OPERATION_KEY_CONFLICT);
+        if (
+          p.actorUserId !== application.actor.id ||
+          p.applicationId !== application.id ||
+          p.settlementRunId !== request.settlementRunId ||
+          p.newSettlementVersionId !== application.newSettlementVersionId ||
+          p.postingBatchId !== application.newPostingBatchId ||
+          p.requestId !== request.id ||
+          p.activityId !== anchor.activityId ||
+          p.baseSettlementVersionId !== request.baseSettlementVersionId ||
+          p.commitRequestHash !== input.requestHash ||
+          p.operationKey !== input.operationKey ||
+          p.sourceRequestHash !== frozenRequestHash
+        )
+          throw new BizException(BizCode.CORRECTION_OPERATION_KEY_CONFLICT);
+        await lockHumanCorrectionJob(tx, options.backgroundJob, this.humanItems);
+        const root = await tx.participationTimeCorrectionManifest.findUnique({
+          where: { postingBatchId: application.newPostingBatchId },
+          select: { rootManifestId: true },
+        });
+        if (root?.rootManifestId !== p.rootManifestId)
+          throw new BizException(BizCode.CORRECTION_APPLY_STATUS_INVALID);
+        const proof = await tx.correctionTimeSourceProof.findUnique({
+          where: { applicationId: application.id },
+          select: { sourceSetHash: true },
+        });
+        if ((proof?.sourceSetHash ?? null) !== p.sourceProofHash)
+          throw new BizException(BizCode.CORRECTION_APPLY_STATUS_INVALID);
+      }
 
       // 幂等:已 committed ⇒ 原样返回上一次的结论。
       if (application.statusCode === 'committed') {
@@ -1366,12 +1457,18 @@ export class CorrectionApplicationService {
           application.actor,
           auditMeta,
         );
+        if (options?.backgroundJob)
+          await finishHumanCorrectionJob(tx, options.backgroundJob, this.humanItems);
         return replayCommitResult(anchor.activityId, request, application, ledger);
       }
       if (request.statusCode !== 'applying' || application.statusCode !== 'preparing') {
         throw new BizException(BizCode.CORRECTION_APPLY_STATUS_INVALID);
       }
       this.assertContributionCorrectionWrite(baseVersion, changeSet);
+
+      if (changeSet.schemaVersion === 3) {
+        await beginCorrectionWritePhase(tx, application.id, 'commit');
+      }
 
       // ===== §5.14 ⑤ ⭐ 第五刀的 commit 协议,**在本事务内逐字复用** =====
       //
@@ -1381,9 +1478,9 @@ export class CorrectionApplicationService {
         tx,
         application.id,
         anchor.activityId,
+        application.newPostingBatchId,
         parseCorrectionChangeSet(request.requestedChangeJson),
         application.actor.id,
-        prevalidatedTimeProof,
       );
       let readyV3CorrectionReceipt: ReadyV3CorrectionReceiptAnchor | undefined;
       if (changeSet.timeCorrection) {
@@ -1458,6 +1555,9 @@ export class CorrectionApplicationService {
       };
 
       // audit 刻意放**最后一步**:它是 DoD 7「让最后一步抛错 ⇒ 七项全回滚」那条判据的落点。
+      if (changeSet.schemaVersion === 3) {
+        await sealCorrectionWritePhase(tx, application.id, 'commit');
+      }
       await this.audit.logCommit({
         ...result,
         settlementRunId: run.id,
@@ -1468,12 +1568,18 @@ export class CorrectionApplicationService {
         auditMeta,
         tx,
       });
+      if (options?.backgroundJob)
+        await finishHumanCorrectionJob(tx, options.backgroundJob, this.humanItems);
       return result;
     };
     return await runMemberLinearizedTransaction(
       this.prisma,
       commitWithin,
-      options?.human ? 'd7-human-correction-commit' : 'standard',
+      bulkBackground
+        ? 'd7-human-background-bulk-commit'
+        : options?.human
+          ? 'd7-human-correction-commit'
+          : 'standard',
     );
   }
 
@@ -2404,18 +2510,22 @@ export class CorrectionApplicationService {
     tx: PrismaTx,
     applicationId: string,
     activityId: string,
+    postingBatchId: string,
     changeSet: CorrectionChangeSet,
     actorUserId: string,
-    prevalidatedTimeProof: CorrectionTimeAllocationProofPrevalidation | undefined,
   ): Promise<number> {
     if (changeSet.schemaVersion === 3) {
-      return await this.materializeV3PendingSegments(
+      // The database derives and checks the complete prospective set from the
+      // locked application. Non-V3 paths and live service authorization stay.
+      // Bind the returned receipt to the locked batch and parsed approved delta.
+      // The SQL validator reads the whole live proof; the optional parse hint
+      // from before the transaction is not a qualification for this writer.
+      return await materializeCorrectionWritePhase(
         tx,
         applicationId,
-        activityId,
-        changeSet,
         actorUserId,
-        prevalidatedTimeProof,
+        postingBatchId,
+        changeSet.segments.length,
       );
     }
     const pending = await tx.correctionPendingSegmentRevision.findMany({

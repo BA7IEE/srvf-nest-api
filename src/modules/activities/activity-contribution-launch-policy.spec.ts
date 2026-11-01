@@ -51,20 +51,21 @@ function source(identity: string): ContributionSource {
 
 describe('active native whole-activity launch envelope', () => {
   it.each([
-    ['identities', 500],
-    ['segments', 500],
-    ['allocations', 500],
-    ['slices', 2500],
-    ['buckets', 2000],
-    ['bucketSources', 2000],
-    ['evaluations', 2000],
-    ['sourceRefs', 2500],
-    ['punchEvents', 2000],
-    ['segmentRevisions', 1000],
-    ['allocationRevisions', 1000],
+    ['identities', 2000],
+    ['segments', 10000],
+    ['allocations', 10000],
+    ['slices', 50000],
+    ['buckets', 8000],
+    ['bucketSources', 40000],
+    ['evaluations', 8000],
+    ['sourceRefs', 50000],
+    ['punchEvents', 20000],
     ['selectionScopes', 32],
     ['policyVersions', 1],
     ['snapshots', 1],
+    ['dayPieces', 50000],
+    ['sourceBytes', 49283072],
+    ['evaluationBytes', 53477376],
   ] as const)(
     'accepts the %s boundary and rejects one extra without truncation',
     (dimension, maximum) => {
@@ -84,9 +85,9 @@ describe('active native whole-activity launch envelope', () => {
   );
 
   it('counts the whole manifest, including rows later filtered out of evaluation', () => {
-    expect(total([1250, 1250], 'slices')).toBe(2500);
-    over(() => total([1250, 1251], 'slices'));
-    expect(() => total([2500, -1], 'slices')).toThrow();
+    expect(total([25000, 25000], 'slices')).toBe(50000);
+    over(() => total([25000, 25001], 'slices'));
+    expect(() => total([50000, -1], 'slices')).toThrow();
   });
 
   it('uses UTF-8 bytes and exact bigint text for locally serialized storage values', () => {
@@ -200,27 +201,37 @@ describe('active native whole-activity launch envelope', () => {
 
   it('bounds all physical slices even when their duration or eventual award is zero', () => {
     const zero = { startsAt: interval.startsAt, endsAt: interval.startsAt };
-    expect(() => spans(Array.from({ length: 2500 }, () => interval))).not.toThrow();
-    over(() => spans(Array.from({ length: 2501 }, () => zero)));
+    expect(() => spans(Array.from({ length: 25000 }, () => interval))).not.toThrow();
+    over(() => spans(Array.from({ length: 50001 }, () => zero)));
   });
 
-  it('counts 2000 semantic units before evaluation while allowing 2500 refs to shared units', () => {
-    const units = Array.from({ length: 2000 }, (_, i) => source(String(i)));
-    expect(() => sources([...units, ...units.slice(0, 500)])).not.toThrow();
+  it('counts8000 semantic units and50000 physical refs independently', () => {
+    const units = Array.from({ length: 8000 }, (_, i) => source(String(i)));
+    const refs = Array.from({ length: 50000 }, (_, i) => units[i % units.length]);
+    expect(() => sources(refs)).not.toThrow();
     over(() => sources([...units, source('extra')]));
-    over(() => sources([...units, ...units.slice(0, 501)]));
+    over(() => sources([...refs, units[0]]));
+  });
+
+  it('does not make cumulative historical revision counts business admission limits', () => {
+    expect(limits).not.toHaveProperty('segmentRevisions');
+    expect(limits).not.toHaveProperty('allocationRevisions');
   });
 
   it('independently verifies actual evaluated units and aggregate day rows', () => {
     const empty = { sourceRefsJson: [], beijingDayPointsJson: [] };
-    expect(() => evaluations(Array.from({ length: 2000 }, () => empty))).not.toThrow();
-    over(() => evaluations(Array.from({ length: 2001 }, () => empty)));
+    expect(() => evaluations(Array.from({ length: 8000 }, () => empty))).not.toThrow();
+    over(() => evaluations(Array.from({ length: 8001 }, () => empty)));
     const dayRow = { ledgerDate: '2026-10-01', recognizedPoints: '0.00' };
     expect(() =>
-      evaluations([{ ...empty, beijingDayPointsJson: Array.from({ length: 5000 }, () => dayRow) }]),
+      evaluations([
+        { ...empty, beijingDayPointsJson: Array.from({ length: 50000 }, () => dayRow) },
+      ]),
     ).not.toThrow();
     over(() =>
-      evaluations([{ ...empty, beijingDayPointsJson: Array.from({ length: 5001 }, () => dayRow) }]),
+      evaluations([
+        { ...empty, beijingDayPointsJson: Array.from({ length: 50001 }, () => dayRow) },
+      ]),
     );
   });
 });

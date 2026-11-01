@@ -1,4 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import type { HumanCorrectionJobFence } from './correction-background-job';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import {
+  HUMAN_CORRECTION_BACKGROUND_BUDGET,
+  isHumanBackgroundBulk,
+  type HumanCorrectionBackgroundBudget,
+} from './human-correction-background-budget';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -39,6 +45,9 @@ export class ActivityTimeCorrectionCommandService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly corrections: CorrectionApplicationService,
+    @Optional()
+    @Inject(HUMAN_CORRECTION_BACKGROUND_BUDGET)
+    private readonly backgroundBudget?: HumanCorrectionBackgroundBudget,
   ) {}
 
   async submit(
@@ -112,8 +121,29 @@ export class ActivityTimeCorrectionCommandService {
       dto.operationKey,
       { expectedBaseSettlementVersionId: dto.expectedBaseSettlementVersionId },
     );
+    let backgroundBulkPrepare: { segmentCount: number; requestHash: string } | undefined;
+    if (this.backgroundBudget?.bulkPrepare === true) {
+      const source = await this.prisma.attendanceCorrectionRequest.findFirst({
+        where: { id: requestId, activityId },
+        select: { requestedChangeJson: true, requestHash: true },
+      });
+      const changes = source?.requestedChangeJson;
+      if (changes && typeof changes === 'object' && !Array.isArray(changes)) {
+        const segments = Reflect.get(changes, 'segments');
+        if (
+          Array.isArray(segments) &&
+          isHumanBackgroundBulk(Reflect.get(changes, 'schemaVersion'), segments.length) &&
+          source.requestHash
+        )
+          backgroundBulkPrepare = {
+            segmentCount: segments.length,
+            requestHash: source.requestHash,
+          };
+      }
+    }
     const result = await this.corrections.prepare(operation, user, auditMeta, {
       human: true,
+      ...(backgroundBulkPrepare ? { backgroundBulkPrepare } : {}),
       expectedActivityId: activityId,
       expectedBaseSettlementVersionId: dto.expectedBaseSettlementVersionId,
     });
@@ -131,8 +161,28 @@ export class ActivityTimeCorrectionCommandService {
     dto: AppCommitActivityTimeCorrectionDto,
     user: CurrentUserPayload,
     auditMeta: AuditMeta,
+    backgroundJob?: HumanCorrectionJobFence,
   ) {
-    const operation = this.humanOperation(
+    const operation = this.toHumanCommitInput(activityId, requestId, dto, user);
+    const result = await this.corrections.commit(operation, user, auditMeta, {
+      human: true,
+      backgroundJob,
+      expectedActivityId: activityId,
+      expectedBaseSettlementVersionId: dto.expectedBaseSettlementVersionId,
+      expectedCorrectionApplicationId: dto.correctionApplicationId,
+      expectedPostingBatchId: dto.postingBatchId,
+    });
+    return presentActivityTimeCorrectionCommit(result);
+  }
+
+  /** Shared server-derived operation binding for synchronous and durable acceptance. */
+  toHumanCommitInput(
+    activityId: string,
+    requestId: string,
+    dto: AppCommitActivityTimeCorrectionDto,
+    user: CurrentUserPayload,
+  ): CorrectionApplyInput {
+    return this.humanOperation(
       'attendance-correction-human-commit-v1',
       activityId,
       requestId,
@@ -144,14 +194,6 @@ export class ActivityTimeCorrectionCommandService {
         postingBatchId: dto.postingBatchId,
       },
     );
-    const result = await this.corrections.commit(operation, user, auditMeta, {
-      human: true,
-      expectedActivityId: activityId,
-      expectedBaseSettlementVersionId: dto.expectedBaseSettlementVersionId,
-      expectedCorrectionApplicationId: dto.correctionApplicationId,
-      expectedPostingBatchId: dto.postingBatchId,
-    });
-    return presentActivityTimeCorrectionCommit(result);
   }
 
   private toHumanSubmitInput(

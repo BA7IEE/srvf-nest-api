@@ -1077,7 +1077,7 @@ describe('D4 write orchestration and replay safety', () => {
     const raw = jest.spyOn(tx, '$queryRaw');
     for (let index = 0; index < 5; index++) raw.mockResolvedValueOnce([{ id: 'run' }]);
     raw.mockResolvedValueOnce(
-      Array.from({ length: 501 }, (_, index) => ({ id: `excluded-${index}` })),
+      Array.from({ length: 2001 }, (_, index) => ({ id: `excluded-${index}` })),
     );
     await expect(service.prepare(activityId, prepare, actor, meta)).rejects.toMatchObject({
       biz: BizCode.ACTIVITY_TIME_SETTLEMENT_SCALE_LIMIT,

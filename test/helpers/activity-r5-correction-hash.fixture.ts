@@ -1,6 +1,12 @@
 import { ActivityContributionSettlementService } from '../../src/modules/activities/activity-contribution-settlement.service';
 import { ActivityTimeAllocationService } from '../../src/modules/activities/activity-time-allocation.service';
 import { CorrectionApplicationService } from '../../src/modules/activities/correction-application.service';
+import { humanCorrectionTestService } from './r5-ci-authenticated-runtime';
+import {
+  pre155CorrectionService,
+  withPre155Review,
+  type E4Pre155Prefix,
+} from './e4-pre155-correction.fixture';
 import {
   createE4Source,
   e4Actor,
@@ -14,6 +20,23 @@ import {
 export async function approvedE4TimeCorrection(
   f: E4Fixture,
   sourceWindow?: { startsAt: Date; endsAt: Date },
+  historicalPrefix?: E4Pre155Prefix,
+) {
+  if (historicalPrefix !== undefined)
+    return withPre155Review(f, historicalPrefix, () =>
+      approvedE4TimeCorrectionWithService(f, sourceWindow, pre155CorrectionService(f)),
+    );
+  return approvedE4TimeCorrectionWithService(
+    f,
+    sourceWindow,
+    humanCorrectionTestService(f, CorrectionApplicationService),
+  );
+}
+
+async function approvedE4TimeCorrectionWithService(
+  f: E4Fixture,
+  sourceWindow: { startsAt: Date; endsAt: Date } | undefined,
+  correction: Pick<CorrectionApplicationService, 'submit' | 'review' | 'prepare' | 'commit'>,
 ) {
   const source = await createE4Source(f, sourceWindow);
   const submitted = await submitE4Time(f, source, await prepareE4Time(f, source));
@@ -48,7 +71,6 @@ export async function approvedE4TimeCorrection(
   const roots = await f.db.participationTimeLedgerEntry.findMany({
     where: { manifestId: original.id },
   });
-  const correction = f.app.get(CorrectionApplicationService);
   const requested = await correction.submit(
     {
       activityId: source.activityId,

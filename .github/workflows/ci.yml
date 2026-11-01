@@ -182,6 +182,8 @@ jobs:
 
       - name: Typecheck
         if: needs.changeset.outputs.docs_only != 'true'
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: pnpm typecheck
 
       # Harness 2.0(T0 §1.4):恒读层预算 + 事实计数守护;前四项均纯文件解析、秒级。
@@ -510,6 +512,14 @@ jobs:
       - name: Initialize test database
         run: pnpm db:test:init
 
+      # Fresh runner-local PostgreSQL only; never part of a production migration.
+      - name: Install sealed R5 CI roles and verify default refusal
+        run: |
+          test "$GITHUB_ACTIONS" = true
+          docker exec -i u-nest-api-postgres psql -X -v ON_ERROR_STOP=1 -U postgres -d app_test < test/fixtures/r5-ci-sealed-roles.sql
+          pnpm prisma:deploy
+          docker exec -i u-nest-api-postgres psql -X -v ON_ERROR_STOP=1 -U postgres -d app_test < test/fixtures/r5-ci-default-closed.sql
+
       # 显式跑一次生产迁移命令,验证 `pnpm prisma:deploy` 脚本存在且可执行。
       # 复用同一份测试库(模板库);E2E 的 globalSetup 之后还会再跑一次
       # `prisma migrate deploy`,Prisma 对已应用的 migration 是 no-op。
@@ -539,6 +549,56 @@ jobs:
           if grep -q 'failed to exit gracefully' tmp/e2e.log; then
             echo "::warning::并行 e2e 出现 worker 强制退出(本仓已知基线,非硬失败)。若近期新增/改动了 spec,请核对 afterAll 是否 app.close();权威检测见 nightly-e2e-leaks.yml,本地复现:pnpm test:e2e:leaks"
           fi
+
+  # Fresh single-instance authentication and current Human V3 regressions.
+  # No production identity, repository secret, persistent PG data or external port.
+  r5-human-ci:
+    name: Authenticated Human V3
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    needs: changeset
+    if: needs.changeset.outputs.docs_only != 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+      - name: Pull pinned isolated fixture images
+        run: |
+          docker pull postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+          docker pull node@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413
+      - name: Real SCRAM qualification and current V3 regressions
+        run: |
+          test "$GITHUB_ACTIONS" = true
+          mkdir -p tmp/r5-authenticated-ci
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          from datetime import datetime, timezone, timedelta
+          import json
+          started = datetime.now(timezone.utc)
+          path = Path('tmp/r5-authenticated-ci/campaign.json')
+          with path.open('x') as out:
+              json.dump({'startedAt': started.isoformat(), 'deadline': (started + timedelta(seconds=1800)).isoformat()}, out)
+          PYCODE
+          python3 test/helpers/r5-ci-authentication.py --checkout "$GITHUB_WORKSPACE" --evidence "$GITHUB_WORKSPACE/tmp/r5-authenticated-ci/run" --campaign "$GITHUB_WORKSPACE/tmp/r5-authenticated-ci/campaign.json" --regressions
+      - name: Preserve bounded fixture evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r5-authenticated-ci-${{ github.run_attempt }}
+          path: tmp/r5-authenticated-ci/
+          retention-days: 7
 
   # 金五条与既有 e2e 物理隔离：独立 Jest config、独立派生库、单 worker。
   # 它们跨越招新、活动、证书、出箱等域，不能混入 e2e shard 后被偶然的执行顺序掩盖。
@@ -590,6 +650,14 @@ jobs:
 
       - name: Initialize test database
         run: pnpm db:test:init
+
+      # Fresh runner-local PostgreSQL only; never part of a production migration.
+      - name: Install sealed R5 CI roles and verify default refusal
+        run: |
+          test "$GITHUB_ACTIONS" = true
+          docker exec -i u-nest-api-postgres psql -X -v ON_ERROR_STOP=1 -U postgres -d app_test < test/fixtures/r5-ci-sealed-roles.sql
+          pnpm prisma:deploy
+          docker exec -i u-nest-api-postgres psql -X -v ON_ERROR_STOP=1 -U postgres -d app_test < test/fixtures/r5-ci-default-closed.sql
 
       - name: Run golden journeys (isolated, serial)
         run: pnpm test:journeys
@@ -765,7 +833,7 @@ jobs:
     # 情况下放行,正是最该拦的 fail-open。代价是往 gate 加 job 必须同步改那条正则;
     # 那不是麻烦,那是加 job 该有的摩擦(与 #1003 尺寸棘轮翻闸同源)。
     # 本文件不在 prettier 覆盖范围(format 只跑 src/**/*.ts),故单行形态不会被自动重排。
-    needs: [changeset, fast, harness-selftest, harness-replay, slow, journeys, redzone-scan, redzone-approval]
+    needs: [changeset, fast, harness-selftest, harness-replay, slow, journeys, r5-human-ci, redzone-scan, redzone-approval]
     if: always()
     steps:
       - name: Aggregate results
@@ -792,6 +860,13 @@ jobs:
           if [ "${{ needs.harness-replay.result }}" != "success" ]; then
             echo "::error::事故回放未通过(结果:${{ needs.harness-replay.result }})"
             exit 1
+          fi
+          human='${{ needs.r5-human-ci.result }}'
+          if [ "$human" != "success" ]; then
+            if [ "$human" != "skipped" ] || [ "${{ needs.changeset.outputs.docs_only }}" != "true" ]; then
+              echo "::error::Authenticated Human V3 未通过或被非法跳过"
+              exit 1
+            fi
           fi
           # ② slow / journeys 允许 skipped 的**唯一**合法理由必须被正面证明
           #    (docs_only == 'true'),不从 skipped 反推。

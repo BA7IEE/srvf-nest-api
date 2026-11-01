@@ -1503,6 +1503,7 @@ checkEq(
       'docs/ai-harness/ROUTE_AUTHZ.md',
       'test/contract/openapi.contract-spec.ts',
       'scripts/check-boundaries.ts',
+      'scripts/check-catalog-sql-proof.ts',
       'scripts/generate-authz-manifest.ts',
     ]) {
       copyIntoFixture(rel);
@@ -2964,10 +2965,19 @@ for (const [configName, config] of JEST_CONFIGS) {
       // 同步改本行;那不是麻烦,是加 job 该有的摩擦。
       // harness-selftest / harness-replay 于 2026-08-15 从 fast 拆出(见 ci.yml 两个
       // job 的头注):它们恒跑、docs-only 也不跳,故 gate 对它们只接受 success。
-      /needs:\s*\[changeset, fast, harness-selftest, harness-replay, slow, journeys, redzone-scan, redzone-approval\]/.test(
+      /needs:\s*\[changeset, fast, harness-selftest, harness-replay, slow, journeys, r5-human-ci, redzone-scan, redzone-approval\]/.test(
         ci,
       ),
       'gate 不依赖这两个 job = 审批不影响放行,门形同虚设',
+    ],
+    [
+      'P2c ci:真实Human认证回归必须成功,跳过仅限正面docs-only',
+      ci.includes("human='${{ needs.r5-human-ci.result }}'") &&
+        ci.includes('Authenticated Human V3 未通过或被非法跳过') &&
+        !/needs:\s*\[changeset, fast, harness-selftest, harness-replay, slow, journeys, r5-human-ci, redzone-scan, redzone-approval\]/.test(
+          ci.replace('journeys, r5-human-ci, redzone-scan', 'journeys, redzone-scan'),
+        ),
+      '认证回归未执行不得聚合放行;移除新依赖必须破坏完整needs断言',
     ],
     [
       'P2c ci:scan 未成功即拒绝放行(无法验证 ≠ 通过)',

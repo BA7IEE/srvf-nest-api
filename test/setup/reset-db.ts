@@ -2,6 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import { PrismaService } from '../../src/database/prisma.service';
 import { assertConnectedTestDatabase, assertTestDatabaseUrl } from './test-db';
 import { withTimeLedgerFixtureCleanup } from './time-ledger-fixture-cleanup';
+import { r5CiTestDatabaseUrl } from './r5-ci-instance-scope';
 
 // 每个 spec 文件 beforeAll 调用一次,在 createTestApp() 之后,
 // 把 User 表清空,保证文件间互不干扰(隔离粒度到 spec 文件级,
@@ -202,7 +203,7 @@ import { withTimeLedgerFixtureCleanup } from './time-ledger-fixture-cleanup';
 // 两者各带 active partial unique(identities 两条),不清就会跨 spec 污染绑定唯一性断言。
 export async function resetDb(app: INestApplication): Promise<void> {
   // 第一道:DATABASE_URL 的**意图**(host 允许清单 + 库名严格等于本 worker 的派生名)
-  assertTestDatabaseUrl(process.env.DATABASE_URL);
+  assertTestDatabaseUrl(r5CiTestDatabaseUrl());
 
   const prisma = app.get(PrismaService);
   // 第二道:连接建立之后向服务器求证它**事实上**是谁。URL 合规不等于连对了地方

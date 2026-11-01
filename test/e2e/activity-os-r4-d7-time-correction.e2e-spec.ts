@@ -1,11 +1,5 @@
-import {
-  BindingScopeType,
-  PrincipalType,
-  Role,
-  UserStatus,
-  Prisma,
-  PrismaClient,
-} from '@prisma/client';
+import { PrismaService } from '../../src/database/prisma.service';
+import { BindingScopeType, PrincipalType, Role, UserStatus, Prisma } from '@prisma/client';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -25,6 +19,8 @@ import request from 'supertest';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { CorrectionApplicationService } from '../../src/modules/activities/correction-application.service';
+import { ActivityTimeCorrectionCommandService } from '../../src/modules/activities/activity-time-correction-command.service';
+import { probeOpenCorrectionCommit } from '../helpers/r5-open-phase-guard-probe';
 import { CorrectionAuditRecorder } from '../../src/modules/activities/correction-audit-recorder';
 import { CorrectionTimeAllocationService } from '../../src/modules/activities/correction-time-allocation.service';
 import { AttendanceCorrectionWriteService } from '../../src/modules/attendances/attendance-correction-write.service';
@@ -51,6 +47,13 @@ import {
 import { httpServer } from '../helpers/http-server';
 import { loadTestEnv } from '../setup/load-env';
 import { assertTestDatabaseUrl } from '../setup/test-db';
+import { r5CiAuthenticated, r5CiTestDatabaseUrl } from '../setup/r5-ci-instance-scope';
+import {
+  humanCorrectionTestApp,
+  humanCorrectionTestService,
+  humanCorrectionTestClient,
+  r5CiOwnerClient,
+} from '../helpers/r5-ci-authenticated-runtime';
 import { deriveTestDbName } from '../setup/worktree-db';
 
 import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
@@ -67,6 +70,7 @@ import {
   observeD7Receipt,
   preserveD7Prepare,
   safeD7Diagnostic,
+  observeD7SetupRejection,
   type D7SetupBatch,
 } from '../helpers/d7-setup-observation';
 let activeSetupObservation: D7SetupObservation | undefined;
@@ -283,6 +287,8 @@ function commitErrorLocation(error: unknown) {
     'src/modules/activities/participation-time-correction.service.ts',
     'src/modules/activities/ledger-posting.service.ts',
     'src/modules/activities/correction-audit-recorder.ts',
+    'src/modules/activities/activity-time-settlement.service.ts',
+    'src/modules/activities/activity-time-settlement-query.service.ts',
     'src/modules/attendances/attendance-correction-write.service.ts',
     'src/common/prisma/member-advisory-lock.util.ts',
   ]);
@@ -317,7 +323,18 @@ function diagnosticCode(error: unknown): string {
       ? error.name
       : 'other';
   if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return kind;
-  const prismaCode = ['P2028', 'P2010', 'P2002', 'P2003', 'P2024', 'P2034'].includes(error.code)
+  const prismaCode = [
+    'P1001',
+    'P1002',
+    'P1008',
+    'P1017',
+    'P2028',
+    'P2010',
+    'P2002',
+    'P2003',
+    'P2024',
+    'P2034',
+  ].includes(error.code)
     ? error.code
     : 'other';
   const state = error.meta?.code;
@@ -332,10 +349,15 @@ function diagnosticCode(error: unknown): string {
       '40001',
       '40P01',
       '53200',
+      '53100',
       '53400',
+      '54001',
       '08003',
       '08006',
       '57P01',
+      '57P02',
+      '57P03',
+      '58030',
     ].includes(state)
       ? state
       : 'unavailable';
@@ -1275,6 +1297,35 @@ describe('D7-1 recognition correction real transaction', () => {
   let f: D13Fixture;
   let actor: CurrentUserPayload;
   const meta = { requestId: 'd5-e2e', ip: null, ua: null };
+  async function probePreparedCommitPhase(
+    activityId: string,
+    requestId: string,
+    baseVersionId: string,
+    prepared: { applicationId: string; postingBatchId: string },
+    probe: (tx: Prisma.TransactionClient) => Promise<void>,
+  ): Promise<void> {
+    const reviewer = await f.db.user.findUniqueOrThrow({
+      where: { id: f.reviewer.id },
+      select: { id: true, memberId: true, username: true, role: true, status: true },
+    });
+    await probeOpenCorrectionCommit(
+      prepared.applicationId,
+      () =>
+        humanCorrectionTestService(f, ActivityTimeCorrectionCommandService).commit(
+          activityId,
+          requestId,
+          {
+            expectedBaseSettlementVersionId: baseVersionId,
+            correctionApplicationId: prepared.applicationId,
+            postingBatchId: prepared.postingBatchId,
+            operationKey: f.key('guard_probe_commit'),
+          },
+          reviewer,
+          meta,
+        ),
+      probe,
+    );
+  }
   const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
   const originalEnvironment = {
     worker: process.env.JEST_WORKER_ID,
@@ -1288,7 +1339,7 @@ describe('D7-1 recognition correction real transaction', () => {
       process.env.JEST_WORKER_ID = String(WORKER);
       loadTestEnv();
       process.env.STORAGE_LOCAL_ROOT = `./tmp/storage-w${WORKER}`;
-      assertTestDatabaseUrl(process.env.DATABASE_URL);
+      assertTestDatabaseUrl(r5CiTestDatabaseUrl());
       await scratchLifecycle.drop(WORKER);
       await scratchLifecycle.create(deriveTestDbName());
       execFileSync('pnpm', ['exec', 'prisma', 'migrate', 'deploy'], {
@@ -1296,7 +1347,7 @@ describe('D7-1 recognition correction real transaction', () => {
         stdio: 'pipe',
       });
     }
-    assertTestDatabaseUrl(process.env.DATABASE_URL);
+    assertTestDatabaseUrl(r5CiTestDatabaseUrl());
   }, 120000);
   beforeEach(async () => {
     // Test-process configuration only. Never changes an application instance or deployment Gate.
@@ -2268,7 +2319,7 @@ describe('D7-1 recognition correction real transaction', () => {
     deadline: number,
     operation: 'prepare' | 'submit' = 'prepare',
   ): Promise<T> {
-    assertTestDatabaseUrl(process.env.DATABASE_URL);
+    assertTestDatabaseUrl(r5CiTestDatabaseUrl());
     await assertDiagnosticObserver();
     // Keep pure observer controls; extra database diagnostics require explicit opt-in.
     if (process.env.SRVF_D7_NATIVE_CHAIN_DIAGNOSTIC !== '1') return run();
@@ -2859,7 +2910,7 @@ describe('D7-1 recognition correction real transaction', () => {
       operationKey,
     });
 
-    const first = await request(httpServer(f.app))
+    const first = await request(httpServer(humanCorrectionTestApp(f)))
       .post(correctionUrl)
       .set('Authorization', f.creator.auth)
       .send(requestBody(f.key('human_submit'), '发现服务段结束时刻需核实'))
@@ -2876,7 +2927,7 @@ describe('D7-1 recognition correction real transaction', () => {
     const firstData = first.body.data as { requestId: string; requestVersion: number };
 
     const wrongActivityId = p.activityId.slice(0, -1) + (p.activityId.endsWith('0') ? '1' : '0');
-    const wrongRouteReview = await request(httpServer(f.app))
+    const wrongRouteReview = await request(httpServer(humanCorrectionTestApp(f)))
       .post(`${D13_APP}/${wrongActivityId}/time-corrections/${firstData.requestId}/review`)
       .set('Authorization', f.reviewer.auth)
       .send({
@@ -2892,7 +2943,7 @@ describe('D7-1 recognition correction real transaction', () => {
       f.db.attendanceCorrectionRequest.findUniqueOrThrow({ where: { id: firstData.requestId } }),
     ).resolves.toMatchObject({ statusCode: 'pending' });
 
-    const initialDetail = await request(httpServer(f.app))
+    const initialDetail = await request(httpServer(humanCorrectionTestApp(f)))
       .get(`${correctionUrl}/${firstData.requestId}`)
       .set('Authorization', f.creator.auth)
       .query({ page: 1, pageSize: 1 })
@@ -2904,7 +2955,7 @@ describe('D7-1 recognition correction real transaction', () => {
       sourcePage: null,
     });
 
-    const returned = await request(httpServer(f.app))
+    const returned = await request(httpServer(humanCorrectionTestApp(f)))
       .post(`${correctionUrl}/${firstData.requestId}/review`)
       .set('Authorization', f.reviewer.auth)
       .send({
@@ -2920,7 +2971,7 @@ describe('D7-1 recognition correction real transaction', () => {
       replayed: false,
     });
 
-    const wrongRouteResubmit = await request(httpServer(f.app))
+    const wrongRouteResubmit = await request(httpServer(humanCorrectionTestApp(f)))
       .post(`${D13_APP}/${wrongActivityId}/time-corrections/${firstData.requestId}/resubmit`)
       .set('Authorization', f.creator.auth)
       .send(requestBody(f.key('human_resubmit_wrong_activity'), '错误活动路径不得重提该申请'));
@@ -2932,7 +2983,7 @@ describe('D7-1 recognition correction real transaction', () => {
       f.db.attendanceCorrectionRequest.findUniqueOrThrow({ where: { id: firstData.requestId } }),
     ).resolves.toMatchObject({ statusCode: 'returned' });
 
-    const resubmitted = await request(httpServer(f.app))
+    const resubmitted = await request(httpServer(humanCorrectionTestApp(f)))
       .post(`${correctionUrl}/${firstData.requestId}/resubmit`)
       .set('Authorization', f.creator.auth)
       .send(requestBody(f.key('human_resubmit'), '已补齐服务段时间核验依据'))
@@ -2956,7 +3007,7 @@ describe('D7-1 recognition correction real transaction', () => {
       }),
     ).toMatchObject({ resubmittedFromRequestId: firstData.requestId, statusCode: 'pending' });
 
-    const approved = await request(httpServer(f.app))
+    const approved = await request(httpServer(humanCorrectionTestApp(f)))
       .post(`${correctionUrl}/${resubmittedData.requestId}/review`)
       .set('Authorization', f.reviewer.auth)
       .send({
@@ -2971,7 +3022,7 @@ describe('D7-1 recognition correction real transaction', () => {
       statusCode: 'approved',
     });
 
-    const prepared = await request(httpServer(f.app))
+    const prepared = await request(httpServer(humanCorrectionTestApp(f)))
       .post(`${correctionUrl}/${resubmittedData.requestId}/prepare`)
       .set('Authorization', f.reviewer.auth)
       .send({
@@ -3018,8 +3069,8 @@ describe('D7-1 recognition correction real transaction', () => {
     });
     const sourceHash = sourceSnapshot?.sourceHash;
     if (typeof sourceHash !== 'string') throw new Error('base source hash required');
-    await expect(
-      f.db.$executeRaw(
+    const insertMismatchedBinding = (tx: Prisma.TransactionClient) =>
+      tx.$executeRaw(
         Prisma.sql`
           INSERT INTO "CorrectionTimeAllocationBinding" (
             "id", "proofId", "activityId", "participationIdentityId", "segmentKey",
@@ -3032,8 +3083,21 @@ describe('D7-1 recognition correction real transaction', () => {
             ${pendingAllocation.id}, ${sourceHash}
           )
         `,
-      ),
-    ).rejects.toThrow('binding does not match its pending allocation fact');
+      );
+    await expect(insertMismatchedBinding(f.db)).rejects.toThrow(
+      'write requires this transaction and actor open phase',
+    );
+    await probePreparedCommitPhase(
+      p.activityId,
+      resubmittedData.requestId,
+      timeRevision.settlementVersionId,
+      preparedData,
+      async (tx) => {
+        await expect(insertMismatchedBinding(tx)).rejects.toThrow(
+          'binding does not match its pending allocation fact',
+        );
+      },
+    );
     expect(
       await f.db.correctionTimeAllocationBinding.count({ where: { proofId: sourceProof.id } }),
     ).toBe(0);
@@ -3044,8 +3108,8 @@ describe('D7-1 recognition correction real transaction', () => {
     const baseAllocation = await f.db.participantTimeAllocationRevision.findUniqueOrThrow({
       where: { id: allocation.id },
     });
-    await expect(
-      f.db.participantTimeAllocationRevision.create({
+    const insertMismatchedAllocation = (tx: Prisma.TransactionClient) =>
+      tx.participantTimeAllocationRevision.create({
         data: {
           ...baseAllocation,
           id: f.key('allocation_guard_mismatch'),
@@ -3060,15 +3124,28 @@ describe('D7-1 recognition correction real transaction', () => {
           settlementDraftContentHash: null,
           allocationJson: baseAllocation.allocationJson as Prisma.InputJsonValue,
         },
-      }),
-    ).rejects.toThrow('correction allocation differs from its pending fact');
+      });
+    await expect(insertMismatchedAllocation(f.db)).rejects.toThrow(
+      'write requires this transaction and actor open phase',
+    );
+    await probePreparedCommitPhase(
+      p.activityId,
+      resubmittedData.requestId,
+      timeRevision.settlementVersionId,
+      preparedData,
+      async (tx) => {
+        await expect(insertMismatchedAllocation(tx)).rejects.toThrow(
+          'correction allocation differs from its pending fact',
+        );
+      },
+    );
     expect(
       await f.db.participantTimeAllocationRevision.count({
         where: { correctionPendingAllocationId: pendingAllocation.id },
       }),
     ).toBe(0);
 
-    const frozenDetail = await request(httpServer(f.app))
+    const frozenDetail = await request(httpServer(humanCorrectionTestApp(f)))
       .get(`${correctionUrl}/${resubmittedData.requestId}`)
       .set('Authorization', f.creator.auth)
       .query({ page: 1, pageSize: 1 })
@@ -3087,7 +3164,7 @@ describe('D7-1 recognition correction real transaction', () => {
       postingBatchId: preparedData.postingBatchId,
       operationKey: f.key('human_commit'),
     };
-    const committed = await request(httpServer(f.app))
+    const committed = await request(httpServer(humanCorrectionTestApp(f)))
       .post(`${correctionUrl}/${resubmittedData.requestId}/commit`)
       .set('Authorization', f.reviewer.auth)
       .send(commitPayload)
@@ -3104,7 +3181,7 @@ describe('D7-1 recognition correction real transaction', () => {
 
     // A same-task replay must report the same immutable target IDs, without
     // adding a second audit/ledger result or substituting placeholder values.
-    const replayed = await request(httpServer(f.app))
+    const replayed = await request(httpServer(humanCorrectionTestApp(f)))
       .post(`${correctionUrl}/${resubmittedData.requestId}/commit`)
       .set('Authorization', f.reviewer.auth)
       .send(commitPayload)
@@ -3186,7 +3263,7 @@ describe('D7-1 recognition correction real transaction', () => {
       const correctedCheckOutAt = new Date(source.checkOutAt.getTime() - 1_000);
       const correctionUrl = `${D13_APP}/${p.activityId}/time-corrections`;
       const submitted = await observeD7Setup(activeSetupObservation, 'humanSubmit', null, () =>
-        request(httpServer(f.app))
+        request(httpServer(humanCorrectionTestApp(f)))
           .post(correctionUrl)
           .set('Authorization', f.creator.auth)
           .send({
@@ -3238,7 +3315,7 @@ describe('D7-1 recognition correction real transaction', () => {
       );
       const submittedData = submitted.body.data as { requestId: string; requestVersion: number };
       await observeD7Setup(activeSetupObservation, 'humanReview', null, () =>
-        request(httpServer(f.app))
+        request(httpServer(humanCorrectionTestApp(f)))
           .post(`${correctionUrl}/${submittedData.requestId}/review`)
           .set('Authorization', f.reviewer.auth)
           .send({
@@ -3249,7 +3326,7 @@ describe('D7-1 recognition correction real transaction', () => {
           .expect(200),
       );
       const prepared = await observeD7Setup(activeSetupObservation, 'humanPrepare', null, () =>
-        request(httpServer(f.app))
+        request(httpServer(humanCorrectionTestApp(f)))
           .post(`${correctionUrl}/${submittedData.requestId}/prepare`)
           .set('Authorization', f.reviewer.auth)
           .send({
@@ -3293,19 +3370,33 @@ describe('D7-1 recognition correction real transaction', () => {
         // guard.  Before materialization and its immutable receipt exist, the
         // database visibility trigger must reject the final status transition
         // and leave the batch ready for the real atomic commit.
-        let finalGuardError: unknown;
-        try {
-          await f.db.ledgerPostingBatch.update({
+        await expect(
+          f.db.ledgerPostingBatch.update({
             where: { id: preparedData.postingBatchId },
             data: { statusCode: 'committed', committedAt: new Date() },
-          });
-        } catch (error) {
-          finalGuardError = error;
-        }
-        expect(finalGuardError).toBeInstanceOf(Prisma.PrismaClientUnknownRequestError);
-        expect((finalGuardError as Error).message).toContain('code: "23514"');
-        expect((finalGuardError as Error).message).toContain(
-          'V3 correction proof bindings are incomplete or mismatched',
+          }),
+        ).rejects.toThrow('write requires this transaction and actor open phase');
+        await probePreparedCommitPhase(
+          p.activityId,
+          submittedData.requestId,
+          timeRevision.settlementVersionId,
+          preparedData,
+          async (tx) => {
+            let finalGuardError: unknown;
+            try {
+              await tx.ledgerPostingBatch.update({
+                where: { id: preparedData.postingBatchId },
+                data: { statusCode: 'committed', committedAt: new Date() },
+              });
+            } catch (error) {
+              finalGuardError = error;
+            }
+            expect(finalGuardError).toBeInstanceOf(Prisma.PrismaClientUnknownRequestError);
+            expect((finalGuardError as Error).message).toContain('code: "23514"');
+            expect((finalGuardError as Error).message).toContain(
+              'V3 correction proof bindings are incomplete or mismatched',
+            );
+          },
         );
         expect(
           await f.db.ledgerPostingBatch.findUniqueOrThrow({
@@ -3352,7 +3443,11 @@ describe('D7-1 recognition correction real transaction', () => {
       let commitRequestRejected = false;
       let commitRequestFailure: unknown;
       let observerDisconnectFailure: unknown;
-      let observerDisconnectState: 'NOT_STARTED' | 'RETURNED' | 'THREW' = 'NOT_STARTED';
+      let observerDisconnectState:
+        | 'NOT_STARTED'
+        | 'RETURNED'
+        | 'THREW'
+        | 'APPLICATION_OWNS_TRANSPORT' = 'NOT_STARTED';
       const measureCommitPhase = async <T>(
         phase: keyof typeof commitPhaseMs,
         work: () => Promise<T>,
@@ -3371,7 +3466,11 @@ describe('D7-1 recognition correction real transaction', () => {
         }
       };
       const observed =
-        population === 2000 ? new PrismaClient({ log: [{ emit: 'event', level: 'query' }] }) : null;
+        population === 2000
+          ? r5CiAuthenticated()
+            ? humanCorrectionTestClient(f)
+            : r5CiOwnerClient({ log: [{ emit: 'event', level: 'query' }] })
+          : null;
       if (observed) {
         await observed.$connect();
         observed.$on('query', (event) =>
@@ -3396,21 +3495,27 @@ describe('D7-1 recognition correction real transaction', () => {
           }, undefined),
         );
       }
+      // Observe the actual P method; never redirect its callback to an owner pool.
+      const observedTransaction = observed?.$transaction.bind(observed);
+      const transactionClient = r5CiAuthenticated()
+        ? (humanCorrectionTestClient(f) as unknown as PrismaService)
+        : f.db;
       const transactionSpy = observed
-        ? jest.spyOn(f.db, '$transaction').mockImplementation((body, options) =>
+        ? jest.spyOn(transactionClient, '$transaction').mockImplementation((body, options) =>
             observeCommitTransaction(
               (tx) => observeD7Span(timing, 'callback', () => body(tx)),
               (callback) =>
-                observeD7Span(timing, 'transaction', () =>
-                  observed.$transaction(callback, options),
-                ),
+                observeD7Span(timing, 'transaction', () => observedTransaction!(callback, options)),
               transactionObservation,
             ),
           )
         : undefined;
-      const correction = f.app.get(CorrectionApplicationService);
+      const correction = humanCorrectionTestService(f, CorrectionApplicationService);
       const commit = correction.commit.bind(correction);
-      const correctionTimeAllocation = f.app.get(CorrectionTimeAllocationService);
+      const correctionTimeAllocation = humanCorrectionTestService(
+        f,
+        CorrectionTimeAllocationService,
+      );
       const materializeTimeAllocations =
         correctionTimeAllocation.materialize.bind(correctionTimeAllocation);
       const timeAllocationSpy = observed
@@ -3422,7 +3527,7 @@ describe('D7-1 recognition correction real transaction', () => {
               ),
             )
         : undefined;
-      const timeCorrection = f.app.get(ParticipationTimeCorrectionService);
+      const timeCorrection = humanCorrectionTestService(f, ParticipationTimeCorrectionService);
       const createCommitReceipt = timeCorrection.createCommitReceipt.bind(timeCorrection);
       const receiptSpy = observed
         ? jest
@@ -3439,7 +3544,7 @@ describe('D7-1 recognition correction real transaction', () => {
           lockedCompleteCalls++;
           return assertComplete(...args);
         });
-      const ledgerPosting = f.app.get(LedgerPostingService);
+      const ledgerPosting = humanCorrectionTestService(f, LedgerPostingService);
       type LedgerReadMethod = 'readBatchDayDeltas' | 'assertPreparedSetConsistent';
       const timedLedger = ledgerPosting as unknown as Record<
         LedgerReadMethod,
@@ -3467,7 +3572,7 @@ describe('D7-1 recognition correction real transaction', () => {
               measureCommitPhase('ledgerCommit', () => commitBatchWithin(...args)),
             )
         : undefined;
-      const correctionWrites = f.app.get(AttendanceCorrectionWriteService);
+      const correctionWrites = humanCorrectionTestService(f, AttendanceCorrectionWriteService);
       const markApplicationCommitted =
         correctionWrites.markApplicationCommitted.bind(correctionWrites);
       const applicationCommittedSpy = observed
@@ -3485,7 +3590,7 @@ describe('D7-1 recognition correction real transaction', () => {
               measureCommitPhase('requestApplied', () => markRequestApplied(...args)),
             )
         : undefined;
-      const correctionAudit = f.app.get(CorrectionAuditRecorder);
+      const correctionAudit = humanCorrectionTestService(f, CorrectionAuditRecorder);
       const logCommit = correctionAudit.logCommit.bind(correctionAudit);
       const finalAuditSpy = observed
         ? jest
@@ -3547,7 +3652,7 @@ describe('D7-1 recognition correction real transaction', () => {
       const committed = await (async () => {
         let commitResponse: request.Response | undefined;
         try {
-          commitResponse = await request(httpServer(f.app))
+          commitResponse = await request(httpServer(humanCorrectionTestApp(f)))
             .post(`${correctionUrl}/${submittedData.requestId}/commit`)
             .set('Authorization', f.reviewer.auth)
             .send({
@@ -3595,8 +3700,12 @@ describe('D7-1 recognition correction real transaction', () => {
           correctionCommitSpy.mockRestore();
           if (observed) {
             try {
-              await observed.$disconnect();
-              observerDisconnectState = 'RETURNED';
+              if (r5CiAuthenticated()) {
+                observerDisconnectState = 'APPLICATION_OWNS_TRANSPORT';
+              } else {
+                await observed.$disconnect();
+                observerDisconnectState = 'RETURNED';
+              }
             } catch (error) {
               observerDisconnectState = 'THREW';
               diagnosticErrorCount++;
@@ -3701,7 +3810,7 @@ describe('D7-1 recognition correction real transaction', () => {
       await createCommittedFactCorrectionBase();
     if (source.checkOutAt === null) throw new Error('closed source segment required');
     const url = `${D13_APP}/${p.activityId}/time-corrections`;
-    const submitted = await request(httpServer(f.app))
+    const submitted = await request(httpServer(humanCorrectionTestApp(f)))
       .post(url)
       .set('Authorization', f.creator.auth)
       .send({
@@ -3754,12 +3863,12 @@ describe('D7-1 recognition correction real transaction', () => {
         operationKey: f.key('budget_submit'),
       })
       .expect(201);
-    await request(httpServer(f.app))
+    await request(httpServer(humanCorrectionTestApp(f)))
       .post(`${url}/${submitted.body.data.requestId}/review`)
       .set('Authorization', f.reviewer.auth)
       .send({ actionCode: 'approve', expectedRequestVersion: submitted.body.data.requestVersion })
       .expect(200);
-    const prepared = await request(httpServer(f.app))
+    const prepared = await request(httpServer(humanCorrectionTestApp(f)))
       .post(`${url}/${submitted.body.data.requestId}/prepare`)
       .set('Authorization', f.reviewer.auth)
       .send({
@@ -3778,7 +3887,7 @@ describe('D7-1 recognition correction real transaction', () => {
       activityId: p.activityId,
       ...target,
       send: () =>
-        request(httpServer(f.app))
+        request(httpServer(humanCorrectionTestApp(f)))
           .post(`${url}/${submitted.body.data.requestId}/commit`)
           .set('Authorization', f.reviewer.auth)
           .send(payload),
@@ -3857,7 +3966,7 @@ describe('D7-1 recognition correction real transaction', () => {
     before: Awaited<ReturnType<typeof humanBudgetState>>,
     seconds: number,
   ) {
-    const recorder = f.app.get(CorrectionAuditRecorder);
+    const recorder = humanCorrectionTestService(f, CorrectionAuditRecorder);
     const logCommit = recorder.logCommit.bind(recorder);
     return jest.spyOn(recorder, 'logCommit').mockImplementationOnce(async (args) => {
       await logCommit(args);
@@ -3920,7 +4029,7 @@ describe('D7-1 recognition correction real transaction', () => {
 
       // Committed applications have no preparing-proof hint. Their mandatory full
       // checks still belong to the same operation budget and must not append effects.
-      const corrections = f.app.get(ParticipationTimeCorrectionService);
+      const corrections = humanCorrectionTestService(f, ParticipationTimeCorrectionService);
       const assertComplete = corrections.assertComplete.bind(corrections);
       const replayProof = jest
         .spyOn(corrections, 'assertComplete')
@@ -3951,7 +4060,7 @@ describe('D7-1 recognition correction real transaction', () => {
     const target = await prepareHumanBudgetCorrection(3);
     const before = await humanBudgetState(target.activityId);
     const pause = pauseHumanBudgetCommit(target, before, 16);
-    const corrections = f.app.get(CorrectionApplicationService);
+    const corrections = humanCorrectionTestService(f, CorrectionApplicationService);
     const commit = corrections.commit.bind(corrections);
     let transactionFailure: unknown;
     jest.spyOn(corrections, 'commit').mockImplementationOnce(async (...args) => {
@@ -4009,7 +4118,7 @@ describe('D7-1 recognition correction real transaction', () => {
       throw new Error('closed correction source required');
     }
     const correctionUrl = `${D13_APP}/${p.activityId}/time-corrections`;
-    const submitted = await request(httpServer(f.app))
+    const submitted = await request(httpServer(humanCorrectionTestApp(f)))
       .post(correctionUrl)
       .set('Authorization', f.creator.auth)
       .send({
@@ -4056,7 +4165,7 @@ describe('D7-1 recognition correction real transaction', () => {
       })
       .expect(201);
     const submittedData = submitted.body.data as { requestId: string; requestVersion: number };
-    await request(httpServer(f.app))
+    await request(httpServer(humanCorrectionTestApp(f)))
       .post(`${correctionUrl}/${submittedData.requestId}/review`)
       .set('Authorization', f.reviewer.auth)
       .send({
@@ -4065,7 +4174,7 @@ describe('D7-1 recognition correction real transaction', () => {
         note: '并发提交前复核通过',
       })
       .expect(200);
-    const prepared = await request(httpServer(f.app))
+    const prepared = await request(httpServer(humanCorrectionTestApp(f)))
       .post(`${correctionUrl}/${submittedData.requestId}/prepare`)
       .set('Authorization', f.reviewer.auth)
       .send({
@@ -4086,7 +4195,7 @@ describe('D7-1 recognition correction real transaction', () => {
     };
     const responses = await Promise.all(
       Array.from({ length: 2 }, () =>
-        request(httpServer(f.app))
+        request(httpServer(humanCorrectionTestApp(f)))
           .post(`${correctionUrl}/${submittedData.requestId}/commit`)
           .set('Authorization', f.reviewer.auth)
           .send(commitPayload)
@@ -4121,14 +4230,66 @@ describe('D7-1 recognition correction real transaction', () => {
     async (population) => {
       const p = population === 1 ? await prepareSource() : await createCapacitySource(population);
       if (population === 1) await recognize(p);
-      const preparedTime = await post(p.url + '/prepare', prepareCommand(p));
-      const submittedTime = await post(p.url + '/submit', {
-        operationKey: f.key('submit_time'),
-        expectedDraftVersion: p.proof.expectedDraftVersion,
-        expectedEvidenceSealId: p.proof.expectedEvidenceSealId,
-        timeRevisionId: preparedTime.timeRevisionId,
-        expectedBucketContentHash: preparedTime.bucketContentHash,
+      const service = f.app.get(ActivityTimeSettlementService);
+      const originalPrepare = service.prepare.bind(service);
+      const prepareSpy = jest.spyOn(service, 'prepare').mockImplementation((...args) => {
+        const enteredMs = performance.now();
+        return observeD7SetupRejection(
+          () => originalPrepare(...args),
+          (error) => {
+            // Closed projections only: no message, query, parameters, IDs or credentials.
+            console.info(
+              '[d7-main-settlement-failure] ' +
+                JSON.stringify({
+                  phase: 'prepare',
+                  population,
+                  elapsedMs: Math.round(performance.now() - enteredMs),
+                  code: diagnosticCode(error),
+                  ...commitErrorLocation(error),
+                }),
+            );
+          },
+        );
       });
+      const preparedTime = await (async () => {
+        try {
+          return await post(p.url + '/prepare', prepareCommand(p));
+        } finally {
+          prepareSpy.mockRestore();
+        }
+      })();
+      const originalSubmit = service.submit.bind(service);
+      const submitSpy = jest.spyOn(service, 'submit').mockImplementation((...args) => {
+        const enteredMs = performance.now();
+        return observeD7SetupRejection(
+          () => originalSubmit(...args),
+          (error) => {
+            console.info(
+              '[d7-main-settlement-failure] ' +
+                JSON.stringify({
+                  phase: 'submit',
+                  population,
+                  elapsedMs: Math.round(performance.now() - enteredMs),
+                  code: diagnosticCode(error),
+                  ...commitErrorLocation(error),
+                }),
+            );
+          },
+        );
+      });
+      const submittedTime = await (async () => {
+        try {
+          return await post(p.url + '/submit', {
+            operationKey: f.key('submit_time'),
+            expectedDraftVersion: p.proof.expectedDraftVersion,
+            expectedEvidenceSealId: p.proof.expectedEvidenceSealId,
+            timeRevisionId: preparedTime.timeRevisionId,
+            expectedBucketContentHash: preparedTime.bucketContentHash,
+          });
+        } finally {
+          submitSpy.mockRestore();
+        }
+      })();
       const { timeRevision, finalActor, finalRole, batch } = await createClassifiedPostingFixture(
         submittedTime.timeRevisionId as string,
         population,
@@ -4165,7 +4326,7 @@ describe('D7-1 recognition correction real transaction', () => {
         orderBy: { id: 'asc' },
       });
       const correction = f.app.get(CorrectionApplicationService);
-      const observed = new PrismaClient({ log: [{ emit: 'event', level: 'query' }] });
+      const observed = r5CiOwnerClient({ log: [{ emit: 'event', level: 'query' }] });
       await observed.$connect();
       jest.spyOn(f.db, '$transaction').mockImplementation(observed.$transaction.bind(observed));
       let depth = 0;

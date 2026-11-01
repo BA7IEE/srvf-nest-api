@@ -17,12 +17,15 @@ import { memberIdentityData } from './member-identity.fixture';
 import { httpServer } from './http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { r5CiAuthenticated } from '../setup/r5-ci-instance-scope';
+import { assertR5CiActorsWithoutPositions } from './r5-ci-authenticated-runtime';
 
 export const D13_APP = '/api/app/v1/my/managed-activities';
 export const D13_ADMIN = '/api/admin/v1';
 
 export interface D13Fixture {
   readonly app: INestApplication;
+  readonly humanApp?: INestApplication;
   readonly db: PrismaService;
   readonly creator: { readonly id: string; readonly memberId: string; readonly auth: string };
   readonly reviewer: { readonly id: string; readonly memberId: string; readonly auth: string };
@@ -107,6 +110,7 @@ async function grantOrganizationPermissions(
 
 export async function createD13Fixture(): Promise<D13Fixture> {
   const app = await createTestApp();
+  let humanApp: INestApplication | undefined;
   try {
     await resetDb(app);
     const db = app.get(PrismaService);
@@ -180,9 +184,12 @@ export async function createD13Fixture(): Promise<D13Fixture> {
     await grantBizAdminToUser(app, creatorUser.id, bizAdmin.bizAdminRoleId);
     await grantOrganizationPermissions(fixture, creatorUser.id, TIME_POLICY_SELECTION_PERMISSIONS);
     await grantOrganizationPermissions(fixture, reviewerUser.id, REVIEWER_PERMISSIONS);
+    await assertR5CiActorsWithoutPositions(db);
+    if (r5CiAuthenticated()) humanApp = await createTestApp({ r5Human: true });
 
     return {
       ...fixture,
+      humanApp,
       creator: {
         id: creatorUser.id,
         memberId: creatorMember.id,
@@ -196,6 +203,7 @@ export async function createD13Fixture(): Promise<D13Fixture> {
     };
   } catch (error) {
     try {
+      await humanApp?.close();
       await app.close();
     } catch (closeError) {
       throw new AggregateError([error, closeError], 'Fixture initialization and cleanup failed');
@@ -205,6 +213,7 @@ export async function createD13Fixture(): Promise<D13Fixture> {
 }
 
 export async function closeD13Fixture(fixture: D13Fixture | undefined): Promise<void> {
+  await fixture?.humanApp?.close();
   await fixture?.app.close();
 }
 

@@ -1,0 +1,18 @@
+[
+  {
+    "file": "activity-os-r4-d7-time-correction.e2e-spec.ts",
+    "config": "test/jest-r5-ci-authenticated.config.ts"
+  },
+  {
+    "file": "activity-os-r5-e4-contribution-settlement-correction.e2e-spec.ts",
+    "config": "test/jest-r5-ci-authenticated.config.ts"
+  },
+  {
+    "file": "activity-os-r5-adv010-contribution-progress.e2e-spec.ts",
+    "config": "test/jest-r5-ci-authenticated.config.ts"
+  },
+  {
+    "file": "activity-os-r5-native-admission.e2e-spec.ts",
+    "config": "test/jest-r5-ci-authenticated.config.ts"
+  }
+]

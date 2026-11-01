@@ -7,6 +7,7 @@ import request from 'supertest';
 import type { ContributionPolicyDefinition } from '../../src/modules/activities/activity-contribution-policy-definition';
 import type { AppPrepareTimeSettlementDto } from '../../src/modules/activities/dto/app/app-activity-time-settlement.dto';
 import { httpServer } from './http-server';
+import { r5CurrentBusinessTableNames } from './r5-current-source-pins';
 import type { E4Fixture } from './activity-contribution-policy.fixture';
 import {
   createNativeLaunchPublication,
@@ -125,10 +126,19 @@ export async function createNativeLaunchSealedSource(
   f: E4Fixture,
   population: number,
   stage: NativeLaunchStage,
-  options: { contributionDefinition?: ContributionPolicyDefinition } = {},
+  options: {
+    contributionDefinition?: ContributionPolicyDefinition;
+    participantMemberId?: string;
+  } = {},
 ) {
   const published = await createNativeLaunchPublication(f, population, stage, options);
-  const raw = nativeLaunchRawInput(published, f.creator, population, f.key, new Date());
+  const raw = nativeLaunchRawInput(
+    published,
+    { id: f.creator.id, memberId: options.participantMemberId ?? f.creator.memberId },
+    population,
+    f.key,
+    new Date(),
+  );
   await stage('RAW_SOURCE_OBSERVATIONS', () =>
     f.db.$transaction(
       async (tx) => {
@@ -162,7 +172,10 @@ export async function createNativeLaunchLiveSource(
   f: E4Fixture,
   population: number,
   stage: NativeLaunchStage,
-  options: { contributionDefinition?: ContributionPolicyDefinition } = {},
+  options: {
+    contributionDefinition?: ContributionPolicyDefinition;
+    participantMemberId?: string;
+  } = {},
 ) {
   const published = await createNativeLaunchSealedSource(f, population, stage, options);
   const { post, raw, seal } = published;
@@ -215,8 +228,12 @@ export async function createNativeLaunchLiveSource(
   };
 }
 
-/** All rows/columns from all 196 business tables, independently committed visibility. */
-export async function nativeLaunchBusinessFingerprint(db: PrismaClient, stage: NativeLaunchStage) {
+/** All rows/columns from the exact frozen business table set, committed visibility. */
+export async function nativeLaunchBusinessFingerprint(
+  db: PrismaClient,
+  stage: NativeLaunchStage,
+  profile: 'current155' | 'pre155' = 'current155',
+) {
   const tables = await stage(
     'FINGERPRINT_TABLES',
     () => db.$queryRaw<{ name: string }[]>`
@@ -225,7 +242,10 @@ export async function nativeLaunchBusinessFingerprint(db: PrismaClient, stage: N
     ORDER BY relname COLLATE "C"
   `,
   );
-  assert.equal(tables.length, 196);
+  assert.deepEqual(
+    tables.map(({ name }) => name),
+    r5CurrentBusinessTableNames(profile),
+  );
   const rows: { name: string; hash: string }[] = [];
   for (const { name } of tables) {
     const [row] = await stage('FINGERPRINT_TABLE', () =>
@@ -256,18 +276,7 @@ export async function assertNativeLaunchFrozenOracle(
   expectedCount: number,
   stage: NativeLaunchStage,
 ): Promise<NativeLaunchOracleResult> {
-  const source = readFileSync(
-    resolve(__dirname, '../e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts'),
-    'utf8',
-  );
-  const extract = (name: string, pin: string) => {
-    const matches = [
-      ...source.matchAll(new RegExp('const ' + name + ' = String.raw`([\\s\\S]*?)`;', 'g')),
-    ];
-    assert.equal(matches.length, 1);
-    assert.equal(hash(matches[0][1]), pin);
-    return matches[0][1];
-  };
+  const extract = nativeFrozenOracleSql();
   const quote = (value: string) => "'" + value.replaceAll("'", "''") + "'";
   const canonical = extract(
     'E4_P_CANONICAL_ORACLE_SQL',
@@ -354,6 +363,33 @@ export async function assertNativeLaunchFrozenOracle(
     storedDifferences: 0,
     rootMatches: true,
   });
+  const day = await assertNativeLaunchFrozenDayOracle(db, root, expectedCount, stage);
+  return { ...result, day };
+}
+
+function nativeFrozenOracleSql() {
+  const source = readFileSync(
+    resolve(__dirname, '../e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts'),
+    'utf8',
+  );
+  return (name: string, pin: string) => {
+    const matches = [
+      ...source.matchAll(new RegExp('const ' + name + ' = String.raw`([\\s\\S]*?)`;', 'g')),
+    ];
+    assert.equal(matches.length, 1);
+    assert.equal(hash(matches[0][1]), pin);
+    return matches[0][1];
+  };
+}
+
+export async function assertNativeLaunchFrozenDayOracle(
+  db: PrismaClient,
+  root: { id: string },
+  expectedCount: number,
+  stage: NativeLaunchStage,
+) {
+  const extract = nativeFrozenOracleSql();
+  const quote = (value: string) => "'" + value.replaceAll("'", "''") + "'";
   const daySql = extract(
     'E4_P_DAY_ORACLE_SQL',
     'a8cdf667c0632e832d10ea2912ebd510e84163097ddfc594f55d000746446274',
@@ -383,5 +419,5 @@ export async function assertNativeLaunchFrozenOracle(
     functionDifferences: 0,
     storedDifferences: 0,
   });
-  return { ...result, day };
+  return day;
 }

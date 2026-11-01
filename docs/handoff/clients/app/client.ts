@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:8c9960b779beb5297b34ca0111a065676c931c4dfbaf79f409648dafcb6503b7
+// inputDigest: sha256:92354ffb9b1f227ae368f1a08fdf1c2ecd87bae1d36010c65c8a97871351f0b2
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -92,6 +92,7 @@ import type {
   AppActivityTemplateVersionOptionDto,
   AppActivityTimeCorrectionCommitResultDto,
   AppActivityTimeCorrectionDetailDto,
+  AppActivityTimeCorrectionJobDto,
   AppActivityTimeCorrectionListItemDto,
   AppActivityTimeCorrectionPrepareResultDto,
   AppActivityTimeCorrectionResubmitResultDto,
@@ -1072,6 +1073,18 @@ export function createAppClient(fetcher: Fetcher) {
     /** 提交精确 prepared application；仅原准备人可重放 [rbac: activity.settlement-final-review.record] */
     AppManagedActivityTimeCorrectionControllerCommit(activityId: string, requestId: string, body: AppCommitActivityTimeCorrectionDto): Promise<ApiEnvelope<AppActivityTimeCorrectionCommitResultDto>> {
       return fetcher<AppActivityTimeCorrectionCommitResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/time-corrections/${requestId}/commit`, body });
+    },
+    /** 后台受理精确 prepared 更正；受理不代表已生效 [rbac: activity.settlement-final-review.record] */
+    AppManagedActivityTimeCorrectionJobsControllerEnqueue(activityId: string, requestId: string, body: AppCommitActivityTimeCorrectionDto): Promise<ApiEnvelope<AppActivityTimeCorrectionJobDto>> {
+      return fetcher<AppActivityTimeCorrectionJobDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/time-corrections/${requestId}/commit-jobs`, body });
+    },
+    /** 原准备人查询后台更正进度和权威生效结果 [rbac: activity.settlement-final-review.record] */
+    AppManagedActivityTimeCorrectionJobsControllerDetail(activityId: string, requestId: string, jobId: string): Promise<ApiEnvelope<AppActivityTimeCorrectionJobDto>> {
+      return fetcher<AppActivityTimeCorrectionJobDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/time-corrections/${requestId}/commit-jobs/${jobId}` });
+    },
+    /** 重新判权后重试已确认未生效的原任务；未知结果拒绝 [rbac: activity.settlement-final-review.record] */
+    AppManagedActivityTimeCorrectionJobsControllerRetry(activityId: string, requestId: string, jobId: string): Promise<ApiEnvelope<AppActivityTimeCorrectionJobDto>> {
+      return fetcher<AppActivityTimeCorrectionJobDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/time-corrections/${requestId}/commit-jobs/${jobId}/retry` });
     },
     /** 准备已批准事实更正，保留准备人绑定 [rbac: activity.settlement-final-review.record] */
     AppManagedActivityTimeCorrectionControllerPrepare(activityId: string, requestId: string, body: AppPrepareActivityTimeCorrectionDto): Promise<ApiEnvelope<AppActivityTimeCorrectionPrepareResultDto>> {

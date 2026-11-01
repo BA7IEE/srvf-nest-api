@@ -219,7 +219,16 @@ function eviSub(id, kind, title, evidence): SubCheck {
 > 本条是**根本不存在对应读数** —— 过程发生在历史里,仓库是它的产物而不是它的函数。
 > ⇒ 这条**永远**不会因为仓库变化而过期,也就永远不会自动提醒任何人重签。**它就是纯人证。**
 
-### 3b — 「新 schema migrations 经审查」153（此前148–152认可保留）
+### 3b — 「新 schema migrations 经审查」155（此前153及更早认可保留）
+
+- **结论**:认可
+- **理由**:在下方完整保留153及更早既有认可的基础上，按用户对已披露154／155迁移SQL及权限范围的真实认可代理登记。固定候选 `b45891be742267115980cf345aa0da0050ec24dd` 的154 `20261030172000_activity_human_correction_background_job` 仅为既有任务类型CHECK新增 `human_correction_commit`，无权限变更，完整SQL SHA-256为 `c72c19314d1ec397454e7703b084286e1ddaa8653504e003d0da45babbdf7eee`；155 `20261031223000_r5_correction_set_materialization` 安装两个守卫表、来源修订列／序列、20个函数（其中3个SECURITY DEFINER）及来源绑定的配套权限，完整SQL SHA-256为 `5a286ec74fa8231a5cb427b32c53bdc666c7df376e212f9603070f22d19a704c`。155含325条GRANT／REVOKE语句，不等于325项新增权限；依赖五个既有封存角色，不创建角色、登录、凭据、membership或HBA，默认未绑定NULL预检仍拒绝写入。上述摘要已独立核对，与申请用户认可的两份SQL完全相同。该head的Fast checks、五片E2E、真实认证四文件、Harness及Docker smoke均通过；历史失败、旧D4占用身份未知及既有TODO／skip保留。此项只认可这两份SQL／权限审阅范围及migration-total=155登记，不授予新权限执行、Ready、PR review自批、合并、部署、生产启用或新head的Trusted批准。
+- **签字人**:维护者（用户认可已披露范围；Codex按明确委托代理录入）
+- **日期**:2026-11-01
+- **依据**:用户于2026-11-01 11:41 UTC对前述两个关口回复「批了」，批准消息为 `Sentinel_f924f2c9e4248191a72d43ab128f3b26`；迁移审阅申请 `Sentinel_247c329e620881919c4230790bb8f1c7` 已明确154／155范围、允许将登记153更新至155并保留旧记录，补充说明 `Sentinel_eebc2c51bba481919222e1908d7fe994` 列明迁移审阅与当时指定Trusted任务。本条只如实记录用户对说明的认可，不声称用户亲自逐行审查源码或亲自执行grant；官方逐文件grant及登记由Codex依明确委托代理执行。原head的Trusted任务已只读核实成功，新提交的审批另按其实际结果记录，不沿用旧批准，也不冒充PR review结论。
+- **对拍**:有 —— `migration-total` = `155`
+
+### 3b 历史签字（2026-10-25） — 「新 schema migrations 经审查」153（此前148–152认可保留）
 
 - **结论**:认可
 - **理由**:在下方保留的148–152既有认可基础上，补录第153条 `20261023170000_activity_contribution_source_parameterized_reads` 的审阅结论。实现候选 `3182ba24f88a7dcd6076f578b34343413ed32c42` 与本地测试修正候选 `e176b0a9a745cc4535bb6e63696c0ad5f9c9ba09` 的该迁移逐字相同，完整SQL SHA-256为 `8be33faf3d4e5cc3f5036117684f620be83f9c9be49acc6c168f5bf894afd0df`。仅参数化两处slice/result JOIN读取，保留time_revision与correction_time_proof分支、12来源列、NULL、重复度、窗口权重及函数属性与权限；历史1–152、表结构和业务上限不变。当前time_revision根的旧144／私有153／实际153三方各50000行、12列双向EXCEPT ALL差集为0；725项PG回归通过、3项既有合法跳过，包含篡改拒绝与回滚回归；原满额全链一次通过，2000身份／10000段／50000明细／8000政策单元，摘要、双oracle及原PSet判据均通过。上述证明不冒称更正分支最大容量、现场生产SLA或最终同SHA CI／Smoke验收；新空库按1–153顺序初始化，无旧业务数据转换要求。实现、预算例外及迁移审阅各自按原批准范围保留，本登记不授予Ready、合并、部署或开闸权限。

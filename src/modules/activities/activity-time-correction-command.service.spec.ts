@@ -38,7 +38,7 @@ const submitDto: AppSubmitActivityTimeCorrectionDto = {
   operationKey: 'human-correction-submit-1',
 };
 
-function fixture() {
+function fixture(budget?: { bulkCommit: boolean; bulkPrepare: boolean }) {
   const corrections = {
     submit: jest.fn<Promise<unknown>, [unknown, ...unknown[]]>(),
     resubmit: jest.fn<Promise<unknown>, [unknown, ...unknown[]]>(),
@@ -59,11 +59,38 @@ function fixture() {
     service: new ActivityTimeCorrectionCommandService(
       prisma as unknown as PrismaService,
       corrections as unknown as CorrectionApplicationService,
+      budget,
     ),
   };
 }
 
 describe('D7-2 Human fact-correction command boundary', () => {
+  it('derives the prepare candidate from server configuration and immutable source, never client flags', async () => {
+    const f = fixture({ bulkCommit: false, bulkPrepare: true });
+    f.prisma.attendanceCorrectionRequest.findFirst.mockResolvedValue({
+      requestHash: HASH,
+      requestedChangeJson: { schemaVersion: 3, segments: Array.from({ length: 1000 }, () => ({})) },
+    });
+    const failure = new Error('domain stop');
+    f.corrections.prepare.mockRejectedValue(failure);
+    await expect(
+      f.service.prepare(
+        'activity',
+        'request',
+        { operationKey: 'op', expectedBaseSettlementVersionId: 'base' },
+        actor,
+        meta,
+      ),
+    ).rejects.toBe(failure);
+    expect(f.corrections.prepare).toHaveBeenCalledWith(
+      expect.anything(),
+      actor,
+      meta,
+      expect.objectContaining({
+        backgroundBulkPrepare: { segmentCount: 1000, requestHash: HASH },
+      }),
+    );
+  });
   it('canonicalizes a Human submit and never forwards a client request hash or actor field', async () => {
     const f = fixture();
     f.corrections.submit.mockResolvedValue({

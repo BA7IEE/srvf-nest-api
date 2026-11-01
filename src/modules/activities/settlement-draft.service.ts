@@ -633,7 +633,10 @@ export class SettlementDraftService {
       identityIds.length === 0
         ? []
         : await tx.participantServiceSegmentRevision.findMany({
-            where: { participationIdentityId: { in: identityIds } },
+            where: {
+              participationIdentityId: { in: identityIds },
+              statusCode: { not: 'superseded' },
+            },
             select: {
               id: true,
               participationIdentityId: true,
@@ -659,7 +662,48 @@ export class SettlementDraftService {
       throw new BizException(BizCode.SETTLEMENT_DRAFT_RUN_STATUS_INVALID);
     }
 
+    const selectedIdentityIds = new Set(identityIds);
+    const historyKeys = new Map<string, { identity: string; segment: string }>();
+    for (const identityId of identityIds) {
+      for (const segment of projectionByIdentity.get(identityId) ?? []) {
+        const key = `${identityId}:${segment.segmentKey}`;
+        // Preserve the existing composite-key/prefix semantics, including ':' in test ids.
+        for (
+          let separator = key.indexOf(':');
+          separator !== -1;
+          separator = key.indexOf(':', separator + 1)
+        ) {
+          const identity = key.slice(0, separator);
+          if (!selectedIdentityIds.has(identity)) continue;
+          const item = { identity, segment: key.slice(separator + 1) };
+          historyKeys.set(JSON.stringify([item.identity, item.segment]), item);
+        }
+      }
+    }
+    // Current full rows protect committed facts and disappearing keys. Historical payloads
+    // are not needed: only the maximum revision of a projected key can affect a new row.
+    const history =
+      historyKeys.size === 0
+        ? []
+        : await tx.$queryRaw<
+            Pick<ExistingSegmentRow, 'participationIdentityId' | 'segmentKey' | 'revision'>[]
+          >`
+          SELECT k.identity AS "participationIdentityId", k.segment AS "segmentKey", h.revision
+          FROM jsonb_to_recordset(${JSON.stringify([...historyKeys.values()])}::jsonb)
+            AS k(identity TEXT, segment TEXT)
+          CROSS JOIN LATERAL (
+            SELECT r.revision
+            FROM "ParticipantServiceSegmentRevision" r
+            WHERE r."participationIdentityId" = k.identity AND r."segmentKey" = k.segment
+            ORDER BY r.revision DESC
+            LIMIT 1
+          ) h
+        `;
     const maxRevisionByKey = new Map<string, number>();
+    for (const row of history) {
+      const key = `${row.participationIdentityId}:${row.segmentKey}`;
+      maxRevisionByKey.set(key, Math.max(maxRevisionByKey.get(key) ?? -1, row.revision));
+    }
     const currentByKey = new Map<string, ExistingSegmentRow>();
     for (const row of existingRows) {
       const key = `${row.participationIdentityId}:${row.segmentKey}`;
@@ -670,7 +714,6 @@ export class SettlementDraftService {
     // Index the existing prefix predicate once, including identities containing ':'.
     // Build from the final map so its overwrite rule and iteration order stay intact.
     const currentRowsByIdentity = new Map<string, ExistingSegmentRow[]>();
-    const selectedIdentityIds = new Set(identityIds);
     for (const [key, row] of currentByKey) {
       for (
         let separator = key.indexOf(':');

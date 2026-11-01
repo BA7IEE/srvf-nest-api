@@ -1,6 +1,12 @@
 import { execSync } from 'child_process';
 import { deriveTemplateTestDbName, deriveTestDbName, deriveWorkerTestDbName } from './worktree-db';
 import { assertNamedTestDatabaseScope } from './test-run-scope';
+import {
+  assertR5CiOwnerConnection,
+  assertR5CiOwnerUrl,
+  r5CiAuthenticated,
+  r5CiDatabaseName,
+} from './r5-ci-instance-scope';
 
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
 
@@ -51,6 +57,10 @@ const ALLOWED_DB_HOSTS: readonly string[] = [
 // 为什么第 3 段要严格相等:`app_test_prod`、`app_test_backup`、别的 lane 的
 // `app_test_<slug>_<hash>` 全都含 'app_test' 子串,旧实现对它们一律放行。
 export function assertTestDatabaseUrl(url: string | undefined): void {
+  if (r5CiAuthenticated()) {
+    assertR5CiOwnerUrl(url);
+    return;
+  }
   if (!url) {
     throw new Error('DATABASE_URL 未设置,拒绝执行测试库操作');
   }
@@ -163,8 +173,13 @@ export interface RawQueryClient {
  */
 export async function assertConnectedTestDatabase(
   client: RawQueryClient,
-  expectedDbName: string = deriveTestDbName(),
+  expectedDbName: string = r5CiDatabaseName() ?? deriveTestDbName(),
 ): Promise<void> {
+  if (r5CiAuthenticated()) {
+    if (expectedDbName !== r5CiDatabaseName()) throw new Error('R5_CI_DATABASE_SCOPE_REJECTED');
+    await assertR5CiOwnerConnection(client);
+    return;
+  }
   const rows = await client.$queryRawUnsafe<Array<{ db: string; srv: string | null }>>(
     'SELECT current_database() AS db, host(inet_server_addr()) AS srv',
   );

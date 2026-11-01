@@ -1,0 +1,38 @@
+{
+  "schema": "srvf-r5-human-correction-installed-connection/v1",
+  "status": "NOT_INSTALLED_TEMPLATE_DO_NOT_ENABLE",
+  "approvalReference": "",
+  "sourceQualificationReference": "",
+  "installationReceipt": {
+    "reference": "",
+    "sha256": ""
+  },
+  "authenticationReceipt": {
+    "reference": "",
+    "sha256": ""
+  },
+  "credentialBindingReference": "",
+  "database": {
+    "name": "",
+    "oid": null
+  },
+  "sessionRole": {
+    "name": "r5_human_queue_login_20261030_q1",
+    "oid": null
+  },
+  "callerRole": {
+    "name": "r5_boundary_caller_h7c6",
+    "oid": null
+  },
+  "untrustedRole": {
+    "name": "r5_untrusted_caller_login_20261030_q1",
+    "oid": null
+  },
+  "source": {
+    "clusterSystemIdentifier": "",
+    "expectedCatalogSha256": "",
+    "installedPreflightBodySha256": "",
+    "baseCatalog": null,
+    "supplementalCatalog": null
+  }
+}

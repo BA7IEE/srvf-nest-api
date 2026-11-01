@@ -229,7 +229,7 @@ describe('148 source hash fixed envelope on nonempty147', () => {
       expect(await installedBody(db())).toBe(bodyOf(originalDefinition()));
       const beforeCatalog = await catalog(db());
       const beforeSettings = await settings(db());
-      const beforeRows = await nativeLaunchBusinessFingerprint(db(), stage);
+      const beforeRows = await nativeLaunchBusinessFingerprint(db(), stage, 'pre155');
       await verifyRoots(db());
       await owner.deploySourceEnvelopeMigrations(remaining(deadline));
       expect(createHash('sha256').update(migration).digest('hex')).toBe(CANDIDATE_SHA);
@@ -241,12 +241,12 @@ describe('148 source hash fixed envelope on nonempty147', () => {
       ]);
       expect((await catalog(db())) === beforeCatalog).toBe(true);
       expect(await settings(db())).toEqual(beforeSettings);
-      expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(beforeRows);
+      expect(await nativeLaunchBusinessFingerprint(db(), stage, 'pre155')).toEqual(beforeRows);
       await verifyRoots(db());
       await owner.deploySourceEnvelopeMigrations(remaining(deadline));
       expect(await migrationRows(db())).toEqual(afterMigrations);
       expect((await catalog(db())) === beforeCatalog).toBe(true);
-      expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(beforeRows);
+      expect(await nativeLaunchBusinessFingerprint(db(), stage, 'pre155')).toEqual(beforeRows);
       upgraded = true;
     }));
 
@@ -351,7 +351,7 @@ describe('148 source hash fixed envelope on nonempty147', () => {
       });
       expect(buckets).toHaveLength(4);
       expect(sources).toHaveLength(4);
-      const before = await nativeLaunchBusinessFingerprint(db(), stage);
+      const before = await nativeLaunchBusinessFingerprint(db(), stage, 'pre155');
       const positiveRollback = new Error(
         'Complete receipt control verified; roll back test writes',
       );
@@ -401,7 +401,7 @@ describe('148 source hash fixed envelope on nonempty147', () => {
       };
       expect(original.sourceSetHash).not.toBe('f'.repeat(64));
       await expect(probe(false)).rejects.toBe(positiveRollback);
-      expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(before);
+      expect(await nativeLaunchBusinessFingerprint(db(), stage, 'pre155')).toEqual(before);
       const error: unknown = await probe(true).then(
         () => null,
         (cause: unknown) => cause,
@@ -414,12 +414,12 @@ describe('148 source hash fixed envelope on nonempty147', () => {
       expect(String(error.meta?.message)).toContain(
         'classified settlement population, source fingerprint, child count or bucket hash mismatch',
       );
-      expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(before);
+      expect(await nativeLaunchBusinessFingerprint(db(), stage, 'pre155')).toEqual(before);
     }));
 
   it('rehearses the forward restore body transactionally and retains installed148 after forced rollback', async () =>
     owned(async () => {
-      const beforeRows = await nativeLaunchBusinessFingerprint(db(), stage);
+      const beforeRows = await nativeLaunchBusinessFingerprint(db(), stage, 'pre155');
       const beforeCatalog = await catalog(db());
       const beforeMigrations = await migrationRows(db());
       const rehearsal = new Error('Forward-restore body verified; roll back rehearsal');
@@ -440,7 +440,7 @@ describe('148 source hash fixed envelope on nonempty147', () => {
       expect(await installedBody(db())).toBe(bodyOf(migration));
       expect((await catalog(db())) === beforeCatalog).toBe(true);
       expect(await migrationRows(db())).toEqual(beforeMigrations);
-      expect(await nativeLaunchBusinessFingerprint(db(), stage)).toEqual(beforeRows);
+      expect(await nativeLaunchBusinessFingerprint(db(), stage, 'pre155')).toEqual(beforeRows);
     }));
 
   it('formally submits the new source under148 and validates stored roots after COMMIT', async () =>

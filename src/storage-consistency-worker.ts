@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { ConfigService } from '@nestjs/config';
 
 import { ActivityBatchWorkerModule } from './modules/activities/activity-batch-worker.module';
 import { ActivityBatchWorker } from './modules/activities/activity-batch.worker';
@@ -14,6 +15,8 @@ import {
   StorageObjectLedgerService,
 } from './modules/storage/storage-object-ledger.service';
 import type { StorageObjectLocator } from './modules/storage/storage.types';
+import { runHumanCorrectionWorkerIfSelected } from './modules/activities/human-correction-runtime-bootstrap';
+import { HumanCorrectionWorkerModule } from './modules/activities/human-correction-worker.module';
 
 export interface WorkerCliArgs {
   once: boolean;
@@ -35,8 +38,25 @@ export interface WorkerCliArgs {
   targetLocalNamespace?: string;
 }
 
-async function bootstrap(): Promise<void> {
-  const args = parseStorageConsistencyWorkerArgs(process.argv.slice(2));
+export async function bootstrapStorageConsistencyWorker(
+  tokens: readonly string[] = process.argv.slice(2),
+): Promise<void> {
+  if (tokens.includes('--human-correction-only')) {
+    const app = await NestFactory.createApplicationContext(HumanCorrectionWorkerModule);
+    app.enableShutdownHooks();
+    try {
+      const worker = app
+        .select(HumanCorrectionWorkerModule)
+        .get(ActivityBatchWorker, { strict: true });
+      await runHumanCorrectionWorkerIfSelected(app.get(ConfigService), worker, tokens);
+    } finally {
+      await app.close();
+    }
+    return;
+  }
+  const args = parseStorageConsistencyWorkerArgs(
+    tokens.includes('--human-correction-only') ? [] : tokens,
+  );
   const app = await NestFactory.createApplicationContext(StorageConsistencyWorkerModule);
   app.enableShutdownHooks();
   try {
@@ -49,6 +69,8 @@ async function bootstrap(): Promise<void> {
     const activityWorker = app
       .select(ActivityBatchWorkerModule)
       .get(ActivityBatchWorker, { strict: true });
+    if (await runHumanCorrectionWorkerIfSelected(app.get(ConfigService), activityWorker, tokens))
+      return;
     const orchestrator = app
       .select(StorageConsistencyWorkerModule)
       .get(AttachmentStorageOrchestrator, { strict: true });
@@ -328,4 +350,4 @@ function writeResult(value: Record<string, unknown>): void {
   process.stdout.write(`${JSON.stringify(value)}\n`);
 }
 
-if (isStorageConsistencyWorkerEntrypoint()) void bootstrap();
+if (isStorageConsistencyWorkerEntrypoint()) void bootstrapStorageConsistencyWorker();

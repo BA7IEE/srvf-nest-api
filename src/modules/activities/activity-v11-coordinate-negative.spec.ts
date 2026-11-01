@@ -1,3 +1,4 @@
+import { assertHumanCorrectionPoolBudget } from './human-correction-runtime-client';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -152,13 +153,28 @@ describe('AC-072 坐标反向验收(本轮未新增六类坐标专用机制)', (
   });
 
   // 保留验收登记的既有标题；具名贡献比较连接不是坐标专用隔离库。
-  // 连接输入严格限定主连接与已批准的独立比较连接，不接受其他连接变量。
+  // 连接输入仅含主连接、已批比较连接、同库Human身份selector；不接纳任意新连接。
   it('② 未新增隔离库:schema 只有一个 datasource 块,且只有一个库连接串 env', () => {
     expect(extractDatasourceCount(schema)).toBe(1);
     expect(envNames.filter((name) => name.includes('DATABASE_URL')).sort()).toEqual([
       'CONTRIBUTION_SHADOW_DATABASE_URL',
       'DATABASE_URL',
+      'HUMAN_CORRECTION_DATABASE_URL',
     ]);
+    // The approved Human selector changes identity, never the target database.
+    const normal = 'postgresql://ordinary@unit.invalid/same?connection_limit=4';
+    expect(() =>
+      assertHumanCorrectionPoolBudget(
+        normal,
+        'postgresql://human@unit.invalid/same?connection_limit=1',
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertHumanCorrectionPoolBudget(
+        normal,
+        'postgresql://human@unit.invalid/other?connection_limit=1',
+      ),
+    ).toThrow('HTTP_CONNECTION_BOUNDARY');
   });
 
   it('③ 未新增临时授权角色:Role 闭集仍是三态,且无坐标相关枚举', () => {

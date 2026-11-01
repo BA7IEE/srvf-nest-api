@@ -248,8 +248,8 @@ async function verifyCorpus(db: PrismaClient) {
   );
 }
 
+const owner = installE4ValidationDatabase({ baselineMigrationCount: 136 });
 describe('E4 unit canonical helper migration 142 nonempty upgrade', () => {
-  const owner = installE4ValidationDatabase({ baselineMigrationCount: 136 });
   let fixture: E4Fixture | undefined;
   let oracleInstalled = false;
   const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;

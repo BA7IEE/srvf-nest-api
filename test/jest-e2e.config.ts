@@ -1,5 +1,16 @@
 import * as os from 'os';
 import type { Config } from 'jest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+// All repository test commands run at the repository root. Reading bytes here
+// works under Jest's CJS and Node's native TS/ESM config loaders alike.
+const operatorSuites = JSON.parse(
+  readFileSync(resolve(process.cwd(), 'test/r5-operator-suites.json'), 'utf8'),
+) as Array<{ file: string; config: string }>;
+const authenticatedSuites = JSON.parse(
+  readFileSync(resolve(process.cwd(), 'test/r5-authenticated-ci-suites.json'), 'utf8'),
+) as Array<{ file: string; config: string }>;
 
 // worker 数上限 8:docker-compose 的 max_connections=200 正是按「最坏 8 worker ×
 // 3 app/spec × connection_limit 5 + 余量」算出来的。用 '50%' 无上限会在高核数机器上
@@ -29,6 +40,16 @@ const config: Config = {
   testRegex: '.*\\.e2e-spec\\.ts$',
   testNamePattern: NATIVE_LAUNCH_REGULAR_TEST_PATTERN,
   testPathIgnorePatterns: [
+    // These bounded operator experiments require their own frozen approval,
+    // source, lease and outcome config. They retain their dedicated configs;
+    // Ordinary V3 files run in required authenticated single-database CI.
+    // The mixed concurrency/pure suite stays here.
+    ...operatorSuites.map(
+      ({ file }) => `<rootDir>/test/e2e/${file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
+    ),
+    ...authenticatedSuites.map(
+      ({ file }) => `<rootDir>/test/e2e/${file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
+    ),
     '/node_modules/',
     '/dist/',
     // Golden journeys 由独立串行 config/job 执行，不能被普通 E2E shard 重复收集。

@@ -33,28 +33,28 @@ describe('147 correction source hash constraint on real PostgreSQL', () => {
     else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
   });
   it('upgrades nonempty146 atomically, rejects NULL with complete rollback, and commits valid V3 once', async () => {
-    const c = await approvedE4TimeCorrection(f);
-    const beforeUpgrade = await nativeLaunchBusinessFingerprint(f.db, stage);
+    const c = await approvedE4TimeCorrection(f, undefined, 146);
+    const beforeUpgrade = await nativeLaunchBusinessFingerprint(f.db, stage, 'pre155');
     const functions = () =>
       f.db
         .$queryRaw`SELECT oid::text,prosrc,proconfig,prosecdef,proowner::text,proacl::text FROM pg_proc WHERE pronamespace='public'::regnamespace ORDER BY oid`;
     const beforeFunctions = await functions();
     await owner.deployCorrectionHashMigrations(60_000);
-    expect(await nativeLaunchBusinessFingerprint(f.db, stage)).toEqual(beforeUpgrade);
+    expect(await nativeLaunchBusinessFingerprint(f.db, stage, 'pre155')).toEqual(beforeUpgrade);
     expect(await functions()).toEqual(beforeFunctions);
     await owner.deployCorrectionHashMigrations(60_000);
-    expect(await nativeLaunchBusinessFingerprint(f.db, stage)).toEqual(beforeUpgrade);
+    expect(await nativeLaunchBusinessFingerprint(f.db, stage, 'pre155')).toEqual(beforeUpgrade);
     expect(
       await f.db
         .$queryRaw`SELECT checksum FROM _prisma_migrations WHERE migration_name='20261018000000_activity_contribution_correction_source_hash_required' AND finished_at IS NOT NULL AND rolled_back_at IS NULL`,
     ).toEqual([{ checksum: '2c68710f16c74577e39002ca078a59835e4cc819407b93dcb6188d96dc1c7d2c' }]);
-    const before = await nativeLaunchBusinessFingerprint(f.db, stage);
+    const before = await nativeLaunchBusinessFingerprint(f.db, stage, 'pre155');
     const injection = injectE4NullCorrectionHash(f);
     await expect(c.correction.prepare(c.input, e4Actor(f.finalReviewer), E4_META)).rejects.toThrow(
       'e4_revision_correction_source_hash_required',
     );
     injection.mockRestore();
-    expect(await nativeLaunchBusinessFingerprint(f.db, stage)).toEqual(before);
+    expect(await nativeLaunchBusinessFingerprint(f.db, stage, 'pre155')).toEqual(before);
     const prepared = await c.correction.prepare(c.input, e4Actor(f.finalReviewer), E4_META);
     const root = await f.db.activitySettlementContributionRevision.findFirstOrThrow({
       where: { settlementVersionId: prepared.newSettlementVersionId },

@@ -7593,6 +7593,8 @@ model AttendanceCorrectionRequest {
   operationKey             String?
   requestHash              String?
   version                  Int     @default(0) // CAS
+  // SQL155 owns this revision; the client must neither read nor supply it.
+  r5SourceRevision         BigInt  @map("r5_source_revision") @ignore
   // Returned requests are preserved forever.  A resubmission only points
   // forward, and a partial unique in the physical schema permits one successor.
   resubmittedFromRequestId String?
@@ -7643,6 +7645,7 @@ model CorrectionApplication {
   segmentCleanupReceipt     CorrectionSegmentCleanupReceipt?
   timeSourceProof           CorrectionTimeSourceProof?
   contributionRevisions     ActivitySettlementContributionRevision[]
+  writePhases               CorrectionWritePhase[] @ignore
 
   correctionRequest    AttendanceCorrectionRequest @relation(fields: [correctionRequestId], references: [id], onDelete: Restrict)
   newSettlementVersion AttendanceSettlementVersion @relation("CorrectionApplicationNewVersion", fields: [newSettlementVersionId], references: [id], onDelete: Restrict)
@@ -7653,6 +7656,45 @@ model CorrectionApplication {
   @@index([statusCode], map: "correction_application_status_idx")
   @@index([newSettlementVersionId], map: "correction_application_new_version_idx")
   @@index([newPostingBatchId], map: "correction_application_new_batch_idx")
+}
+
+// SQL155 enforcement storage only. Keep SchemaEngine's physical model exact
+// without generating application delegates or writable relation inputs.
+model CorrectionApprovedInputItem {
+  request_id      String
+  source_revision BigInt
+  kind            String
+  ordinal         Int
+  complete        Boolean
+  safe            Boolean
+  raw_item        Json?
+  schema_version  Json?
+  item_count      Int?
+  pid             String?
+  skey            String?
+  result          String?
+
+  @@id([request_id, kind, ordinal], map: "CorrectionApprovedInputItem_pkey")
+  @@index([request_id, source_revision, kind, pid, skey, result], map: "r5_approved_input_match")
+  @@ignore
+}
+
+model CorrectionWritePhase {
+  applicationId        String
+  phase                String
+  state                String              @default("OPEN")
+  batchId              String
+  requestId            String
+  sourceRevision       BigInt
+  transactionId        Unsupported("xid8")
+  actorOid             Int                 @db.Oid
+  materializedByUserId String?
+  materializedAt       DateTime?           @db.Timestamp(3)
+
+  application CorrectionApplication @relation(fields: [applicationId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "CorrectionWritePhase_applicationId_fkey")
+
+  @@id([applicationId, phase], map: "CorrectionWritePhase_pkey")
+  @@ignore
 }
 
 // #1295: temporary approved segment inputs, never a source of committed facts.
@@ -7916,7 +7958,8 @@ model ActivityBatchJob {
   updatedAt DateTime @updatedAt
 
   // settlement_prepare / bulk_proxy / import_preview / import_execute
-  // / export / notification_expand / reconciliation(§3.27 明写七值闭集)
+  // / export / notification_expand / reconciliation / human_correction_commit
+  // Human correction jobs retain the original actor and atomic publication protocol.
   jobTypeCode String
 
   activityId          String

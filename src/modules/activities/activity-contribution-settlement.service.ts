@@ -51,7 +51,83 @@ export interface FirstReviewBarrierCandidate {
   guard: FirstReviewGuardIdentity;
 }
 
-// Exact §12.26 guard137 and complete146 pins, independently extracted from migration SQL.
+// No validation result is cached. The database posting
+// trigger still computes complete(TRUE) and ledger-complete at the actual UPDATE.
+interface NativePostingBoundaryCandidate {
+  proof: ActivitySettlementContributionRevision;
+  guardKey: string;
+}
+
+// Pinned posting guard137; checked before/after the mandatory status UPDATE.
+// Ineligible/privileged rows keep the old full check; catalog SQL errors abort.
+// This detects stable configuration drift, not privileged change-and-restore ABA.
+const NATIVE_POSTING_GUARD_CATALOG = Prisma.sql`
+  SELECT pg_catalog.jsonb_build_array(
+    CURRENT_USER, relation.oid, trigger_row.oid, guard_proc.oid,
+    complete_proc.oid, ledger_proc.oid,
+    pg_catalog.md5(pg_catalog.to_jsonb(guard_proc)::text),
+    pg_catalog.md5(pg_catalog.to_jsonb(complete_proc)::text), pg_catalog.md5(pg_catalog.to_jsonb(ledger_proc)::text)
+  )::text AS key
+  FROM pg_catalog.pg_class relation
+  JOIN pg_catalog.pg_trigger trigger_row ON trigger_row.tgrelid=relation.oid
+  JOIN pg_catalog.pg_attribute status_column ON status_column.attrelid=relation.oid
+    AND status_column.attname='statusCode' AND NOT status_column.attisdropped
+  JOIN pg_catalog.pg_proc guard_proc ON guard_proc.oid=trigger_row.tgfoid
+  JOIN pg_catalog.pg_language guard_language ON guard_language.oid=guard_proc.prolang
+  JOIN pg_catalog.pg_proc complete_proc
+    ON complete_proc.oid=pg_catalog.to_regprocedure('public.e4_assert_complete(text,boolean)')
+  JOIN pg_catalog.pg_proc ledger_proc
+    ON ledger_proc.oid=pg_catalog.to_regprocedure('public.e4_assert_ledger_complete(text,text)')
+  JOIN pg_catalog.pg_roles caller ON caller.rolname=CURRENT_USER
+  WHERE relation.oid=pg_catalog.to_regclass('public."LedgerPostingBatch"')
+    AND relation.relkind='r' AND NOT relation.relispartition
+    AND NOT caller.rolsuper AND NOT caller.rolcreaterole AND NOT caller.rolbypassrls
+    AND NOT pg_catalog.pg_has_role(CURRENT_USER,relation.relowner,'MEMBER')
+    AND NOT pg_catalog.pg_has_role(CURRENT_USER,guard_proc.proowner,'MEMBER')
+    AND NOT pg_catalog.pg_has_role(CURRENT_USER,complete_proc.proowner,'MEMBER')
+    AND NOT pg_catalog.pg_has_role(CURRENT_USER,ledger_proc.proowner,'MEMBER')
+    AND NOT pg_catalog.has_table_privilege(CURRENT_USER,relation.oid,'TRIGGER')
+    AND NOT pg_catalog.has_schema_privilege(CURRENT_USER,'public','CREATE')
+    -- Guard137 uses unqualified relation names; a temp namespace can shadow
+    -- those reads. Such sessions retain the original explicit full check.
+    AND pg_catalog.pg_my_temp_schema()=0
+    AND pg_catalog.current_setting('session_replication_role')='origin'
+    AND trigger_row.tgname='e4_native_posting_guard'
+    AND trigger_row.tgtype=23 AND trigger_row.tgenabled::text='O'
+    AND NOT trigger_row.tgisinternal AND NOT trigger_row.tgdeferrable
+    AND NOT trigger_row.tginitdeferred AND trigger_row.tgconstraint=0
+    AND trigger_row.tgqual IS NULL AND trigger_row.tgnargs=0
+    AND trigger_row.tgargs=''::bytea
+    AND trigger_row.tgattr::text=status_column.attnum::text
+    AND guard_proc.oid=pg_catalog.to_regprocedure('public.e4_native_posting_guard()')
+    AND guard_proc.pronargs=0 AND guard_proc.prorettype='pg_catalog.trigger'::regtype
+    AND guard_proc.prokind='f' AND NOT guard_proc.prosecdef
+    AND guard_language.lanname='plpgsql'
+    AND guard_proc.proconfig=ARRAY['search_path=pg_catalog, public']::text[]
+    AND pg_catalog.md5(guard_proc.prosrc)='3ff1b506fee3958d3b9229ba0ffbb8cb'
+    AND complete_proc.pronargs=2 AND complete_proc.pronargdefaults=1
+    AND pg_catalog.pg_get_expr(complete_proc.proargdefaults,0)='true'
+    AND complete_proc.prorettype='pg_catalog.void'::regtype
+    AND complete_proc.prokind='f' AND NOT complete_proc.prosecdef
+    AND complete_proc.proconfig=ARRAY['search_path=pg_catalog, public']::text[]
+    AND ledger_proc.pronargs=2 AND ledger_proc.pronargdefaults=0
+    AND ledger_proc.prorettype='pg_catalog.void'::regtype
+    AND ledger_proc.prokind='f' AND NOT ledger_proc.prosecdef
+    AND ledger_proc.proconfig=ARRAY['search_path=pg_catalog, public']::text[]
+    AND (SELECT count(*) FROM pg_catalog.pg_proc callable
+      JOIN pg_catalog.pg_namespace ns ON ns.oid=callable.pronamespace
+      WHERE ns.nspname IN ('pg_catalog','public') AND callable.proname='e4_assert_complete'
+        AND callable.proargtypes[0]='pg_catalog.text'::regtype
+        AND (callable.pronargs=1 OR (callable.pronargs=2 AND callable.pronargdefaults=1)))=1
+    AND (SELECT count(*) FROM pg_catalog.pg_proc callable
+      JOIN pg_catalog.pg_namespace ns ON ns.oid=callable.pronamespace
+      WHERE ns.nspname IN ('pg_catalog','public') AND callable.proname='e4_assert_ledger_complete'
+        AND callable.proargtypes[0]='pg_catalog.text'::regtype
+        AND callable.proargtypes[1]='pg_catalog.text'::regtype
+        AND callable.pronargs=2)=1
+`;
+
+// Exact §12.26 guard137 and R5 typed-row complete pins, extracted from frozen SQL sources.
 // A fixed SQL fragment is not a cross-request authorization/identity cache.
 const FIRST_REVIEW_GUARD_CATALOG = Prisma.sql`
   SELECT (
@@ -77,7 +153,7 @@ const FIRST_REVIEW_GUARD_CATALOG = Prisma.sql`
     AND complete_proc.prokind='f' AND NOT complete_proc.prosecdef
     AND complete_language.lanname='plpgsql'
     AND complete_proc.proconfig=ARRAY['search_path=pg_catalog, public']::text[]
-    AND pg_catalog.md5(complete_proc.prosrc)='40b56bac5a571c56e589cbc549419bfa'
+    AND pg_catalog.md5(complete_proc.prosrc)='8922a6d0c4642ba1c99f679cb9581065'
     AND (SELECT count(*) FROM pg_catalog.pg_proc callable
       JOIN pg_catalog.pg_namespace ns ON ns.oid=callable.pronamespace
       WHERE ns.nspname IN ('pg_catalog','public') AND callable.proname='e4_assert_complete'
@@ -234,7 +310,7 @@ export class ActivityContributionSettlementService {
   }
 
   /** Reads remain available when fixture mode is off; write owners check the mode separately. */
-  async assertVersionInTx(tx: Tx, settlementVersionId: string, postingBatchId?: string) {
+  private async readVersionProofInTx(tx: Tx, settlementVersionId: string) {
     const proof = await tx.activitySettlementContributionRevision.findFirst({
       where: {
         settlementVersionId,
@@ -244,11 +320,60 @@ export class ActivityContributionSettlementService {
       orderBy: { revision: 'desc' },
     });
     if (!proof) throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+    return proof;
+  }
+
+  async assertVersionInTx(tx: Tx, settlementVersionId: string, postingBatchId?: string) {
+    const proof = await this.readVersionProofInTx(tx, settlementVersionId);
     if (postingBatchId !== undefined)
       await tx.$queryRaw`SELECT e4_assert_complete(${proof.id})::text,
         e4_assert_ledger_complete(${proof.id}, ${postingBatchId})::text`;
     else await tx.$queryRaw`SELECT e4_assert_complete(${proof.id})::text`;
     return proof;
+  }
+
+  /** Called only after the existing server-side fresh-V3 receipt re-read. */
+  async readNativePostingBoundaryCandidateInTx(
+    tx: Tx,
+    settlementVersionId: string,
+    postingBatchId: string,
+  ): Promise<NativePostingBoundaryCandidate | null> {
+    const proof = await this.readVersionProofInTx(tx, settlementVersionId);
+    if (
+      proof.kindCode !== 'correction' ||
+      proof.sourceKindCode !== 'correction_time_proof' ||
+      proof.correctionPostingBatchId !== postingBatchId ||
+      proof.correctionApplicationId === null ||
+      proof.correctionTimeSourceProofId === null
+    )
+      return null;
+    const guards = await tx.$queryRaw<{ key: string }[]>`${NATIVE_POSTING_GUARD_CATALOG}`;
+    return guards.length === 1 ? { proof, guardKey: guards[0].key } : null;
+  }
+
+  /** Not proof of execution by itself; combines required UPDATE with exact live guard. */
+  async assertNativePostingBoundaryInTx(
+    tx: Tx,
+    candidate: NativePostingBoundaryCandidate,
+    posted: {
+      id: string;
+      settlementVersionId: string;
+      settlementRunId: string;
+      statusCode: string;
+    },
+  ): Promise<void> {
+    const latest = await this.readVersionProofInTx(tx, candidate.proof.settlementVersionId);
+    const guards = await tx.$queryRaw<{ key: string }[]>`${NATIVE_POSTING_GUARD_CATALOG}`;
+    if (
+      latest.id !== candidate.proof.id ||
+      posted.id !== candidate.proof.correctionPostingBatchId ||
+      posted.settlementVersionId !== candidate.proof.settlementVersionId ||
+      posted.settlementRunId !== candidate.proof.settlementRunId ||
+      posted.statusCode !== 'committed' ||
+      guards.length !== 1 ||
+      guards[0].key !== candidate.guardKey
+    )
+      throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
   }
 
   /** First/approve only: latest selection matches the general validator, with no good-row filter. */
