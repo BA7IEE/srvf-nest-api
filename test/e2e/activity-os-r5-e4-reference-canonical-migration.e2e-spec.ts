@@ -235,8 +235,8 @@ async function verifyInstalledExpression(db: PrismaClient) {
   expect(results).toEqual([{ cases: 22, mismatches: 0, fast: 8 }]);
 }
 
+const owner = installE4ValidationDatabase({ baselineMigrationCount: 136 });
 describe('E4 reference canonical migration 139 nonempty upgrade', () => {
-  const owner = installE4ValidationDatabase({ baselineMigrationCount: 136 });
   let fixture: E4Fixture | undefined;
   const namespace = 'e4_reference_oracle_' + randomBytes(8).toString('hex');
   let oracleInstalled = false;

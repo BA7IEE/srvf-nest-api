@@ -1,5 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+import ts from 'typescript';
 
 const memoryReader = resolve('test/helpers/r5_ci_resources.py');
 const probe = `
@@ -96,5 +99,108 @@ print(json.dumps({'caps':{name:scope[name] for name in names},'options':options}
     { meminfo: 'MemTotal: 100 kB\n' },
   ])('rejects malformed, incomplete or contradictory evidence: %j', (input) => {
     expect(readMemory(input)).toHaveProperty('error');
+  });
+});
+
+describe('ADV010 ordinary concurrency uses independent observation within the CI connection cap', () => {
+  function arrange(authenticated = true) {
+    const source = readFileSync(
+      resolve('test/e2e/activity-os-r5-adv010-contribution-progress.e2e-spec.ts'),
+      'utf8',
+    );
+    const ast = ts.createSourceFile('adv010.ts', source, ts.ScriptTarget.Latest, true);
+    const functions: ts.FunctionDeclaration[] = [];
+    const find = (node: ts.Node) => {
+      if (ts.isFunctionDeclaration(node) && node.name?.text === 'ordinaryConcurrencyApps')
+        functions.push(node);
+      ts.forEachChild(node, find);
+    };
+    find(ast);
+    expect(functions).toHaveLength(1);
+    let clients = authenticated ? 3 : 1;
+    let maximum = clients;
+    const close = jest.fn(() => {
+      clients -= 2;
+      return Promise.resolve();
+    });
+    const fixture = { db: {}, humanApp: authenticated ? { close } : undefined };
+    const created: Array<{ get: jest.Mock; db: object }> = [];
+    const appWithState = jest.fn(() => {
+      clients++;
+      maximum = Math.max(maximum, clients);
+      const db = {};
+      const app = { get: jest.fn(() => db), db };
+      created.push(app);
+      return Promise.resolve(app);
+    });
+    const scope = {
+      f: fixture,
+      r5CiAuthenticated: () => authenticated,
+      PrismaService: Symbol('ordinary observer'),
+      appWithState,
+    };
+    const code = ts.transpileModule('(' + functions[0].getText(ast) + ')', {
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const run = runInNewContext(code, scope) as () => Promise<{
+      secondApp: object;
+      observationDb: object;
+      progressApp: object;
+    }>;
+    return { run, close, created, appWithState, fixture, scope, maximum: () => maximum };
+  }
+
+  it('uses one separate reader for SQL and real HTTP progress without increasing the five-connection cap', async () => {
+    const fixture = arrange();
+    const result = await fixture.run();
+    expect(fixture.close).toHaveBeenCalledTimes(1);
+    expect(fixture.scope.f.humanApp).toBeUndefined();
+    expect(result.secondApp).toBe(fixture.created[0]);
+    expect(result.progressApp).toBe(fixture.created[1]);
+    expect(result.observationDb).toBe(fixture.created[1].db);
+    expect(result.observationDb).not.toBe(fixture.fixture.db);
+    expect(fixture.maximum() + 1).toBeLessThanOrEqual(5); // existing holder client
+    expect(fixture.appWithState.mock.calls).toEqual([
+      [true, false],
+      [true, false],
+    ]);
+  });
+
+  it('preserves the existing non-authenticated fixture path', async () => {
+    const fixture = arrange(false);
+    const result = await fixture.run();
+    expect(fixture.close).not.toHaveBeenCalled();
+    expect(fixture.created).toHaveLength(1);
+    expect(result.observationDb).toBe(fixture.fixture.db);
+    expect(result.progressApp).toBe(result.secondApp);
+  });
+
+  it('awaits successful scope close before creating its replacement reader', async () => {
+    const fixture = arrange();
+    let finish!: () => void;
+    let entered!: () => void;
+    const closing = new Promise<void>((resolve) => (entered = resolve));
+    fixture.close.mockImplementationOnce(() => {
+      entered();
+      return new Promise<void>((resolve) => (finish = resolve));
+    });
+    const pending = fixture.run();
+    await closing;
+    expect(fixture.close).toHaveBeenCalledTimes(1);
+    expect(fixture.created).toHaveLength(1);
+    expect(fixture.scope.f.humanApp).toBeDefined();
+    finish();
+    await pending;
+    expect(fixture.created).toHaveLength(2);
+    expect(fixture.scope.f.humanApp).toBeUndefined();
+  });
+
+  it('propagates a failed close without a new reader or false cleanup completion', async () => {
+    const fixture = arrange();
+    const error = new Error('scope close failed');
+    fixture.close.mockRejectedValueOnce(error);
+    await expect(fixture.run()).rejects.toBe(error);
+    expect(fixture.created).toHaveLength(1);
+    expect(fixture.scope.f.humanApp).toBeDefined();
   });
 });

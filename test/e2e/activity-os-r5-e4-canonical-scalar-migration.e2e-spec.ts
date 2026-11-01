@@ -135,8 +135,8 @@ async function verifyRealRoots(db: PrismaClient) {
   `;
 }
 
+const owner = installE4ValidationDatabase({ baselineMigrationCount: 136 });
 describe('E4 canonical scalar migration 138 nonempty upgrade', () => {
-  const owner = installE4ValidationDatabase({ baselineMigrationCount: 136 });
   let fixture: E4Fixture | undefined;
   const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
   beforeAll(() => {

@@ -6,6 +6,31 @@ import { runInNewContext } from 'node:vm';
 import { r5CurrentBusinessTableNames } from '../../test/helpers/r5-current-source-pins';
 
 describe('pre155 fixture is a source-qualified historical implementation', () => {
+  it.each(['canonical-scalar', 'reference-canonical', 'evaluation-canonical', 'unit-canonical'])(
+    'keeps %s app/oracle cleanup inside the outer worker lifecycle',
+    (kind) => {
+      const source = readFileSync(
+        resolve('test/e2e/activity-os-r5-e4-' + kind + '-migration.e2e-spec.ts'),
+        'utf8',
+      );
+      const ast = ts.createSourceFile('migration.ts', source, ts.ScriptTarget.Latest, true);
+      const calls: ts.CallExpression[] = [];
+      const visit = (node: ts.Node) => {
+        if (
+          ts.isCallExpression(node) &&
+          ts.isIdentifier(node.expression) &&
+          node.expression.text === 'installE4ValidationDatabase'
+        )
+          calls.push(node);
+        ts.forEachChild(node, visit);
+      };
+      visit(ast);
+      expect(calls).toHaveLength(1);
+      expect(ts.isVariableDeclaration(calls[0].parent)).toBe(true);
+      expect(ts.isSourceFile(calls[0].parent.parent.parent.parent)).toBe(true);
+    },
+  );
+
   it('changes no non-import source tokens from the exact 63711 implementation', () => {
     const source = readFileSync(
       resolve('test/fixtures/r5-pre155/correction-application.service.ts'),

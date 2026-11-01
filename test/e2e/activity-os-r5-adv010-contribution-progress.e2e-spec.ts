@@ -45,6 +45,7 @@ import { memberIdentityData } from '../helpers/member-identity.fixture';
 import { createTestApp } from '../setup/test-app';
 import { assertConnectedTestDatabase } from '../setup/test-db';
 import { r5CiOwnerClient } from '../helpers/r5-ci-authenticated-runtime';
+import { r5CiAuthenticated } from '../setup/r5-ci-instance-scope';
 
 const ADMIN_APPLICATIONS = '/api/admin/v1/team-join/applications';
 const APP_APPLICATIONS = '/api/app/v1/me/team-join/applications';
@@ -287,6 +288,19 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
     }
   }
 
+  async function ordinaryConcurrencyApps() {
+    const secondApp = await appWithState(true, false);
+    if (!r5CiAuthenticated()) return { secondApp, observationDb: f.db, progressApp: secondApp };
+    // This ordinary-ledger case never calls Human services. Release its unused
+    // U/P scope before adding an independent reader: both single-connection
+    // writer pools will be blocked, so neither can also observe their wait.
+    if (!f.humanApp) throw new Error('ADV010 unused Human scope missing');
+    await f.humanApp.close();
+    f = { ...f, humanApp: undefined };
+    const progressApp = await appWithState(true, false);
+    return { secondApp, observationDb: progressApp.get(PrismaService), progressApp };
+  }
+
   async function readyWithPreparingRead(
     submitted: TimeSettlementReceiptResult,
     during: () => Promise<void>,
@@ -458,7 +472,7 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
 
   it('ADV-010 concurrently commits two same-day awards while real progress refreshes, with one stale baseline rejected', async () => {
     const who = await candidate();
-    const secondApp = await appWithState(true, false);
+    const { secondApp, observationDb, progressApp } = await ordinaryConcurrencyApps();
     const a = await sourceFor(
       who,
       new Date('2020-03-01T08:00:00Z'),
@@ -530,7 +544,7 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
       const deadline = performance.now() + 2_000;
       let waiters = 0;
       while (performance.now() < deadline && waiters !== 2) {
-        const [{ count }] = await f.db.$queryRaw<{ count: number }[]>`
+        const [{ count }] = await observationDb.$queryRaw<{ count: number }[]>`
           SELECT count(DISTINCT waiting.pid)::int AS count FROM pg_locks waiting
           JOIN pg_locks holder ON holder.locktype=waiting.locktype AND holder.database=waiting.database
             AND holder.classid=waiting.classid AND holder.objid=waiting.objid AND holder.objsubid=waiting.objsubid
@@ -543,7 +557,7 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
         if (waiters !== 2) await nextTurn();
       }
       expect(waiters).toBe(2);
-      await expectProgress(who, '0', secondApp);
+      await expectProgress(who, '0', progressApp);
     } finally {
       release();
       await Promise.allSettled([holding, outcomes]);
