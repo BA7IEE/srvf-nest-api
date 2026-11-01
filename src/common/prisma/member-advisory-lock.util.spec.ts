@@ -11,6 +11,7 @@ describe('named member transaction resource profiles', () => {
   it.each([
     ['standard', 7_000],
     ['d7-human-correction-commit', 15_000],
+    ['d7-human-background-bulk-commit', 60_000],
     ['e4-native-ledger-commit', 60_000],
   ] as const)(
     '%s keeps RC, the original lock limit and its own deadline',

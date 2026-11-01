@@ -25,6 +25,14 @@ import { fileURLToPath } from 'node:url';
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const E2E_DIR = path.join(REPO_ROOT, 'test', 'e2e');
 const SPEC_SUFFIX = '.e2e-spec.ts';
+const OPERATOR_SUITES = JSON.parse(
+  fs.readFileSync(path.join(REPO_ROOT, 'test/r5-operator-suites.json'), 'utf8'),
+);
+const OPERATOR_PATHS = new Set(OPERATOR_SUITES.map(({ file }) => `test/e2e/${file}`));
+const AUTHENTICATED_SUITES = JSON.parse(
+  fs.readFileSync(path.join(REPO_ROOT, 'test/r5-authenticated-ci-suites.json'), 'utf8'),
+);
+const AUTHENTICATED_PATHS = new Set(AUTHENTICATED_SUITES.map(({ file }) => `test/e2e/${file}`));
 
 /**
  * 片 1 的**文件名前缀**清单(按域归族)。片 2 是 catch-all:凡不匹配这里的一律归它,
@@ -60,7 +68,8 @@ const SHARDS = [
 
 export const SHARD_COUNT = SHARDS.length;
 
-const alternation = (prefixes) => prefixes.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+const alternation = (prefixes) =>
+  prefixes.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
 
 /**
  * 生成传给 `jest --testPathPatterns` 的正则。
@@ -76,7 +85,7 @@ export function patternFor(shardId) {
   return `/test/e2e/${body}[^/]*\\.e2e-spec\\.ts$`;
 }
 
-export function allSpecs() {
+function diskSpecs() {
   const walk = (dir) =>
     fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => {
       const full = path.join(dir, d.name);
@@ -85,6 +94,10 @@ export function allSpecs() {
   return walk(E2E_DIR)
     .map((f) => path.relative(REPO_ROOT, f).split(path.sep).join('/'))
     .sort();
+}
+
+export function allSpecs() {
+  return diskSpecs().filter((file) => !OPERATOR_PATHS.has(file) && !AUTHENTICATED_PATHS.has(file));
 }
 
 /** 某片实际会收到的文件 —— **用的就是发给 jest 的那条正则**,杜绝"算的"与"跑的"分叉。 */
@@ -100,6 +113,29 @@ export function specsFor(shardId) {
 export function verify() {
   const specs = allSpecs();
   const problems = [];
+  // Every file remains accounted for: regular shard OR an exact, existing
+  // dedicated operator config. Never silently ignore a missing/renamed entry.
+  const disk = diskSpecs();
+  if (OPERATOR_SUITES.length !== 6 || OPERATOR_PATHS.size !== 6)
+    problems.push('R5 operator suite inventory must contain six distinct explicit entries');
+  for (const { file, config } of OPERATOR_SUITES) {
+    if (!disk.includes(`test/e2e/${file}`) || !fs.existsSync(path.join(REPO_ROOT, config)))
+      problems.push(`Missing operator suite or dedicated config: ${file}`);
+  }
+  if (AUTHENTICATED_SUITES.length !== 4 || AUTHENTICATED_PATHS.size !== 4)
+    problems.push('R5 authenticated CI inventory must contain four distinct complete files');
+  for (const { file, config } of AUTHENTICATED_SUITES) {
+    if (
+      !disk.includes(`test/e2e/${file}`) ||
+      !fs.existsSync(path.join(REPO_ROOT, config)) ||
+      OPERATOR_PATHS.has(`test/e2e/${file}`)
+    )
+      problems.push(`Missing or duplicate authenticated CI suite/config: ${file}`);
+  }
+  if (disk.length !== specs.length + OPERATOR_PATHS.size + AUTHENTICATED_PATHS.size)
+    problems.push(
+      'Regular, authenticated and operator accounting differs from the complete disk inventory',
+    );
 
   const nested = specs.filter((f) => f.split('/').length !== 3); // test/e2e/<name>
   if (nested.length > 0) {
@@ -130,10 +166,19 @@ export function verify() {
   }
   for (const shard of SHARDS) {
     if (specsFor(shard.id).length === 0) {
-      problems.push(`片 ${shard.id}(${shard.name})一个 spec 都没匹配到 —— 空片是配置错误,不是合法状态。`);
+      problems.push(
+        `片 ${shard.id}(${shard.name})一个 spec 都没匹配到 —— 空片是配置错误,不是合法状态。`,
+      );
     }
   }
-  return { ok: problems.length === 0, problems, total: specs.length };
+  return {
+    ok: problems.length === 0,
+    problems,
+    total: specs.length,
+    operatorTotal: OPERATOR_PATHS.size,
+    authenticatedTotal: AUTHENTICATED_PATHS.size,
+    diskTotal: disk.length,
+  };
 }
 
 const argv = process.argv.slice(2);
@@ -143,15 +188,20 @@ const valueOf = (name) => {
   return i >= 0 ? argv[i + 1] : undefined;
 };
 
-if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))) {
+if (
+  process.argv[1] &&
+  fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))
+) {
   if (flag('shards')) {
     process.stdout.write(`${SHARD_COUNT}\n`);
   } else if (flag('verify')) {
-    const { ok, problems, total } = verify();
+    const { ok, problems, total, operatorTotal, authenticatedTotal, diskTotal } = verify();
     for (const shard of SHARDS) {
       process.stdout.write(`片 ${shard.id} ${shard.name}:${specsFor(shard.id).length} 个 spec\n`);
     }
     process.stdout.write(`合计 ${total} 个 spec / ${SHARD_COUNT} 片\n`);
+    process.stdout.write(`另 ${operatorTotal} 个专用实验保留独立配置；磁盘总数 ${diskTotal}\n`);
+    process.stdout.write(`另 ${authenticatedTotal} 个完整文件进入 required 单库认证 CI\n`);
     if (!ok) {
       process.stderr.write(`\n✗ 分片清单不完整:\n${problems.map((p) => `  - ${p}`).join('\n')}\n`);
       process.exit(1);
@@ -168,7 +218,9 @@ if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(file
     else if (flag('list')) process.stdout.write(`${specsFor(shardId).join('\n')}\n`);
     else {
       const shard = SHARDS.find((s) => s.id === shardId);
-      process.stdout.write(`片 ${shardId} ${shard?.name ?? ''}:${specsFor(shardId).length} 个 spec\n`);
+      process.stdout.write(
+        `片 ${shardId} ${shard?.name ?? ''}:${specsFor(shardId).length} 个 spec\n`,
+      );
     }
   }
 }

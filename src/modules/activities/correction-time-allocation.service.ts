@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -201,7 +201,13 @@ export interface CorrectionTimeAllocationPreparation {
  */
 @Injectable()
 export class CorrectionTimeAllocationService {
-  constructor(private readonly attachments: AttachmentsService) {}
+  constructor(
+    @Inject(AttachmentsService)
+    private readonly attachments: Pick<
+      AttachmentsService,
+      'findOwnedAttachmentsTrusted' | 'lockOwnerReferenceStorageBoundaryTrusted'
+    >,
+  ) {}
 
   /**
    * Parse the large, immutable V3 source proof before the bounded Human
@@ -693,11 +699,38 @@ export class CorrectionTimeAllocationService {
       sourceSnapshots = parseSourceSnapshots(fullProof.sourceSnapshotJson);
     }
     const sourceByKey = new Map(sourceSnapshots.map((source) => [sourcePairKey(source), source]));
-    const pending = await tx.correctionPendingTimeAllocation.findMany({
+    // Prisma expands composite relation keys into tuple IN expressions. Bound
+    // both evidence and base-allocation includes using the existing read batch
+    // size, retaining the original relation predicates and global row order.
+    const pendingIds = await tx.correctionPendingTimeAllocation.findMany({
       where: { applicationId: input.applicationId, activityId: input.activityId },
-      include: { evidence: { orderBy: { ordinal: 'asc' } }, baseAllocationRevision: true },
+      select: { id: true },
       orderBy: [{ participationIdentityId: 'asc' }, { segmentKey: 'asc' }],
     });
+    const pending: Prisma.CorrectionPendingTimeAllocationGetPayload<{
+      include: { evidence: true; baseAllocationRevision: true };
+    }>[] = [];
+    for (
+      let offset = 0;
+      offset < pendingIds.length;
+      offset += CORRECTION_ALLOCATION_READ_BATCH_SIZE
+    ) {
+      const ids = pendingIds
+        .slice(offset, offset + CORRECTION_ALLOCATION_READ_BATCH_SIZE)
+        .map((row) => row.id);
+      const rows = await tx.correctionPendingTimeAllocation.findMany({
+        where: {
+          applicationId: input.applicationId,
+          activityId: input.activityId,
+          id: { in: ids },
+        },
+        include: { evidence: { orderBy: { ordinal: 'asc' } }, baseAllocationRevision: true },
+        orderBy: [{ participationIdentityId: 'asc' }, { segmentKey: 'asc' }],
+      });
+      if (rows.length !== ids.length || rows.some((row, index) => row.id !== ids[index]))
+        return invalidCorrectionFact();
+      pending.push(...rows);
+    }
     if (
       pending.length === 0 ||
       pending.length !== proof.expectedPendingCount ||

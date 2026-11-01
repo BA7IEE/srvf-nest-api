@@ -100,7 +100,12 @@ describe('LedgerReadyBatchCommitter', () => {
     expect(prisma.correctionApplication.findFirst).toHaveBeenCalledWith({
       where: {
         newPostingBatchId: 'batch',
-        correctionRequest: { requestedChangeJson: { path: ['schemaVersion'], equals: 2 } },
+        correctionRequest: {
+          OR: [
+            { requestedChangeJson: { path: ['schemaVersion'], equals: 2 } },
+            { requestedChangeJson: { path: ['schemaVersion'], equals: 3 } },
+          ],
+        },
       },
       select: { id: true },
     });

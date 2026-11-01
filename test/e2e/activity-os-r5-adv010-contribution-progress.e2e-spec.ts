@@ -44,6 +44,7 @@ import { httpServer } from '../helpers/http-server';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 import { createTestApp } from '../setup/test-app';
 import { assertConnectedTestDatabase } from '../setup/test-db';
+import { r5CiOwnerClient } from '../helpers/r5-ci-authenticated-runtime';
 
 const ADMIN_APPLICATIONS = '/api/admin/v1/team-join/applications';
 const APP_APPLICATIONS = '/api/app/v1/me/team-join/applications';
@@ -492,7 +493,7 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
       ['2020-03-01T08:00:00.000Z', '2020-03-01T09:00:00.000Z'],
       ['2020-03-01T10:00:00.000Z', '2020-03-01T11:00:00.000Z'],
     ]);
-    const lockDb = new PrismaClient();
+    const lockDb = r5CiOwnerClient();
     extraPools.push(lockDb);
     await lockDb.$connect();
     await assertConnectedTestDatabase(lockDb);

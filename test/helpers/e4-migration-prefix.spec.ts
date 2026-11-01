@@ -19,9 +19,11 @@ import {
   E4_MIGRATION_151,
   E4_MIGRATION_152,
   E4_MIGRATION_153,
+  E4_MIGRATION_154,
+  E4_MIGRATION_155,
 } from './e4-migration-prefix';
 
-const CURRENT_MIGRATION_COUNT = 153;
+const CURRENT_MIGRATION_COUNT = 155;
 
 describe('fixed E4 historical migration prefix', () => {
   const names = readdirSync(resolve(__dirname, '../../prisma/migrations'), {
@@ -67,6 +69,11 @@ describe('fixed E4 historical migration prefix', () => {
     expect(prefix).not.toContain(E4_MIGRATION_152);
     expect([...names].sort()[152]).toBe(E4_MIGRATION_153);
     expect(prefix).not.toContain(E4_MIGRATION_153);
+    expect([...names].sort()[153]).toBe(E4_MIGRATION_154);
+    expect(prefix).not.toContain(E4_MIGRATION_154);
+    expect([...names].sort()[154]).toBe(E4_MIGRATION_155);
+    expect(prefix).not.toContain(E4_MIGRATION_155);
+    expect(prefix).toEqual([...names].sort().slice(0, 137));
   });
 
   it.each([
@@ -88,6 +95,8 @@ describe('fixed E4 historical migration prefix', () => {
     'unknown grouped bucket successor',
     'unknown narrow projection successor',
     'unknown parameterized source successor',
+    'unknown Human correction successor',
+    'unknown set materialization successor',
     'extra migration',
   ])('rejects %s without silently widening the historical proof', (kind) => {
     const changed = [...names].sort();
@@ -109,9 +118,11 @@ describe('fixed E4 historical migration prefix', () => {
     if (kind === 'unknown grouped bucket successor') changed[150] = '20261020202600_unknown';
     if (kind === 'unknown narrow projection successor') changed[151] = '20261021061000_unknown';
     if (kind === 'unknown parameterized source successor') changed[152] = '20261023170000_unknown';
+    if (kind === 'unknown Human correction successor') changed[153] = '20261030172000_unknown';
+    if (kind === 'unknown set materialization successor') changed[154] = '20261031223000_unknown';
     if (kind === 'extra migration') changed.push('20261013000000_unknown');
     expect(() => e4HistoricalMigrationPrefix(changed)).toThrow(
-      'E4 fixed 137 prefix or explicit 138/139/140/141/142/143/144/145/146/147/148/149/150/151/152/153 successors changed',
+      'E4 fixed 137 prefix or explicit 138/139/140/141/142/143/144/145/146/147/148/149/150/151/152/153/154/155 successors changed',
     );
   });
 });

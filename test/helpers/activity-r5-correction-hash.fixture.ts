@@ -1,6 +1,7 @@
 import { ActivityContributionSettlementService } from '../../src/modules/activities/activity-contribution-settlement.service';
 import { ActivityTimeAllocationService } from '../../src/modules/activities/activity-time-allocation.service';
 import { CorrectionApplicationService } from '../../src/modules/activities/correction-application.service';
+import { humanCorrectionTestService } from './r5-ci-authenticated-runtime';
 import {
   createE4Source,
   e4Actor,
@@ -48,7 +49,7 @@ export async function approvedE4TimeCorrection(
   const roots = await f.db.participationTimeLedgerEntry.findMany({
     where: { manifestId: original.id },
   });
-  const correction = f.app.get(CorrectionApplicationService);
+  const correction = humanCorrectionTestService(f, CorrectionApplicationService);
   const requested = await correction.submit(
     {
       activityId: source.activityId,

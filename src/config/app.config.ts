@@ -1,5 +1,6 @@
 import { registerAs } from '@nestjs/config';
 import { BlockList, isIP } from 'node:net';
+import { isAbsolute } from 'node:path';
 
 // V2.x production storage_settings fail-fast(2026-05-16):
 // 'smoke' 是 CI Docker smoke job 专用 AppEnv;除 storage_settings fail-fast 外,
@@ -793,6 +794,38 @@ export interface AppConfig {
   // Legacy typed test fixtures omit this additive key; missing is always off.
   contributionShadowMode?: ContributionShadowMode;
   contributionSettlementMode?: ContributionSettlementMode;
+  humanCorrectionBackground?: HumanCorrectionRuntimeConfig;
+}
+
+export type HumanCorrectionRuntimeConfig =
+  | { readonly mode: 'off' }
+  | {
+      readonly mode: 'first-launch';
+      readonly installedRecordPath: string;
+      readonly installedRecordSha256: string;
+    };
+
+/** Operator-only bootstrap input. This never reads a file or changes a role. */
+export function parseHumanCorrectionRuntimeConfig(
+  mode: string | undefined,
+  installedRecordPath: string | undefined,
+  installedRecordSha256: string | undefined,
+): HumanCorrectionRuntimeConfig {
+  if (mode === undefined || mode === 'off') return Object.freeze({ mode: 'off' });
+  if (mode !== 'first-launch') throw new Error('ACTIVITY_HUMAN_CORRECTION_BACKGROUND_MODE_INVALID');
+  if (
+    typeof installedRecordPath !== 'string' ||
+    !isAbsolute(installedRecordPath) ||
+    installedRecordPath !== installedRecordPath.trim() ||
+    installedRecordPath.length > 4096 ||
+    Array.from(installedRecordPath).some(
+      (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+    )
+  )
+    throw new Error('ACTIVITY_HUMAN_CORRECTION_INSTALLED_RECORD_PATH_REQUIRED');
+  if (typeof installedRecordSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(installedRecordSha256))
+    throw new Error('ACTIVITY_HUMAN_CORRECTION_INSTALLED_RECORD_SHA256_REQUIRED');
+  return Object.freeze({ mode, installedRecordPath, installedRecordSha256 });
 }
 
 export default registerAs('app', (): AppConfig => {
@@ -1105,6 +1138,11 @@ export default registerAs('app', (): AppConfig => {
     process.env.ACTIVITY_E4_CONTRIBUTION_SETTLEMENT_MODE,
     env,
   );
+  const humanCorrectionBackground = parseHumanCorrectionRuntimeConfig(
+    process.env.ACTIVITY_HUMAN_CORRECTION_BACKGROUND_MODE,
+    process.env.ACTIVITY_HUMAN_CORRECTION_INSTALLED_RECORD_PATH,
+    process.env.ACTIVITY_HUMAN_CORRECTION_INSTALLED_RECORD_SHA256,
+  );
 
   return {
     env,
@@ -1139,5 +1177,6 @@ export default registerAs('app', (): AppConfig => {
     activityOsControlPlane,
     contributionShadowMode,
     contributionSettlementMode,
+    humanCorrectionBackground,
   };
 });

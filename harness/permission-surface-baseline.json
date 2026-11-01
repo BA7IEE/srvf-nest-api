@@ -163,8 +163,8 @@
       "description": "sha256:e9f672b8e3359d066420ea31c1472fac49058fe78b580178da135da99b1a34db"
     },
     "activity.settlement-final-review.record": {
-      "endpoints": 5,
-      "surface": "sha256:2d76a0617db3b9c2177decf80f161c8cf7231c264d31eab81b103a592bf2fc68",
+      "endpoints": 8,
+      "surface": "sha256:518d9261938f5851a2c1210a6f2657ff6f6d0c706de614c39242faa2124c2320",
       "description": "sha256:c5f69867bffa5cda685611e9981bc6ab1e144cc4b736dcc0bc5d9f01f38dbb3d"
     },
     "activity.settlement-first-review.record": {

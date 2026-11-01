@@ -16,6 +16,7 @@ import {
 } from '../helpers/native-launch-admission.cases';
 import { createNativeCapacityCorrectionCases } from '../helpers/native-capacity-corrections.cases';
 import type { NativeLaunchStage } from '../helpers/native-launch-live.fixture';
+import { r5CiOwnerClient } from '../helpers/r5-ci-authenticated-runtime';
 
 let f: E4Fixture | undefined;
 let observer: PrismaClient | undefined;
@@ -109,7 +110,7 @@ describe('active native full capacity: applicable business boundaries, original 
         f.app.get<ReturnType<typeof appConfig>>(appConfig.KEY).contributionSettlementMode,
         'active',
       );
-      observer = new PrismaClient({
+      observer = r5CiOwnerClient({
         datasources: { db: { url: process.env.DATABASE_URL } },
         transactionOptions: { timeout: 30_000, maxWait: 2_000 },
       });

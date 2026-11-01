@@ -27,7 +27,12 @@ export class LedgerReadyBatchCommitter {
     const correction = await this.prisma.correctionApplication.findFirst({
       where: {
         newPostingBatchId: postingBatchId,
-        correctionRequest: { requestedChangeJson: { path: ['schemaVersion'], equals: 2 } },
+        correctionRequest: {
+          OR: [
+            { requestedChangeJson: { path: ['schemaVersion'], equals: 2 } },
+            { requestedChangeJson: { path: ['schemaVersion'], equals: 3 } },
+          ],
+        },
       },
       select: { id: true },
     });

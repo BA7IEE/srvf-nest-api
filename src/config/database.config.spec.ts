@@ -17,6 +17,7 @@ describe('independent contribution shadow database configuration', () => {
     expect(databaseConfig()).toEqual({
       url: 'postgresql://primary.invalid/primary',
       contributionShadowUrl: undefined,
+      humanCorrectionUrl: undefined,
     });
   });
 
@@ -25,6 +26,7 @@ describe('independent contribution shadow database configuration', () => {
     expect(databaseConfig()).toEqual({
       url: 'postgresql://primary.invalid/primary',
       contributionShadowUrl: 'postgresql://runtime.invalid/shadow',
+      humanCorrectionUrl: undefined,
     });
   });
 
@@ -38,5 +40,11 @@ describe('independent contribution shadow database configuration', () => {
     process.env.CONTRIBUTION_SHADOW_DATABASE_URL = 'postgresql://runtime.invalid/shadow';
     expect(databaseConfig().url).toBeUndefined();
     expect(databaseConfig().contributionShadowUrl).toBe('postgresql://runtime.invalid/shadow');
+  });
+  it('uses only the explicit Human selector, independently of primary and shadow inputs', () => {
+    expect(databaseConfig().humanCorrectionUrl).toBeUndefined();
+    process.env.HUMAN_CORRECTION_DATABASE_URL = 'postgresql://human.invalid/protected';
+    expect(databaseConfig().humanCorrectionUrl).toBe('postgresql://human.invalid/protected');
+    expect(databaseConfig().url).toBe('postgresql://primary.invalid/primary');
   });
 });

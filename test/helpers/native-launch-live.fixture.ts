@@ -125,10 +125,19 @@ export async function createNativeLaunchSealedSource(
   f: E4Fixture,
   population: number,
   stage: NativeLaunchStage,
-  options: { contributionDefinition?: ContributionPolicyDefinition } = {},
+  options: {
+    contributionDefinition?: ContributionPolicyDefinition;
+    participantMemberId?: string;
+  } = {},
 ) {
   const published = await createNativeLaunchPublication(f, population, stage, options);
-  const raw = nativeLaunchRawInput(published, f.creator, population, f.key, new Date());
+  const raw = nativeLaunchRawInput(
+    published,
+    { id: f.creator.id, memberId: options.participantMemberId ?? f.creator.memberId },
+    population,
+    f.key,
+    new Date(),
+  );
   await stage('RAW_SOURCE_OBSERVATIONS', () =>
     f.db.$transaction(
       async (tx) => {
@@ -162,7 +171,10 @@ export async function createNativeLaunchLiveSource(
   f: E4Fixture,
   population: number,
   stage: NativeLaunchStage,
-  options: { contributionDefinition?: ContributionPolicyDefinition } = {},
+  options: {
+    contributionDefinition?: ContributionPolicyDefinition;
+    participantMemberId?: string;
+  } = {},
 ) {
   const published = await createNativeLaunchSealedSource(f, population, stage, options);
   const { post, raw, seal } = published;

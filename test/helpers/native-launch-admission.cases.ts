@@ -1,5 +1,6 @@
 import { createNativeCapacityLiveSource } from './native-capacity-live.fixture';
 import { strict as assert } from 'node:assert';
+import { humanCorrectionTestService, r5CiOwnerClient } from './r5-ci-authenticated-runtime';
 import { PrismaClient, type Prisma } from '@prisma/client';
 import { ActivityTimeSettlementService } from '../../src/modules/activities/activity-time-settlement.service';
 import { ActivityContributionSettlementService } from '../../src/modules/activities/activity-contribution-settlement.service';
@@ -141,7 +142,7 @@ export async function runNativeLaunchSmallAdmission(
 
   const correction = f.app.get(CorrectionApplicationService);
   const contributions = f.app.get(ActivityContributionSettlementService);
-  const gate = jest.spyOn(contributions, 'assertNewNativeCorrectionInTx');
+  let gate = jest.spyOn(contributions, 'assertNewNativeCorrectionInTx');
   const copy = jest.spyOn(queries, 'assertLaunchCopyInTx');
   const assertCommitted = async (
     prepared: CorrectionPrepareResult,
@@ -282,6 +283,13 @@ export async function runNativeLaunchSmallAdmission(
       }),
     );
     assert.equal(roots.length, 4);
+    const humanCorrection = humanCorrectionTestService(f, CorrectionApplicationService);
+    const humanQueries = humanCorrectionTestService(f, ActivityContributionSettlementQueryService);
+    gate.mockRestore();
+    gate = jest.spyOn(
+      humanCorrectionTestService(f, ActivityContributionSettlementService),
+      'assertNewNativeCorrectionInTx',
+    );
     const buildTimeRequest = async (versionId: string, long: boolean) => {
       const previous = await stage('ADMISSION_IO_202', () =>
         observer.activitySettlementContributionRevision.findFirstOrThrow({
@@ -334,7 +342,7 @@ export async function runNativeLaunchSmallAdmission(
         non_creditable: 4,
       };
       const receipt = await stage('ADMISSION_IO_243', () =>
-        correction.submit(
+        humanCorrection.submit(
           {
             activityId: source.activityId,
             participationIdentityId: source.raw.people[0].identityId,
@@ -384,7 +392,7 @@ export async function runNativeLaunchSmallAdmission(
         ),
       );
       await stage('ADMISSION_IO_291', () =>
-        correction.review(
+        humanCorrection.review(
           { correctionRequestId: receipt.correctionRequestId, actionCode: 'approve' },
           e4Actor(f.finalReviewer),
           E4_META,
@@ -400,11 +408,11 @@ export async function runNativeLaunchSmallAdmission(
     const v3command = await stage('V3_SUBMIT_REVIEW', () =>
       buildTimeRequest(unchanged.newSettlementVersionId, false),
     );
-    const changedEvaluation = jest.spyOn(queries, 'readCorrectionEvaluationInTx');
+    const changedEvaluation = jest.spyOn(humanQueries, 'readCorrectionEvaluationInTx');
     let changed: Awaited<ReturnType<CorrectionApplicationService['prepare']>>;
     try {
       changed = await stage('V3_PREPARE', () =>
-        correction.prepare(v3command, e4Actor(f.finalReviewer), E4_META),
+        humanCorrection.prepare(v3command, e4Actor(f.finalReviewer), E4_META),
       );
       assert(changedEvaluation.mock.calls.some((call) => call.at(-1) === true));
     } finally {
@@ -419,7 +427,7 @@ export async function runNativeLaunchSmallAdmission(
     assert(changedProof.correctionTimeSourceProofId);
     await assertNativeLaunchFrozenOracle(observer, changedProof, 4, stage);
     const changedCommitted = await stage('V3_COMMIT', () =>
-      correction.commit(v3command, e4Actor(f.finalReviewer), E4_META),
+      humanCorrection.commit(v3command, e4Actor(f.finalReviewer), E4_META),
     );
     const changedLedger = await assertCommitted(changed, changedCommitted, 'V3_COMMIT');
     const evaluations = await stage('ADMISSION_IO_323', () =>
@@ -463,7 +471,7 @@ export async function runNativeLaunchSmallAdmission(
     try {
       await stage('LONG_FULL_SOURCE_PREPARE_REJECT', () =>
         assert.rejects(
-          () => correction.prepare(longCommand, e4Actor(f.finalReviewer), E4_META),
+          () => humanCorrection.prepare(longCommand, e4Actor(f.finalReviewer), E4_META),
           (error: unknown) => {
             prepareRejection = error;
             if (typeof error !== 'object' || error === null) return false;
@@ -731,7 +739,7 @@ export async function assertNativeCapacityLedgerReadback(
   context: Awaited<ReturnType<typeof runNativeLaunchCapacityBoundary>>,
 ) {
   const { source, submitted, posted } = context;
-  const summaryDb = new PrismaClient<Prisma.PrismaClientOptions, 'query'>({
+  const summaryDb = r5CiOwnerClient({
     log: [{ emit: 'event', level: 'query' }],
   });
   let summaryQueries = 0;

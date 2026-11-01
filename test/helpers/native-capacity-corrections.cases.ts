@@ -26,6 +26,8 @@ import {
   type NativeLaunchStage,
 } from './native-launch-live.fixture';
 import type { NativeAdmissionResult } from './native-launch-admission.cases';
+import { buildNativeCapacityCorrectionShape } from './native-capacity-change-shape';
+import { humanCorrectionTestService } from './r5-ci-authenticated-runtime';
 
 type Source = Awaited<ReturnType<typeof createNativeCapacityLiveSource>>;
 
@@ -176,7 +178,10 @@ export async function createNativeCapacityCorrectionCases(
     // The unchanged-time V1 copy is the existing trusted internal standard7
     // path. Actual changed-time V3 uses the real Human command adapter, which
     // derives hashes/anchors and dispatches the existing Human15 profile.
-    const human = kind === 'time' ? f.app.get(ActivityTimeCorrectionCommandService) : undefined;
+    const human =
+      kind === 'time'
+        ? humanCorrectionTestService(f, ActivityTimeCorrectionCommandService)
+        : undefined;
     const submitInput = {
       participationIdentityId: source.raw.people[0].identityId,
       requestTypeCode: kind,
@@ -308,6 +313,7 @@ export async function createNativeCapacityCorrectionCases(
     return { prepared, root, committed };
   };
   let unchanged: Awaited<ReturnType<typeof apply>> | undefined;
+  let timeChangedConsumed = false;
   return {
     async unchanged() {
       assert(!unchanged, 'unchanged acceptance already consumed');
@@ -318,8 +324,14 @@ export async function createNativeCapacityCorrectionCases(
         'unchanged_time',
       );
     },
-    async timeChanged() {
+    async timeChanged(delta: 1 | 1000 | 10000 = 10000) {
       assert(unchanged, 'unchanged acceptance must complete first');
+      assert(!timeChangedConsumed, 'one changed-time shape per complete native fixture');
+      timeChangedConsumed = true;
+      const changeShape = buildNativeCapacityCorrectionShape(source.segments, delta);
+      assert.equal(changeShape.metrics.sourceRows, 10000);
+      assert.equal(changeShape.metrics.changedSegmentRows, delta);
+      emit({ label: 'NATIVE2000_TIME_CHANGED_INPUT_SHAPE', value: changeShape.metrics });
       const allocations = await recognizeCommittedSources(f, source, stage);
       assert.equal(allocations.length, 10000);
       const bySource = new Map(allocations.map((row) => [row.sourceSegmentId, row]));
@@ -330,18 +342,17 @@ export async function createNativeCapacityCorrectionCases(
         where: { manifestId: manifest.id },
       });
       assert.equal(roots.length, 8000);
-      const seconds: Record<string, number> = {
-        volunteer_service: 38,
-        training: 19,
-        organization: 19,
-        non_creditable: 19,
-      };
+      assert.equal(
+        new Set(roots.map((row) => JSON.stringify([row.participationIdentityId, row.categoryCode])))
+          .size,
+        8000,
+      );
       const changed = await apply(
         'NATIVE2000_TIME_CHANGED',
         {
           schemaVersion: 3,
           results: results.map((row) => ({ ...row, lateFlag: !row.lateFlag })),
-          segments: source.segments.map((row) => ({
+          segments: changeShape.selected.map((row) => ({
             participationIdentityId: row.participationIdentityId,
             segmentKey: row.segmentKey,
             checkInAt: row.checkInAt.toISOString(),
@@ -349,7 +360,7 @@ export async function createNativeCapacityCorrectionCases(
             resultCode: 'valid',
             serviceHours: '0.01',
           })),
-          allocations: source.segments.map((row) => {
+          allocations: changeShape.selected.map((row) => {
             const allocation = bySource.get(row.id);
             assert(allocation);
             return nativeLaunchV3Allocation({
@@ -365,10 +376,15 @@ export async function createNativeCapacityCorrectionCases(
             baseSettlementVersionId: unchanged.prepared.newSettlementVersionId,
             baseTimeLedgerHash: manifest.contentHash,
             reason: 'Native capacity approved fact correction',
-            items: roots.map((row) => ({
-              rootEntryId: row.id,
-              recognizedSeconds: seconds[row.categoryCode],
-            })),
+            items: roots.map((row) => {
+              const categories = changeShape.recognizedSecondsByIdentity.get(
+                row.participationIdentityId,
+              );
+              assert(categories);
+              const recognizedSeconds = categories[row.categoryCode];
+              assert(Number.isSafeInteger(recognizedSeconds) && recognizedSeconds >= 0);
+              return { rootEntryId: row.id, recognizedSeconds };
+            }),
           },
         },
         'time',
@@ -379,16 +395,15 @@ export async function createNativeCapacityCorrectionCases(
         where: { id: changed.root.correctionTimeSourceProofId },
       });
       assert.equal(proof.expectedSegmentCount, 10000);
-      assert.equal(proof.expectedPendingCount, 10000);
+      assert.equal(proof.expectedBindingCount, 10000);
+      assert.equal(proof.expectedPendingCount, changeShape.expected.pending);
       assert.equal(proof.expectedSliceCount, 50000);
       const changedEvaluations = await observer.participantContributionEvaluation.findMany({
         where: { contributionRevisionId: changed.root.id },
         select: { durationSeconds: true },
       });
-      assert.equal(
-        changedEvaluations.reduce((sum, row) => sum + row.durationSeconds, 0),
-        190000,
-      );
+      const actualDuration = changedEvaluations.reduce((sum, row) => sum + row.durationSeconds, 0);
+      assert.equal(actualDuration, changeShape.expectedRecognizedSeconds);
       const [history] = await observer.$queryRaw<
         { segmentRevisions: number; allocationRevisions: number; physicalSlices: number }[]
       >`
@@ -401,9 +416,17 @@ export async function createNativeCapacityCorrectionCases(
       (SELECT count(*)::int FROM "ParticipantTimeAllocationSlice"
        WHERE "activityId"=${source.activityId}) AS "physicalSlices"
   `;
-      assert.equal(history.segmentRevisions, 20000);
-      assert.equal(history.allocationRevisions, 30000);
-      assert.equal(history.physicalSlices, 150000);
+      assert.equal(history.segmentRevisions, changeShape.expected.segmentRevisions);
+      assert.equal(history.allocationRevisions, changeShape.expected.allocationRevisions);
+      assert.equal(history.physicalSlices, changeShape.expected.physicalSlices);
+      // Retain the original full-change acceptance's independent fixed numbers.
+      if (delta === 10000) {
+        assert.equal(proof.expectedPendingCount, 10000);
+        assert.equal(actualDuration, 190000);
+        assert.equal(history.segmentRevisions, 20000);
+        assert.equal(history.allocationRevisions, 30000);
+        assert.equal(history.physicalSlices, 150000);
+      }
       emit({ label: 'native2000 complete correction history remains admissible', value: history });
     },
   };

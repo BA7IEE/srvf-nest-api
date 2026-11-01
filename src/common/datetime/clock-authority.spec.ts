@@ -150,6 +150,16 @@ const CLOCK_CRITICAL_COLUMNS: readonly ClockCriticalColumn[] = [
         valueExpr: 'new Date()',
         clockSource: '应用时钟(入队即可领)',
       },
+      {
+        file: 'src/modules/activities/activity-time-correction-background.service.ts',
+        valueExpr: 'new Date()',
+        clockSource: '后台 Human 更正受理的应用时钟，和 worker availableAt 领取判定同源',
+      },
+      {
+        file: 'src/modules/activities/activity-time-correction-background.service.ts',
+        valueExpr: 'new Date()',
+        clockSource: '确认未生效后的显式人工重试；应用时钟，和 worker 领取判定同源',
+      },
       // ↓ UPDATE 腿(退避重排 / 复活重领):同样是时钟来源,同样必须与 claimJob 同源。
       {
         file: 'src/modules/activities/activity-batch.worker.ts',

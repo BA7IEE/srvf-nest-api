@@ -1,0 +1,118 @@
+{
+  "schema": "srvf-r5-human-async-binding-review/v1",
+  "status": "REVIEWED_AND_APPROVED",
+  "supplementalExpectedCatalogSha256": "62acc905834625271a2dfb1c3fb88fa3f08d59c409ca40cbe1551b2b327c4462",
+  "installedPreflightBodySha256": "0eef2253992dbe51810b42feac663075701731ee1a4f9d34de0ae35f8ca1b1ac",
+  "originalExpectedCatalogSha256": "4d1206dca23c9dd2a3a78d0e973de6e0c04b307caee1f734d193f1fed20314a2",
+  "originalCollectorSha256": "063ecd8b212bc592acf7f53008cf8769b12f1f0bf846b2f2e4ca8fb9ceb59542",
+  "queueProvenanceReviewReference": "Protected Item v2 epoch and separate P/U trust boundary; source-reviewed; actual P authority/provider plus U cannot SET P or write Item PASS in libfile_cbe9fd5359a8819183e439c2a6dbd815 v0; real forged-COMMIT counterexample NOT_RUN",
+  "sourceReviewReference": "SOURCE_DERIVED_AND_NATIVE_INSTALLED / ef4766541407613b4e6d493142bb2f99b05f74d0856e97fbdf95ac33e915c22e / libfile_de7465df3324819193178d8ddae69f47 v0 SHA256 b1aa05999ade909d53b5fab29b4b8a5930617c2fa69dbf529f093e4c431c4160",
+  "permissionApprovalReference": "Sentinel_e14fd70dc390819192324c72864e9e9e / Sentinel_7e8efd3bee0081919cfca2e14934d47f (approved identities/auth only)",
+  "installedBindingReference": "DDL XID158962 independently committed / libfile_de7465df3324819193178d8ddae69f47; P/U readonly qualification q4 PASS / libfile_cbe9fd5359a8819183e439c2a6dbd815 v0 SHA256 dddaf41e30c64071ccb246951c3ffa03c6041ecfb5d8771cd012ba6596e7ff43; new business stage requires fresh memory credentials and live qualification",
+  "originalBinding": {
+    "historicalTableCount": 26,
+    "historicalFunctionCount": 201,
+    "collectorSha256": "063ecd8b212bc592acf7f53008cf8769b12f1f0bf846b2f2e4ca8fb9ceb59542",
+    "preflightBodySha256": "ccd5167cb30cd2ee587fcba5af63db8e0d44bde6a01b85922f66f1f74681070d",
+    "liveCaptureLibraryId": "libfile_3f0574c219c881918c81cd02f54a45df",
+    "liveCaptureSha256": "dfaa5145374b917d8c15cf46920f5ec57517febbfaeeae1d4f23efc84bf09913",
+    "liveCaptureIsNewExpected": false
+  },
+  "requiredJobGuardCoverage": ["ActivityBatchJob", "ActivityBatchJobItem"],
+  "queueProvenanceBeforePermissionApproval": {
+    "status": "REVIEWED_FOR_INDEPENDENT_U_STARTUP_C_MODEL; U cannot SET P or write Item verified; forged real COMMIT NOT_RUN",
+    "condition": "Adversarial SQL uses independent authenticated U with startup C. Arbitrary SQL using trusted application/worker P is outside this boundary; current_user=C alone is not a one-way security boundary.",
+    "publicPayloadHashIsNotAuthentication": true,
+    "positiveSmokeProvesThisCounterexample": false
+  },
+  "supplementalReadAdmissionTables": [
+    "ActivityBatchJob",
+    "ActivityBatchJobItem",
+    "ActivityInvitation",
+    "ActivitySession"
+  ],
+  "runtimeCaller": {
+    "name": "r5_boundary_caller_h7c6",
+    "oid": 1789091
+  },
+  "target": {
+    "cluster": "7695840193603043362",
+    "database": "app_test_r5_setmat_20261029_q1",
+    "oid": 1998913
+  },
+  "notes": [
+    "Expected catalogs remain source-derived from frozen DDL/GRANT and qualified normative source; never adopt actual on mismatch.",
+    "Native installation XID158962 independently committed. Job CHECK8 and preflight match 30 tables/201 functions/5 enums; original ActivitySession CHECK was not altered.",
+    "Human-only production worker selection is derived from trusted connection and atomically claims that family; generic invitation/session expiry scanning remains in the general worker. No additional eight-column SELECT granted.",
+    "P/U q4 proved actual authenticated identities, non-NULL historical births, P authority/provider and U/C negative metadata checks with zero unexpected SQL; this is neither current session ownership nor real business COMMIT proof.",
+    "Real business admission still requires an explicit new single-use stage, fresh FD3 credentials, live birth/qualification, strict source/catalog/ACL/resource/queue gates and the original full business transaction.",
+    "The existing thousand-item prepared application and all historical FAIL/UNKNOWN evidence remain read-only and must not be prepared or replayed.",
+    "Default production installed connection remains null. This reviewed record only admits the explicitly controlled test graph; no deployment authorization."
+  ],
+  "identityInstallation": {
+    "C": 1789091,
+    "P": 2035122,
+    "U": 2035123,
+    "backendStart": null,
+    "libraryId": "libfile_4f374dd111d48191a07794711c8fe248",
+    "lifecycle": "INSTALLED_INACTIVE",
+    "zipSha256": "2f199937113f2dfdd1a3cdf6e92c4779ef575e7e2fce0f4ae65821c21b85b6b6"
+  },
+  "newBoundPreflightStatus": "NATIVE_INSTALLED_SOURCE_MATCHED",
+  "currentSourceIsCurrentRuntimeProof": false,
+  "installedTrustedPItemColumnPrivileges": {
+    "select": [
+      "id",
+      "createdAt",
+      "updatedAt",
+      "jobId",
+      "itemKey",
+      "statusCode",
+      "attempts",
+      "lastErrorCode",
+      "safeMessage",
+      "resourceType",
+      "resourceId",
+      "payloadHash",
+      "resultReference"
+    ],
+    "insert": [
+      "id",
+      "createdAt",
+      "updatedAt",
+      "jobId",
+      "itemKey",
+      "statusCode",
+      "attempts",
+      "resourceType",
+      "resourceId",
+      "payloadHash",
+      "resultReference"
+    ],
+    "update": [
+      "updatedAt",
+      "statusCode",
+      "attempts",
+      "lastErrorCode",
+      "safeMessage",
+      "resultReference"
+    ],
+    "delete": false,
+    "rlsDisabledMeansCloneWideRows": true,
+    "physicalOrmSqlMinimalityVerified": false,
+    "principal": "P2035122 only; C/U unchanged without Item write",
+    "installationReference": "libfile_4f374dd111d48191a07794711c8fe248 v0; source-qualified 30-table catalog and actual P/U qualification receipts"
+  },
+  "runtimeQualification": {
+    "reference": "libfile_cbe9fd5359a8819183e439c2a6dbd815",
+    "version": 0,
+    "zipSha256": "dddaf41e30c64071ccb246951c3ffa03c6041ecfb5d8771cd012ba6596e7ff43",
+    "receiptSha256": "ee5d06b6879f7a79fc377658fa9714faa27a8791e2649411e720119755963caf",
+    "phaseId": "r5_runtime_qualification_20261031_q4",
+    "priorSourceBindingSha256": "bfadb52c5832eda36a45cd30e4939726abe3735e1cffffe7cd924b6cfaa7fcf2",
+    "status": "PASS_READONLY_ONLY",
+    "birthEvidenceIsHistoricalNotCurrentOwnership": true,
+    "businessCommitProven": false,
+    "historicalQ1Q2Q3FailuresPreserved": true
+  }
+}

@@ -7,7 +7,7 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 import { assertNamedTestDatabaseScope } from '../setup/test-run-scope';
 
 export const E4_SLICE_SQL_SHA256 =
-  '8558d7eaceacebb98f37c7d7879c0c2e7b7d6bfa60464a0005c2c6d1bac3b262';
+  '59306042b53e1d484f61ca881bb6c7544a0940cd58b4b1346f00f8a87207551e';
 export const E4_SLICE_PREFIX_MD5 = '26a76ae33c01abd6a7905880ac47b10d';
 export const E4_EVAL_INSERT_SQL_SHA256 =
   'bbd5c19bba6466dbe309e151bc636b25ffc02c4ce9e6688066d443fe62cc4c68';

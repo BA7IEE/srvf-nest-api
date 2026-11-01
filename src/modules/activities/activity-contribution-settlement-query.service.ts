@@ -875,12 +875,33 @@ export class ActivityContributionSettlementQueryService {
         a.id AS "allocationRevisionId", a."allocationHash", a."ruleSnapshotId", a."ruleSnapshotHash", a."sourcePositionId",
         a."sourceSegmentId", a."sourceSegmentRevision", s.id AS "sliceId", s."categoryCode", s."startAt" AS "startsAt", s."endAt" AS "endsAt"
       FROM "ParticipantSettlementTimeBucket" b
-      JOIN "ParticipantSettlementTimeBucketSource" bs ON bs."bucketId" = b.id AND bs."timeRevisionId" = b."timeRevisionId" AND bs."activityId" = b."activityId"
-      JOIN "ParticipantTimeAllocationRevision" a ON a.id = bs."allocationRevisionId" AND a."activityId" = bs."activityId"
+      JOIN LATERAL (
+        SELECT bs0."bucketId", bs0."timeRevisionId", bs0."activityId", bs0."allocationRevisionId", bs0."sourceSegmentId", bs0."sourceSegmentRevision"
+        FROM "ParticipantSettlementTimeBucketSource" bs0
+        WHERE bs0."bucketId" = b.id
+        OFFSET 0
+      ) bs ON bs."bucketId" = b.id AND bs."timeRevisionId" = b."timeRevisionId" AND bs."activityId" = b."activityId"
+      JOIN LATERAL (
+        SELECT a0.id, a0."activityId", a0."sourceSegmentId", a0."sourceSegmentRevision", a0."participationIdentityId",
+          a0."memberId", a0."sessionId", a0."allocationHash", a0."ruleSnapshotId", a0."ruleSnapshotHash", a0."sourcePositionId"
+        FROM "ParticipantTimeAllocationRevision" a0
+        WHERE a0.id = bs."allocationRevisionId"
+        OFFSET 0
+      ) a ON a.id = bs."allocationRevisionId" AND a."activityId" = bs."activityId"
         AND a."sourceSegmentId" = bs."sourceSegmentId" AND a."sourceSegmentRevision" = bs."sourceSegmentRevision"
         AND a."participationIdentityId" = b."participationIdentityId"
-      JOIN "ParticipantTimeAllocationSlice" s ON s."allocationRevisionId" = a.id AND s."activityId" = a."activityId" AND s."categoryCode" = b."categoryCode"
-      JOIN "ParticipantSettlementResultRevision" r ON r."settlementVersionId" = ${time.settlementVersionId} AND r."participationIdentityId" = a."participationIdentityId"
+      JOIN LATERAL (
+        SELECT s0.id, s0."allocationRevisionId", s0."activityId", s0."categoryCode", s0."startAt", s0."endAt", s0.ordinal
+        FROM "ParticipantTimeAllocationSlice" s0
+        WHERE s0."allocationRevisionId" = a.id AND s0."activityId" = a."activityId" AND s0."categoryCode" = b."categoryCode"
+        OFFSET 0
+      ) s ON s."allocationRevisionId" = a.id AND s."activityId" = a."activityId" AND s."categoryCode" = b."categoryCode"
+      JOIN LATERAL (
+        SELECT r0."settlementVersionId", r0."participationIdentityId", r0."resultCode"
+        FROM "ParticipantSettlementResultRevision" r0
+        WHERE r0."settlementVersionId" = ${time.settlementVersionId} AND r0."participationIdentityId" = a."participationIdentityId"
+        OFFSET 0
+      ) r ON r."participationIdentityId" = a."participationIdentityId"
       WHERE b."timeRevisionId" = ${time.id} AND b."activityId" = ${time.activityId}
       ORDER BY b.id, a.id, s.ordinal LIMIT ${TIME_SETTLEMENT_LIMITS.slices + 1}
     `;

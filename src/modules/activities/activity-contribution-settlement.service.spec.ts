@@ -213,6 +213,108 @@ function setup(
   };
 }
 
+describe('fresh native V3 posting boundary qualification', () => {
+  const proof = () => ({
+    ...root(),
+    kindCode: 'correction',
+    sourceKindCode: 'correction_time_proof',
+    correctionPostingBatchId: 'batch-v3',
+    correctionApplicationId: 'application-v3',
+    correctionTimeSourceProofId: 'time-proof-v3',
+  });
+  const posted = () => ({
+    id: 'batch-v3',
+    settlementVersionId: proof().settlementVersionId,
+    settlementRunId: proof().settlementRunId,
+    statusCode: 'committed',
+  });
+
+  it('retains missing-proof rejection before any catalog or full computation', async () => {
+    const { service, prismaTx, tx } = setup();
+    await expect(
+      service.readNativePostingBoundaryCandidateInTx(prismaTx, 'missing', 'batch-v3'),
+    ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY });
+    expect(tx.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it.each(['unchanged_time', 'time_revision'])(
+    'does not qualify %s as native V3',
+    async (sourceKindCode) => {
+      const { service, prismaTx, tx } = setup();
+      tx.activitySettlementContributionRevision.findFirst.mockResolvedValue({
+        ...proof(),
+        sourceKindCode,
+      });
+      await expect(
+        service.readNativePostingBoundaryCandidateInTx(prismaTx, 'version', 'batch-v3'),
+      ).resolves.toBeNull();
+      expect(tx.$queryRaw).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([{ rows: [] }, { rows: [{ key: 'one' }, { key: 'two' }] }])(
+    'does not accept ambiguous or ineligible catalog rows: %j',
+    async ({ rows }) => {
+      const { service, prismaTx, tx } = setup();
+      tx.activitySettlementContributionRevision.findFirst.mockResolvedValue(proof());
+      tx.$queryRaw.mockResolvedValue(rows);
+      await expect(
+        service.readNativePostingBoundaryCandidateInTx(prismaTx, 'version', 'batch-v3'),
+      ).resolves.toBeNull();
+    },
+  );
+
+  it('propagates a failed catalog statement instead of continuing an aborted transaction', async () => {
+    const { service, prismaTx, tx } = setup();
+    tx.activitySettlementContributionRevision.findFirst.mockResolvedValue(proof());
+    const failure = new Error('catalog statement failed');
+    tx.$queryRaw.mockRejectedValue(failure);
+    await expect(
+      service.readNativePostingBoundaryCandidateInTx(prismaTx, 'version', 'batch-v3'),
+    ).rejects.toBe(failure);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['guard', 'proof', 'batch', 'status', 'version', 'run'])(
+    'rejects post-UPDATE %s drift',
+    async (change) => {
+      const { service, prismaTx, tx } = setup();
+      tx.activitySettlementContributionRevision.findFirst.mockResolvedValue({
+        ...proof(),
+        ...(change === 'proof' ? { id: 'other-root' } : {}),
+      });
+      tx.$queryRaw.mockResolvedValue([{ key: change === 'guard' ? 'changed' : 'original' }]);
+      const row = {
+        ...posted(),
+        ...(change === 'batch' ? { id: 'other-batch' } : {}),
+        ...(change === 'status' ? { statusCode: 'ready' } : {}),
+        ...(change === 'version' ? { settlementVersionId: 'other-version' } : {}),
+        ...(change === 'run' ? { settlementRunId: 'other-run' } : {}),
+      };
+      await expect(
+        service.assertNativePostingBoundaryInTx(
+          prismaTx,
+          { proof: proof(), guardKey: 'original' },
+          row,
+        ),
+      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY });
+    },
+  );
+
+  it('accepts matching post-UPDATE anchors without treating the catalog as a computed proof', async () => {
+    const { service, prismaTx, tx } = setup();
+    tx.activitySettlementContributionRevision.findFirst.mockResolvedValue(proof());
+    tx.$queryRaw.mockResolvedValue([{ key: 'original' }]);
+    await expect(
+      service.assertNativePostingBoundaryInTx(
+        prismaTx,
+        { proof: proof(), guardKey: 'original' },
+        posted(),
+      ),
+    ).resolves.toBeUndefined();
+  });
+});
+
 describe('§12.26 first-review candidate and actual constraint barrier', () => {
   it('reads the same latest proof predicate without prefiltering good rows', async () => {
     const { service, prismaTx, tx } = setup();
@@ -310,23 +412,26 @@ describe('§12.26 first-review candidate and actual constraint barrier', () => {
       const source =
         name === 'e4_assert_complete'
           ? readFileSync(
-              resolve(
-                __dirname,
-                '../../../prisma/migrations/20261015221000_activity_contribution_policy_band_planning/migration.sql',
-              ),
+              resolve(__dirname, '../../../test/helpers/r5-e4-pairs-row-carry.candidate.sql'),
               'utf8',
             )
           : migration;
       const matches = [
         ...source.matchAll(
-          new RegExp(
-            `CREATE(?: OR REPLACE)? FUNCTION ${name}\\([^]*? AS \\$\\$([^]*?)\\$\\$;`,
-            'gu',
-          ),
+          name === 'e4_assert_complete'
+            ? /CREATE OR REPLACE FUNCTION public\.e4_assert_complete\([^]*?AS \$function\$([^]*?)\$function\$;/gu
+            : new RegExp(
+                `CREATE(?: OR REPLACE)? FUNCTION ${name}\\([^]*? AS \\$\\$([^]*?)\\$\\$;`,
+                'gu',
+              ),
         ),
       ];
       expect(matches).toHaveLength(1);
       const pin = createHash('md5').update(matches[0][1]).digest('hex');
+      if (name === 'e4_assert_complete')
+        expect(createHash('sha256').update(matches[0][1]).digest('hex')).toBe(
+          'e563d10a93339ea6195d7a004d3f37bb958b1bfdda0420e655e2242c4ef3f744',
+        );
       expect(sql).toContain(pin);
     }
     for (const predicate of [
@@ -347,13 +452,14 @@ describe('§12.26 first-review candidate and actual constraint barrier', () => {
       expect(sql).toContain(predicate);
   });
 
-  it('accepts only the policy-band146 whole-body pin and never a superseded body', async () => {
+  it('accepts only the frozen R5 typed-row whole-body pin and never a superseded body', async () => {
     const { service, prismaTx, tx } = setup();
     tx.activitySettlementContributionRevision.findFirst.mockResolvedValue(firstReviewProof());
     tx.$queryRaw.mockResolvedValue([FIRST_REVIEW_TEST_GUARD]);
     await service.readFirstReviewBarrierCandidateInTx(prismaTx, firstReviewAnchor());
     const call = tx.$queryRaw.mock.calls[0] as [TemplateStringsArray, Prisma.Sql];
-    expect(call[1].text).toContain("md5(complete_proc.prosrc)='40b56bac5a571c56e589cbc549419bfa'");
+    expect(call[1].text).toContain("md5(complete_proc.prosrc)='8922a6d0c4642ba1c99f679cb9581065'");
+    expect(call[1].text).not.toContain('40b56bac5a571c56e589cbc549419bfa');
     expect(call[1].text).not.toContain('b03a7298e625b703fa2f011c0fbcc6c0');
     expect(call[1].text).not.toContain('ade4d2af9aa0baf8400a79fc6b62c797');
     expect(call[1].text).not.toContain('59a9bc7d7c0c3b38df982536a2632b15');
@@ -375,7 +481,7 @@ describe('§12.26 first-review candidate and actual constraint barrier', () => {
     expect(
       historical.sql.replace(
         "md5(complete_proc.prosrc)='21fe9ecf6df989a3f8fa5878df40b93c'",
-        "md5(complete_proc.prosrc)='40b56bac5a571c56e589cbc549419bfa'",
+        "md5(complete_proc.prosrc)='8922a6d0c4642ba1c99f679cb9581065'",
       ),
     ).toBe(query.sql);
     expect(query.sql).not.toContain('21fe9ecf6df989a3f8fa5878df40b93c');
@@ -396,14 +502,14 @@ describe('§12.26 first-review candidate and actual constraint barrier', () => {
     await service.readFirstReviewBarrierCandidateInTx(prismaTx, firstReviewAnchor());
     const call = tx.$queryRaw.mock.calls[0] as [TemplateStringsArray, Prisma.Sql];
     const text = call[1].sql;
-    const pin = "pg_catalog.md5(complete_proc.prosrc)='40b56bac5a571c56e589cbc549419bfa'";
+    const pin = "pg_catalog.md5(complete_proc.prosrc)='8922a6d0c4642ba1c99f679cb9581065'";
     const variants: Record<string, string> = {
       missing: text.replace(pin, 'TRUE'),
       duplicate: text + pin,
       other_sql: 'SELECT 1',
       changed_guard: text.replace("trigger_row.tgenabled::text='O'", 'TRUE'),
       already_historical: text.replace(
-        '40b56bac5a571c56e589cbc549419bfa',
+        '8922a6d0c4642ba1c99f679cb9581065',
         '21fe9ecf6df989a3f8fa5878df40b93c',
       ),
       barrier: text + '; SET CONSTRAINTS ALL IMMEDIATE',

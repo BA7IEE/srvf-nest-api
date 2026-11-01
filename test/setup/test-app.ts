@@ -5,6 +5,7 @@ import { AppModule } from '../../src/app.module';
 import { applyGlobalSetup } from '../../src/bootstrap/apply-global-setup';
 import { applySwagger } from '../../src/bootstrap/apply-swagger';
 import type { AppConfig } from '../../src/config/app.config';
+import { configureR5CiTestApp } from '../helpers/r5-ci-authenticated-runtime';
 
 // E2E 测试唯一的 NestApplication 工厂。
 // 必须与 src/main.ts bootstrap() 的全局配置严格一致——双方共享 applyGlobalSetup
@@ -30,10 +31,12 @@ import type { AppConfig } from '../../src/config/app.config';
 //
 // 不做的事:
 // - 不注入 fixtures:每个 spec 自行造数据,保证隔离
-export async function createTestApp(): Promise<INestApplication> {
-  const moduleRef = await Test.createTestingModule({
+export async function createTestApp(options: { r5Human?: true } = {}): Promise<INestApplication> {
+  const builder = Test.createTestingModule({
     imports: [AppModule],
-  }).compile();
+  });
+  configureR5CiTestApp(builder, options.r5Human === true);
+  const moduleRef = await builder.compile();
 
   const app = moduleRef.createNestApplication();
 

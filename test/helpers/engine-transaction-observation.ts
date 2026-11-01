@@ -1,7 +1,11 @@
 import { performance } from 'node:perf_hooks';
 
 /** Test-only actual transaction bridge observer. Does not retain arguments or results. */
-export function observeTestEngineTransactions(engine: object, clock = () => performance.now()) {
+export function observeTestEngineTransactions(
+  engine: object,
+  clock = () => performance.now(),
+  progress?: (event: Record<string, unknown>) => void,
+) {
   const original: unknown = Reflect.get(engine, 'transaction');
   const descriptor = Object.getOwnPropertyDescriptor(engine, 'transaction');
   if (
@@ -12,6 +16,14 @@ export function observeTestEngineTransactions(engine: object, clock = () => perf
   const phases: { phase: string; elapsedMs: number; outcome: string }[] = [];
   let unknown = false;
   let pending = 0;
+  const emit = (event: Record<string, unknown>) => {
+    try {
+      progress?.(event);
+    } catch {
+      // Observation failure must never replace the native engine result.
+      unknown = true;
+    }
+  };
   const tick = (): number | null => {
     try {
       const value = clock();
@@ -32,6 +44,7 @@ export function observeTestEngineTransactions(engine: object, clock = () => perf
       return;
     }
     phases.push({ phase, elapsedMs, outcome });
+    emit({ event: 'ENGINE_PHASE_SETTLED', phase, elapsedMs, outcome, pending });
   };
   const wrapper = function (this: unknown, ...args: unknown[]) {
     const started = tick();
@@ -41,6 +54,7 @@ export function observeTestEngineTransactions(engine: object, clock = () => perf
         ? args[0]
         : 'other';
     if (phase === 'other') unknown = true;
+    emit({ event: 'ENGINE_PHASE_STARTED', phase, pending });
     let result: unknown;
     try {
       result = Reflect.apply(original, this, args);

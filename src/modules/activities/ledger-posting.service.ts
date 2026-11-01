@@ -491,13 +491,23 @@ export class LedgerPostingService {
         );
         await this.timeLedger.assertComplete(tx, batch);
       }
-      // Native evidence is independent of the D7 receipt shortcut: check under the existing member/day locks.
-      if (native) await this.contributions!.assertVersionInTx(tx, version.id, batch.id);
+      // Receipt selects only the fresh V3 entry; it never certifies E4 evidence.
+      // The mandatory status UPDATE below still executes the full E4 DB guard.
+      const nativePostingBoundary =
+        native && correction && readyV3ReceiptMatches
+          ? await this.contributions!.readNativePostingBoundaryCandidateInTx(
+              tx,
+              version.id,
+              batch.id,
+            )
+          : null;
+      if (native && nativePostingBoundary === null)
+        await this.contributions!.assertVersionInTx(tx, version.id, batch.id);
       const now = new Date();
       await this.advanceDayStates(tx, batch.id, deltas);
       const entryCount = deltas.reduce((sum, row) => sum + row.entryCount, 0);
 
-      await tx.ledgerPostingBatch.update({
+      const postedBatch = await tx.ledgerPostingBatch.update({
         where: { id: batch.id },
         data: {
           statusCode: 'committed',
@@ -506,6 +516,12 @@ export class LedgerPostingService {
           version: { increment: 1 },
         },
       });
+      if (nativePostingBoundary !== null)
+        await this.contributions!.assertNativePostingBoundaryInTx(
+          tx,
+          nativePostingBoundary,
+          postedBatch,
+        );
       await tx.attendanceSettlementRun.update({
         where: { id: run.id },
         data: {

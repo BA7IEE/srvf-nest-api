@@ -143,7 +143,7 @@
 | `wechat-setting.reset.credentials` |
 | `wecom-setting.reset.credentials` |
 
-### controller × surface 对照(128 个 @Controller)
+### controller × surface 对照(129 个 @Controller)
 
 > 权威源:`src/**/*.controller.ts` 的 `@Controller(...)` 装饰器。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 鉴权模式(R / A / P)与业务语义属人类知识,见本文件标记之外的章节。
@@ -210,7 +210,7 @@
 | `admin/v1/team-join/cycles` | `src/modules/team-join/team-join-cycles.controller.ts` |
 | `admin/v1/users` | `src/modules/users/users.controller.ts` |
 
-#### app/v1(40 个 controller)
+#### app/v1(41 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
@@ -251,6 +251,7 @@
 | `app/v1/my/managed-activities/:activityId/positions` | `src/modules/activities/controllers/app-managed-activity-positions.controller.ts` |
 | `app/v1/my/managed-activities/:activityId/registrations` | `src/modules/activity-registrations/controllers/app-managed-activity-registrations.controller.ts` |
 | `app/v1/my/managed-activities/:activityId/time-corrections` | `src/modules/activities/controllers/app-managed-activity-time-correction.controller.ts` |
+| `app/v1/my/managed-activities/:activityId/time-corrections/:requestId/commit-jobs` | `src/modules/activities/controllers/app-managed-activity-time-correction-jobs.controller.ts` |
 | `app/v1/my/managed-activities/:activityId/time-settlement` | `src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts` |
 | `app/v1/my/managed-activities/control-plane` | `src/modules/activities/controllers/app-managed-activity-control-plane.controller.ts` |
 | `app/v1/notifications` | `src/modules/notifications/notification-app.controller.ts` |

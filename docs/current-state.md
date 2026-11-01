@@ -32,9 +32,9 @@
 | 计数项 | 值 |
 |---|---|
 | 模块 | 43 |
-| Controller | 128 |
-| Endpoint | 663 |
-| Migration | 153 |
+| Controller | 129 |
+| Endpoint | 666 |
+| Migration | 155 |
 | BizCode | 582 |
 | 权限码 | 273 |
 | AuditLogEvent | 178 |

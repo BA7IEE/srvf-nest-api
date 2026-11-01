@@ -83,6 +83,7 @@ describe('App draft batch job compatibility', () => {
       });
       const where = {
         activityId: 'activity',
+        jobTypeCode: { not: 'human_correction_commit' },
         activity: {
           deletedAt: null,
           OR: [
@@ -128,6 +129,7 @@ describe('App draft batch job compatibility', () => {
       expect(f.prisma.activityBatchJob.findFirst).toHaveBeenCalledWith({
         where: {
           id: 'draft-job',
+          jobTypeCode: { not: 'human_correction_commit' },
           activity: {
             deletedAt: null,
             OR: [
@@ -243,6 +245,7 @@ describe('App draft batch job compatibility', () => {
         expect.objectContaining({
           where: {
             id: 'draft-job',
+            jobTypeCode: { not: 'human_correction_commit' },
             activity: {
               deletedAt: null,
               OR: [

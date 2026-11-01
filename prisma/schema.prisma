@@ -7916,7 +7916,8 @@ model ActivityBatchJob {
   updatedAt DateTime @updatedAt
 
   // settlement_prepare / bulk_proxy / import_preview / import_execute
-  // / export / notification_expand / reconciliation(§3.27 明写七值闭集)
+  // / export / notification_expand / reconciliation / human_correction_commit
+  // Human correction jobs retain the original actor and atomic publication protocol.
   jobTypeCode String
 
   activityId          String

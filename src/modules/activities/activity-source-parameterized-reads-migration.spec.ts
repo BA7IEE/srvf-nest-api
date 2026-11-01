@@ -29,7 +29,7 @@ describe('source153 parameterized reads forward migration', () => {
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    expect(names).toHaveLength(153);
+    expect(names).toHaveLength(155);
     expect(names[152]).toBe(E4_MIGRATION_153);
     expect(e4HistoricalMigrationPrefix(names)).toHaveLength(137);
   });

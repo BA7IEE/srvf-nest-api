@@ -92,10 +92,22 @@ jobs:
         run: pnpm prisma:generate
 
       # Migration / seed 在 host 跑(镜像内不带 prisma CLI,与生产部署形态一致)。
+
+      # Fresh runner-local PostgreSQL only; never part of a production migration.
+      - name: Install sealed R5 CI roles
+        run: |
+          test "$GITHUB_ACTIONS" = true
+          docker exec -i u-nest-api-postgres psql -X -v ON_ERROR_STOP=1 -U postgres -d app_smoke < test/fixtures/r5-ci-sealed-roles.sql
+
       - name: Apply migrations to app_smoke
         env:
           DATABASE_URL: ${{ env.HOST_DATABASE_URL }}
         run: pnpm prisma:deploy
+
+      - name: Verify R5 default preflight refuses
+        run: |
+          test "$GITHUB_ACTIONS" = true
+          docker exec -i u-nest-api-postgres psql -X -v ON_ERROR_STOP=1 -U postgres -d app_smoke < test/fixtures/r5-ci-default-closed.sql
 
       # JWT_SECRET / SUPER_ADMIN_PASSWORD / STORAGE_ENCRYPTION_KEY / SMS_ENCRYPTION_KEY /
       # WECHAT_ENCRYPTION_KEY / WECOM_ENCRYPTION_KEY 仅活在该 job 生命周期,

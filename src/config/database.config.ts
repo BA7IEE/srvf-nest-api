@@ -3,6 +3,7 @@ import { registerAs } from '@nestjs/config';
 export interface DatabaseConfig {
   url: string | undefined;
   contributionShadowUrl: string | undefined;
+  humanCorrectionUrl?: string;
 }
 
 // 第 4 阶段不强校验 DATABASE_URL —— Prisma 自身在连接失败时会抛出明确错误。
@@ -14,5 +15,6 @@ export default registerAs(
     // Optional independent runtime identity; never fall back to DATABASE_URL.
     // Configuration alone neither creates a client nor enables shadow mode.
     contributionShadowUrl: process.env.CONTRIBUTION_SHADOW_DATABASE_URL || undefined,
+    humanCorrectionUrl: process.env.HUMAN_CORRECTION_DATABASE_URL || undefined,
   }),
 );

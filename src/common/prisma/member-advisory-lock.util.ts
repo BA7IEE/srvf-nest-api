@@ -55,6 +55,8 @@ export const MEMBER_TX_TIMEOUT_MS = MEMBER_LOCK_WAIT_BUDGET_MS + MEMBER_TX_WORK_
  * 普通成员操作、legacy apply 与非普通E4的直接账本提交继续使用 MEMBER_TX_TIMEOUT_MS。
  */
 export const HUMAN_CORRECTION_COMMIT_TX_TIMEOUT_MS = 15_000;
+/** Approved first-launch candidate, selected only by trusted bulk Human worker configuration. */
+export const HUMAN_BACKGROUND_BULK_COMMIT_TX_TIMEOUT_MS = 60_000;
 
 /**
  * 普通 policy_v1 E4 提交的具名工程例外（2026-10-24 明确委托）。
@@ -67,6 +69,7 @@ export const E4_LEDGER_COMMIT_TX_TIMEOUT_MS = 60_000;
 type MemberTransactionProfile =
   | 'standard'
   | 'd7-human-correction-commit'
+  | 'd7-human-background-bulk-commit'
   | 'e4-native-ledger-commit';
 
 /** PostgreSQL 55P03 = lock_not_available(等锁超过 lock_timeout)。 */
@@ -193,11 +196,13 @@ export async function runMemberLinearizedTransaction<T>(
   return prisma.$transaction((tx) => withBoundedMemberLockWait(tx, () => body(tx)), {
     isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
     timeout:
-      profile === 'd7-human-correction-commit'
-        ? HUMAN_CORRECTION_COMMIT_TX_TIMEOUT_MS
-        : profile === 'e4-native-ledger-commit'
-          ? E4_LEDGER_COMMIT_TX_TIMEOUT_MS
-          : MEMBER_TX_TIMEOUT_MS,
+      profile === 'd7-human-background-bulk-commit'
+        ? HUMAN_BACKGROUND_BULK_COMMIT_TX_TIMEOUT_MS
+        : profile === 'd7-human-correction-commit'
+          ? HUMAN_CORRECTION_COMMIT_TX_TIMEOUT_MS
+          : profile === 'e4-native-ledger-commit'
+            ? E4_LEDGER_COMMIT_TX_TIMEOUT_MS
+            : MEMBER_TX_TIMEOUT_MS,
   });
 }
 

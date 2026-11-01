@@ -51,6 +51,8 @@ import { memberIdentityData } from './member-identity.fixture';
 import { httpServer } from './http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { r5CiAuthenticated } from '../setup/r5-ci-instance-scope';
+import { assertR5CiActorsWithoutPositions } from './r5-ci-authenticated-runtime';
 import { installScratchDatabaseLease } from './scratch-database-lease';
 import { loadTestEnv } from '../setup/load-env';
 import { assertTestDatabaseUrl } from '../setup/test-db';
@@ -560,6 +562,7 @@ export function installE4ValidationDatabase(options?: {
 
 export interface E13Fixture {
   readonly app: INestApplication;
+  readonly humanApp?: INestApplication;
   readonly db: PrismaService;
   readonly creator: { readonly id: string; readonly memberId: string; readonly auth: string };
   readonly reviewer: { readonly id: string; readonly memberId: string; readonly auth: string };
@@ -662,6 +665,7 @@ async function grantOrganizationPermissions(
 
 export async function createE13Fixture(): Promise<E13Fixture> {
   const app = await createTestApp();
+  let humanApp: INestApplication | undefined;
   try {
     await resetDb(app);
     const db = app.get(PrismaService);
@@ -739,9 +743,12 @@ export async function createE13Fixture(): Promise<E13Fixture> {
       CONTRIBUTION_POLICY_SELECTION_PERMISSIONS,
     );
     await grantOrganizationPermissions(fixture, reviewerUser.id, REVIEWER_PERMISSIONS);
+    await assertR5CiActorsWithoutPositions(db);
+    if (r5CiAuthenticated()) humanApp = await createTestApp({ r5Human: true });
 
     return {
       ...fixture,
+      humanApp,
       creator: {
         id: creatorUser.id,
         memberId: creatorMember.id,
@@ -755,6 +762,7 @@ export async function createE13Fixture(): Promise<E13Fixture> {
     };
   } catch (error) {
     try {
+      await humanApp?.close();
       await app.close();
     } catch (closeError) {
       throw new AggregateError([error, closeError], 'Fixture initialization and cleanup failed');
@@ -764,6 +772,7 @@ export async function createE13Fixture(): Promise<E13Fixture> {
 }
 
 export async function closeE13Fixture(fixture: E13Fixture | undefined): Promise<void> {
+  await fixture?.humanApp?.close();
   await fixture?.app.close();
 }
 
@@ -978,6 +987,7 @@ export async function createE4Fixture(): Promise<E4Fixture> {
         scopeType: BindingScopeType.GLOBAL,
       },
     });
+    await assertR5CiActorsWithoutPositions(fixture.db);
     return {
       ...fixture,
       finalReviewer: {
