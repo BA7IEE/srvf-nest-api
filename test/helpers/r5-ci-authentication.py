@@ -68,7 +68,17 @@ def save(name, value):
 def clean(value):
     for secret in passwords:
         value = value.replace(secret, '[REDACTED]')
+    value = re.sub(r"(?i)postgres(?:ql)?://[^\s\"'<>]+", '[REDACTED_DATABASE_URL]', value)
+    value = re.sub(r'(?i)\bBearer\s+[a-z0-9._~+/-]+', 'Bearer [REDACTED]', value)
+    value = re.sub(r'\beyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\b', '[REDACTED_JWT]', value)
+    value = re.sub(r'(?i)([?&](?:sig|signature|token|access_token|key)=)[^&\s]+', r'\1[REDACTED]', value)
     return value
+
+
+def regression_failure_tail(stderr, stdout):
+    # Sanitize before truncating: cutting a secret first could hide its prefix
+    # from the redactor. Only failures are emitted, bounded to 12KiB.
+    return clean(stderr + '\n' + stdout)[-12288:]
 
 
 def run(argv, stem, text=None, allow=False, cleanup=False, timeout=30, persist=True):
@@ -297,6 +307,9 @@ try:
             stage.update(exitCode=p.returncode, endedAt=stamp())
             save('REGRESSION-STAGES.json', stages)
             if p.returncode:
+                print(json.dumps({'stage': 'JEST_REGRESSION_FAILED', 'file': suite['file'],
+                                  'exitCode': p.returncode,
+                                  'diagnosticTail': regression_failure_tail(p.stderr, p.stdout)}), flush=True)
                 raise RuntimeError('REGRESSION_FAILED_' + suite['file'])
         receipt['status'] = 'PASS_REAL_AUTHENTICATION_AND_ALL_FOUR_REGRESSION_FILES'
 except BaseException as error:
