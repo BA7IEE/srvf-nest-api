@@ -4,6 +4,7 @@ import {
   observeD7Receipt,
   preserveD7Prepare,
   safeD7Diagnostic,
+  observeD7SetupRejection,
   type D7SetupBatch,
 } from './d7-setup-observation';
 
@@ -26,6 +27,25 @@ const metadata: D7SetupBatch = {
 };
 
 describe('whole D7 setup diagnostic preserves business execution', () => {
+  it('observes the actual setup rejection once without replacing it when output fails', async () => {
+    const failure = new Error('original');
+    const work = jest.fn(() => Promise.reject(failure));
+    const report = jest.fn(() => {
+      throw new Error('output failed');
+    });
+    await expect(observeD7SetupRejection(work, report)).rejects.toBe(failure);
+    expect(work).toHaveBeenCalledTimes(1);
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report).toHaveBeenCalledWith(failure);
+  });
+  it('returns the actual setup value without reporting a failure', async () => {
+    const value = {};
+    const report = jest.fn();
+    await expect(observeD7SetupRejection(() => Promise.resolve(value), report)).resolves.toBe(
+      value,
+    );
+    expect(report).not.toHaveBeenCalled();
+  });
   it('disabled observation preserves the original Promise and synchronous error', () => {
     const value = Promise.resolve({ count: 100 });
     expect(observeD7Setup(undefined, 'base', null, () => value)).toBe(value);

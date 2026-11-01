@@ -62,4 +62,14 @@ describe('bounded CI regression diagnostics expose the original failure safely',
     expect(result).toContain('bounded middle omitted');
     expect(result.length).toBeLessThanOrEqual(12_288);
   });
+  it('preserves the closed main-prepare error record from the middle of verbose output', () => {
+    const record =
+      '[d7-main-prepare-failure] {"population":2000,"code":"PrismaClientKnownRequestError:P2028:unavailable"}';
+    const result = diagnostic(
+      'FAIL D7\n' + 'x'.repeat(20_000) + '\n  ' + record + '\n' + 'y'.repeat(20_000),
+    );
+    expect(result).toContain(record);
+    expect(result).toContain('FAIL D7');
+    expect(result.length).toBeLessThanOrEqual(12_288);
+  });
 });

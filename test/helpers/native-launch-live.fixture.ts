@@ -7,6 +7,7 @@ import request from 'supertest';
 import type { ContributionPolicyDefinition } from '../../src/modules/activities/activity-contribution-policy-definition';
 import type { AppPrepareTimeSettlementDto } from '../../src/modules/activities/dto/app/app-activity-time-settlement.dto';
 import { httpServer } from './http-server';
+import { r5CurrentBusinessTableNames } from './r5-current-source-pins';
 import type { E4Fixture } from './activity-contribution-policy.fixture';
 import {
   createNativeLaunchPublication,
@@ -227,7 +228,7 @@ export async function createNativeLaunchLiveSource(
   };
 }
 
-/** All rows/columns from all 196 business tables, independently committed visibility. */
+/** All rows/columns from the exact frozen business table set, committed visibility. */
 export async function nativeLaunchBusinessFingerprint(db: PrismaClient, stage: NativeLaunchStage) {
   const tables = await stage(
     'FINGERPRINT_TABLES',
@@ -237,7 +238,10 @@ export async function nativeLaunchBusinessFingerprint(db: PrismaClient, stage: N
     ORDER BY relname COLLATE "C"
   `,
   );
-  assert.equal(tables.length, 196);
+  assert.deepEqual(
+    tables.map(({ name }) => name),
+    r5CurrentBusinessTableNames(),
+  );
   const rows: { name: string; hash: string }[] = [];
   for (const { name } of tables) {
     const [row] = await stage('FINGERPRINT_TABLE', () =>

@@ -89,7 +89,14 @@ def regression_failure_tail(stderr, stdout):
     if len(text) <= 12288:
         return text
     marker = '\n[... bounded middle omitted ...]\n'
-    return text[:8192] + marker + text[-(4096 - len(marker)):]
+    # This fixed test-owned record contains only closed codes, source locations
+    # and timings. Keep it when verbose fixture traces occupy the middle.
+    priority = '\n'.join(line.strip() for line in text.splitlines()
+                         if line.strip().startswith('[d7-main-prepare-failure] {')
+                         and len(line) <= 1536)
+    priority = priority[:4096]
+    prefix = priority + '\n' if priority else ''
+    return prefix + text[:8192 - len(prefix)] + marker + text[-(4096 - len(marker)):]
 
 
 def run(argv, stem, text=None, allow=False, cleanup=False, timeout=30, persist=True):

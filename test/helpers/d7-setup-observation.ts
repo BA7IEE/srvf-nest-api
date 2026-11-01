@@ -88,6 +88,19 @@ export function safeD7Diagnostic(work: () => unknown, onFailure?: () => void): b
   }
 }
 
+/** Observe only a rejection; the original call, value and error remain authoritative. */
+export async function observeD7SetupRejection<T>(
+  work: () => Promise<T>,
+  report: (error: unknown) => void,
+): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    safeD7Diagnostic(() => report(error));
+    throw error;
+  }
+}
+
 export async function observeD7Receipt<T>(
   original: () => Promise<T>,
   observe: () => Promise<void>,

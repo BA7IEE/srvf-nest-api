@@ -70,6 +70,7 @@ import {
   observeD7Receipt,
   preserveD7Prepare,
   safeD7Diagnostic,
+  observeD7SetupRejection,
   type D7SetupBatch,
 } from '../helpers/d7-setup-observation';
 let activeSetupObservation: D7SetupObservation | undefined;
@@ -286,6 +287,8 @@ function commitErrorLocation(error: unknown) {
     'src/modules/activities/participation-time-correction.service.ts',
     'src/modules/activities/ledger-posting.service.ts',
     'src/modules/activities/correction-audit-recorder.ts',
+    'src/modules/activities/activity-time-settlement.service.ts',
+    'src/modules/activities/activity-time-settlement-query.service.ts',
     'src/modules/attendances/attendance-correction-write.service.ts',
     'src/common/prisma/member-advisory-lock.util.ts',
   ]);
@@ -335,7 +338,9 @@ function diagnosticCode(error: unknown): string {
       '40001',
       '40P01',
       '53200',
+      '53100',
       '53400',
+      '54001',
       '08003',
       '08006',
       '57P01',
@@ -4211,7 +4216,33 @@ describe('D7-1 recognition correction real transaction', () => {
     async (population) => {
       const p = population === 1 ? await prepareSource() : await createCapacitySource(population);
       if (population === 1) await recognize(p);
-      const preparedTime = await post(p.url + '/prepare', prepareCommand(p));
+      const service = f.app.get(ActivityTimeSettlementService);
+      const originalPrepare = service.prepare.bind(service);
+      const prepareSpy = jest.spyOn(service, 'prepare').mockImplementation((...args) => {
+        const enteredMs = performance.now();
+        return observeD7SetupRejection(
+          () => originalPrepare(...args),
+          (error) => {
+            // Closed projections only: no message, query, parameters, IDs or credentials.
+            console.info(
+              '[d7-main-prepare-failure] ' +
+                JSON.stringify({
+                  population,
+                  elapsedMs: Math.round(performance.now() - enteredMs),
+                  code: diagnosticCode(error),
+                  ...commitErrorLocation(error),
+                }),
+            );
+          },
+        );
+      });
+      const preparedTime = await (async () => {
+        try {
+          return await post(p.url + '/prepare', prepareCommand(p));
+        } finally {
+          prepareSpy.mockRestore();
+        }
+      })();
       const submittedTime = await post(p.url + '/submit', {
         operationKey: f.key('submit_time'),
         expectedDraftVersion: p.proof.expectedDraftVersion,
