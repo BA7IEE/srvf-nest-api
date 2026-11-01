@@ -11,6 +11,15 @@ import {
 
 const HISTORICAL_CLUSTER = '7695840193603043362';
 export const R5_CI_AUTHENTICATED_FILES = Object.freeze(suites.map(({ file }) => file));
+// Public test values only. Connection URLs and JWT material remain in their
+// separate stdin/config-token paths and never enter this environment map.
+export const R5_CI_NONSECRET_APP_ENV = Object.freeze({
+  APP_ENV: 'test',
+  APP_PORT: '3001',
+  APP_CORS_ORIGIN: 'http://localhost:5173',
+  ENABLE_SWAGGER: 'true',
+  LOGIN_THROTTLE_LIMIT: '50',
+});
 
 export interface R5CiInput {
   readonly identity: R5CiInstanceIdentity;

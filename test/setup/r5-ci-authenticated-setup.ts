@@ -2,7 +2,11 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { closeR5CiRuntime } from '../helpers/r5-ci-authenticated-runtime';
-import { registerR5CiStdin, R5_CI_AUTHENTICATED_FILES } from './r5-ci-instance-scope';
+import {
+  registerR5CiStdin,
+  R5_CI_AUTHENTICATED_FILES,
+  R5_CI_NONSECRET_APP_ENV,
+} from './r5-ci-instance-scope';
 
 // One complete file per process and fresh driver-owned database. Never invoke
 // normal template/worker clone setup or load .env.test into process.env here.
@@ -32,8 +36,7 @@ if (
 )
   throw new Error('R5_CI_ISOLATED_PROCESS_REQUIRED');
 registerR5CiStdin();
-process.env.APP_ENV = 'test';
-process.env.LOGIN_THROTTLE_LIMIT = '1000';
+Object.assign(process.env, R5_CI_NONSECRET_APP_ENV);
 const storage = mkdtempSync(join(tmpdir(), 'srvf-r5-ci-storage-'));
 process.env.STORAGE_LOCAL_ROOT = storage;
 afterAll(async () => {
