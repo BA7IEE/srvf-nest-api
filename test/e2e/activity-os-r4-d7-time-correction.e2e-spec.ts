@@ -19,6 +19,8 @@ import request from 'supertest';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { CorrectionApplicationService } from '../../src/modules/activities/correction-application.service';
+import { ActivityTimeCorrectionCommandService } from '../../src/modules/activities/activity-time-correction-command.service';
+import { probeOpenCorrectionCommit } from '../helpers/r5-open-phase-guard-probe';
 import { CorrectionAuditRecorder } from '../../src/modules/activities/correction-audit-recorder';
 import { CorrectionTimeAllocationService } from '../../src/modules/activities/correction-time-allocation.service';
 import { AttendanceCorrectionWriteService } from '../../src/modules/attendances/attendance-correction-write.service';
@@ -1276,6 +1278,35 @@ describe('D7-1 recognition correction real transaction', () => {
   let f: D13Fixture;
   let actor: CurrentUserPayload;
   const meta = { requestId: 'd5-e2e', ip: null, ua: null };
+  async function probePreparedCommitPhase(
+    activityId: string,
+    requestId: string,
+    baseVersionId: string,
+    prepared: { applicationId: string; postingBatchId: string },
+    probe: (tx: Prisma.TransactionClient) => Promise<void>,
+  ): Promise<void> {
+    const reviewer = await f.db.user.findUniqueOrThrow({
+      where: { id: f.reviewer.id },
+      select: { id: true, memberId: true, username: true, role: true, status: true },
+    });
+    await probeOpenCorrectionCommit(
+      prepared.applicationId,
+      () =>
+        humanCorrectionTestService(f, ActivityTimeCorrectionCommandService).commit(
+          activityId,
+          requestId,
+          {
+            expectedBaseSettlementVersionId: baseVersionId,
+            correctionApplicationId: prepared.applicationId,
+            postingBatchId: prepared.postingBatchId,
+            operationKey: f.key('guard_probe_commit'),
+          },
+          reviewer,
+          meta,
+        ),
+      probe,
+    );
+  }
   const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
   const originalEnvironment = {
     worker: process.env.JEST_WORKER_ID,
@@ -3019,8 +3050,8 @@ describe('D7-1 recognition correction real transaction', () => {
     });
     const sourceHash = sourceSnapshot?.sourceHash;
     if (typeof sourceHash !== 'string') throw new Error('base source hash required');
-    await expect(
-      f.db.$executeRaw(
+    const insertMismatchedBinding = (tx: Prisma.TransactionClient) =>
+      tx.$executeRaw(
         Prisma.sql`
           INSERT INTO "CorrectionTimeAllocationBinding" (
             "id", "proofId", "activityId", "participationIdentityId", "segmentKey",
@@ -3033,8 +3064,21 @@ describe('D7-1 recognition correction real transaction', () => {
             ${pendingAllocation.id}, ${sourceHash}
           )
         `,
-      ),
-    ).rejects.toThrow('binding does not match its pending allocation fact');
+      );
+    await expect(insertMismatchedBinding(f.db)).rejects.toThrow(
+      'write requires this transaction and actor open phase',
+    );
+    await probePreparedCommitPhase(
+      p.activityId,
+      resubmittedData.requestId,
+      timeRevision.settlementVersionId,
+      preparedData,
+      async (tx) => {
+        await expect(insertMismatchedBinding(tx)).rejects.toThrow(
+          'binding does not match its pending allocation fact',
+        );
+      },
+    );
     expect(
       await f.db.correctionTimeAllocationBinding.count({ where: { proofId: sourceProof.id } }),
     ).toBe(0);
@@ -3045,8 +3089,8 @@ describe('D7-1 recognition correction real transaction', () => {
     const baseAllocation = await f.db.participantTimeAllocationRevision.findUniqueOrThrow({
       where: { id: allocation.id },
     });
-    await expect(
-      f.db.participantTimeAllocationRevision.create({
+    const insertMismatchedAllocation = (tx: Prisma.TransactionClient) =>
+      tx.participantTimeAllocationRevision.create({
         data: {
           ...baseAllocation,
           id: f.key('allocation_guard_mismatch'),
@@ -3061,8 +3105,21 @@ describe('D7-1 recognition correction real transaction', () => {
           settlementDraftContentHash: null,
           allocationJson: baseAllocation.allocationJson as Prisma.InputJsonValue,
         },
-      }),
-    ).rejects.toThrow('correction allocation differs from its pending fact');
+      });
+    await expect(insertMismatchedAllocation(f.db)).rejects.toThrow(
+      'write requires this transaction and actor open phase',
+    );
+    await probePreparedCommitPhase(
+      p.activityId,
+      resubmittedData.requestId,
+      timeRevision.settlementVersionId,
+      preparedData,
+      async (tx) => {
+        await expect(insertMismatchedAllocation(tx)).rejects.toThrow(
+          'correction allocation differs from its pending fact',
+        );
+      },
+    );
     expect(
       await f.db.participantTimeAllocationRevision.count({
         where: { correctionPendingAllocationId: pendingAllocation.id },
@@ -3294,19 +3351,33 @@ describe('D7-1 recognition correction real transaction', () => {
         // guard.  Before materialization and its immutable receipt exist, the
         // database visibility trigger must reject the final status transition
         // and leave the batch ready for the real atomic commit.
-        let finalGuardError: unknown;
-        try {
-          await f.db.ledgerPostingBatch.update({
+        await expect(
+          f.db.ledgerPostingBatch.update({
             where: { id: preparedData.postingBatchId },
             data: { statusCode: 'committed', committedAt: new Date() },
-          });
-        } catch (error) {
-          finalGuardError = error;
-        }
-        expect(finalGuardError).toBeInstanceOf(Prisma.PrismaClientUnknownRequestError);
-        expect((finalGuardError as Error).message).toContain('code: "23514"');
-        expect((finalGuardError as Error).message).toContain(
-          'V3 correction proof bindings are incomplete or mismatched',
+          }),
+        ).rejects.toThrow('write requires this transaction and actor open phase');
+        await probePreparedCommitPhase(
+          p.activityId,
+          submittedData.requestId,
+          timeRevision.settlementVersionId,
+          preparedData,
+          async (tx) => {
+            let finalGuardError: unknown;
+            try {
+              await tx.ledgerPostingBatch.update({
+                where: { id: preparedData.postingBatchId },
+                data: { statusCode: 'committed', committedAt: new Date() },
+              });
+            } catch (error) {
+              finalGuardError = error;
+            }
+            expect(finalGuardError).toBeInstanceOf(Prisma.PrismaClientUnknownRequestError);
+            expect((finalGuardError as Error).message).toContain('code: "23514"');
+            expect((finalGuardError as Error).message).toContain(
+              'V3 correction proof bindings are incomplete or mismatched',
+            );
+          },
         );
         expect(
           await f.db.ledgerPostingBatch.findUniqueOrThrow({

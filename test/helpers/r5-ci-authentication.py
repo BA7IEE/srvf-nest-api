@@ -24,6 +24,12 @@ DB = 'app_test_r5_setmat_20261029_q1'
 ROLES = ['r5_boundary_owner_h7c6', 'r5_boundary_caller_h7c6', 'r5_mat_writer_20261029_q1',
          'r5_human_queue_login_20261030_q1', 'r5_untrusted_caller_login_20261030_q1']
 DOCKER = ['docker', '--host=unix:///var/run/docker.sock']
+# The original combined 3.5GiB fixture ceiling is unchanged. PG now has room
+# for schema/data/WAL; Node's smaller share still bounds each serial Jest run.
+PG_MEMORY_BYTES = 1536 * 1024**2
+NODE_MEMORY_BYTES = 2 * 1024**3
+PG_DATA_TMPFS_BYTES = 1024**3
+FIXTURE_MEMORY_BUDGET_BYTES = 3584 * 1024**2
 parser = argparse.ArgumentParser()
 parser.add_argument('--checkout', required=True)
 parser.add_argument('--evidence', required=True)
@@ -133,12 +139,15 @@ def authenticated(role, password, db, text, stem, allow=False):
 
 
 try:
+    assert PG_MEMORY_BYTES + NODE_MEMORY_BYTES == FIXTURE_MEMORY_BUDGET_BYTES
+    assert PG_DATA_TMPFS_BYTES < PG_MEMORY_BYTES
     free = shutil.disk_usage(repo).free
     memory = memory_admission()
     save('ADMISSION.json', {'diskFreeBytes': free, **memory,
-                           'pgCpu': 1, 'pgMemoryBytes': 512 * 1024**2,
-                           'nodeCpu': 1, 'nodeMemoryBytes': 3 * 1024**3, 'pidsPerContainer': 128,
-                           'dataTmpfsBytes': 256 * 1024**2})
+                           'pgCpu': 1, 'pgMemoryBytes': PG_MEMORY_BYTES,
+                           'nodeCpu': 1, 'nodeMemoryBytes': NODE_MEMORY_BYTES, 'pidsPerContainer': 128,
+                           'dataTmpfsBytes': PG_DATA_TMPFS_BYTES,
+                           'combinedMemoryBudgetBytes': FIXTURE_MEMORY_BUDGET_BYTES})
     assert free > 10 * 1024**3, 'DISK_ADMISSION_REJECTED_GT_10GIB'
     assert memory['memoryAvailableBytes'] > 4 * 1024**3, 'MEMORY_ADMISSION_REJECTED_GT_4GIB'
     source_paths = ['test/helpers/r5-ci-authentication.py', 'test/helpers/r5_ci_resources.py',
@@ -176,8 +185,8 @@ try:
              'exec su-exec postgres postgres -D /var/lib/postgresql/data '
              '-c listen_addresses=127.0.0.1 -c unix_socket_directories=' + socket)
     cid = docker(['run', '--detach', '--pull=never', '--name', name, '--label', label,
-                  '--network', 'none', '--cpus', '1', '--memory', '512m', '--pids-limit', '128',
-                  '--tmpfs', '/var/lib/postgresql/data:rw,size=268435456', *socket_mount, '--entrypoint', '/bin/sh',
+                  '--network', 'none', '--cpus', '1', '--memory', str(PG_MEMORY_BYTES), '--pids-limit', '128',
+                  '--tmpfs', '/var/lib/postgresql/data:rw,size=' + str(PG_DATA_TMPFS_BYTES), *socket_mount, '--entrypoint', '/bin/sh',
                   PG_IMAGE, '-ceu', shell], 'create-pg').stdout.strip()
     assert re.fullmatch('[a-f0-9]{64}', cid)
     receipt['containerId'] = cid
@@ -222,7 +231,7 @@ try:
     negative = sql('\\set VERBOSITY verbose\nSET ROLE ' + ROLES[1] + '; SELECT public.r5_correction_boundary_preflight();', 'default-null', allow=True)
     assert negative.returncode == 3 and '55000: materialization catalog pins are not bound' in negative.stderr
     app_cid = docker(['run', '--detach', '--pull=never', '--name', name + '-app', '--label', label,
-                      '--network', 'container:' + cid, '--cpus', '1', '--memory', '3g', '--pids-limit', '128',
+                      '--network', 'container:' + cid, '--cpus', '1', '--memory', str(NODE_MEMORY_BYTES), '--pids-limit', '128',
                       '--mount', 'type=bind,src=' + str(repo) + ',dst=' + str(repo) + ',readonly',
                       *(['--mount', 'type=volume,source=' + socket_volume + ',target=' + socket + ',readonly'] if socket_volume else []),
                       '--workdir', str(repo), NODE_IMAGE, 'node', '-e', 'setInterval(()=>{},1000)'], 'create-node').stdout.strip()
@@ -353,7 +362,7 @@ finally:
             cleanup['phase'] = 'STOP_PG'
             docker(['exec', '--user', 'postgres', cid, 'pg_ctl', '-D', '/var/lib/postgresql/data', '-m', 'fast', '-w', '-t', '10', 'stop'], 'pg-normal-stop', cleanup=True, timeout=15, allow=True)
             exited = docker(['wait', cid], 'pg-wait', cleanup=True, timeout=10)
-            assert exited.stdout.strip() == '0'
+            assert exited.stdout.strip() == '0', 'PG_ABNORMAL_EXIT_' + exited.stdout.strip()
             cleanup['phase'] = 'REMOVE_PG'
             docker(['rm', cid], 'pg-remove', cleanup=True)
             left = docker(['ps', '-aq', '--filter', 'label=' + label], 'no-containers', cleanup=True).stdout.strip()
