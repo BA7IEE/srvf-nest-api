@@ -5,6 +5,7 @@ import {
   assertTestDatabaseUrl,
 } from './test-db';
 import { deriveTestDbName } from './worktree-db';
+import { r5CiTestDatabaseUrl } from './r5-ci-instance-scope';
 
 const TRUNCATE_TRIGGERS = [
   { table: 'ParticipantContributionEvaluation', trigger: 'e4_evaluation_no_truncate' },
@@ -36,6 +37,7 @@ const TRUNCATE_TRIGGERS = [
   { table: 'CorrectionPendingTimeAllocationEvidence', trigger: 'cptae_no_truncate' },
   { table: 'CorrectionTimeAllocationBinding', trigger: 'ctab_no_truncate' },
   { table: 'CorrectionTimeSourceProof', trigger: 'ctsp_no_truncate' },
+  { table: 'CorrectionWritePhase', trigger: 'r5_phase_no_truncate' },
   { table: 'ParticipationTimeCorrectionCommitReceipt', trigger: 'ptcr_no_truncate' },
   { table: 'ParticipationTimeCorrectionEntry', trigger: 'ptce_no_truncate' },
   { table: 'ParticipationTimeCorrectionManifest', trigger: 'ptcm_no_truncate' },
@@ -45,7 +47,7 @@ const TRUNCATE_TRIGGERS = [
 
 /** Fixed SQL fragments for existing psql batches; caller supplies BEGIN/COMMIT on one connection. */
 export function timeLedgerFixtureTriggerSql(expectedDatabase = deriveTestDbName()) {
-  assertTestDatabaseUrl(process.env.DATABASE_URL);
+  assertTestDatabaseUrl(r5CiTestDatabaseUrl());
   assertDroppableTestDbName(expectedDatabase);
   const dbLiteral = "'" + expectedDatabase.replaceAll("'", "''") + "'";
   // Names come exclusively from the fixed allowlist, never caller input.
@@ -155,6 +157,7 @@ export function timeLedgerFixtureTriggerSql(expectedDatabase = deriveTestDbName(
                   (item->>'table'='CorrectionPendingTimeAllocationEvidence' AND item->>'trigger'='cptae_no_truncate') OR
                   (item->>'table'='CorrectionTimeAllocationBinding' AND item->>'trigger'='ctab_no_truncate') OR
                   (item->>'table'='CorrectionTimeSourceProof' AND item->>'trigger'='ctsp_no_truncate') OR
+                  (item->>'table'='CorrectionWritePhase' AND item->>'trigger'='r5_phase_no_truncate') OR
                   (item->>'table'='ParticipationTimeLedgerEntry' AND item->>'trigger'='ptle_no_truncate') OR
                   (item->>'table'='ParticipationTimeCorrectionCommitReceipt' AND item->>'trigger'='ptcr_no_truncate') OR
                   (item->>'table'='ParticipationTimeCorrectionEntry' AND item->>'trigger'='ptce_no_truncate') OR
@@ -180,7 +183,7 @@ export async function withTimeLedgerFixtureCleanup<T>(
   tx: Prisma.TransactionClient,
   cleanup: (tx: Prisma.TransactionClient) => Promise<T>,
 ): Promise<T> {
-  assertTestDatabaseUrl(process.env.DATABASE_URL);
+  assertTestDatabaseUrl(r5CiTestDatabaseUrl());
   await assertConnectedTestDatabase(tx);
   const changed: { table: string; trigger: string; enabled: string }[] = [];
   for (const { table, trigger } of TRUNCATE_TRIGGERS) {

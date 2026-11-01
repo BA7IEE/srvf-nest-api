@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import time
 from urllib.parse import quote
+from r5_ci_resources import memory_admission
 
 PG_IMAGE = 'sha256:81bd698b4594e751a3269e4dcd3e03a4a0ec0daf7b72e7aa1abd43cce9887542'
 NODE_IMAGE = 'node@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413'
@@ -118,20 +119,18 @@ def authenticated(role, password, db, text, stem, allow=False):
 
 try:
     free = shutil.disk_usage(repo).free
-    configured_memory = Path('/sys/fs/cgroup/memory.max').read_text().strip()
-    if configured_memory == 'max':
-        memory_info = Path('/proc/meminfo').read_text()
-        memory_limit = int(re.search(r'^MemTotal:\s+(\d+)', memory_info, re.M).group(1)) * 1024
-        available = int(re.search(r'^MemAvailable:\s+(\d+)', memory_info, re.M).group(1)) * 1024
-        memory_used = memory_limit - available
-    else:
-        memory_limit = int(configured_memory)
-        memory_used = int(Path('/sys/fs/cgroup/memory.current').read_text())
-    assert free > 10 * 1024**3 and memory_limit - memory_used > 4 * 1024**3
-    save('ADMISSION.json', {'diskFreeBytes': free, 'memoryLimitBytes': memory_limit,
-                           'memoryUsedBytes': memory_used, 'pgCpu': 1, 'pgMemoryBytes': 512 * 1024**2,
+    memory = memory_admission()
+    save('ADMISSION.json', {'diskFreeBytes': free, **memory,
+                           'pgCpu': 1, 'pgMemoryBytes': 512 * 1024**2,
                            'nodeCpu': 1, 'nodeMemoryBytes': 3 * 1024**3, 'pidsPerContainer': 128,
                            'dataTmpfsBytes': 256 * 1024**2})
+    assert free > 10 * 1024**3, 'DISK_ADMISSION_REJECTED_GT_10GIB'
+    assert memory['memoryAvailableBytes'] > 4 * 1024**3, 'MEMORY_ADMISSION_REJECTED_GT_4GIB'
+    source_paths = ['test/helpers/r5-ci-authentication.py', 'test/helpers/r5_ci_resources.py',
+                    'test/helpers/r5-ci-auth-probe.ts', 'test/helpers/r5-ci-source-binding.ts',
+                    'test/fixtures/r5-ci-source-catalog.json', 'test/r5-authenticated-ci-suites.json']
+    save('EXECUTION-SOURCE.json', {p: hashlib.sha256((repo / p).read_bytes()).hexdigest()
+                                 for p in source_paths})
     assert not docker(['ps', '-aq', '--filter', 'label=srvf.r5.ci-auth'], 'other-fixture-preflight').stdout.strip()
     save('WINDOW.json', {'startedAt': stamp(), 'stageLimitSeconds': 600,
                          'controlLimitSeconds': 1800, 'authenticationLimitSeconds': 180,
@@ -212,6 +211,10 @@ try:
                       '--mount', 'type=bind,src=' + str(repo) + ',dst=' + str(repo) + ',readonly',
                       *(['--mount', 'type=volume,source=' + socket_volume + ',target=' + socket + ',readonly'] if socket_volume else []),
                       '--workdir', str(repo), NODE_IMAGE, 'node', '-e', 'setInterval(()=>{},1000)'], 'create-node').stdout.strip()
+    app_env = json.loads(docker(['inspect', '--format', '{{json .Config.Env}}', app_cid], 'node-environment').stdout)
+    assert not {'DATABASE_URL', 'HUMAN_CORRECTION_DATABASE_URL', 'CONTRIBUTION_SHADOW_DATABASE_URL'} & {
+        value.partition('=')[0] for value in app_env
+    }, 'NODE_FIXTURE_MUST_NOT_INHERIT_DATABASE_URLS'
     built = json.loads(probe({'mode': 'build', 'identity': identity}, 'build-source').stdout)
     for section, query_file in [('base', 'r5-setmat-catalog-query.sql'), ('supplemental', 'r5-setmat-async-job-catalog.sql')]:
         actual = query((repo / 'test/helpers' / query_file).read_text(), section + '-catalog')
@@ -287,8 +290,7 @@ try:
             save('REGRESSION-STAGES.json', stages)
             receipt['businessCalls'] = 'REGRESSION_TEST_PROCESSES_STARTED_NOT_COUNTED'
             p = docker(['exec', '-i', '--env', 'SRVF_R5_CI_AUTHENTICATED=1',
-                        '--env', 'DATABASE_URL=', '--env', 'HUMAN_CORRECTION_DATABASE_URL=',
-                        '--env', 'CONTRIBUTION_SHADOW_DATABASE_URL=', app_cid,
+                        app_cid,
                         'node', './node_modules/jest/bin/jest.js', '--config', suite['config'],
                         '--runInBand', '--runTestsByPath', 'test/e2e/' + suite['file']],
                        'regression-' + str(index + 1), text=private_input, timeout=575, allow=True)
@@ -341,5 +343,6 @@ finally:
     save('CLEANUP.json', cleanup)
     receipt['cleanup'] = cleanup
     save('RESULT.json', receipt)
-    print(json.dumps({'status': receipt['status'], 'cleanup': cleanup['status'], 'elapsedSeconds': time.monotonic() - started}), flush=True)
+    print(json.dumps({'status': receipt['status'], 'error': receipt.get('error'),
+                      'cleanup': cleanup['status'], 'elapsedSeconds': time.monotonic() - started}), flush=True)
 raise SystemExit(0 if receipt['status'].startswith('PASS') and receipt['cleanup']['status'] == 'PASS' else 1)

@@ -3426,6 +3426,9 @@ describe('OpenAPI 契约快照', () => {
       [prefix + '/{requestId}/resubmit', 'post', '201'],
       [prefix + '/{requestId}/prepare', 'post', '200'],
       [prefix + '/{requestId}/commit', 'post', '200'],
+      [prefix + '/{requestId}/commit-jobs', 'post', '201'],
+      [prefix + '/{requestId}/commit-jobs/{jobId}', 'get', '200'],
+      [prefix + '/{requestId}/commit-jobs/{jobId}/retry', 'post', '200'],
     ] as const;
     expect(
       Object.keys(doc.paths)
