@@ -25,6 +25,7 @@ import {
   frozen137FirstReviewCatalogQuery,
   frozen137FirstReviewCatalogTx,
 } from '../../../test/helpers/e4-frozen137-first-review-catalog';
+import { pre155FirstReviewQuery } from '../../../test/helpers/e4-pre155-correction.fixture';
 
 const FIRST_REVIEW_TEST_GUARD = {
   valid: true,
@@ -485,6 +486,46 @@ describe('§12.26 first-review candidate and actual constraint barrier', () => {
       ),
     ).toBe(query.sql);
     expect(query.sql).not.toContain('21fe9ecf6df989a3f8fa5878df40b93c');
+  });
+
+  it('retains the complete pre155 catalog and barrier predicates, parameter order and real constraint call', async () => {
+    const { service, prismaTx, tx } = setup();
+    tx.activitySettlementContributionRevision.findFirst.mockResolvedValue(firstReviewProof());
+    tx.$queryRaw.mockResolvedValue([FIRST_REVIEW_TEST_GUARD]);
+    await service.readFirstReviewBarrierCandidateInTx(prismaTx, firstReviewAnchor());
+    const base = tx.$queryRaw.mock.calls[0] as [TemplateStringsArray, Prisma.Sql];
+    const baseQuery = Prisma.sql(base[0], base[1]);
+    tx.$queryRaw.mockReset().mockResolvedValue([{ ...FIRST_REVIEW_TEST_GUARD, anchorValid: true }]);
+    await service.assertFirstReviewBarrierInTx(prismaTx, firstReviewAnchor(), {
+      proof: firstReviewProof(),
+      guard: FIRST_REVIEW_TEST_GUARD,
+    });
+    const barrier = tx.$queryRaw.mock.calls[0] as [
+      TemplateStringsArray,
+      string,
+      string,
+      Prisma.Sql,
+    ];
+    const barrierQuery = Prisma.sql(barrier[0], ...barrier.slice(1));
+    for (const query of [baseQuery, barrierQuery]) {
+      const converted = pre155FirstReviewQuery(query);
+      expect(
+        converted.sql.replace(
+          '40b56bac5a571c56e589cbc549419bfa',
+          '8922a6d0c4642ba1c99f679cb9581065',
+        ),
+      ).toBe(query.sql);
+      expect(converted.values).toEqual(query.values);
+      expect(() => pre155FirstReviewQuery(Prisma.sql`${query} ${1}`)).toThrow(
+        'PRE155_REVIEW_QUERY_SCOPE_REFUSED',
+      );
+      expect(() => pre155FirstReviewQuery(Prisma.raw(query.sql + '; SELECT 1'))).toThrow(
+        'PRE155_REVIEW_QUERY_SCOPE_REFUSED',
+      );
+    }
+    expect(tx.$executeRaw.mock.calls).toEqual([
+      [['SET CONSTRAINTS public.e4_native_version_complete_guard IMMEDIATE']],
+    ]);
   });
 
   it.each([

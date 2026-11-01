@@ -444,24 +444,24 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > 引用本表前先看时点;要当前值请直接跑 `pnpm docs:boundaries`(`--violations`)读
 > `stateGovernance` 块,或数 `harness/state-machines.json` 的 `entries`。
 
-**取数时点:2026-10-04(Activity OS R5 / E4 本地候选，未提交、未合并)**
+**取数时点:2026-11-01(R5 SQL155 物理镜像候选，未合并)**
 
 上一时点 E3-2 D1 为78条、8 governed / 70 inventory、inventory L1/L2/L3为17/27/26，
-not-derived为33；保留为历史证据。本轮五项只登记不可变配置，不提升governed。
+not-derived为33；保留为历史证据。此前 E4 五项登记后为83条。本轮仅补 SQL155 的 phase/state 物理镜像登记，不提升governed。
 
 | 项                                    |                                值 |
 | ------------------------------------- | --------------------------------: |
-| 总条目                                |                            **83** |
-| `governed` / `inventory`              |                        **8 / 75** |
-| 75 条 inventory 的分层                | L1 **22** · L2 **27** · L3 **26** |
+| 总条目                                |                            **85** |
+| `governed` / `inventory`              |                        **8 / 77** |
+| 77 条 inventory 的分层                | L1 **23** · L2 **27** · L3 **27** |
 | 已有机器可读边(`transitions` 是数组)※ |                                32 |
-| `transitions: "not-derived"` ※        |                                38 |
-| `transitions: "unconstrained"` ※      |                                13 |
+| `transitions: "not-derived"` ※        |                                39 |
+| `transitions: "unconstrained"` ※      |                                14 |
 
-> ※ 这三行按**全部 83 条**统计(32+38+13=83),不是按上一行那 75 条 inventory。
-> 原表未标口径,而两种口径下 `unconstrained` 分别是 13 与 5 —— 差 8 条,
+> ※ 这三行按**全部 85 条**统计(32+39+14=85),不是按上一行那 77 条 inventory。
+> 原表未标口径,而两种口径下 `unconstrained` 分别是 14 与 6 —— 差 8 条,
 > 正是 L1 配置列升 `governed` 的那批。复核本表时先确认口径再比数字。
-> | **`vacuousGreenIfClosedSetOnly`** | **36** |
+> | **`vacuousGreenIfClosedSetOnly`** | **37** |
 > | 零 blocker 但仍 inventory 的升格候选 | **3** |
 
 > 🔴 **历史 true-up、A2 增补、A3 与本次 A7 落地要分开读**:

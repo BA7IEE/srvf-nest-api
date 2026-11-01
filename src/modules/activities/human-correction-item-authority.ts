@@ -282,7 +282,22 @@ export class HumanCorrectionItemAuthority {
       statement.values.some((value, index) => value !== expected.values[index])
     )
       throw new HumanCorrectionAuthorityUnavailableError();
-    return this.asAuthority(tx, () => tx.$executeRaw(statement));
+    return this.asAuthority(tx, () =>
+      tx.$executeRaw(Prisma.sql`
+      WITH expired AS (
+        UPDATE "ActivityBatchJob" SET "statusCode" = 'dead', "failed" = 1,
+          "succeeded" = 0, "skipped" = 0, "completedAt" = ${now},
+          "leaseOwner" = NULL, "leaseExpiresAt" = NULL, "lastErrorCode" = 'DraftJobAttemptsExhausted'
+        WHERE "jobTypeCode" = ${'bulk_proxy'}
+          AND "payload"->>'action' = ${'settlement_draft_generate'}
+          AND "payload"->>'executionMode' = 'async'
+          AND "statusCode" = 'processing' AND "attempts" >= ${maxAttempts}
+          AND "leaseExpiresAt" <= ${now} RETURNING id
+      ) UPDATE "ActivityBatchJobItem" SET "statusCode" = 'failed',
+        "lastErrorCode" = 'DraftJobAttemptsExhausted', "safeMessage" = '草稿生成重试次数已用尽'
+        WHERE "jobId" IN (SELECT id FROM expired) AND "itemKey" = 'generate' AND "statusCode" <> 'succeeded'
+    `),
+    );
   }
 
   private async change(

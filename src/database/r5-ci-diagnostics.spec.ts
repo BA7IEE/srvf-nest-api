@@ -72,4 +72,11 @@ describe('bounded CI regression diagnostics expose the original failure safely',
     expect(result).toContain('FAIL D7');
     expect(result.length).toBeLessThanOrEqual(12_288);
   });
+  it('retains the closed submit record as well as the original prepare label', () => {
+    const record =
+      '[d7-main-settlement-failure] {"phase":"submit","code":"PrismaClientKnownRequestError:P1017:unavailable"}';
+    const result = diagnostic('x'.repeat(20_000) + '\n' + record + '\n' + 'y'.repeat(20_000));
+    expect(result).toContain(record);
+    expect(result.length).toBeLessThanOrEqual(12_288);
+  });
 });

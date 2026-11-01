@@ -16,6 +16,7 @@ import {
   E4_MIGRATION_150,
   E4_MIGRATION_151,
   E4_MIGRATION_152,
+  E4_MIGRATION_153,
 } from './e4-migration-prefix';
 import type { INestApplication } from '@nestjs/common';
 import { BindingScopeType, PrincipalType, Role, UserStatus, Prisma } from '@prisma/client';
@@ -295,7 +296,8 @@ export function installE4ValidationDatabase(options?: {
     | 149
     | 150
     | 151
-    | 152;
+    | 152
+    | 153;
   function deployHistoricalMigrations(count: HistoricalCount): void;
   function deployHistoricalMigrations(count: HistoricalCount, timeout: number): Promise<void>;
   function deployHistoricalMigrations(
@@ -324,6 +326,7 @@ export function installE4ValidationDatabase(options?: {
       E4_MIGRATION_150,
       E4_MIGRATION_151,
       E4_MIGRATION_152,
+      E4_MIGRATION_153,
     ].slice(0, count - 136);
     for (const name of successors) {
       const directory = join(temporary, 'migrations', name);
@@ -402,6 +405,11 @@ export function installE4ValidationDatabase(options?: {
   function deploySourceProofProjectionMigrations(timeout: number): Promise<void>;
   function deploySourceProofProjectionMigrations(timeout?: number) {
     return deployHistoricalMigrations(152, timeout);
+  }
+  function deploySourceParameterizedMigrations(): void;
+  function deploySourceParameterizedMigrations(timeout: number): Promise<void>;
+  function deploySourceParameterizedMigrations(timeout?: number) {
+    return deployHistoricalMigrations(153, timeout);
   }
   const previous = {
     worker: process.env.JEST_WORKER_ID,
@@ -544,6 +552,7 @@ export function installE4ValidationDatabase(options?: {
     deploySourceProofCountMigrations,
     deployBucketGroupedMigrations,
     deploySourceProofProjectionMigrations,
+    deploySourceParameterizedMigrations,
     deployLatestMigrations,
     async recreateCurrentMigrations() {
       if (!baseline || !initialized || worker === undefined)

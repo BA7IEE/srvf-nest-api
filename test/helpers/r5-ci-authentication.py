@@ -92,7 +92,7 @@ def regression_failure_tail(stderr, stdout):
     # This fixed test-owned record contains only closed codes, source locations
     # and timings. Keep it when verbose fixture traces occupy the middle.
     priority = '\n'.join(line.strip() for line in text.splitlines()
-                         if line.strip().startswith('[d7-main-prepare-failure] {')
+                         if line.strip().startswith(('[d7-main-prepare-failure] {', '[d7-main-settlement-failure] {'))
                          and len(line) <= 1536)
     priority = priority[:4096]
     prefix = priority + '\n' if priority else ''
@@ -118,6 +118,34 @@ def run(argv, stem, text=None, allow=False, cleanup=False, timeout=30, persist=T
 
 def docker(argv, stem, **kw):
     return run(DOCKER + argv, stem, **kw)
+
+
+def pg_exit_evidence(container, stem):
+    # Read Docker metadata only. No database connection, credentials or restart.
+    evidence = {'status': 'UNKNOWN'}
+    try:
+        result = docker(['inspect', '--format', '{{json .State}}', container],
+                        stem, cleanup=True, timeout=5, allow=True, persist=False)
+        if result.returncode == 0:
+            state = json.loads(result.stdout)
+            if (type(state.get('Running')) is bool and type(state.get('OOMKilled')) is bool
+                    and type(state.get('ExitCode')) is int):
+                evidence = {'status': 'KNOWN', 'running': state['Running'],
+                            'oomKilled': state['OOMKilled'], 'exitCode': state['ExitCode']}
+        logs = docker(['logs', '--tail', '40', container], stem + '-logs',
+                      cleanup=True, timeout=5, allow=True, persist=False)
+        text = (logs.stdout + logs.stderr)[-1_000_000:]
+        patterns = {'NO_SPACE': 'No space left on device',
+                    'ALLOCATION_FAILURE': 'out of memory|Cannot allocate memory',
+                    'SIGNAL_9': 'terminated by signal 9', 'PANIC': r'PANIC:'}
+        evidence['logCategories'] = {
+            code: sum(bool(re.search(pattern, line, re.I)) for line in text.splitlines()
+                      if re.search(r'\b(?:PANIC|FATAL|ERROR|LOG):', line))
+            for code, pattern in patterns.items()}
+    except Exception:
+        pass
+    save(stem + '.json', evidence)
+    return evidence
 
 
 def sql(text, stem, db=DB, **kw):
@@ -361,6 +389,7 @@ finally:
             docker(['rm', app_cid], 'node-remove', cleanup=True)
         if cid:
             cleanup['phase'] = 'SEAL_ROLES'
+            cleanup['serverAtSeal'] = pg_exit_evidence(cid, 'pg-state-before-seal')
             sql('BEGIN;\n' + '\n'.join('ALTER ROLE ' + r + ' NOLOGIN PASSWORD NULL;' for r in ROLES[3:]) + '\nCOMMIT;', 'seal', cleanup=True)
             cleanup['phase'] = 'INDEPENDENT_CLOSEOUT'
             state = query("SELECT jsonb_build_object('rolesSealed',(SELECT bool_and(NOT rolcanlogin AND rolpassword IS NULL) FROM pg_authid WHERE rolname LIKE 'r5_%'),'otherClients',(SELECT count(*) FROM pg_stat_activity WHERE backend_type='client backend' AND pid<>pg_backend_pid()),'prepared',(SELECT count(*) FROM pg_prepared_xacts));", 'independent-closeout', cleanup=True)
@@ -383,6 +412,21 @@ finally:
             cleanup['ephemeralSocketVolumesRemaining'] = 0
     except BaseException as error:
         cleanup.update(status='UNKNOWN_REQUIRES_INSPECTION_NO_REPLAY', type=type(error).__name__, safeReason=clean(str(error)))
+        if cid:
+            final_state = pg_exit_evidence(cid, 'pg-state-after-cleanup-error')
+            cleanup['serverAfterCleanupError'] = final_state
+            if final_state.get('status') == 'KNOWN' and final_state['running'] is False:
+                try:
+                    # Only this already stopped disposable cluster. Preserve
+                    # UNKNOWN for SQL sealing even after resource disposal.
+                    docker(['rm', cid], 'pg-remove-after-observed-exit', cleanup=True, timeout=5)
+                    if socket_volume:
+                        docker(['volume', 'rm', socket_volume], 'socket-remove-after-observed-exit', cleanup=True, timeout=5)
+                    left = docker(['ps', '-aq', '--filter', 'label=' + label], 'containers-after-observed-exit', cleanup=True, timeout=5).stdout.strip()
+                    volumes = docker(['volume', 'ls', '--quiet', '--filter', 'label=' + label], 'volumes-after-observed-exit', cleanup=True, timeout=5).stdout.strip()
+                    cleanup['resourceDisposal'] = 'CONFIRMED' if not left and not volumes else 'UNKNOWN'
+                except Exception:
+                    cleanup['resourceDisposal'] = 'UNKNOWN'
     save('CLEANUP.json', cleanup)
     receipt['cleanup'] = cleanup
     save('RESULT.json', receipt)

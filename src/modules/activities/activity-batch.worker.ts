@@ -643,7 +643,20 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
       );
     } else {
       // Existing seven-family permissions, never an admin fallback for Human.
-      await tx.$executeRaw(draftSweep);
+      await tx.$executeRaw(Prisma.sql`
+      WITH expired AS (
+        UPDATE "ActivityBatchJob" SET "statusCode" = 'dead', "failed" = 1,
+          "succeeded" = 0, "skipped" = 0, "completedAt" = ${now},
+          "leaseOwner" = NULL, "leaseExpiresAt" = NULL, "lastErrorCode" = 'DraftJobAttemptsExhausted'
+        WHERE "jobTypeCode" = ${SETTLEMENT_DRAFT_GENERATE_JOB_TYPE}
+          AND "payload"->>'action' = ${SETTLEMENT_DRAFT_GENERATE_JOB_ACTION}
+          AND "payload"->>'executionMode' = 'async'
+          AND "statusCode" = 'processing' AND "attempts" >= ${ACTIVITY_BATCH_MAX_ATTEMPTS}
+          AND "leaseExpiresAt" <= ${now} RETURNING id
+      ) UPDATE "ActivityBatchJobItem" SET "statusCode" = 'failed',
+        "lastErrorCode" = 'DraftJobAttemptsExhausted', "safeMessage" = '草稿生成重试次数已用尽'
+        WHERE "jobId" IN (SELECT id FROM expired) AND "itemKey" = 'generate' AND "statusCode" <> 'succeeded'
+    `);
     }
     for (const [jobTypeCode, lastErrorCode] of [
       [LEDGER_PREPARE_JOB_TYPE, 'LEDGER_PREPARE_MAX_ATTEMPTS_EXHAUSTED'],

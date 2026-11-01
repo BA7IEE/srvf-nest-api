@@ -333,6 +333,20 @@ describe('Human protected Item authority (pure model, NOT PG authentication)', (
     expect(statement.sql).toContain('WITH expired AS');
     expect(statement.sql).toContain('"itemKey" = \'generate\'');
     expect(statement.sql).not.toContain(HUMAN_CORRECTION_ITEM_KEY);
+    const executed = f.execute.mock.calls
+      .map(([input]) => input)
+      .filter(
+        (input) =>
+          input &&
+          typeof input === 'object' &&
+          'sql' in input &&
+          typeof input.sql === 'string' &&
+          input.sql.includes('WITH expired AS'),
+      );
+    expect(executed).toHaveLength(1);
+    const actual = executed[0] as Prisma.Sql;
+    expect(actual.sql).toBe(statement.sql);
+    expect(actual.values).toEqual(statement.values);
     expect(f.profile.state.currentRole).toBe('pure_caller');
   });
 });

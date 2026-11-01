@@ -194,7 +194,7 @@ describe('153 parameterized source reads on nonempty152', () => {
         template = await db().activitySettlementContributionRevision.findFirstOrThrow({
           where: { settlementVersionId: prepared.settlementVersionId },
         });
-        const correction = await approvedE4TimeCorrection(fixture);
+        const correction = await approvedE4TimeCorrection(fixture, undefined, 152);
         await correction.correction.prepare(
           correction.input,
           e4Actor(fixture.finalReviewer),
@@ -233,7 +233,7 @@ describe('153 parameterized source reads on nonempty152', () => {
         const beforeSettings = await settingsSnapshot(db());
         const beforeRows = await businessSnapshot(db());
         const beforeCatalog = await catalog(db());
-        await owner.deployLatestMigrations(60_000);
+        await owner.deploySourceParameterizedMigrations(60_000);
         expect(createHash('sha256').update(candidate).digest('hex')).toBe(candidateSha);
         expect(await installedBody(db())).toBe(candidateBody);
         const after = [...prior, { name: E4_MIGRATION_153, checksum: candidateSha }];
@@ -241,7 +241,7 @@ describe('153 parameterized source reads on nonempty152', () => {
         expect(await businessSnapshot(db())).toBe(beforeRows);
         expect(await catalog(db())).toBe(beforeCatalog);
         expect(await settingsSnapshot(db())).toEqual(beforeSettings);
-        await owner.deployLatestMigrations(60_000);
+        await owner.deploySourceParameterizedMigrations(60_000);
         expect(await migrationRows(db())).toEqual(after);
         expect(await businessSnapshot(db())).toBe(beforeRows);
         expect(await catalog(db())).toBe(beforeCatalog);

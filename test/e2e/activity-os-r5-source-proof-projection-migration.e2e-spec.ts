@@ -231,7 +231,7 @@ describe('152 narrow source-proof projection on nonempty151', () => {
         process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
         appClosed = false;
         fixture = await createE4Fixture();
-        correction = await approvedE4TimeCorrection(fixture);
+        correction = await approvedE4TimeCorrection(fixture, undefined, 151);
         prepared = await correction.correction.prepare(
           correction.input,
           e4Actor(fixture.finalReviewer),
@@ -533,10 +533,14 @@ describe('152 narrow source-proof projection on nonempty151', () => {
     'prepares and commits a fresh real source under152 with the original service budgets and guards',
     async () =>
       owned(async () => {
-        const next = await approvedE4TimeCorrection(f(), {
-          startsAt: new Date('2020-03-02T08:00:00.000Z'),
-          endsAt: new Date('2020-03-02T09:00:00.000Z'),
-        });
+        const next = await approvedE4TimeCorrection(
+          f(),
+          {
+            startsAt: new Date('2020-03-02T08:00:00.000Z'),
+            endsAt: new Date('2020-03-02T09:00:00.000Z'),
+          },
+          152,
+        );
         const nextPrepared = await next.correction.prepare(
           next.input,
           e4Actor(f().finalReviewer),

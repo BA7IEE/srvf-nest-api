@@ -323,7 +323,18 @@ function diagnosticCode(error: unknown): string {
       ? error.name
       : 'other';
   if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return kind;
-  const prismaCode = ['P2028', 'P2010', 'P2002', 'P2003', 'P2024', 'P2034'].includes(error.code)
+  const prismaCode = [
+    'P1001',
+    'P1002',
+    'P1008',
+    'P1017',
+    'P2028',
+    'P2010',
+    'P2002',
+    'P2003',
+    'P2024',
+    'P2034',
+  ].includes(error.code)
     ? error.code
     : 'other';
   const state = error.meta?.code;
@@ -344,6 +355,9 @@ function diagnosticCode(error: unknown): string {
       '08003',
       '08006',
       '57P01',
+      '57P02',
+      '57P03',
+      '58030',
     ].includes(state)
       ? state
       : 'unavailable';
@@ -4225,8 +4239,9 @@ describe('D7-1 recognition correction real transaction', () => {
           (error) => {
             // Closed projections only: no message, query, parameters, IDs or credentials.
             console.info(
-              '[d7-main-prepare-failure] ' +
+              '[d7-main-settlement-failure] ' +
                 JSON.stringify({
+                  phase: 'prepare',
                   population,
                   elapsedMs: Math.round(performance.now() - enteredMs),
                   code: diagnosticCode(error),
@@ -4243,13 +4258,38 @@ describe('D7-1 recognition correction real transaction', () => {
           prepareSpy.mockRestore();
         }
       })();
-      const submittedTime = await post(p.url + '/submit', {
-        operationKey: f.key('submit_time'),
-        expectedDraftVersion: p.proof.expectedDraftVersion,
-        expectedEvidenceSealId: p.proof.expectedEvidenceSealId,
-        timeRevisionId: preparedTime.timeRevisionId,
-        expectedBucketContentHash: preparedTime.bucketContentHash,
+      const originalSubmit = service.submit.bind(service);
+      const submitSpy = jest.spyOn(service, 'submit').mockImplementation((...args) => {
+        const enteredMs = performance.now();
+        return observeD7SetupRejection(
+          () => originalSubmit(...args),
+          (error) => {
+            console.info(
+              '[d7-main-settlement-failure] ' +
+                JSON.stringify({
+                  phase: 'submit',
+                  population,
+                  elapsedMs: Math.round(performance.now() - enteredMs),
+                  code: diagnosticCode(error),
+                  ...commitErrorLocation(error),
+                }),
+            );
+          },
+        );
       });
+      const submittedTime = await (async () => {
+        try {
+          return await post(p.url + '/submit', {
+            operationKey: f.key('submit_time'),
+            expectedDraftVersion: p.proof.expectedDraftVersion,
+            expectedEvidenceSealId: p.proof.expectedEvidenceSealId,
+            timeRevisionId: preparedTime.timeRevisionId,
+            expectedBucketContentHash: preparedTime.bucketContentHash,
+          });
+        } finally {
+          submitSpy.mockRestore();
+        }
+      })();
       const { timeRevision, finalActor, finalRole, batch } = await createClassifiedPostingFixture(
         submittedTime.timeRevisionId as string,
         population,

@@ -27,7 +27,7 @@ export function r5CurrentE4SourcePins() {
 }
 
 /** Complete frozen physical table set; the migration ledger is the only exclusion. */
-export function r5CurrentBusinessTableNames() {
+export function r5CurrentBusinessTableNames(profile: 'current155' | 'pre155' = 'current155') {
   const bytes = readFileSync(resolve(__dirname, 'r5-setmat-table-manifest.json'));
   if (
     createHash('sha256').update(bytes).digest('hex') !==
@@ -35,5 +35,11 @@ export function r5CurrentBusinessTableNames() {
   )
     throw new Error('R5_CURRENT_TABLE_MANIFEST_CHANGED');
   const manifest = JSON.parse(bytes.toString('utf8')) as { tables: string[] };
-  return manifest.tables.filter((name) => name !== '_prisma_migrations').sort();
+  const names = manifest.tables.filter((name) => name !== '_prisma_migrations').sort();
+  if (profile === 'current155') return names;
+  if (profile !== 'pre155') throw new Error('R5_TABLE_PROFILE_REFUSED');
+  r5CurrentE4SourcePins(); // qualify the migration that introduces exactly these tables
+  return names.filter(
+    (name) => !['CorrectionWritePhase', 'CorrectionApprovedInputItem'].includes(name),
+  );
 }

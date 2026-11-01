@@ -229,7 +229,11 @@ export async function createNativeLaunchLiveSource(
 }
 
 /** All rows/columns from the exact frozen business table set, committed visibility. */
-export async function nativeLaunchBusinessFingerprint(db: PrismaClient, stage: NativeLaunchStage) {
+export async function nativeLaunchBusinessFingerprint(
+  db: PrismaClient,
+  stage: NativeLaunchStage,
+  profile: 'current155' | 'pre155' = 'current155',
+) {
   const tables = await stage(
     'FINGERPRINT_TABLES',
     () => db.$queryRaw<{ name: string }[]>`
@@ -240,7 +244,7 @@ export async function nativeLaunchBusinessFingerprint(db: PrismaClient, stage: N
   );
   assert.deepEqual(
     tables.map(({ name }) => name),
-    r5CurrentBusinessTableNames(),
+    r5CurrentBusinessTableNames(profile),
   );
   const rows: { name: string; hash: string }[] = [];
   for (const { name } of tables) {

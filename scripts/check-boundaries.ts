@@ -22,6 +22,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
+import { isReadOnlyCatalogSql } from './check-catalog-sql-proof';
 
 const ROOT = path.resolve(__dirname, '..');
 const DOMAIN_MAP = 'harness/domain-map.json';
@@ -1957,12 +1958,57 @@ function shapeOf(node: ts.Node, source: ts.SourceFile): string {
 interface SqlLiteral {
   text: string;
   hasInterpolation: boolean;
+  catalogProofEligible?: boolean;
 }
 
-function literalSql(node: ts.Expression | ts.TaggedTemplateExpression): SqlLiteral | null {
+function scalarSqlBindings(node: ts.TaggedTemplateExpression, checker?: ts.TypeChecker): boolean {
+  if (!checker || !ts.isPropertyAccessExpression(node.tag)) return false;
+  if (!['sql', '$queryRaw', '$executeRaw'].includes(node.tag.name.text)) return false;
+  if (node.tag.name.text === 'sql') {
+    let receiver = checker.getSymbolAtLocation(node.tag.expression);
+    if (receiver && receiver.flags & ts.SymbolFlags.Alias)
+      receiver = checker.getAliasedSymbol(receiver);
+    if (!receiver || !declaredByPrismaClient(receiver)) return false;
+  }
+  let symbol = checker.getSymbolAtLocation(node.tag.name);
+  if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+  if (!symbol || !declaredByPrismaClient(symbol)) return false;
+  if (!ts.isTemplateExpression(node.template)) return true;
+  return node.template.templateSpans.every(({ expression }) =>
+    typeMembers(checker.getTypeAtLocation(expression)).every(
+      (type) =>
+        Boolean(
+          type.flags &
+          (ts.TypeFlags.StringLike |
+            ts.TypeFlags.NumberLike |
+            ts.TypeFlags.BooleanLike |
+            ts.TypeFlags.BigIntLike |
+            ts.TypeFlags.Null |
+            ts.TypeFlags.Undefined),
+        ) ||
+        (type.getSymbol()?.getName() === 'Date' &&
+          type
+            .getSymbol()
+            ?.declarations?.some((declaration) =>
+              /\/typescript\/lib\/lib\.[^/]+\.d\.ts$/u.test(
+                declaration.getSourceFile().fileName.replace(/\\/gu, '/'),
+              ),
+            )),
+    ),
+  );
+}
+
+export function literalSql(
+  node: ts.Expression | ts.TaggedTemplateExpression,
+  checker?: ts.TypeChecker,
+): SqlLiteral | null {
   if (ts.isTaggedTemplateExpression(node)) {
     if (ts.isNoSubstitutionTemplateLiteral(node.template)) {
-      return { text: node.template.text, hasInterpolation: false };
+      return {
+        text: node.template.text,
+        hasInterpolation: false,
+        catalogProofEligible: scalarSqlBindings(node, checker),
+      };
     }
     if (ts.isTemplateExpression(node.template)) {
       // Parameters commonly use interpolation while the table identifier remains
@@ -1973,13 +2019,80 @@ function literalSql(node: ts.Expression | ts.TaggedTemplateExpression): SqlLiter
           node.template.head.text +
           node.template.templateSpans.map((span) => span.literal.text).join(''),
         hasInterpolation: true,
+        catalogProofEligible: scalarSqlBindings(node, checker),
       };
     }
   }
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
-    return { text: node.text, hasInterpolation: false };
+    return { text: node.text, hasInterpolation: false, catalogProofEligible: true };
+  }
+  if (checker) {
+    // Resolve primitive strings only. A const Prisma.Sql object's strings and
+    // values arrays can be mutated or escape, so it must remain unknown here.
+    const fixedString = (expression: ts.Expression, seen = new Set<ts.Node>()): string | null => {
+      if (seen.has(expression) || seen.size >= 8) return null;
+      seen.add(expression);
+      if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression))
+        return expression.text;
+      if (
+        ts.isTaggedTemplateExpression(expression) &&
+        ts.isNoSubstitutionTemplateLiteral(expression.template) &&
+        ts.isPropertyAccessExpression(expression.tag) &&
+        expression.tag.name.text === 'raw' &&
+        ts.isIdentifier(expression.tag.expression) &&
+        expression.tag.expression.text === 'String'
+      ) {
+        const symbol = checker.getSymbolAtLocation(expression.tag.expression);
+        if (
+          !symbol?.declarations?.some((d) =>
+            /\/typescript\/lib\/lib\.[^/]+\.d\.ts$/u.test(
+              d.getSourceFile().fileName.replace(/\\/gu, '/'),
+            ),
+          )
+        )
+          return null;
+        return expression.template.rawText ?? expression.template.text;
+      }
+      if (!ts.isIdentifier(expression)) return null;
+      let symbol = checker.getSymbolAtLocation(expression);
+      if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+      const declarations = symbol?.declarations;
+      if (declarations?.length !== 1 || !ts.isVariableDeclaration(declarations[0])) return null;
+      const declaration = declarations[0];
+      if (
+        !ts.isVariableDeclarationList(declaration.parent) ||
+        !(declaration.parent.flags & ts.NodeFlags.Const) ||
+        !declaration.initializer
+      )
+        return null;
+      return fixedString(declaration.initializer, seen);
+    };
+    if (ts.isIdentifier(node)) {
+      const text = fixedString(node);
+      return text === null ? null : { text, hasInterpolation: false, catalogProofEligible: true };
+    }
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === 'raw' &&
+      node.arguments.length === 1
+    ) {
+      let symbol = checker.getSymbolAtLocation(node.expression.expression);
+      if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+      if (!symbol || !declaredByPrismaClient(symbol)) return null;
+      const text = fixedString(node.arguments[0]);
+      return text === null ? null : { text, hasInterpolation: false, catalogProofEligible: true };
+    }
   }
   return null;
+}
+
+/** A metadata-looking template with an opaque fragment is still dynamic. This
+ * adds no exemption to the old full-text path for ordinary business SQL. */
+export function rawSqlDisposition(sql: SqlLiteral | null): 'dynamic' | 'catalog-only' | 'inspect' {
+  if (sql === null) return 'dynamic';
+  if (isReadOnlyCatalogSql(sql.text)) return sql.catalogProofEligible ? 'catalog-only' : 'dynamic';
+  return 'inspect';
 }
 
 function escapeRegex(value: string): string {
@@ -2189,13 +2302,15 @@ function scan(map: DomainMap): {
         ? expression.expression
         : expression;
       if (!rawCapableClient(typed, receiver)) return;
-      const sql = literalSql(node);
-      if (sql === null) {
+      const sql = literalSql(node, typed.checker);
+      const disposition = rawSqlDisposition(sql);
+      if (sql === null || disposition === 'dynamic') {
         emit('raw-sql-dynamic', 'report', 'unknown', null, 'raw', node, {
           reason: 'non-literal SQL',
         });
         return;
       }
+      if (disposition === 'catalog-only') return;
       for (const model of models) {
         const owner = map.modelOwnership[model.name];
         if (owner === undefined || owner.domain === sourceDomain) continue;
@@ -2726,13 +2841,15 @@ function scanCommon(
         ? expression.expression
         : expression;
       if (!rawCapableClient(typed, receiver)) return;
-      const sql = literalSql(node);
-      if (sql === null) {
+      const sql = literalSql(node, typed.checker);
+      const disposition = rawSqlDisposition(sql);
+      if (sql === null || disposition === 'dynamic') {
         emit('common-raw-sql-dynamic', 'report', 'unknown', null, 'raw', node, {
           reason: 'non-literal SQL — 无法证明它没有碰业务表。',
         });
         return;
       }
+      if (disposition === 'catalog-only') return;
       for (const model of models) {
         const owner = map.modelOwnership[model.name];
         if (owner === undefined) continue;

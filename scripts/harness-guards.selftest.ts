@@ -1503,6 +1503,7 @@ checkEq(
       'docs/ai-harness/ROUTE_AUTHZ.md',
       'test/contract/openapi.contract-spec.ts',
       'scripts/check-boundaries.ts',
+      'scripts/check-catalog-sql-proof.ts',
       'scripts/generate-authz-manifest.ts',
     ]) {
       copyIntoFixture(rel);
