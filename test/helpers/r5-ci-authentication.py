@@ -299,9 +299,11 @@ try:
             stages.append(stage)
             save('REGRESSION-STAGES.json', stages)
             receipt['businessCalls'] = 'REGRESSION_TEST_PROCESSES_STARTED_NOT_COUNTED'
+            # pnpm's frozen executable shim supplies its private-hoist resolution
+            # paths, as in the existing ordinary `pnpm exec jest` CI entrypoint.
             p = docker(['exec', '-i', '--env', 'SRVF_R5_CI_AUTHENTICATED=1',
                         app_cid,
-                        'node', './node_modules/jest/bin/jest.js', '--config', suite['config'],
+                        './node_modules/.bin/jest', '--config', suite['config'],
                         '--runInBand', '--runTestsByPath', 'test/e2e/' + suite['file']],
                        'regression-' + str(index + 1), text=private_input, timeout=575, allow=True)
             stage.update(exitCode=p.returncode, endedAt=stamp())
