@@ -93,6 +93,88 @@ function sql(statement: string): string {
     { input: statement, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
   ).trim();
 }
+function waitForD4WorkerQuiescence(database: string) {
+  // Synchronous psql exit does not prove its backend is already gone. Keep the
+  // original ALL-backends-zero condition, within the existing120s hook; never
+  // ignore a background worker, terminate a connection or force DROP.
+  const deadline = performance.now() + 1_000;
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  let attempts = 0;
+  let observed: unknown[] = [];
+  function refuse(reason: string): never {
+    console.info('D4_WORKER_QUIESCENCE', JSON.stringify({ reason, attempts, observed }));
+    throw new Error('D4 migration worker is in use or unknown; refusing reconstruction: ' + reason);
+  }
+  for (;;) {
+    const remaining = Math.floor(deadline - performance.now());
+    if (remaining < 1) refuse('DEADLINE');
+    attempts++;
+    const active = execFileSync(
+      'docker',
+      [
+        'exec',
+        '-i',
+        'u-nest-api-postgres',
+        'psql',
+        '--no-psqlrc',
+        '-qtA',
+        '-U',
+        'postgres',
+        '-d',
+        'postgres',
+        '-v',
+        'ON_ERROR_STOP=1',
+      ],
+      {
+        input:
+          `SELECT coalesce(jsonb_agg(jsonb_build_object('pid',pid,
+        'kind',CASE backend_type WHEN 'client backend' THEN 'CLIENT'
+          WHEN 'autovacuum worker' THEN 'AUTOVACUUM' ELSE 'OTHER' END,
+        'state',CASE state WHEN 'active' THEN 'ACTIVE' WHEN 'idle' THEN 'IDLE' ELSE 'OTHER' END)
+        ORDER BY pid),'[]'::jsonb)::text FROM pg_stat_activity WHERE datname = ` +
+          literal(database),
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: remaining,
+      },
+    ).trim();
+    let rows: unknown;
+    try {
+      rows = JSON.parse(active);
+    } catch {
+      refuse('INVALID_SNAPSHOT');
+    }
+    if (!Array.isArray(rows)) refuse('INVALID_SNAPSHOT');
+    if (
+      !rows.every((row: unknown) => {
+        if (!row || typeof row !== 'object') return false;
+        const item = row as Record<string, unknown>;
+        return (
+          Object.keys(item).sort().join(',') === 'kind,pid,state' &&
+          typeof item.pid === 'number' &&
+          Number.isInteger(item.pid) &&
+          item.pid > 0 &&
+          typeof item.kind === 'string' &&
+          ['CLIENT', 'AUTOVACUUM', 'OTHER'].includes(item.kind) &&
+          typeof item.state === 'string' &&
+          ['ACTIVE', 'IDLE', 'OTHER'].includes(item.state)
+        );
+      })
+    )
+      refuse('INVALID_SNAPSHOT');
+    if (performance.now() >= deadline) refuse('DEADLINE');
+    if (rows.length === 0) {
+      if (observed.length)
+        console.info(
+          'D4_WORKER_QUIESCENCE',
+          JSON.stringify({ reason: 'QUIESCENT', attempts, observed }),
+        );
+      return;
+    }
+    observed = rows;
+    Atomics.wait(pause, 0, 0, Math.max(0, Math.min(25, deadline - performance.now())));
+  }
+}
 function recreate() {
   const { database, worker } = target();
   const engine = execFileSync(
@@ -101,29 +183,7 @@ function recreate() {
     { encoding: 'utf8' },
   ).trim();
   if (!engine.startsWith('unix://')) throw new Error('D4 migration requires a local Docker socket');
-  const active = execFileSync(
-    'docker',
-    [
-      'exec',
-      '-i',
-      'u-nest-api-postgres',
-      'psql',
-      '--no-psqlrc',
-      '-qtA',
-      '-U',
-      'postgres',
-      '-d',
-      'postgres',
-      '-v',
-      'ON_ERROR_STOP=1',
-    ],
-    {
-      input: 'SELECT count(*) FROM pg_stat_activity WHERE datname = ' + literal(database),
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    },
-  ).trim();
-  if (active !== '0') throw new Error('D4 migration worker is in use; refusing reconstruction');
+  waitForD4WorkerQuiescence(database);
   dropWorkerDatabase(worker);
   execFileSync('docker', ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', database], {
     stdio: 'pipe',

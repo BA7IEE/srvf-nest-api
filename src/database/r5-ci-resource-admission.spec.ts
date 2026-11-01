@@ -204,3 +204,108 @@ describe('ADV010 ordinary concurrency uses independent observation within the CI
     expect(fixture.scope.f.humanApp).toBeDefined();
   });
 });
+
+describe('D4 worker reconstruction retains the all-backends-zero guard', () => {
+  function recreation(frames: unknown[], queryDelay = 0) {
+    const file = resolve('test/e2e/activity-os-r4-d4-time-bucket-migration.e2e-spec.ts');
+    const source = readFileSync(file, 'utf8');
+    const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+    const names = ['waitForD4WorkerQuiescence', 'recreate', 'literal'];
+    const functions = ast.statements.filter(
+      (node): node is ts.FunctionDeclaration =>
+        ts.isFunctionDeclaration(node) && !!node.name && names.includes(node.name.text),
+    );
+    expect(functions).toHaveLength(3);
+    let time = 0;
+    let index = 0;
+    const calls: Array<{ argv: string[]; options?: { input?: string; timeout?: number } }> = [];
+    const drop = jest.fn();
+    const info = jest.fn();
+    const scope = {
+      target: () => ({ database: 'app_test_w4', worker: '4' }),
+      performance: { now: () => time },
+      console: { info },
+      Atomics: {
+        wait: (_buffer: unknown, _offset: number, _value: number, duration: number) => {
+          time += duration;
+          return 'timed-out';
+        },
+      },
+      execFileSync: (
+        _command: string,
+        argv: string[],
+        options?: { input?: string; timeout?: number },
+      ) => {
+        calls.push({ argv, options });
+        if (argv[0] === 'context') return 'unix:///fixture-only';
+        if (argv.includes('psql')) {
+          time += queryDelay;
+          const value = frames[Math.min(index++, frames.length - 1)];
+          return typeof value === 'string' ? value : JSON.stringify(value);
+        }
+        return '';
+      },
+      dropWorkerDatabase: drop,
+      sql: () => 'app_test_w4',
+    };
+    const code = ts.transpileModule(
+      functions.map((node) => node.getText(ast)).join('\n') + '\nrecreate;',
+      { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
+    ).outputText;
+    const run = runInNewContext(code, scope) as () => void;
+    return { run, calls, drop, info, time: () => time };
+  }
+
+  it('uses the same target-wide predicate and normal DROP only after an empty snapshot', () => {
+    const fixture = recreation([[]]);
+    fixture.run();
+    expect(fixture.drop).toHaveBeenCalledWith('4');
+    const reads = fixture.calls.filter((call) => call.argv.includes('psql'));
+    expect(reads).toHaveLength(1);
+    expect(reads[0].options?.input?.split('FROM pg_stat_activity')[1]).toBe(
+      " WHERE datname = 'app_test_w4'",
+    );
+    expect(reads[0].options?.timeout).toBe(1_000);
+    expect(fixture.calls.filter((call) => call.argv.includes('createdb'))).toHaveLength(1);
+  });
+
+  it('waits for actual disappearance and retains the prior PID/classification', () => {
+    const fixture = recreation([[{ pid: 51, kind: 'CLIENT', state: 'IDLE' }], []]);
+    fixture.run();
+    expect(fixture.time()).toBe(25);
+    expect(fixture.drop).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(fixture.info.mock.calls)).toContain('QUIESCENT');
+    expect(JSON.stringify(fixture.info.mock.calls)).toContain('51');
+  });
+
+  it.each(['CLIENT', 'AUTOVACUUM', 'OTHER'])(
+    'refuses a persistent %s backend without filtering it out or terminating it',
+    (kind) => {
+      const fixture = recreation([[{ pid: 51, kind, state: 'ACTIVE' }]]);
+      expect(() => fixture.run()).toThrow('DEADLINE');
+      expect(fixture.time()).toBe(1_000);
+      expect(fixture.drop).not.toHaveBeenCalled();
+      expect(fixture.calls.some((call) => call.argv.includes('createdb'))).toBe(false);
+      for (const call of fixture.calls.filter((call) => call.argv.includes('psql'))) {
+        expect(call.options?.timeout).toBeGreaterThan(0);
+        expect(call.options?.timeout).toBeLessThanOrEqual(1_000);
+      }
+    },
+  );
+
+  it.each([
+    { kind: 'invalid JSON', frame: 'invalid JSON' },
+    { kind: 'invalid PID', frame: [{ pid: 'DO_NOT_LOG', kind: 'CLIENT', state: 'IDLE' }] },
+  ])('refuses $kind without reconstruction or raw metadata output', ({ frame }) => {
+    const fixture = recreation([frame]);
+    expect(() => fixture.run()).toThrow('INVALID_SNAPSHOT');
+    expect(fixture.drop).not.toHaveBeenCalled();
+    expect(JSON.stringify(fixture.info.mock.calls)).not.toContain('DO_NOT_LOG');
+  });
+
+  it('refuses even an empty response arriving outside the one-second observation window', () => {
+    const fixture = recreation([[]], 1_001);
+    expect(() => fixture.run()).toThrow('DEADLINE');
+    expect(fixture.drop).not.toHaveBeenCalled();
+  });
+});
