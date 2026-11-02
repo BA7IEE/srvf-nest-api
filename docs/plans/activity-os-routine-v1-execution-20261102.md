@@ -7,7 +7,7 @@
 - Library：`libfile_f78e51360a1481919258e929ceedf96c`；ZIP 28149 字节，SHA256 `cb3d12ce16b6528fa94c66ff38d7912272ac56e1171ed8e10bb66d7287919312`，已正式物化、独立核大小/摘要、CRC、安全解包并完整阅读。
 - `SRVF_ActivityOS_V1_Agent_Execution_Plan_2026-11-02.md`：56760 字节，SHA256 `c3045670632b3cfc8306a22d87b135aadd33de46b41cdb3d1a0947317e261e61`。
 - `SRVF_V1_release_manifest.template.yaml`：8310 字节，SHA256 `f7e9f6ba81aa22a92ba8d82164b3b3ad10bc7f2e51770ec9afc1627d51b27141`。
-- 后端 remote main：`2fd2a952f77847b498c5438abe4bdb163f25f66f`。#1395：`e37aadb7b094cc770578de4ba52b22587da7bfd8`，完整 CI `41385476216` 15/15 PASS；原 Trusted `41385474139/job/125085350947` 已由用户放行并 PASS；转 Ready 后新 Trusted `41398313337/job/125124459340` WAITING，尚未合并。
+- 后端 L0 时点 remote main：`2fd2a952f77847b498c5438abe4bdb163f25f66f`。#1395 head `e37aadb7b094cc770578de4ba52b22587da7bfd8` 的完整 CI/Trusted 已 PASS；Ready 后新 Trusted 的代理调用先被 integration403 拒绝，后经用户手动放行，2026-11-02 正常 squash 合并为 main `103b73a5d5a104d32e098d0275c322fd2fd30c6e`。主干 push CI `41411588308` 独立跟进，不把 PR 通过等同主干终态。
 - L2 隔离分支：`codex/activityos-v1-single-session-20261102`，基于 #1395 精确 head，不修改其冻结工作树。依赖离线冻结安装、Prisma 生成、`agent:preflight --lane routine_v1` PASS。
 - 前端 remote main：`e9da19ec0a937708d535f2d58677101affc4d0e9`。唯一前端 owner 在 2026-11-02 04:48:43 UTC 报告本地 HEAD 相同、13 文件全暂存、tree `23eb16b9c4edbc447655eb01126379277520ac96`、无其他 dirty/conflict；无开放 PR、无候选远端分支。之后 owner 开始 A14 修复，集成前必须取得新的 tree/摘要。
 - 前端原候选 Library `libfile_d2c9111820008191ab3b636400310c37`，461114 字节，SHA256 `0556c61723b3754be0f183a437b2797c786a3cb6f5f84a221ffbd20f5b31cb05`；本环境已正式物化并逐项核 13 源文件和 patch。R5 回执/任务恢复与三个统计修复必须保留，不覆盖。
@@ -73,15 +73,15 @@
 | 包 | 准确范围 | 状态 |
 | --- | --- | --- |
 | L0 | 附件、两仓、未合并写集、现成接口、155 前置和短合同 | COMPLETE；只读事实及本台账，无业务执行 |
-| L1 | #1395 合同/生成物/CI/Trusted/正常合并和 main 核验 | 代码/完整 CI PASS；旧 Trusted PASS；用户已批准 Ready 后新 41398313337 检查，但代理调用被 GitHub integration 403 拒绝，已停止该动作、未合并 |
-| L2 | 上述单场次一致保存、薄 Admin 适配和真实 API | 6/6 实现；原 131 定向 unit 与日界修复后 35 项回归 PASS，最终 types PASS；q8 最终运行字节真实六接口、同 XID／真实回滚／锁后撤权及当前专业时段/窗口拒绝 PASS；四处官方派生已同步，q7 完整 contract 1126/1126 PASS，原 945 schema/522 path 块未变；新增债务 0。完整 quick 留有下述阻断，不冒充全绿 |
+| L1 | #1395 合同/生成物/CI/Trusted/正常合并和 main 核验 | 已正常合并 main103b73a5，独立回读 PR merged/main SHA 一致；保留403历史。主干 CI41411588308 在途，未部署 |
+| L2 | 上述单场次一致保存、薄 Admin 适配和真实 API | 6/6 实现；全量 unit498 suites/11079 PASS（另4既有TODO）、types PASS；q7 contract1126/1126 PASS、旧945 schema/522 path块未变；q8/q9真实六接口、同XID、审计回滚、锁后撤权和专业形状拒绝 PASS。q9先种前序 Activity/User各1行，以既有双重守卫 resetDb清理，原两条空库断言保留。第五来源摘要已批准且metadata PASS；完整新head CI仍须裁决 |
 | L3 | 唯一前端 owner 接既有表单/审核/必要结束链，保留 R5/统计候选 | 按最新用户指令 UI 延期；前端 owner 已安全暂停，18 文件 tree ae1a6370a586459709301b9f1c4339b2bff92be4（原 13 文件保留），真实新 UI NOT_RUN |
 | L4 | 同版普通账号完整验收、目标 155/部署/启用前置 | NOT_RUN；生产目标和资格 UNKNOWN；API 验收与延期 UI/A16 分列，不代表已上线 |
 
 当前是有界集成，非新架构。父线程的 1–2 天可联调候选、2–4 天验收/上线前检查只是条件性估算；实际时长取决于整体保存实现、普通身份真实验证、受保护审批以及正式目标前置，不能把该估算写成上线承诺。
 
-提交前完整 quick 的原始失败保留：单测日界结构拒绝已修复并回归；`harness/domain-map.json` 仅模块输入摘要过期，但不在本轮四路径批准内，未修改，须精确补批后重验（模块/模型/归属和债务不变）；本机 Node24 全仓 lint 在既有 6GiB 堆上 OOM，使用 CI 同版 Node22、相同 6GiB 堆的独立冷验另记，未提高预算或放松断言。新 Draft PR 可先依赖 #1395 分支，保证差分仅含 L2；#1395 合并后再正常继承 main 并核新 head，不强推、不把旧 CI 视为新 head 通过。
+原始失败均保留：日界结构拒绝已改为复用公共日期工具；d4c6db19的CI41407692100四片E2E及Human认证PASS，第五片唯一失败是复用worker的空库前置，修复只在原断言前调用既有guarded resetDb，q9复验通过。第五文件获单独批准后，调用仓库computeDomainMapInputDigest生成并只改一行来源摘要，43模块/198模型/归属/权限/债务不变，metadata PASS。正式CI冷lint已通过，本地Node24/隔离Node22的6GiB OOM仍留证，不扩大内存调试或预算。#1395 squash树与已继承e37aadb7逐字相同，正常合并main到L2并逐树证明保留已验候选，不强推；PR基底改为main后的最终head必须重跑CI。
 
 ## 本次未做
 
-未运行生产、原 q1 或旧成功对象，未合并新 L2 PR、部署或启动 R6/R7。四个精确保护路径由代理按用户委托通过官方 grant 执行，未改守卫或自造令牌；公开分支/Draft PR 与全 CI 按新授权推进。仅新 socket-only、无外部网络、五 NOLOGIN fixture 角色的隔离 PG16 做 L2 合成 API/契约验证，正常销毁；q1/q2/q3 失败留证与 q4/q5/q6/q7 PASS 分别保留。#1395 未混入 L2；指定 Trusted 的代理批准被 GitHub integration 403 拒绝，未绕行或合并。正式结算／更正本轮未重跑，只按历史真实证据原范围复用。
+未运行生产、原q1或旧成功对象，未合并新L2 PR、部署或启动R6/R7。五个精确保护路径均按用户批准通过官方grant执行并clear，未改守卫或自造令牌；公开分支/Draft PR与CI按授权推进。仅新socket-only、无外网、五NOLOGIN fixture角色的隔离PG16做合成API/契约验证，正常销毁；q1/q2/q3失败与q4至q9的通过分别保留。#1395在用户手动放行指定Trusted后正常固定head合并，未重试403、绕保护或自批review。正式结算／更正本轮未重跑，只按历史真实证据原范围复用。
