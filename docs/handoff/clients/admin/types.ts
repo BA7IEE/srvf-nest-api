@@ -3,7 +3,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:4e5f0483cec82fc80d18d3411a47eeb1a0c57bf55a3072c02a41dd17ce37ea34
+// inputDigest: sha256:2f966ddfffc4149dfb0957355178ce5d8a5c2a11e2d97e4bf7bf5365ac0c6196
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -685,6 +685,20 @@ export interface AdminCreateActivityTemplateVersionDto {
   "metricSelection"?: AdminActivityMetricSelectionInputDto;
 }
 
+export interface AdminCreateSimpleActivityDto {
+  "title": string;
+  "organizationId": string;
+  "startAt": string;
+  "endAt": string;
+  "location": string;
+  "templateVersionId": string;
+  "operationKey": string;
+  "confirmedCapacity"?: number | null;
+  "defaultPlaceVisibilityCode": "public" | "accepted" | "staff" | "command";
+  "instance"?: AdminSimpleActivityInstanceDto;
+  "places"?: AdminSimpleActivityPlaceDto[];
+}
+
 export interface AdminCreateTimePolicyDto {
   "operationKey": string;
   "code": string;
@@ -896,6 +910,17 @@ export interface AdminRetireTimePolicyVersionDto {
   "expectedStatusCode": "active";
 }
 
+export interface AdminSaveSimpleActivityDto {
+  "title": string;
+  "organizationId": string;
+  "startAt": string;
+  "endAt": string;
+  "location": string;
+  "expectedDraftHash": string;
+  "instance": AdminSimpleActivityInstanceDto;
+  "places": AdminSimpleActivityPlaceDto[];
+}
+
 export interface AdminSelectActivityMetricSetDto {
   "operationKey": string;
   "expectedRevision": number;
@@ -998,6 +1023,142 @@ export interface AdminSettlementSealRevisionDto {
   "workflowRevision": number;
   "manualReviewPendingCount": number;
   "sealedAt": string;
+}
+
+export interface AdminSimpleActivityCreationResultDto {
+  "activityId": string;
+  "createdAt": string;
+  "createdStatusCode": "draft";
+  "replayed": boolean;
+}
+
+export interface AdminSimpleActivityInstanceDto {
+  "capacity": number | null;
+  "registrationDeadline": string | null;
+  "description": string | null;
+  "registrationNotes": string | null;
+}
+
+export interface AdminSimpleActivityPlaceDto {
+  "roleCode": "primary" | "meeting" | "execution" | "evacuation" | "parking" | "other";
+  "visibilityCode": "public" | "accepted" | "staff" | "command";
+  "presetId"?: string;
+  "inline"?: AdminSimpleInlinePlaceDto;
+}
+
+export interface AdminSimpleDraftPolicyDto {
+  "kind": "time" | "contribution";
+  "layerCode": "activity" | "session" | "position" | "template";
+  "mode": string;
+  "name": string | null;
+  "version": number | null;
+  "effectiveFrom": string | null;
+  "effectiveUntil": string | null;
+}
+
+export interface AdminSimpleDraftPositionDto {
+  "id": string;
+  "code": string;
+  "name": string;
+  "attendanceRoleCode": string;
+  "capacity": number | null;
+  "startAt": string | null;
+  "endAt": string | null;
+}
+
+export interface AdminSimpleDraftResponseDto {
+  "activityId": string;
+  "title": string;
+  "organizationId": string;
+  "activityTypeCode": string;
+  "allocationModeCode": "first_come";
+  "startAt": string;
+  "endAt": string;
+  "location": string;
+  "instance": AdminSimpleActivityInstanceDto;
+  "statusCode": string;
+  "review": AdminSimpleDraftReviewDto;
+  "editable": boolean;
+  "draftHash": string;
+  "selectedTemplateVersionId": string;
+  "definitionHash": string;
+  "session": AdminSimpleDraftSessionDto;
+  "position": AdminSimpleDraftPositionDto;
+  "places": AdminSimpleActivityPlaceDto[];
+  "policies": AdminSimpleDraftPolicyDto[];
+}
+
+export interface AdminSimpleDraftReviewDto {
+  "id": string;
+  "status": "pending" | "approved" | "returned" | "withdrawn" | "cancelled";
+  "requestType": "initial" | "change";
+}
+
+export interface AdminSimpleDraftSessionDto {
+  "id": string;
+  "code": string;
+  "name": string;
+  "startAt": string;
+  "endAt": string;
+  "capacity": number | null;
+  "checkInOpenAt": string;
+  "checkInCloseAt": string;
+  "checkOutOpenAt": string;
+  "checkOutCloseAt": string;
+  "preparationStartAt": string | null;
+}
+
+export interface AdminSimpleInlinePlaceDto {
+  "name": string;
+  "addressText": string;
+  "instruction"?: string;
+  "coordinate"?: AdminSimplePlaceCoordinateDto;
+  "providerCode"?: string;
+  "providerPlaceId"?: string;
+  "checkInEligible": boolean;
+  "radiusMeters"?: number;
+}
+
+export interface AdminSimpleOrganizationOptionDto {
+  "organizationId": string;
+  "name": string;
+  "pathLabel": string;
+  "source": "membership" | "cross-org-grant";
+  "membershipType": "PRIMARY" | "SECONDARY" | "TEMPORARY" | "SUPPORT" | null;
+}
+
+export interface AdminSimplePlaceCoordinateDto {
+  "longitude": number;
+  "latitude": number;
+  "coordinateSystemCode": "wgs84" | "gcj02" | "bd09";
+}
+
+export interface AdminSimpleTemplateFamilyOptionDto {
+  "id": string;
+  "code": string;
+  "name": string;
+  "categoryCode": string;
+}
+
+export interface AdminSimpleTemplateVersionOptionDto {
+  "id": string;
+  "code": string;
+  "name": string;
+  "version": number;
+  "schemaVersion": 1 | 2 | 3 | 4 | 5;
+  "definitionHash": string;
+  "statusCode": "active";
+  "activityTypeCode": string;
+  "family": AdminSimpleTemplateFamilyOptionDto;
+  "effectiveFrom": string;
+  "effectiveTo": string | null;
+  "createdAt": string;
+  "updatedAt": string;
+}
+
+export interface AdminSubmitSimpleActivityReviewDto {
+  "operationKey": string;
+  "confirmation": boolean;
 }
 
 export interface AdminTemplateActivityDefinitionDto {

@@ -820,6 +820,13 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/activities'],
   // F1/A6(admin-api-fe-integration-roadmap.md §4 A6)。
   ['get', '/api/admin/v1/activities/options'],
+  // ActivityOS V1 L2:本人单场次草稿及发布提审；复用既有组织/责任/授权，不新增权限码。
+  ['get', '/api/admin/v1/activities/organization-options'],
+  ['get', '/api/admin/v1/activities/template-version-options'],
+  ['post', '/api/admin/v1/activities/from-template'],
+  ['get', '/api/admin/v1/activities/{id}/simple-draft'],
+  ['put', '/api/admin/v1/activities/{id}/simple-draft'],
+  ['post', '/api/admin/v1/activities/{id}/publish-reviews'],
   ['post', '/api/admin/v1/activities'],
   ['get', '/api/admin/v1/activities/{id}'],
   ['patch', '/api/admin/v1/activities/{id}'],
@@ -1222,7 +1229,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 666; // Human background correction adds three explicit App routes.
+const EXPECTED_ROUTE_COUNT = 672; // ActivityOS V1 adds six explicit Admin simple-activity routes.
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -1239,6 +1246,22 @@ function schemaAllowsNull(schema: OpenApiSchema | undefined): boolean {
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
 const EXPECTED_SCHEMAS: readonly string[] = [
+  'AdminCreateSimpleActivityDto',
+  'AdminSaveSimpleActivityDto',
+  'AdminSubmitSimpleActivityReviewDto',
+  'AdminSimpleActivityCreationResultDto',
+  'AdminSimpleActivityInstanceDto',
+  'AdminSimpleActivityPlaceDto',
+  'AdminSimpleDraftPolicyDto',
+  'AdminSimpleDraftPositionDto',
+  'AdminSimpleDraftResponseDto',
+  'AdminSimpleDraftReviewDto',
+  'AdminSimpleDraftSessionDto',
+  'AdminSimpleInlinePlaceDto',
+  'AdminSimpleOrganizationOptionDto',
+  'AdminSimplePlaceCoordinateDto',
+  'AdminSimpleTemplateFamilyOptionDto',
+  'AdminSimpleTemplateVersionOptionDto',
   'AppActivityTimeCorrectionJobDto',
   'LoginDto',
   'CreateUserDto',
@@ -2265,6 +2288,96 @@ describe('OpenAPI 契约快照', () => {
     expect(template.properties?.statusCode.enum).toEqual(['active']);
     expect(JSON.stringify(template)).not.toContain('Admin');
     expect(JSON.stringify(metric)).not.toContain('Admin');
+  });
+  it.each([
+    ['get', 'organization-options'],
+    ['get', 'template-version-options'],
+    ['post', 'from-template'],
+    ['get', '{id}/simple-draft'],
+    ['put', '{id}/simple-draft'],
+    ['post', '{id}/publish-reviews'],
+  ] as const)('L2 simple activity %s %s retains bearer authentication', (method, suffix) => {
+    const operation = doc.paths[`/api/admin/v1/activities/${suffix}`]?.[method];
+    expect(operation?.security).toEqual([{ bearer: [] }]);
+    expect(documented4xxCodes(operation)).toEqual(
+      expect.arrayContaining([BizCode.UNAUTHORIZED.code, BizCode.FORBIDDEN.code]),
+    );
+  });
+  it('L2 simple commands bind the full draft hash and preserve explicit nullable instance values', () => {
+    const schemas = doc.components?.schemas ?? {};
+    const create = schemas.AdminCreateSimpleActivityDto as OpenApiSchema;
+    const save = schemas.AdminSaveSimpleActivityDto as OpenApiSchema;
+    const instance = schemas.AdminSimpleActivityInstanceDto as OpenApiSchema;
+    const submit = schemas.AdminSubmitSimpleActivityReviewDto as OpenApiSchema;
+    expect(Object.keys(create.properties ?? {}).sort()).toEqual([
+      'confirmedCapacity',
+      'defaultPlaceVisibilityCode',
+      'endAt',
+      'instance',
+      'location',
+      'operationKey',
+      'organizationId',
+      'places',
+      'startAt',
+      'templateVersionId',
+      'title',
+    ]);
+    expect(Object.keys(save.properties ?? {}).sort()).toEqual([
+      'endAt',
+      'expectedDraftHash',
+      'instance',
+      'location',
+      'organizationId',
+      'places',
+      'startAt',
+      'title',
+    ]);
+    expect(save.required?.slice().sort()).toEqual(Object.keys(save.properties ?? {}).sort());
+    expect(save.properties?.expectedDraftHash).toMatchObject({
+      type: 'string',
+      pattern: '^[0-9a-f]{64}$',
+    });
+    expect(instance.required?.slice().sort()).toEqual([
+      'capacity',
+      'description',
+      'registrationDeadline',
+      'registrationNotes',
+    ]);
+    expect(Object.keys(instance.properties ?? {}).sort()).toEqual(
+      instance.required?.slice().sort(),
+    );
+    for (const property of Object.values(instance.properties ?? {})) {
+      expect(property.nullable).toBe(true);
+    }
+    expect(Object.keys(submit.properties ?? {}).sort()).toEqual(['confirmation', 'operationKey']);
+    expect(submit.required?.slice().sort()).toEqual(['confirmation', 'operationKey']);
+    const operation = doc.paths['/api/admin/v1/activities/{id}/simple-draft']?.put;
+    expect(operation?.requestBody?.content?.['application/json']?.schema?.$ref).toBe(
+      '#/components/schemas/AdminSaveSimpleActivityDto',
+    );
+    expect(documented4xxCodes(operation)).toContain(BizCode.ACTIVITY_SIMPLE_DRAFT_STALE.code);
+    expect(operation?.responses?.['409']).toBeDefined();
+  });
+  it('L2 Admin template options keep the exact safe summary without a full definition', () => {
+    const schema = doc.components?.schemas?.AdminSimpleTemplateVersionOptionDto as OpenApiSchema;
+    expect(Object.keys(schema.properties ?? {}).sort()).toEqual([
+      'activityTypeCode',
+      'code',
+      'createdAt',
+      'definitionHash',
+      'effectiveFrom',
+      'effectiveTo',
+      'family',
+      'id',
+      'name',
+      'schemaVersion',
+      'statusCode',
+      'updatedAt',
+      'version',
+    ]);
+    expect(schema.properties?.schemaVersion.enum).toEqual([1, 2, 3, 4, 5]);
+    expect(schema.properties?.statusCode.enum).toEqual(['active']);
+    expect(JSON.stringify(schema)).not.toContain('App');
   });
   it('definition versions remain independent through V5 additive policy selections', () => {
     const schemas = doc.components?.schemas ?? {};

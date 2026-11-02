@@ -17,7 +17,8 @@ export class ActivityDraftAuditRecorder {
       | 'draft-session-position-create'
       | 'draft-session-position-update'
       | 'draft-session-position-delete'
-      | 'draft-registration-form-update';
+      | 'draft-registration-form-update'
+      | 'simple-draft-update';
     actorUserId: string;
     actorRoleSnap: Role;
     auditMeta: AuditMeta;

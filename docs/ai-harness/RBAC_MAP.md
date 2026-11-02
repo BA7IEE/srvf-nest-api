@@ -143,12 +143,12 @@
 | `wechat-setting.reset.credentials` |
 | `wecom-setting.reset.credentials` |
 
-### controller × surface 对照(129 个 @Controller)
+### controller × surface 对照(130 个 @Controller)
 
 > 权威源:`src/**/*.controller.ts` 的 `@Controller(...)` 装饰器。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 鉴权模式(R / A / P)与业务语义属人类知识,见本文件标记之外的章节。
 
-#### admin/v1(57 个 controller)
+#### admin/v1(58 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
@@ -165,6 +165,7 @@
 | `admin/v1/activities` | `src/modules/activities/controllers/admin-activity-metric-selection.controller.ts` |
 | `admin/v1/activities` | `src/modules/activities/controllers/admin-activity-positions.controller.ts` |
 | `admin/v1/activities` | `src/modules/activities/controllers/admin-activity-time-policy-selection.controller.ts` |
+| `admin/v1/activities` | `src/modules/activities/controllers/admin-simple-activities.controller.ts` |
 | `admin/v1/activities/:activityId` | `src/modules/activities/controllers/admin-activity-participation.controller.ts` |
 | `admin/v1/activities/:activityId` | `src/modules/activity-feedbacks/controllers/admin-activity-feedbacks.controller.ts` |
 | `admin/v1/activities/:activityId` | `src/modules/attendances/controllers/admin-activity-check-ins.controller.ts` |

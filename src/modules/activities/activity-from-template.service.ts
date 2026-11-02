@@ -31,6 +31,11 @@ import { ActivityAllocationModeService } from './activity-allocation-mode.servic
 import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { ActivityImageSigningService } from './activity-image-signing.service';
 import { ActivityInitiationPolicy } from './activity-initiation-policy';
+import {
+  parseSimpleActivityInstance,
+  simpleDraftLayout,
+  type SimpleActivityInstance,
+} from './activity-simple-draft-plan';
 import { ActivityResponseDto } from './activities.dto';
 import { toResponseDto } from './activity-presenter';
 import { matchesActivityTemplateDefinitionHash } from './activity-template-definition';
@@ -109,6 +114,7 @@ export interface MaterializedActivityFromTemplate {
   readonly templateVersionId: string;
   readonly definitionHash: string;
   readonly actor?: CurrentUserPayload;
+  readonly revalidateSimpleCreation?: () => Promise<CurrentUserPayload>;
   /** The outer command supplies its real source receipt/review before persisting this fact. */
   readonly timePolicySelectionInitialization?: {
     readonly selection: ActivityTimePolicySelectionDocument;
@@ -426,6 +432,9 @@ export class ActivityFromTemplateService {
     readonly expectedDefinitionHash?: string;
     readonly creationContextHash?: string;
     readonly confirmedCapacity?: number | null;
+    readonly simple?: boolean;
+    readonly instance?: SimpleActivityInstance;
+    readonly creationSurface?: 'admin' | 'app';
   }): Promise<MaterializedActivityFromTemplate> {
     return this.materializeNormalizedWithinTransaction({
       tx: args.tx,
@@ -435,6 +444,14 @@ export class ActivityFromTemplateService {
       expectedDefinitionHash: args.expectedDefinitionHash,
       creationContextHash: args.creationContextHash,
       confirmedCapacity: args.confirmedCapacity,
+      ...(args.simple
+        ? {
+            simple: true,
+            instance:
+              args.instance === undefined ? undefined : parseSimpleActivityInstance(args.instance),
+            creationSurface: args.creationSurface,
+          }
+        : {}),
     });
   }
 
@@ -445,6 +462,7 @@ export class ActivityFromTemplateService {
     actorUserId: string,
     creationContextHash: string,
     user: CurrentUserPayload,
+    simple = false,
   ): Promise<ActivityFullRow | null> {
     return this.findReplay(
       tx,
@@ -452,11 +470,25 @@ export class ActivityFromTemplateService {
       actorUserId,
       creationContextHash,
       user,
+      simple,
     );
   }
 
   isCreationOperationKeyConflict(error: unknown): boolean {
     return this.isOperationKeyConflict(error);
+  }
+
+  /** Caller owns the aggregate lock, current authorization and all writes. */
+  async simpleDraftTemplateWithinTransaction(
+    tx: Prisma.TransactionClient,
+    templateVersionId: string,
+    revalidate: () => Promise<void>,
+  ) {
+    const template = await this.lockTemplateVersion(tx, templateVersionId);
+    await revalidate();
+    const selected = this.selectDefinitionOrThrow(template);
+    await this.assertGovernedTemplateFamily(tx, template.familyId);
+    return selected;
   }
 
   /**
@@ -544,30 +576,49 @@ export class ActivityFromTemplateService {
     readonly expectedDefinitionHash?: string;
     readonly creationContextHash?: string;
     readonly confirmedCapacity?: number | null;
+    readonly simple?: boolean;
+    readonly instance?: SimpleActivityInstance;
+    readonly creationSurface?: 'admin' | 'app';
   }): Promise<MaterializedActivityFromTemplate> {
     const template = await this.lockTemplateVersion(args.tx, args.input.templateVersionId);
     const { definition, definitionHash } = this.selectDefinitionOrThrow(template);
     let actor = args.user;
     let v3Initiator: string | undefined;
     let policyRevalidate: (() => Promise<CurrentUserPayload>) | undefined;
+    if (args.simple) {
+      const current = await this.metricAccess.authorizeSimpleCreation(
+        args.tx,
+        args.user,
+        args.input.organizationId,
+      );
+      actor = current.actor;
+      v3Initiator = current.initiatorMemberId;
+    }
     if (
       hasMetricSelection(definition) ||
       isTemplateDefinitionV4(definition) ||
       isTemplateDefinitionV5(definition)
     ) {
       const revalidate = async () => {
-        const surface = args.creationContextHash === undefined ? 'admin' : 'app';
+        const surface =
+          args.creationSurface ?? (args.creationContextHash === undefined ? 'admin' : 'app');
         const requireInitiator =
           args.initiatorMode === 'resolve' && this.config.activityResponsibilityWorkflow.enabled;
         if (hasMetricSelection(definition)) {
-          const current = await this.metricAccess.authorizeCreation(
-            args.tx,
-            args.user,
-            surface,
-            args.input.organizationId,
-            args.input.initiatorMemberId,
-            requireInitiator,
-          );
+          const current = args.simple
+            ? await this.metricAccess.authorizeSimpleCreation(
+                args.tx,
+                args.user,
+                args.input.organizationId,
+              )
+            : await this.metricAccess.authorizeCreation(
+                args.tx,
+                args.user,
+                surface,
+                args.input.organizationId,
+                args.input.initiatorMemberId,
+                requireInitiator,
+              );
           actor = current.actor;
           v3Initiator = current.initiatorMemberId;
         }
@@ -641,8 +692,31 @@ export class ActivityFromTemplateService {
 
     this.allocationModes.assertValidMode(definition.activity.allocationModeCode);
     this.access.assertStartEndValid(args.input.startAt, args.input.endAt);
-    this.access.assertRegistrationDeadlineValid(args.input.registrationDeadline, args.input.endAt);
-    const sessions = this.materializeSessions(definition, args.input.startAt, args.input.endAt);
+    const materializedInput =
+      args.instance === undefined
+        ? args.input
+        : {
+            ...args.input,
+            registrationDeadline:
+              args.instance.registrationDeadline === null
+                ? null
+                : new Date(args.instance.registrationDeadline),
+          };
+    this.access.assertRegistrationDeadlineValid(
+      materializedInput.registrationDeadline,
+      args.input.endAt,
+    );
+    const sessions = args.simple
+      ? this.materializeSimpleSessions(
+          definition,
+          args.input.startAt,
+          args.input.endAt,
+          args.instance?.capacity === undefined
+            ? (definition.activity.capacity ?? null)
+            : args.instance.capacity,
+          args.input.location,
+        )
+      : this.materializeSessions(definition, args.input.startAt, args.input.endAt);
     await this.access.assertDictItemValid(
       DICT_TYPE_ACTIVITY_TYPE,
       template.activityTypeCode,
@@ -685,13 +759,20 @@ export class ActivityFromTemplateService {
     const created = await args.tx.activity.create({
       data: {
         ...this.activityCreateData({
-          input: args.input,
+          input: materializedInput,
           templateVersionId: template.id,
           activityTypeCode: template.activityTypeCode,
           definition,
           requestHash,
           initiatorMemberId,
         }),
+        ...(args.instance === undefined
+          ? {}
+          : {
+              capacity: args.instance.capacity,
+              description: args.instance.description,
+              registrationNotes: args.instance.registrationNotes,
+            }),
         ...(hasMetricSelection(definition)
           ? metricSelectionColumns(definition.metricSelection)
           : {}),
@@ -800,7 +881,21 @@ export class ActivityFromTemplateService {
       created,
       templateVersionId: template.id,
       definitionHash,
-      ...(hasMetricSelection(definition) ? { actor } : {}),
+      ...(hasMetricSelection(definition) || args.simple ? { actor } : {}),
+      ...(args.simple
+        ? {
+            revalidateSimpleCreation:
+              policyRevalidate ??
+              (async () =>
+                (
+                  await this.metricAccess.authorizeSimpleCreation(
+                    args.tx,
+                    args.user,
+                    args.input.organizationId,
+                  )
+                ).actor),
+          }
+        : {}),
       ...(timePolicySelectionInitialization ? { timePolicySelectionInitialization } : {}),
       ...(contributionPolicySelectionInitialization
         ? { contributionPolicySelectionInitialization }
@@ -853,6 +948,7 @@ export class ActivityFromTemplateService {
     actorUserId: string,
     creationContextHash?: string,
     user?: CurrentUserPayload,
+    simple = false,
   ): Promise<ActivityFullRow | null> {
     const existing = await tx.activity.findUnique({
       where: { createFromTemplateOperationKey: input.operationKey },
@@ -865,6 +961,11 @@ export class ActivityFromTemplateService {
       },
     });
     if (!existing) return null;
+    if (simple) {
+      if (!user) throw new BizException(BizCode.UNAUTHORIZED);
+      await tx.$queryRaw`SELECT "id" FROM "Activity" WHERE "id" = ${existing.id} FOR UPDATE`;
+      await this.metricAccess.authorizeSimpleCreation(tx, user, input.organizationId);
+    }
     if (
       existing.selectedTemplateVersion?.schemaVersion === 3 ||
       existing.selectedTemplateVersion?.schemaVersion === 4 ||
@@ -872,15 +973,17 @@ export class ActivityFromTemplateService {
     ) {
       if (!user) throw new BizException(BizCode.UNAUTHORIZED);
       await tx.$queryRaw`SELECT "id" FROM "Activity" WHERE "id" = ${existing.id} FOR UPDATE`;
-      const surface = creationContextHash === undefined ? 'admin' : 'app';
-      await this.metricAccess.authorizeCreation(
-        tx,
-        user,
-        surface,
-        input.organizationId,
-        input.initiatorMemberId,
-        this.config.activityResponsibilityWorkflow.enabled,
-      );
+      const surface = simple ? 'admin' : creationContextHash === undefined ? 'admin' : 'app';
+      if (simple) await this.metricAccess.authorizeSimpleCreation(tx, user, input.organizationId);
+      else
+        await this.metricAccess.authorizeCreation(
+          tx,
+          user,
+          surface,
+          input.organizationId,
+          input.initiatorMemberId,
+          this.config.activityResponsibilityWorkflow.enabled,
+        );
       if (
         existing.selectedTemplateVersion.schemaVersion === 4 ||
         existing.selectedTemplateVersion.schemaVersion === 5
@@ -1021,6 +1124,26 @@ export class ActivityFromTemplateService {
         })
       : null;
     if (!family) throw new BizException(BizCode.ACTIVITY_TEMPLATE_VERSION_NOT_SELECTABLE);
+  }
+
+  private materializeSimpleSessions(
+    definition: ActivityTemplateDefinitionV1,
+    startAt: Date,
+    endAt: Date,
+    capacity: number | null,
+    location: string,
+  ): readonly MaterializedSession[] {
+    const layout = simpleDraftLayout(definition, startAt, endAt, capacity, location);
+    const originalEnd = addMinutes(startAt, definition.sessions[0].endOffsetMinutes);
+    const [source] = this.materializeSessions(definition, startAt, originalEnd);
+    const session = {
+      ...source,
+      ...layout.session,
+      positions: [{ ...source.positions[0], ...layout.position }],
+    };
+    this.assertSessionValid(session, startAt, endAt);
+    this.assertPositionValid(session.positions[0], session);
+    return [session];
   }
 
   private materializeSessions(

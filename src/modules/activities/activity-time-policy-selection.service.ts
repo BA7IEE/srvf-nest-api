@@ -692,6 +692,29 @@ export class ActivityTimePolicySelectionService {
     };
   }
 
+  /** Revalidate retained selections against an atomically edited interval; never append a revision. */
+  async assertCurrentForDraftWithinTransaction(
+    tx: Prisma.TransactionClient,
+    activity: {
+      id: string;
+      startAt: Date;
+      endAt: Date;
+      timePolicySelectionRevision: number;
+      currentTimePolicySelectionRevisionId: string | null;
+    },
+    reauthorize: () => Promise<void>,
+  ) {
+    const document = await this.loadCurrent(tx, activity);
+    await this.assertChangedReferencesCurrentAndAvailable(
+      tx,
+      activity,
+      document,
+      Object.values(document.items),
+      reauthorize,
+    );
+    return document;
+  }
+
   private async loadCurrent(
     tx: Prisma.TransactionClient,
     activity: {

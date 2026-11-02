@@ -22,6 +22,7 @@ import {
 import { canonicalizeRegistrationFormDefinitionForB3 } from './registration-form-definition';
 import { timePolicyVersionDocument } from './activity-time-policy-presenter';
 import { contributionPolicyVersionDocument } from './activity-contribution-policy-presenter';
+import { isSimpleDraftTemplate } from './activity-simple-draft-plan';
 
 interface OptionsQuery {
   organizationId: string;
@@ -109,7 +110,7 @@ export class ActivityMetricSelectionQueryService {
     );
   }
 
-  templateVersionOptions(query: OptionsQuery, user: CurrentUserPayload) {
+  templateVersionOptions(query: OptionsQuery, user: CurrentUserPayload, simpleOnly = false) {
     return this.prisma.$transaction(
       async (tx) => {
         await this.access.authorizeOptions(tx, user, query.organizationId);
@@ -143,6 +144,7 @@ export class ActivityMetricSelectionQueryService {
             )
               throw new TypeError('invalid template effective window');
             const definition = parseStoredTemplateVersion(row);
+            if (simpleOnly && !isSimpleDraftTemplate(definition)) return [];
             if ('registrationForm' in definition && definition.registrationForm)
               canonicalizeRegistrationFormDefinitionForB3(definition.registrationForm);
             const selection = 'metricSelection' in definition ? definition.metricSelection : null;

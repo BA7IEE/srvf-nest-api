@@ -118,8 +118,8 @@
       "description": "sha256:131961e98b947579dc90f4fc0420b38f706280ed319074cd3589e4e0bcddbe3f"
     },
     "activity.create.record": {
-      "endpoints": 4,
-      "surface": "sha256:92538c0ba03494bfe1c3b9866d6c6b4eb0722423301f5071eff074f393804556",
+      "endpoints": 5,
+      "surface": "sha256:c7fd8907468269648fd530294f11da1bc7d4c87a1dc3a2e7d3fb5d7ac853cf43",
       "description": "sha256:06e92bcaa99b85602e92dcddb7f48d0a6d917c0cd019e7c9b53e132aa2738507"
     },
     "activity.delete.record": {
@@ -213,8 +213,8 @@
       "description": "sha256:bc3a10aa1294516041efd6512b658c503384b172610374fdd39a3efafd6bd616"
     },
     "activity.update.record": {
-      "endpoints": 8,
-      "surface": "sha256:2c10d4c714d369de5b6414056731e33bae918c776a93c7993183be51c43c4834",
+      "endpoints": 9,
+      "surface": "sha256:e9c32fa0d2da3a6c90dd0f794f175af7f1f8bcffd1856c85c9a4e8322cd078e4",
       "description": "sha256:d8729617edc88416ccc1240876c17584c8a46df0a01928f9561656cfbda59709"
     },
     "announcement-import.execute.record": {

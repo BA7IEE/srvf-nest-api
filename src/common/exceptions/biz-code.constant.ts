@@ -1812,6 +1812,11 @@ export const BizCode = {
     message: '从模板创建活动的操作键与首次请求不一致',
     httpStatus: HttpStatus.CONFLICT,
   },
+  ACTIVITY_SIMPLE_DRAFT_STALE: {
+    code: 20255,
+    message: '活动草稿已变化，请重新读取后再保存',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // Activity OS R2 / B7: three B6 draft creation commands only; not a permission failure.
   ACTIVITY_CONTROL_PLANE_UNAVAILABLE: {
