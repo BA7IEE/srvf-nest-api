@@ -85,7 +85,7 @@ describe('Integration Foundation v1 PR2 —— ServicePrincipal 控制面(8 端�
       expect(json).not.toContain('secretHash');
     }
     // 凭证列表不返回 hash/secret。
-    const creds = await service.listCredentials(spId);
+    const creds = await service.listCredentials(spId, actor);
     expect(creds).toHaveLength(1);
     expect(JSON.stringify(creds)).not.toContain('secretHash');
     expect(JSON.stringify(creds)).not.toContain(rawSecret1);

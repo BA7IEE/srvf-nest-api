@@ -245,6 +245,11 @@ export class AttachmentWriteService {
       }
       throw error;
     }
+    // Editing metadata does not grant access to the file itself. Preserve update-only
+    // roles while keeping their response out of the download URL resolution path.
+    if (!(await this.access.canViewAttachment(user, updated))) {
+      return { ...updated, accessUrl: null };
+    }
     return this.access.toResponseDto(updated);
   }
 
