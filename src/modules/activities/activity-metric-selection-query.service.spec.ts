@@ -12,6 +12,8 @@ import type { GlobalTemplateVersionRow } from './activity-template-version-prese
 import { fingerprintActivityMetricDefinition } from './activity-metric-definition';
 import { fingerprintActivityMetricSetDefinition } from './activity-metric-set-definition';
 import { fingerprintActivityTemplateDefinition } from './activity-template-definition';
+import { fingerprintTimePolicyVersion } from './activity-time-policy-definition';
+import { fingerprintContributionPolicyVersion } from './activity-contribution-policy-definition';
 
 const requestActor: CurrentUserPayload = {
   id: 'reader',
@@ -232,11 +234,28 @@ function optionTemplate(
     activity: { allocationModeCode: 'first_come' },
     sessions: [],
     ...(schemaVersion > 1 ? { registrationForm: null } : {}),
-    ...(schemaVersion === 3
+    ...(schemaVersion >= 3
       ? {
           metricSelection: {
             metricRequirementCode: selection.metricRequirementCode,
             metricSetPointer: selection.metricSetPointer ? { ...selection.metricSetPointer } : null,
+          },
+        }
+      : {}),
+    ...(schemaVersion >= 4
+      ? {
+          timePolicySelection: {
+            default: { mode: 'inherit', pointer: null },
+            sessionOverrides: [],
+            positionOverrides: [],
+          },
+        }
+      : {}),
+    ...(schemaVersion === 5
+      ? {
+          contributionPolicySelection: {
+            activityDefault: { mode: 'inherit', pointer: null },
+            positionOverrides: [],
           },
         }
       : {}),
@@ -286,6 +305,16 @@ function optionsSetup() {
     activityTemplate: {
       findMany: jest.fn<Promise<unknown[]>, [Prisma.ActivityTemplateFindManyArgs]>(),
     },
+    timePolicyVersion: {
+      findMany: jest
+        .fn<Promise<unknown[]>, [Prisma.TimePolicyVersionFindManyArgs]>()
+        .mockResolvedValue([]),
+    },
+    contributionPolicyVersion: {
+      findMany: jest
+        .fn<Promise<unknown[]>, [Prisma.ContributionPolicyVersionFindManyArgs]>()
+        .mockResolvedValue([]),
+    },
     activityMetricSetVersion: {
       findMany: jest.fn<Promise<unknown[]>, [Prisma.ActivityMetricSetVersionFindManyArgs]>(),
     },
@@ -304,6 +333,133 @@ function optionsSetup() {
 const optionsQuery = { organizationId: 'organization', page: 1, pageSize: 20 };
 
 describe('C1 D2b bounded App options', () => {
+  it.each([4, 5])(
+    'discovers supported V%s through the actual candidate filter without returning definitions',
+    async (schema) => {
+      const h = optionsSetup();
+      const row = optionTemplate(`v${schema}`, schema);
+      h.tx.activityTemplate.findMany
+        .mockImplementationOnce((args) => {
+          const filter = args.where?.schemaVersion;
+          const allowed =
+            filter !== null && typeof filter === 'object' && Array.isArray(filter.in)
+              ? filter.in
+              : [];
+          return Promise.resolve(allowed.includes(schema) ? [{ id: row.id }] : []);
+        })
+        .mockResolvedValueOnce([row]);
+      const result = await h.service.templateVersionOptions(optionsQuery, currentActor);
+      expect(result).toMatchObject({ items: [{ id: row.id, schemaVersion: schema }], total: 1 });
+      expect(result.items[0]).not.toHaveProperty('definitionJson');
+      expect(result.items[0]).not.toHaveProperty('timePolicySelection');
+      expect(result.items[0]).not.toHaveProperty('contributionPolicySelection');
+      expect(h.authorizeOptions).toHaveBeenCalledWith(
+        h.client,
+        currentActor,
+        optionsQuery.organizationId,
+      );
+    },
+  );
+
+  it.each([4, 5])(
+    'V%s excludes retired or corrupted policy references while keeping valid future-effective metadata',
+    async (schema) => {
+      const h = optionsSetup();
+      const template = optionTemplate('policy-template', schema);
+      const time = schema === 4;
+      const document = time
+        ? fingerprintTimePolicyVersion({
+            schemaVersion: 1,
+            evaluatorVersion: 1,
+            effectiveFrom: '2200-01-01T00:00:00.000Z',
+            effectiveUntil: null,
+            definition: {
+              defaultCategory: 'volunteer_service',
+              roleMappings: [],
+              allowSplit: false,
+              specialIntervals: {
+                preparation: { mode: 'exclude' },
+                duty: { mode: 'exclude' },
+                travel: { mode: 'exclude' },
+              },
+              rounding: { mode: 'floor', quantumSeconds: 1 },
+              evidence: { requiredSources: [], requireManualRecognition: false },
+              manualAdjustment: { enabled: false },
+            },
+          })
+        : fingerprintContributionPolicyVersion({
+            schemaVersion: 1,
+            evaluatorVersion: 1,
+            effectiveFrom: '2200-01-01T00:00:00.000Z',
+            effectiveUntil: null,
+            definition: {
+              defaultResult: { recognizedPoints: '0.50', explanationCode: 'fixed' },
+              roleRules: [],
+            },
+          });
+      const pointer = {
+        policyId: 'policy',
+        versionId: 'version',
+        definitionHash: document.definitionHash,
+        ...(!time ? { evaluatorVersion: 1 } : {}),
+      };
+      const definition = template.definitionJson as Record<string, Prisma.JsonValue>;
+      if (time)
+        definition.timePolicySelection = {
+          default: { mode: 'explicit', pointer },
+          sessionOverrides: [],
+          positionOverrides: [],
+        };
+      else
+        definition.contributionPolicySelection = {
+          activityDefault: { mode: 'explicit', pointer },
+          positionOverrides: [],
+        };
+      template.definitionHash = fingerprintActivityTemplateDefinition({
+        schemaVersion: schema,
+        definition,
+      }).definitionHash;
+      const version = {
+        id: 'version',
+        policyId: 'policy',
+        version: 1,
+        schemaVersion: 1,
+        evaluatorVersion: 1,
+        definitionJson: document.definition,
+        definitionHash: document.definitionHash,
+        effectiveFrom: new Date(document.effectiveFrom),
+        effectiveUntil: null,
+        statusCode: 'active',
+      };
+      const versions = time
+        ? h.tx.timePolicyVersion.findMany
+        : h.tx.contributionPolicyVersion.findMany;
+      for (const state of ['valid', 'retired', 'corrupt'] as const) {
+        h.tx.activityTemplate.findMany
+          .mockResolvedValueOnce([{ id: template.id }])
+          .mockResolvedValueOnce([template]);
+        versions.mockResolvedValueOnce([
+          {
+            ...version,
+            statusCode: state === 'retired' ? 'retired' : 'active',
+            definitionHash: document.definitionHash,
+            definitionJson:
+              state === 'corrupt'
+                ? { ...document.definition, unexpected: 'corrupt' }
+                : document.definition,
+          },
+        ]);
+        const result = await h.service.templateVersionOptions(optionsQuery, currentActor);
+        expect(result.items.map((item) => item.id)).toEqual(state === 'valid' ? [template.id] : []);
+        expect(result.total).toBe(state === 'valid' ? 1 : 0);
+      }
+      expect(versions).toHaveBeenCalledTimes(3);
+      expect(versions.mock.calls[0][0]).toEqual({ where: { id: { in: ['version'] } } });
+      expect(
+        time ? h.tx.contributionPolicyVersion.findMany : h.tx.timePolicyVersion.findMany,
+      ).not.toHaveBeenCalled();
+    },
+  );
   it.each(['metricSetOptions', 'templateVersionOptions'] as const)(
     '%s rejects before catalogue access when current initiation eligibility fails',
     async (method) => {
@@ -488,7 +644,7 @@ describe('C1 D2b bounded App options', () => {
     );
     expect(h.tx.activityTemplate.findMany.mock.calls[0][0].where).toEqual({
       statusCode: 'active',
-      schemaVersion: { in: [1, 2, 3] },
+      schemaVersion: { in: [1, 2, 3, 4, 5] },
       family: { scopeTypeCode: 'global', ownerOrganizationId: null, statusCode: 'active' },
     });
     expect(h.tx.activityMetricSetVersion.findMany).toHaveBeenCalledTimes(1);

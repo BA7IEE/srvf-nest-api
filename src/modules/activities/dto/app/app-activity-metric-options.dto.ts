@@ -41,7 +41,7 @@ export class AppActivityTemplateVersionOptionDto {
   name!: string;
   @ApiProperty({ description: '显式版本号', minimum: 1 })
   version!: number;
-  @ApiProperty({ description: '定义 schema 版本', enum: [1, 2, 3] })
+  @ApiProperty({ description: '定义 schema 版本', enum: [1, 2, 3, 4, 5] })
   schemaVersion!: number;
   @ApiProperty({ description: '精确版本内容 hash', pattern: '^[0-9a-f]{64}$' })
   definitionHash!: string;

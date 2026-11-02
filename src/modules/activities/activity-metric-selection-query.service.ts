@@ -20,6 +20,8 @@ import {
   presentTemplateVersionSummary,
 } from './activity-template-version-presenter';
 import { canonicalizeRegistrationFormDefinitionForB3 } from './registration-form-definition';
+import { timePolicyVersionDocument } from './activity-time-policy-presenter';
+import { contributionPolicyVersionDocument } from './activity-contribution-policy-presenter';
 
 interface OptionsQuery {
   organizationId: string;
@@ -49,7 +51,10 @@ function unavailableDefinition(error: unknown) {
   return (
     error instanceof TypeError ||
     error instanceof ActivityTemplateDefinitionV1Error ||
-    (error instanceof BizException && error.biz === BizCode.BAD_REQUEST)
+    (error instanceof BizException &&
+      (error.biz === BizCode.BAD_REQUEST ||
+        error.biz === BizCode.ACTIVITY_TIME_POLICY_RECEIPT_INVALID ||
+        error.biz === BizCode.ACTIVITY_CONTRIBUTION_POLICY_RECEIPT_INVALID))
   );
 }
 
@@ -111,7 +116,7 @@ export class ActivityMetricSelectionQueryService {
         const candidates = await tx.activityTemplate.findMany({
           where: {
             statusCode: 'active',
-            schemaVersion: { in: [1, 2, 3] },
+            schemaVersion: { in: [1, 2, 3, 4, 5] },
             family: globalTemplateFamilyWhere(),
           },
           select: { id: true },
@@ -141,7 +146,33 @@ export class ActivityMetricSelectionQueryService {
             if ('registrationForm' in definition && definition.registrationForm)
               canonicalizeRegistrationFormDefinitionForB3(definition.registrationForm);
             const selection = 'metricSelection' in definition ? definition.metricSelection : null;
-            return [{ summary: presentTemplateVersionSummary(row), selection }];
+            const time =
+              'timePolicySelection' in definition ? definition.timePolicySelection : null;
+            const contribution =
+              'contributionPolicySelection' in definition
+                ? definition.contributionPolicySelection
+                : null;
+            const timePointers = time
+              ? [
+                  time.default,
+                  ...time.sessionOverrides.map((item) => item.selection),
+                  ...time.positionOverrides.map((item) => item.selection),
+                ].flatMap((value) => (value.pointer ? [value.pointer] : []))
+              : [];
+            const contributionPointers = contribution
+              ? [
+                  contribution.activityDefault,
+                  ...contribution.positionOverrides.map((item) => item.selection),
+                ].flatMap((value) => (value.pointer ? [value.pointer] : []))
+              : [];
+            return [
+              {
+                summary: presentTemplateVersionSummary(row),
+                selection,
+                timePointers,
+                contributionPointers,
+              },
+            ];
           } catch (error) {
             if (unavailableDefinition(error)) return [];
             throw error;
@@ -165,21 +196,71 @@ export class ActivityMetricSelectionQueryService {
             })
           : [];
         const byId = new Map(sets.map((set) => [set.id, set]));
-        const items = parsed.flatMap(({ summary, selection }) => {
-          try {
-            if (selection)
-              assertMetricSelectionReference(
-                selection,
-                selection.metricSetPointer
-                  ? (byId.get(selection.metricSetPointer.id) ?? null)
-                  : null,
-              );
-            return [summary];
-          } catch (error) {
-            if (unavailableDefinition(error)) return [];
-            throw error;
-          }
-        });
+        // V4/V5 references are checked in the same snapshot and bounded batches,
+        // just like V3's metric pointer; no raw policy definition leaves this read.
+        const timeIds = [
+          ...new Set(
+            parsed.flatMap((item) => item.timePointers.map((pointer) => pointer.versionId)),
+          ),
+        ];
+        const contributionIds = [
+          ...new Set(
+            parsed.flatMap((item) => item.contributionPointers.map((pointer) => pointer.versionId)),
+          ),
+        ];
+        assertCandidateLimit(timeIds);
+        assertCandidateLimit(contributionIds);
+        const [timeRows, contributionRows] = await Promise.all([
+          timeIds.length ? tx.timePolicyVersion.findMany({ where: { id: { in: timeIds } } }) : [],
+          contributionIds.length
+            ? tx.contributionPolicyVersion.findMany({ where: { id: { in: contributionIds } } })
+            : [],
+        ]);
+        const timesById = new Map(timeRows.map((row) => [row.id, row]));
+        const contributionsById = new Map(contributionRows.map((row) => [row.id, row]));
+        const items = parsed.flatMap(
+          ({ summary, selection, timePointers, contributionPointers }) => {
+            try {
+              for (const pointer of timePointers) {
+                const row = timesById.get(pointer.versionId);
+                if (
+                  !row ||
+                  row.policyId !== pointer.policyId ||
+                  row.statusCode !== 'active' ||
+                  row.schemaVersion !== 1 ||
+                  row.evaluatorVersion !== 1 ||
+                  row.definitionHash !== pointer.definitionHash ||
+                  timePolicyVersionDocument(row).definitionHash !== pointer.definitionHash
+                )
+                  throw new TypeError('template time policy reference unavailable');
+              }
+              for (const pointer of contributionPointers) {
+                const row = contributionsById.get(pointer.versionId);
+                if (
+                  !row ||
+                  row.policyId !== pointer.policyId ||
+                  row.statusCode !== 'active' ||
+                  row.schemaVersion !== 1 ||
+                  row.evaluatorVersion !== pointer.evaluatorVersion ||
+                  row.definitionHash !== pointer.definitionHash ||
+                  contributionPolicyVersionDocument(row).definitionHash !== pointer.definitionHash
+                )
+                  throw new TypeError('template contribution policy reference unavailable');
+              }
+              if (selection)
+                assertMetricSelectionReference(
+                  selection,
+                  selection.metricSetPointer
+                    ? (byId.get(selection.metricSetPointer.id) ?? null)
+                    : null,
+                );
+              return [summary];
+            } catch (error) {
+              if (unavailableDefinition(error)) return [];
+              throw error;
+            }
+          },
+        );
         return pageOf(items, query);
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },

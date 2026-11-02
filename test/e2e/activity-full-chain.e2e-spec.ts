@@ -343,6 +343,132 @@ describe('活动全链路贯通(14 站 · 8 条接缝)', () => {
     return (body.data ?? {}) as Record<string, unknown>;
   }
 
+  it('canonical pending registration survives manual approval and allocation commit through HTTP', async () => {
+    const manager = await prisma.user.findUniqueOrThrow({
+      where: { username: managerUsername },
+      select: { id: true },
+    });
+    await grantGlobal(manager.id, 'manual-chain-draft-edit', ['activity.update.record']);
+    freezeSystemTime(T_BEFORE_DEADLINE);
+    const ownerAuth = (await loginAs(app, managerUsername)).authHeader;
+    const applicantAuth = (await loginAs(app, applicantUsername)).authHeader;
+    const publisherAuth = (await loginAs(app, publishReviewerUsername)).authHeader;
+    const server = httpServer(app);
+    const post = (path: string, auth: string, body: object) =>
+      request(server).post(path).set('Authorization', auth).send(body);
+    const created = await post('/api/app/v1/my/managed-activities', ownerAuth, {
+      title: 'Manual approval seam',
+      activityTypeCode,
+      organizationId,
+      allocationModeCode: 'qualification_rank',
+      registrationModeCode: 'open_apply',
+      visibilityCode: 'internal',
+      defaultLocationRequired: false,
+      startAt: SESSION_START.toISOString(),
+      endAt: SESSION_END.toISOString(),
+      registrationDeadline: DEADLINE.toISOString(),
+      location: 'Synthetic venue',
+      capacity: 1,
+      isPublicRegistration: true,
+    }).expect(201);
+    expect(created.body.code).toBe(0);
+    const activityId = created.body.data.activity.id as string;
+    const managed = `/api/app/v1/my/managed-activities/${activityId}`;
+    const session = await post(`${managed}/sessions`, ownerAuth, {
+      code: 'manual-session',
+      name: 'Manual session',
+      startAt: SESSION_START.toISOString(),
+      endAt: SESSION_END.toISOString(),
+      locationText: 'Synthetic venue',
+      capacity: 1,
+      checkInOpenAt: CHECK_IN_OPEN.toISOString(),
+      checkInCloseAt: CHECK_IN_CLOSE.toISOString(),
+      checkOutOpenAt: CHECK_OUT_OPEN.toISOString(),
+      checkOutCloseAt: CHECK_OUT_CLOSE.toISOString(),
+      locationRequired: false,
+    }).expect(201);
+    const sessionId = session.body.data.sessionId as string;
+    const position = await post(`${managed}/sessions/${sessionId}/positions`, ownerAuth, {
+      code: 'manual-position',
+      name: 'Manual position',
+      attendanceRoleCode,
+      capacity: 1,
+      startAt: SESSION_START.toISOString(),
+      endAt: SESSION_END.toISOString(),
+    }).expect(201);
+    const positionId = position.body.data.positionId as string;
+    await request(server)
+      .put(`${managed}/metric-selection`)
+      .set('Authorization', ownerAuth)
+      .send({
+        operationKey: 'manual-metric',
+        expectedRevision: 0,
+        metricSelection: { metricRequirementCode: 'not_required', metricSetPointer: null },
+      })
+      .expect(200);
+    const review = await post(`${managed}/publish-reviews`, ownerAuth, {
+      operationKey: 'manual-publish',
+      confirmation: true,
+    }).expect(200);
+    await post(
+      `/api/admin/v1/activity-publish-reviews/${review.body.data.id as string}/approve`,
+      publisherAuth,
+      { requiresInsuranceConfirmed: true, operationKey: 'manual-approve-publish' },
+    ).expect(200);
+    const registered = await post(
+      `/api/app/v1/activities/${activityId}/registrations`,
+      applicantAuth,
+      {
+        operationKey: 'manual-register',
+        formVersion: null,
+        answers: [],
+        preferences: [{ sessionId, positionIds: [positionId] }],
+      },
+    ).expect(201);
+    expect(registered.body.code).toBe(0);
+    const registrationId = registered.body.data.registrationId as string;
+    const approved = await request(server)
+      .patch(`${managed}/registrations/${registrationId}/approve`)
+      .set('Authorization', ownerAuth)
+      .send({})
+      .expect(200);
+    expect(approved.body.code).toBe(0);
+    expect(approved.body.data).toMatchObject({ registrationId, statusCode: 'pass' });
+    // Header approval is not an occupancy grant. Consume the real allocation
+    // protocol after its deadline; advance only the existing test application clock.
+    freezeSystemTime(T_AFTER_DEADLINE);
+    const allocationAuth = (await loginAs(app, managerUsername)).authHeader;
+    const prepared = await post(`${managed}/allocation-batches`, allocationAuth, {
+      operationKey: 'manual-allocation-prepare',
+      sessionId,
+      positionId,
+    }).expect(201);
+    expect(prepared.body.code).toBe(0);
+    const plan = prepared.body.data as {
+      batch: {
+        batchId: string;
+        candidates: Array<{ registrationId: string; participationIdentityId: string }>;
+      };
+    };
+    expect(plan.batch.candidates).toHaveLength(1);
+    expect(plan.batch.candidates[0].registrationId).toBe(registrationId);
+    const identityId = plan.batch.candidates[0].participationIdentityId;
+    expect(identityId).toEqual(expect.any(String));
+    const committed = await post(
+      `${managed}/allocation-batches/${plan.batch.batchId}/commit`,
+      allocationAuth,
+      { operationKey: 'manual-allocation-commit' },
+    ).expect(200);
+    expect(committed.body.code).toBe(0);
+    expect(committed.body.data.batch.candidates).toEqual([
+      expect.objectContaining({
+        registrationId,
+        participationIdentityId: identityId,
+        resultCode: 'allocated',
+      }),
+    ]);
+  }, 60_000);
+
   it('走完 14 站并逐条钉住 8 条接缝的身份连续性', async () => {
     // 报名截止之前:第 1–6 站。冻结在先、登录在后 —— token 的 exp 按应用时钟判。
     freezeSystemTime(T_BEFORE_DEADLINE);

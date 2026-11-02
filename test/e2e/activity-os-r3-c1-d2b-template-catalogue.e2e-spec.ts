@@ -110,8 +110,25 @@ describe('C1 D2b App options HTTP eligibility and exact pagination', () => {
     const definition = {
       ...v1,
       ...(schemaVersion > 1 ? { registrationForm: null } : {}),
-      ...(schemaVersion === 3
+      ...(schemaVersion >= 3
         ? { metricSelection: { metricRequirementCode: 'not_required', metricSetPointer: null } }
+        : {}),
+      ...(schemaVersion >= 4
+        ? {
+            timePolicySelection: {
+              default: { mode: 'inherit', pointer: null },
+              sessionOverrides: [],
+              positionOverrides: [],
+            },
+          }
+        : {}),
+      ...(schemaVersion === 5
+        ? {
+            contributionPolicySelection: {
+              activityDefault: { mode: 'inherit', pointer: null },
+              positionOverrides: [],
+            },
+          }
         : {}),
     };
     const targetStatus = overrides.statusCode ?? 'active';
@@ -270,6 +287,19 @@ describe('C1 D2b App options HTTP eligibility and exact pagination', () => {
       200,
     );
     expect(beyond.body.data).toEqual({ items: [], total: 2, page: 3, pageSize: 1 });
+  });
+  it('discovers V4 and V5 template ids for an ordinary eligible App member with the same safe summary', async () => {
+    const versions = [await storedTemplate(4), await storedTemplate(5)];
+    const response = await get('template-version-options').expect(200);
+    expect(response.body.code).toBe(0);
+    const page = response.body.data as Page;
+    expect(page.total).toBe(2);
+    expect(page.items.map((item) => item.id).sort()).toEqual(
+      versions.map((item) => item.id).sort(),
+    );
+    expect(page.items.map((item) => item.schemaVersion).sort()).toEqual([4, 5]);
+    for (const item of page.items) expect(Object.keys(item).sort()).toEqual(summaryKeys);
+    expect(response.body.data).not.toHaveProperty('definitionJson');
   });
   it('returns only valid global V1/V2/V3 summaries, with tie ordering and exact filtered total', async () => {
     const date = new Date('2200-02-01T00:00:00.000Z');
