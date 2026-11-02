@@ -21,15 +21,38 @@ function badPlace(): never {
   throw new BizException(BizCode.BAD_REQUEST);
 }
 
+interface CreationPlacesInput {
+  activityId: string;
+  sessions: readonly CreationSessionPlaceScope[];
+  places: readonly CreationPlaceCommand[];
+  fallback?: { location: string; visibilityCode: (typeof CREATION_PLACE_VISIBILITIES)[number] };
+  revalidate?: () => Promise<void>;
+}
+
+/** Existing local rows keep their identities. Simple edits cannot silently remove place structure. */
+export async function writeSimpleDraftPlaces(
+  tx: Prisma.TransactionClient,
+  input: CreationPlacesInput,
+) {
+  const existing = await tx.activityPlace.findMany({
+    where: { activityId: input.activityId },
+    orderBy: { id: 'asc' },
+  });
+  return writeLocalPlaces(tx, input, existing);
+}
+
 /** Activity-local snapshot writer. Caller owns a newly created Activity and its root transaction. */
 export async function writeCreationPlaces(
   tx: Prisma.TransactionClient,
-  input: {
-    activityId: string;
-    sessions: readonly CreationSessionPlaceScope[];
-    places: readonly CreationPlaceCommand[];
-    fallback?: { location: string; visibilityCode: (typeof CREATION_PLACE_VISIBILITIES)[number] };
-  },
+  input: CreationPlacesInput,
+): Promise<number> {
+  return writeLocalPlaces(tx, input);
+}
+
+async function writeLocalPlaces(
+  tx: Prisma.TransactionClient,
+  input: CreationPlacesInput,
+  existing?: readonly ActivityPlace[],
 ): Promise<number> {
   const sessions = new Map(input.sessions.map((s) => [s.code, s]));
   const groups = new Map<string | null, CreationPlaceCommand[]>();
@@ -80,7 +103,25 @@ export async function writeCreationPlaces(
     }
   }
   // One creation command never overlays a pre-existing local snapshot.
-  if (await tx.activityPlace.count({ where: { activityId: input.activityId } })) badPlace();
+  if (
+    existing === undefined &&
+    (await tx.activityPlace.count({ where: { activityId: input.activityId } }))
+  )
+    badPlace();
+  const key = (sessionId: string | null, role: string) => JSON.stringify([sessionId, role]);
+  const prior = new Map(existing?.map((row) => [key(row.sessionId, row.roleCode), row]));
+  if (existing !== undefined) {
+    const targets = [...groups].flatMap(([scope, places]) =>
+      places.map((place) => key(scope === null ? null : sessions.get(scope)!.id, place.roleCode)),
+    );
+    if (
+      prior.size !== existing.length ||
+      targets.length !== existing.length ||
+      new Set(targets).size !== targets.length ||
+      targets.some((target) => !prior.has(target))
+    )
+      badPlace();
+  }
 
   // Sorted locks avoid inversion when two creations select the same presets in opposite order.
   const presetIds = [
@@ -92,6 +133,7 @@ export async function writeCreationPlaces(
       SELECT "id" FROM "PlacePreset" WHERE "id" = ${id} FOR SHARE
     `;
     if (locked.length !== 1) badPlace();
+    await input.revalidate?.();
     const preset = await tx.placePreset.findUnique({ where: { id } });
     if (!preset) badPlace();
     presets.set(id, preset);
@@ -117,27 +159,30 @@ export async function writeCreationPlaces(
           radiusMeters: place.inline.radiusMeters ?? null,
         });
       if (!local || !local.name.trim() || !local.addressText.trim()) badPlace();
+      const data = {
+        activityId: input.activityId,
+        sessionId,
+        roleCode: place.roleCode,
+        visibilityCode: place.visibilityCode,
+        name: local.name,
+        addressText: local.addressText,
+        instruction: local.instruction,
+        longitude: local.longitude,
+        latitude: local.latitude,
+        coordinateSystemCode: local.coordinateSystemCode,
+        providerCode: local.providerCode,
+        providerPlaceId: local.providerPlaceId,
+        checkInEligible: local.checkInEligible,
+        radiusMeters: local.radiusMeters,
+        sourcePresetId: place.presetId ?? null,
+      };
       rows.push(
-        await tx.activityPlace.create({
-          data: {
-            activityId: input.activityId,
-            sessionId,
-            roleCode: place.roleCode,
-            visibilityCode: place.visibilityCode,
-            name: local.name,
-            addressText: local.addressText,
-            instruction: local.instruction,
-            longitude: local.longitude,
-            latitude: local.latitude,
-            coordinateSystemCode: local.coordinateSystemCode,
-            providerCode: local.providerCode,
-            providerPlaceId: local.providerPlaceId,
-            checkInEligible: local.checkInEligible,
-            radiusMeters: local.radiusMeters,
-            sourcePresetId: place.presetId ?? null,
-            workflowRevision: 0,
-          },
-        }),
+        existing === undefined
+          ? await tx.activityPlace.create({ data: { ...data, workflowRevision: 0 } })
+          : await tx.activityPlace.update({
+              where: { id: prior.get(key(sessionId, place.roleCode))!.id },
+              data: { ...data, workflowRevision: { increment: 1 } },
+            }),
       );
       count += 1;
     }
@@ -159,7 +204,9 @@ export async function writeCreationPlaces(
     const coordinates =
       projection.kind === 'projectable'
         ? { longitude: projection.longitude, latitude: projection.latitude }
-        : {};
+        : existing === undefined
+          ? {}
+          : { longitude: null, latitude: null };
     if (sessionId === null) {
       await tx.activity.update({
         where: { id: input.activityId },
@@ -170,7 +217,9 @@ export async function writeCreationPlaces(
                 locationLongitude: projection.longitude,
                 locationLatitude: projection.latitude,
               }
-            : {}),
+            : existing === undefined
+              ? {}
+              : { locationLongitude: null, locationLatitude: null }),
         },
       });
     } else {

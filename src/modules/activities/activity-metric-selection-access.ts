@@ -62,6 +62,27 @@ export class ActivityMetricSelectionAccess {
   }
 
   /** Current creation authority, without turning an initial selection into a draft PUT. */
+  async authorizeSimpleCreation(
+    tx: Prisma.TransactionClient,
+    user: CurrentUserPayload,
+    organizationId: string,
+  ) {
+    const actor = await this.current(tx, user, 'app');
+    await this.access.assertCanOrThrow(
+      actor,
+      'activity.create.record',
+      { type: 'organization', id: organizationId },
+      tx,
+    );
+    const initiatorMemberId = await this.initiation.resolveInitiator(
+      actor,
+      organizationId,
+      undefined,
+      tx,
+    );
+    return { actor, initiatorMemberId };
+  }
+
   async authorizeCreation(
     tx: Prisma.TransactionClient,
     user: CurrentUserPayload,

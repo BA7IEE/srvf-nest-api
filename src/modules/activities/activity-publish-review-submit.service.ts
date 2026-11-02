@@ -244,8 +244,17 @@ export class ActivityPublishReviewSubmitService {
     dto: SubmitActivityPublishReviewDto,
     user: CurrentUserPayload,
     auditMeta: AuditMeta,
+    revalidateAdapter?: (tx: PrismaTx) => Promise<void>,
   ): Promise<ActivityPublishReviewResponseDto> {
-    return this.submitInitialProposalInternal(activityId, dto, user, auditMeta, null);
+    return this.submitInitialProposalInternal(
+      activityId,
+      dto,
+      user,
+      auditMeta,
+      null,
+      [],
+      revalidateAdapter,
+    );
   }
 
   /** V2 App endpoint: a single collection command covers session/position create, update and cancel. */
@@ -450,6 +459,7 @@ export class ActivityPublishReviewSubmitService {
     auditMeta: AuditMeta,
     audienceTagCodes: string[] | null,
     audienceOrganizationIds: string[] = [],
+    revalidateAdapter?: (tx: PrismaTx) => Promise<void>,
   ): Promise<ActivityPublishReviewResponseDto> {
     // 幂等哈希:不按组织定向时 payload 逐字节沿用本刀之前的形状 —— 否则同一 operationKey 的
     // 存量 pending 提交会算出新哈希,replay 对不上,当场变成「幂等键冲突」而不是幂等命中。
@@ -468,6 +478,7 @@ export class ActivityPublishReviewSubmitService {
     try {
       const row = await this.prisma.$transaction(async (tx) => {
         await lockActivity(activityId, tx);
+        await revalidateAdapter?.(tx);
         const activity = await tx.activity.findUniqueOrThrow({
           where: { id: activityId },
           select: {
@@ -510,6 +521,7 @@ export class ActivityPublishReviewSubmitService {
         if (!decision.allowed) throw new BizException(decision.biz);
         let actor = user;
         const snapshot = await this.proposalV2.buildInitial(tx, activityId, async () => {
+          await revalidateAdapter?.(tx);
           actor = await this.revalidateInitialProposalSubmission(
             tx,
             activityId,

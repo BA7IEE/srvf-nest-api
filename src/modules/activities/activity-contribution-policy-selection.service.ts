@@ -655,6 +655,30 @@ export class ActivityContributionPolicySelectionService {
     };
   }
 
+  /** The root draft editor retains the immutable selection and checks its new target intervals. */
+  async assertCurrentForDraftWithinTransaction(
+    tx: Prisma.TransactionClient,
+    activity: {
+      id: string;
+      startAt: Date;
+      endAt: Date;
+      contributionPolicySelectionRevision: number;
+      currentContributionPolicySelectionRevisionId: string | null;
+    },
+    reauthorize: () => Promise<void>,
+  ) {
+    const current = await this.loadCurrent(tx, activity);
+    await this.assertReferencesCurrentAndAvailable(
+      tx,
+      activity,
+      current.document,
+      current.templateSelection,
+      Object.values(current.document.items),
+      reauthorize,
+    );
+    return current.document;
+  }
+
   private async loadCurrent(
     tx: Prisma.TransactionClient,
     activity: {

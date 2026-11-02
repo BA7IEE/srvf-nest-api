@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { SimpleActivityInstance } from './activity-simple-draft-plan';
 import { instanceToPlain } from 'class-transformer';
 import { Prisma } from '@prisma/client';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -367,7 +368,9 @@ export function mapQuickCreation(dto: AppQuickActivityCreationDto) {
     places: (dto.places ?? []).map(mapCreationPlace),
   };
 }
-export type QuickCreationCommand = ReturnType<typeof mapQuickCreation>;
+export type QuickCreationCommand = ReturnType<typeof mapQuickCreation> & {
+  readonly instance?: SimpleActivityInstance;
+};
 
 export function mapProfessionalCreation(dto: AppProfessionalActivityCreationDto) {
   const activity: CreateActivityDto = {
@@ -552,6 +555,19 @@ function canonicalInput(input: unknown): string {
 
 export function creationRequestHash(mode: string, actorUserId: string, command: unknown): string {
   return createHash('sha256').update(canonicalInput({ mode, actorUserId, command })).digest('hex');
+}
+
+/** The new Admin intent changes materialization semantics; it cannot alias an old App command. */
+export function quickCreationRequestHash(
+  actorUserId: string,
+  command: QuickCreationCommand,
+  simple: boolean,
+): string {
+  return creationRequestHash(
+    'quick',
+    actorUserId,
+    simple ? { ...command, layoutMode: 'single_session_v1' } : command,
+  );
 }
 
 export function isCreationReceiptConflict(error: unknown): boolean {

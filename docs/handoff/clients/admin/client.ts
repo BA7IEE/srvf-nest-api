@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:4e5f0483cec82fc80d18d3411a47eeb1a0c57bf55a3072c02a41dd17ce37ea34
+// inputDigest: sha256:2f966ddfffc4149dfb0957355178ce5d8a5c2a11e2d97e4bf7bf5365ac0c6196
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -85,6 +85,7 @@ import type {
   AdminCreateActivityMetricRuleBindingDto,
   AdminCreateActivityMetricSetDto,
   AdminCreateActivityTemplateVersionDto,
+  AdminCreateSimpleActivityDto,
   AdminCreateTimePolicyDto,
   AdminCreateTimePolicyVersionDto,
   AdminMeResponseDto,
@@ -107,6 +108,7 @@ import type {
   AdminRegistrationExpandedMemberDto,
   AdminRegistrationListItemDto,
   AdminRetireTimePolicyVersionDto,
+  AdminSaveSimpleActivityDto,
   AdminSelectActivityMetricSetDto,
   AdminSettlementApproveCommandDto,
   AdminSettlementPostingBatchDto,
@@ -117,6 +119,20 @@ import type {
   AdminSettlementReviewResponseDto,
   AdminSettlementReviewVersionDto,
   AdminSettlementSealRevisionDto,
+  AdminSimpleActivityCreationResultDto,
+  AdminSimpleActivityInstanceDto,
+  AdminSimpleActivityPlaceDto,
+  AdminSimpleDraftPolicyDto,
+  AdminSimpleDraftPositionDto,
+  AdminSimpleDraftResponseDto,
+  AdminSimpleDraftReviewDto,
+  AdminSimpleDraftSessionDto,
+  AdminSimpleInlinePlaceDto,
+  AdminSimpleOrganizationOptionDto,
+  AdminSimplePlaceCoordinateDto,
+  AdminSimpleTemplateFamilyOptionDto,
+  AdminSimpleTemplateVersionOptionDto,
+  AdminSubmitSimpleActivityReviewDto,
   AdminTemplateActivityDefinitionDto,
   AdminTemplateContributionPolicyExplicitSelectionDto,
   AdminTemplateContributionPolicyPositionOverrideDto,
@@ -442,9 +458,21 @@ export function createAdminClient(fetcher: Fetcher) {
     ActivitiesControllerCreate(body: CreateActivityDto): Promise<ApiEnvelope<ActivityResponseDto>> {
       return fetcher<ActivityResponseDto>({ method: "POST", path: "/api/admin/v1/activities", body });
     },
+    /** 本人从精确模板原子创建单场次草稿 [rbac: activity.create.record] */
+    AdminSimpleActivitiesControllerCreate(body: AdminCreateSimpleActivityDto): Promise<ApiEnvelope<AdminSimpleActivityCreationResultDto>> {
+      return fetcher<AdminSimpleActivityCreationResultDto>({ method: "POST", path: "/api/admin/v1/activities/from-template", body });
+    },
     /** 活动选择器投影(q 模糊 title;USER 强制只见 published/completed) [auth] */
     ActivitiesControllerOptions(query?: { "q"?: string; "statusCode"?: string; "organizationId"?: string; "limit"?: number; "includeArchived"?: boolean }): Promise<ApiEnvelope<ActivityOptionsResponseDto>> {
       return fetcher<ActivityOptionsResponseDto>({ method: "GET", path: "/api/admin/v1/activities/options", query });
+    },
+    /** 当前正式成员本人可发起组织，不授予 GLOBAL 权限 [auth] */
+    AdminSimpleActivitiesControllerOrganizationOptions(): Promise<ApiEnvelope<AdminSimpleOrganizationOptionDto[]>> {
+      return fetcher<AdminSimpleOrganizationOptionDto[]>({ method: "GET", path: "/api/admin/v1/activities/organization-options" });
+    },
+    /** 本人可发起组织的安全模板版本摘要，与 App 同源 [auth] */
+    AdminSimpleActivitiesControllerTemplateOptions(query: { "page"?: number; "pageSize"?: number; "organizationId": string }): Promise<ApiEnvelope<PageResultDto & { "items": AdminSimpleTemplateVersionOptionDto[] }>> {
+      return fetcher<PageResultDto & { "items": AdminSimpleTemplateVersionOptionDto[] }>({ method: "GET", path: "/api/admin/v1/activities/template-version-options", query });
     },
     /** 生成活动考勤提交草稿（只读不落库） [rbac: attendance.read.sheet] */
     AdminActivityCheckInsControllerAttendanceSheetDraft(activityId: string): Promise<ApiEnvelope<AttendanceSheetDraftDto>> {
@@ -610,9 +638,21 @@ export function createAdminClient(fetcher: Fetcher) {
     ActivitiesControllerPublish(id: string, body: PublishActivityDto): Promise<ApiEnvelope<ActivityResponseDto>> {
       return fetcher<ActivityResponseDto>({ method: "PATCH", path: `/api/admin/v1/activities/${id}/publish`, body });
     },
+    /** 本人用客户端幂等键提交现行发布审核，成功不代表已发布 [auth] */
+    AdminSimpleActivitiesControllerSubmit(id: string, body: AdminSubmitSimpleActivityReviewDto): Promise<ApiEnvelope<ActivityPublishReviewResponseDto>> {
+      return fetcher<ActivityPublishReviewResponseDto>({ method: "POST", path: `/api/admin/v1/activities/${id}/publish-reviews`, body });
+    },
     /** 按会员受众标签发布活动(空数组面向全部有效会员；开关关闭时 503) [rbac: activity.publish.record] */
     ActivitiesControllerPublishWithAudienceTags(id: string, body: PublishActivityWithAudienceTagsDto): Promise<ApiEnvelope<ActivityResponseDto>> {
       return fetcher<ActivityResponseDto>({ method: "PATCH", path: `/api/admin/v1/activities/${id}/publish-with-audience-tags`, body });
+    },
+    /** 本人简单活动最终事实、并发指纹和真实审核状态 [auth] */
+    AdminSimpleActivitiesControllerGet(id: string): Promise<ApiEnvelope<AdminSimpleDraftResponseDto>> {
+      return fetcher<AdminSimpleDraftResponseDto>({ method: "GET", path: `/api/admin/v1/activities/${id}/simple-draft` });
+    },
+    /** 根锁和指纹保护的一次完整草稿保存 [rbac: activity.update.record] */
+    AdminSimpleActivitiesControllerSave(id: string, body: AdminSaveSimpleActivityDto): Promise<ApiEnvelope<AdminSimpleDraftResponseDto>> {
+      return fetcher<AdminSimpleDraftResponseDto>({ method: "PUT", path: `/api/admin/v1/activities/${id}/simple-draft`, body });
     },
     /** 分页读取活动时长政策选择及解析摘要 [rbac: activity.time-policy.read] */
     AdminActivityTimePolicySelectionControllerGet(id: string, query?: { "page"?: number; "pageSize"?: number; "revision"?: number }): Promise<ApiEnvelope<AdminActivityTimePolicySelectionResponseDto>> {

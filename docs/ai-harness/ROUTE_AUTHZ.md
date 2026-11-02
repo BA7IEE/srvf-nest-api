@@ -16,9 +16,9 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.1.0 |
-| inputDigest | sha256:6e4aedfb38048b195b4beaec8f1d1dc9b8aacadb9f066cba038f34551b484342 |
-| endpoint count | 666 |
-| legacy [auth] count | 183 |
+| inputDigest | sha256:1a1fd450b7d082618cba5a1c47f35ae3b1a5109a8be2d59b61706ae34cdd04ee |
+| endpoint count | 672 |
+| legacy [auth] count | 187 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
 | per-route truth source | code |
@@ -29,7 +29,7 @@
 
 | surface | routes | declared in code | undeclared |
 |---|---:|---:|---:|
-| admin | 316 | 316 | 0 |
+| admin | 322 | 322 | 0 |
 | app | 208 | 208 | 0 |
 | system | 102 | 102 | 0 |
 | auth | 22 | 22 | 0 |
@@ -41,8 +41,8 @@
 | marker | count |
 |---|---:|
 | public | 33 |
-| rbac | 450 |
-| auth | 183 |
+| rbac | 452 |
+| auth | 187 |
 | unclassified | 0 |
 
 ## Phase 0 decision record
@@ -58,10 +58,14 @@
 | admin individual | GET /api/admin/v1/activities/:activityId/reconciliation | RBAC; admission=-; codes=activity-registration.read.record,attendance.read.sheet; require=all; scopes=-; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-participation.controller.ts:55; src/modules/activities/controllers/admin-activity-participation.controller.ts:76 |
 | admin individual | GET /api/admin/v1/activities/:id | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/activities.controller.ts:141; src/modules/activities/activities.controller.ts:152 |
 | admin individual | GET /api/admin/v1/activities/:id/metric-selection | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-metric-selection.controller.ts:31; src/modules/activities/controllers/admin-activity-metric-selection.controller.ts:42 |
+| admin individual | GET /api/admin/v1/activities/:id/simple-draft | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-simple-activities.controller.ts:136; src/modules/activities/controllers/admin-simple-activities.controller.ts:160 |
 | admin individual | GET /api/admin/v1/activities/options | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/activities.controller.ts:98; src/modules/activities/activities.controller.ts:109 |
+| admin individual | GET /api/admin/v1/activities/organization-options | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-simple-activities.controller.ts:54; src/modules/activities/controllers/admin-simple-activities.controller.ts:69 |
+| admin individual | GET /api/admin/v1/activities/template-version-options | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-simple-activities.controller.ts:72; src/modules/activities/controllers/admin-simple-activities.controller.ts:96 |
 | admin individual | GET /api/admin/v1/me | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/users/controllers/admin-me.controller.ts:34; src/modules/users/controllers/admin-me.controller.ts:43 |
 | admin individual | GET /api/admin/v1/meta/dashboard-summary | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=org-scope; engine=authz-scoped | code | src/modules/meta/meta.controller.ts:59; src/modules/meta/meta.controller.ts:68 |
 | admin individual | GET /api/admin/v1/meta/participation-overview | RBAC; admission=-; codes=activity-registration.read.record,attendance.read.sheet; require=all; scopes=-; engine=authz-scoped | code | src/modules/meta/meta.controller.ts:71; src/modules/meta/meta.controller.ts:86 |
+| admin individual | POST /api/admin/v1/activities/:id/publish-reviews | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-simple-activities.controller.ts:201; src/modules/activities/controllers/admin-simple-activities.controller.ts:231 |
 | admin individual | POST /api/admin/v1/contents/:id/attachments/confirm | RBAC; admission=-; codes=attachment.upload.content-file,attachment.upload.content-image; require=any; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:248; src/modules/content/content-admin.controller.ts:274 |
 | app tag family | Mobile - Activities (4) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=visibility:app-activity-catalog; engine=authz-scoped | code | src/modules/activities/controllers/app-activities.controller.ts:47 |
 | app tag family | Mobile - Activity Registration Upload Sessions (2) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-registration-upload-sessions.controller.ts:78 |
@@ -113,7 +117,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.1.0",
-  "inputDigest": "sha256:6e4aedfb38048b195b4beaec8f1d1dc9b8aacadb9f066cba038f34551b484342",
+  "inputDigest": "sha256:1a1fd450b7d082618cba5a1c47f35ae3b1a5109a8be2d59b61706ae34cdd04ee",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -1235,6 +1239,22 @@
       }
     },
     {
+      "routeKey": "GET /api/admin/v1/activities/:id/simple-draft",
+      "controller": "AdminSimpleActivitiesController",
+      "handler": "get",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
       "routeKey": "GET /api/admin/v1/activities/:id/time-policy-selection",
       "controller": "AdminActivityTimePolicySelectionController",
       "handler": "get",
@@ -1265,6 +1285,38 @@
         "require": "all",
         "scopes": [
           "visibility:activity-visibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "GET /api/admin/v1/activities/organization-options",
+      "controller": "AdminSimpleActivitiesController",
+      "handler": "organizationOptions",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "GET /api/admin/v1/activities/template-version-options",
+      "controller": "AdminSimpleActivitiesController",
+      "handler": "templateOptions",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [
+          "responsibility"
         ],
         "engine": "authz-scoped"
       }
@@ -7604,6 +7656,43 @@
       }
     },
     {
+      "routeKey": "POST /api/admin/v1/activities/:id/publish-reviews",
+      "controller": "AdminSimpleActivitiesController",
+      "handler": "submit",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "POST /api/admin/v1/activities/from-template",
+      "controller": "AdminSimpleActivitiesController",
+      "handler": "create",
+      "legacy": "rbac",
+      "policy": {
+        "admission": "app-member",
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity.create.record",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
       "routeKey": "POST /api/admin/v1/activity-metric-definitions",
       "controller": "AdminActivityMetricDefinitionsController",
       "handler": "create",
@@ -12003,6 +12092,27 @@
       }
     },
     {
+      "routeKey": "PUT /api/admin/v1/activities/:id/simple-draft",
+      "controller": "AdminSimpleActivitiesController",
+      "handler": "save",
+      "legacy": "rbac",
+      "policy": {
+        "admission": "app-member",
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity.update.record",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
       "routeKey": "PUT /api/admin/v1/activity-metric-definitions/:id/draft",
       "controller": "AdminActivityMetricDefinitionsController",
       "handler": "update",
@@ -12363,8 +12473,8 @@
 | `activity-responsibility.override.record` | 23 | DELETE /api/admin/v1/activities/:activityId/responsibilities/collaborators/:assignmentId · DELETE /api/app/v1/my/managed-activities/:activityId/collaborators/:assignmentId · DELETE /api/app/v1/my/managed-activities/:activityId/positions/:activityPositionId · GET /api/admin/v1/activities/:activityId/responsibilities · PATCH /api/app/v1/my/managed-activities/:activityId/positions/:activityPositionId · POST /api/admin/v1/activities/:activityId/responsibilities/assign-initiator · POST /api/admin/v1/activities/:activityId/responsibilities/claim · POST /api/admin/v1/activities/:activityId/responsibilities/collaborators · POST /api/admin/v1/activities/:activityId/responsibilities/transfer · POST /api/app/v1/my/managed-activities · POST /api/app/v1/my/managed-activities/:activityId/archive · POST /api/app/v1/my/managed-activities/:activityId/cancel · POST /api/app/v1/my/managed-activities/:activityId/clone · POST /api/app/v1/my/managed-activities/:activityId/collaborators · POST /api/app/v1/my/managed-activities/:activityId/evidence-seals · POST /api/app/v1/my/managed-activities/:activityId/positions · POST /api/app/v1/my/managed-activities/:activityId/terminate · POST /api/app/v1/my/managed-activities/:activityId/transfer-initiator · POST /api/app/v1/my/managed-activities/:activityId/transfer-owner · POST /api/app/v1/my/managed-activities/:activityId/unarchive · POST /api/app/v1/my/managed-activities/emergency · POST /api/app/v1/my/managed-activities/from-template · POST /api/app/v1/my/managed-activities/professional |
 | `attendance.read.sheet` | 20 | GET /api/admin/v1/activities/:activityId/attendance-sheet-draft · GET /api/admin/v1/activities/:activityId/attendance-sheets · GET /api/admin/v1/activities/:activityId/check-ins · GET /api/admin/v1/activities/:activityId/feedback-summary · GET /api/admin/v1/activities/:activityId/feedbacks · GET /api/admin/v1/activities/:activityId/participation-ledger · GET /api/admin/v1/activities/:activityId/participation-summary · GET /api/admin/v1/activities/:activityId/reconciliation · GET /api/admin/v1/attendance-settlements · GET /api/admin/v1/attendance-settlements/:id/posting-batch · GET /api/admin/v1/attendance-settlements/:settlementVersionId/review-detail · GET /api/admin/v1/attendance-sheets · GET /api/admin/v1/attendance-sheets/:id · GET /api/admin/v1/attendance-sheets/:id/review-detail · GET /api/admin/v1/members/:memberId/attendance-records · GET /api/admin/v1/members/:memberId/contribution-summary · GET /api/admin/v1/members/:memberId/participation-ledger · GET /api/admin/v1/members/:memberId/participation-summary · GET /api/admin/v1/members/:memberId/participation-time-proof · GET /api/admin/v1/meta/participation-overview |
 | `activity.time-settlement.read` | 10 | GET /api/app/v1/my/managed-activities/:activityId/time-corrections · GET /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId · GET /api/app/v1/my/managed-activities/:activityId/time-settlement · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/allocations/:allocationRevisionId · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/buckets · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/ledger · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/shadow · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/sources · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/sources · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/versions/:settlementVersionId/correction-ledger |
+| `activity.update.record` | 9 | DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId · PATCH /api/admin/v1/activities/:activityId/positions/:activityPositionId · PATCH /api/admin/v1/activities/:id · POST /api/admin/v1/activities/:activityId/positions · PUT /api/admin/v1/activities/:id/cover · PUT /api/admin/v1/activities/:id/gallery · PUT /api/admin/v1/activities/:id/metric-selection · PUT /api/admin/v1/activities/:id/simple-draft · PUT /api/app/v1/my/managed-activities/:activityId/metric-selection |
 | `activity.settlement-final-review.record` | 8 | GET /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId/commit-jobs/:jobId · POST /api/admin/v1/attendance-settlements/:id/final-approve · POST /api/admin/v1/attendance-settlements/:id/final-return · POST /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId/commit · POST /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId/commit-jobs · POST /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId/commit-jobs/:jobId/retry · POST /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId/prepare · POST /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId/review |
-| `activity.update.record` | 8 | DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId · PATCH /api/admin/v1/activities/:activityId/positions/:activityPositionId · PATCH /api/admin/v1/activities/:id · POST /api/admin/v1/activities/:activityId/positions · PUT /api/admin/v1/activities/:id/cover · PUT /api/admin/v1/activities/:id/gallery · PUT /api/admin/v1/activities/:id/metric-selection · PUT /api/app/v1/my/managed-activities/:activityId/metric-selection |
 | `activity-registration.read.record` | 7 | GET /api/admin/v1/activities/:activityId/participation-summary · GET /api/admin/v1/activities/:activityId/reconciliation · GET /api/admin/v1/activities/:activityId/registrations · GET /api/admin/v1/activities/:activityId/registrations/export · GET /api/admin/v1/members/:memberId/registrations · GET /api/admin/v1/meta/participation-overview · GET /api/admin/v1/registrations |
 | `activity.create.cross-org` | 7 | PATCH /api/app/v1/my/managed-activities/:activityId · POST /api/app/v1/my/managed-activities · POST /api/app/v1/my/managed-activities/:activityId/clone · POST /api/app/v1/my/managed-activities/:activityId/transfer-initiator · POST /api/app/v1/my/managed-activities/emergency · POST /api/app/v1/my/managed-activities/from-template · POST /api/app/v1/my/managed-activities/professional |
 | `activity.outcome.read` | 7 | GET /api/app/v1/my/managed-activities/:activityId/ending-workbench · GET /api/app/v1/my/managed-activities/:activityId/metric-candidates/:candidateId · GET /api/app/v1/my/managed-activities/:activityId/outcome-confirmed · GET /api/app/v1/my/managed-activities/:activityId/outcome-report · GET /api/app/v1/my/managed-activities/:activityId/outcomes · GET /api/app/v1/my/managed-activities/:activityId/outcomes/:outcomeRevisionId · POST /api/app/v1/my/managed-activities/outcome-reports/query |
@@ -12373,6 +12483,7 @@
 | `org.read.node` | 6 | GET /api/admin/v1/organizations · GET /api/admin/v1/organizations/:id · GET /api/admin/v1/organizations/options · GET /api/admin/v1/organizations/tree · GET /api/admin/v1/organizations/tree-options · GET /api/admin/v1/organizations/tree-with-summary |
 | `supervision-assignment.read.record` | 6 | GET /api/admin/v1/members/:memberId/supervision-scope · GET /api/admin/v1/organizations/:orgId/supervisors · GET /api/admin/v1/supervision-assignments · GET /api/admin/v1/supervision-assignments/:id · GET /api/admin/v1/supervision-assignments/page · POST /api/admin/v1/supervision-assignments/coverage-preview |
 | `activity-metric.read.catalog` | 5 | GET /api/admin/v1/activity-metric-definitions · GET /api/admin/v1/activity-metric-definitions/:id · GET /api/admin/v1/activity-metric-rule-bindings · GET /api/admin/v1/activity-metric-sets · GET /api/admin/v1/activity-metric-sets/:id |
+| `activity.create.record` | 5 | POST /api/admin/v1/activities · POST /api/admin/v1/activities/from-template · POST /api/app/v1/my/managed-activities/emergency · POST /api/app/v1/my/managed-activities/from-template · POST /api/app/v1/my/managed-activities/professional |
 | `activity.settlement-submit.record` | 5 | POST /api/app/v1/my/managed-activities/:activityId/settlement/submit · POST /api/app/v1/my/managed-activities/:activityId/settlement/versions/:versionId/resubmit · POST /api/app/v1/my/managed-activities/:activityId/time-corrections · POST /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId/resubmit · POST /api/app/v1/my/managed-activities/:activityId/time-settlement/submit |
 | `certificate.read.record` | 5 | GET /api/admin/v1/certificates · GET /api/admin/v1/certificates/stats · GET /api/admin/v1/members/:memberId/certificates · GET /api/admin/v1/members/:memberId/certificates/:id · GET /api/admin/v1/members/:memberId/certificates/qualification-flag |
 | `contribution-shadow.read.evidence` | 5 | GET /api/system/v1/contribution-shadow/windows · GET /api/system/v1/contribution-shadow/windows/:windowId/attempts/:attemptId/comparisons · GET /api/system/v1/contribution-shadow/windows/:windowId/candidates · GET /api/system/v1/contribution-shadow/windows/:windowId/candidates/:auditLogId · GET /api/system/v1/contribution-shadow/windows/:windowId/summary |
@@ -12382,7 +12493,6 @@
 | `activity-template.manage.version` | 4 | POST /api/admin/v1/activity-template-versions · POST /api/admin/v1/activity-template-versions/:id/activate · POST /api/admin/v1/activity-template-versions/:id/retire · PUT /api/admin/v1/activity-template-versions/:id/draft |
 | `activity-time-policy.manage.version` | 4 | POST /api/admin/v1/activity-time-policies · POST /api/admin/v1/activity-time-policies/:id/versions · POST /api/admin/v1/activity-time-policies/:id/versions/:versionId/activate · POST /api/admin/v1/activity-time-policies/:id/versions/:versionId/retire |
 | `activity-time-policy.read.catalog` | 4 | GET /api/admin/v1/activity-time-policies · GET /api/admin/v1/activity-time-policies/:id · GET /api/admin/v1/activity-time-policies/:id/versions · GET /api/admin/v1/activity-time-policies/:id/versions/:versionId |
-| `activity.create.record` | 4 | POST /api/admin/v1/activities · POST /api/app/v1/my/managed-activities/emergency · POST /api/app/v1/my/managed-activities/from-template · POST /api/app/v1/my/managed-activities/professional |
 | `activity.settlement-generate.record` | 4 | GET /api/app/v1/my/managed-activities/:activityId/settlement · GET /api/app/v1/my/managed-activities/:activityId/settlement/items · GET /api/app/v1/my/managed-activities/:activityId/settlement/versions/:versionId · POST /api/app/v1/my/managed-activities/:activityId/settlement/generate |
 | `activity.time-settlement.prepare` | 4 | POST /api/app/v1/my/managed-activities/:activityId/time-corrections · POST /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId/resubmit · POST /api/app/v1/my/managed-activities/:activityId/time-settlement/prepare · POST /api/app/v1/my/managed-activities/:activityId/time-settlement/submit |
 | `attachment.upload.*` | 4 | POST /api/admin/v1/attachments · POST /api/admin/v1/attachments/confirm-upload · POST /api/admin/v1/attachments/upload-url · POST /api/admin/v1/contents/:id/attachments/upload-url |
@@ -12676,8 +12786,11 @@
 | GET | /api/admin/v1/activities/:id | Admin - Activities | auth | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/activities.controller.ts:141; src/modules/activities/activities.controller.ts:152 |
 | GET | /api/admin/v1/activities/:id/contribution-policy-selection | Admin - Activity Contribution Policy Selection | rbac | RBAC; admission=-; codes=activity.contribution-policy.read; require=all; scopes=-; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-contribution-policy-selection.controller.ts:33; src/modules/activities/controllers/admin-activity-contribution-policy-selection.controller.ts:53 |
 | GET | /api/admin/v1/activities/:id/metric-selection | Admin - Activity Metric Selection | auth | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-metric-selection.controller.ts:31; src/modules/activities/controllers/admin-activity-metric-selection.controller.ts:42 |
+| GET | /api/admin/v1/activities/:id/simple-draft | Admin - Simple Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-simple-activities.controller.ts:136; src/modules/activities/controllers/admin-simple-activities.controller.ts:160 |
 | GET | /api/admin/v1/activities/:id/time-policy-selection | Admin - Activity Time Policy Selection | rbac | RBAC; admission=-; codes=activity.time-policy.read; require=all; scopes=-; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-time-policy-selection.controller.ts:33; src/modules/activities/controllers/admin-activity-time-policy-selection.controller.ts:48 |
 | GET | /api/admin/v1/activities/options | Admin - Activities | auth | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/activities.controller.ts:98; src/modules/activities/activities.controller.ts:109 |
+| GET | /api/admin/v1/activities/organization-options | Admin - Simple Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-simple-activities.controller.ts:54; src/modules/activities/controllers/admin-simple-activities.controller.ts:69 |
+| GET | /api/admin/v1/activities/template-version-options | Admin - Simple Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-simple-activities.controller.ts:72; src/modules/activities/controllers/admin-simple-activities.controller.ts:96 |
 | GET | /api/admin/v1/activity-metric-definitions | Admin - Activity Metric Definitions | rbac | RBAC; admission=-; codes=activity-metric.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:38; src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:47 |
 | GET | /api/admin/v1/activity-metric-definitions/:id | Admin - Activity Metric Definitions | rbac | RBAC; admission=-; codes=activity-metric.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:50; src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:61 |
 | GET | /api/admin/v1/activity-metric-rule-bindings | Admin - Activity Metric Rule Bindings | rbac | RBAC; admission=-; codes=activity-metric.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-rule-bindings.controller.ts:57; src/modules/activities/controllers/admin-activity-metric-rule-bindings.controller.ts:63 |
@@ -13021,6 +13134,8 @@
 | POST | /api/admin/v1/activities/:activityId/responsibilities/collaborators | Admin - Activity Responsibilities | rbac | RBAC; admission=-; codes=activity-responsibility.override.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-responsibilities.controller.ts:74; src/modules/activities/controllers/admin-activity-responsibilities.controller.ts:98 |
 | POST | /api/admin/v1/activities/:activityId/responsibilities/transfer | Admin - Activity Responsibilities | rbac | RBAC; admission=-; codes=activity-responsibility.override.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-responsibilities.controller.ts:132; src/modules/activities/controllers/admin-activity-responsibilities.controller.ts:158 |
 | POST | /api/admin/v1/activities/:id/complete | Admin - Activities | rbac | RBAC; admission=-; codes=activity.complete.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/activities.controller.ts:357; src/modules/activities/activities.controller.ts:377 |
+| POST | /api/admin/v1/activities/:id/publish-reviews | Admin - Simple Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-simple-activities.controller.ts:201; src/modules/activities/controllers/admin-simple-activities.controller.ts:231 |
+| POST | /api/admin/v1/activities/from-template | Admin - Simple Activities | rbac | RBAC; admission=app-member; codes=activity.create.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-simple-activities.controller.ts:99; src/modules/activities/controllers/admin-simple-activities.controller.ts:133 |
 | POST | /api/admin/v1/activity-metric-definitions | Admin - Activity Metric Definitions | rbac | RBAC; admission=-; codes=activity-metric.manage.definition; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:64; src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:89 |
 | POST | /api/admin/v1/activity-metric-definitions/:id/activate | Admin - Activity Metric Definitions | rbac | RBAC; admission=-; codes=activity-metric.manage.definition; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:130; src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:157 |
 | POST | /api/admin/v1/activity-metric-definitions/:id/retire | Admin - Activity Metric Definitions | rbac | RBAC; admission=-; codes=activity-metric.manage.definition; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:164; src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:191 |
@@ -13263,6 +13378,7 @@
 | PUT | /api/admin/v1/activities/:id/cover | Admin - Activities | rbac | RBAC; admission=-; codes=activity.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/activities.controller.ts:199; src/modules/activities/activities.controller.ts:219 |
 | PUT | /api/admin/v1/activities/:id/gallery | Admin - Activities | rbac | RBAC; admission=-; codes=activity.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/activities.controller.ts:227; src/modules/activities/activities.controller.ts:247 |
 | PUT | /api/admin/v1/activities/:id/metric-selection | Admin - Activity Metric Selection | rbac | RBAC; admission=-; codes=activity.update.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-metric-selection.controller.ts:44; src/modules/activities/controllers/admin-activity-metric-selection.controller.ts:72 |
+| PUT | /api/admin/v1/activities/:id/simple-draft | Admin - Simple Activities | rbac | RBAC; admission=app-member; codes=activity.update.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-simple-activities.controller.ts:163; src/modules/activities/controllers/admin-simple-activities.controller.ts:198 |
 | PUT | /api/admin/v1/activity-metric-definitions/:id/draft | Admin - Activity Metric Definitions | rbac | RBAC; admission=-; codes=activity-metric.manage.definition; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:96; src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:123 |
 | PUT | /api/admin/v1/activity-metric-sets/:id/draft | Admin - Activity Metric Sets | rbac | RBAC; admission=-; codes=activity-metric.manage.set; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:93; src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:117 |
 | PUT | /api/admin/v1/activity-template-versions/:id/draft | Admin - Activity Template Versions | rbac | RBAC; admission=-; codes=activity-template.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-template-versions.controller.ts:90; src/modules/activities/controllers/admin-activity-template-versions.controller.ts:117 |

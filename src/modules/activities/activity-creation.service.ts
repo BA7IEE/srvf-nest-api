@@ -18,6 +18,7 @@ import { ActivityAuditRecorder } from './activity-audit-recorder';
 import {
   creationContributionPolicyPointers,
   creationRequestHash,
+  quickCreationRequestHash,
   creationTimePolicyPointers,
   isCreationReceiptConflict,
   materializeCreationContributionPolicySelection,
@@ -69,17 +70,23 @@ export class ActivityCreationService {
     command: QuickCreationCommand,
     user: CurrentUserPayload,
     auditMeta: AuditMeta,
+    simple = false,
   ): Promise<AppActivityCreationResultDto> {
-    await this.assertAccess(user);
+    if (command.instance !== undefined && !simple) throw new BizException(BizCode.BAD_REQUEST);
+    await this.assertAccess(user, simple ? command.template.organizationId : undefined);
     this.controlPlane.assertCreationAvailable();
-    const requestHash = creationRequestHash('quick', user.id, command);
+    const requestHash = quickCreationRequestHash(user.id, command, simple);
     const replay = async (tx: Prisma.TransactionClient) => {
+      if (simple) {
+        await this.metricAccess.authorizeSimpleCreation(tx, user, command.template.organizationId);
+      }
       const activity = await this.templates.findCreationReplayWithinTransaction(
         tx,
         command.template,
         user.id,
         requestHash,
         user,
+        ...(simple ? ([true] as const) : []),
       );
       return activity ? presentActivityCreation({ activity, mode: 'quick', replayed: true }) : null;
     };
@@ -87,7 +94,9 @@ export class ActivityCreationService {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await replay(tx);
         if (existing) return existing;
-        const result = await this.quick.create(tx, command, user, requestHash);
+        const result = simple
+          ? await this.quick.create(tx, command, user, requestHash, true)
+          : await this.quick.create(tx, command, user, requestHash);
         let actor = result.actor ?? user; // V3 revalidated identity; V1/V2 preserve their old path.
         if (result.timePolicySelectionInitialization) {
           await this.timePolicySelection.initializeWithinTransaction({
@@ -182,11 +191,17 @@ export class ActivityCreationService {
     return this.runReceiptCommand({ mode: 'emergency', command }, user, auditMeta);
   }
 
-  private async assertAccess(user: CurrentUserPayload): Promise<void> {
+  private async assertAccess(user: CurrentUserPayload, organizationId?: string): Promise<void> {
     if (!user.memberId) throw new BizException(BizCode.FORBIDDEN);
     if (!this.config.activityResponsibilityWorkflow.enabled)
       throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
-    await this.access.assertCanOrThrow(user, 'activity.create.record');
+    if (organizationId === undefined)
+      await this.access.assertCanOrThrow(user, 'activity.create.record');
+    else
+      await this.access.assertCanOrThrow(user, 'activity.create.record', {
+        type: 'organization',
+        id: organizationId,
+      });
   }
 
   private async runReceiptCommand(

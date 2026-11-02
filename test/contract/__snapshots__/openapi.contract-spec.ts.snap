@@ -3507,6 +3507,94 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AdminCreateSimpleActivityDto": {
+    "properties": {
+      "confirmedCapacity": {
+        "description": "仅确认模板容量，必须等值；不是实例覆盖",
+        "minimum": 1,
+        "nullable": true,
+        "type": "number",
+      },
+      "defaultPlaceVisibilityCode": {
+        "description": "缺省文字地点的明确可见性",
+        "enum": [
+          "public",
+          "accepted",
+          "staff",
+          "command",
+        ],
+        "type": "string",
+      },
+      "endAt": {
+        "description": "本次结束时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "instance": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminSimpleActivityInstanceDto",
+          },
+        ],
+        "description": "可选封闭实例参数；缺省保留模板默认和旧 Quick hash",
+      },
+      "location": {
+        "description": "文字地点；有明确地点快照时以服务端最终主地点为准",
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string",
+      },
+      "operationKey": {
+        "description": "同内容重试复用的创建幂等键",
+        "maxLength": 128,
+        "minLength": 8,
+        "type": "string",
+      },
+      "organizationId": {
+        "description": "本人具备发起资格的组织 ID",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "places": {
+        "description": "活动及唯一场次使用同一份类型化地点，省略复制文字地点",
+        "items": {
+          "$ref": "#/components/schemas/AdminSimpleActivityPlaceDto",
+        },
+        "maxItems": 6,
+        "minItems": 1,
+        "type": "array",
+      },
+      "startAt": {
+        "description": "本次开始时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "templateVersionId": {
+        "description": "精确模板版本 ID，不接受族 ID 或自动取最新",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "title": {
+        "description": "本次活动标题",
+        "maxLength": 100,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "title",
+      "organizationId",
+      "startAt",
+      "endAt",
+      "location",
+      "templateVersionId",
+      "operationKey",
+      "defaultPlaceVisibilityCode",
+    ],
+    "type": "object",
+  },
   "AdminCreateTimePolicyDto": {
     "properties": {
       "code": {
@@ -4527,6 +4615,71 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AdminSaveSimpleActivityDto": {
+    "properties": {
+      "endAt": {
+        "description": "本次结束时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "expectedDraftHash": {
+        "description": "最近一次读取所得完整草稿并发指纹，不是授权凭据",
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "instance": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminSimpleActivityInstanceDto",
+          },
+        ],
+        "description": "完整目标实例参数；不接受局部补丁",
+      },
+      "location": {
+        "description": "文字地点；有明确地点快照时以服务端最终主地点为准",
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string",
+      },
+      "organizationId": {
+        "description": "本人具备发起资格的组织 ID",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "places": {
+        "description": "完整目标地点，保留现有用途结构",
+        "items": {
+          "$ref": "#/components/schemas/AdminSimpleActivityPlaceDto",
+        },
+        "maxItems": 6,
+        "minItems": 1,
+        "type": "array",
+      },
+      "startAt": {
+        "description": "本次开始时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "title": {
+        "description": "本次活动标题",
+        "maxLength": 100,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "title",
+      "organizationId",
+      "startAt",
+      "endAt",
+      "location",
+      "expectedDraftHash",
+      "instance",
+      "places",
+    ],
+    "type": "object",
+  },
   "AdminSelectActivityMetricSetDto": {
     "properties": {
       "expectedRevision": {
@@ -4993,6 +5146,729 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "workflowRevision",
       "manualReviewPendingCount",
       "sealedAt",
+    ],
+    "type": "object",
+  },
+  "AdminSimpleActivityCreationResultDto": {
+    "properties": {
+      "activityId": {
+        "description": "创建所得活动 ID",
+        "type": "string",
+      },
+      "createdAt": {
+        "description": "首次创建时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "createdStatusCode": {
+        "description": "首次创建时状态，不代表当前发布状态",
+        "enum": [
+          "draft",
+        ],
+        "type": "string",
+      },
+      "replayed": {
+        "description": "是否复用同一成功创建命令",
+        "type": "boolean",
+      },
+    },
+    "required": [
+      "activityId",
+      "createdAt",
+      "createdStatusCode",
+      "replayed",
+    ],
+    "type": "object",
+  },
+  "AdminSimpleActivityInstanceDto": {
+    "properties": {
+      "capacity": {
+        "description": "本次实例人数，null 明确不限；不修改模板容量",
+        "maximum": 2147483647,
+        "minimum": 1,
+        "nullable": true,
+        "type": "number",
+      },
+      "description": {
+        "description": "本次活动说明；null 清空",
+        "maxLength": 2000,
+        "nullable": true,
+        "type": "string",
+      },
+      "registrationDeadline": {
+        "description": "本次报名截止；null 明确不限",
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "registrationNotes": {
+        "description": "本次参与准备；null 清空",
+        "maxLength": 2000,
+        "nullable": true,
+        "type": "string",
+      },
+    },
+    "required": [
+      "capacity",
+      "registrationDeadline",
+      "description",
+      "registrationNotes",
+    ],
+    "type": "object",
+  },
+  "AdminSimpleActivityPlaceDto": {
+    "properties": {
+      "inline": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminSimpleInlinePlaceDto",
+          },
+        ],
+        "description": "完整本地地点，与 presetId 恰选一个",
+      },
+      "presetId": {
+        "description": "精确预设 ID，与 inline 恰选一个",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "roleCode": {
+        "description": "地点用途；恰有一个 primary，每种用途至多一个",
+        "enum": [
+          "primary",
+          "meeting",
+          "execution",
+          "evacuation",
+          "parking",
+          "other",
+        ],
+        "type": "string",
+      },
+      "visibilityCode": {
+        "description": "明确可见性",
+        "enum": [
+          "public",
+          "accepted",
+          "staff",
+          "command",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "roleCode",
+      "visibilityCode",
+    ],
+    "type": "object",
+  },
+  "AdminSimpleDraftPolicyDto": {
+    "properties": {
+      "effectiveFrom": {
+        "description": "政策覆盖起点",
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "effectiveUntil": {
+        "description": "政策覆盖终点",
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "kind": {
+        "description": "政策种类",
+        "enum": [
+          "time",
+          "contribution",
+        ],
+        "type": "string",
+      },
+      "layerCode": {
+        "description": "选定层级",
+        "enum": [
+          "activity",
+          "session",
+          "position",
+          "template",
+        ],
+        "type": "string",
+      },
+      "mode": {
+        "description": "原政策选择模式，不接受通过草稿命令修改",
+        "type": "string",
+      },
+      "name": {
+        "description": "政策名称",
+        "nullable": true,
+        "type": "string",
+      },
+      "version": {
+        "description": "精确版本号",
+        "nullable": true,
+        "type": "number",
+      },
+    },
+    "required": [
+      "kind",
+      "layerCode",
+      "mode",
+      "name",
+      "version",
+      "effectiveFrom",
+      "effectiveUntil",
+    ],
+    "type": "object",
+  },
+  "AdminSimpleDraftPositionDto": {
+    "properties": {
+      "attendanceRoleCode": {
+        "description": "现有 attendance role 字典编码",
+        "type": "string",
+      },
+      "capacity": {
+        "description": "本次容量；null 不限",
+        "nullable": true,
+        "type": "number",
+      },
+      "code": {
+        "description": "稳定岗位编码",
+        "type": "string",
+      },
+      "endAt": {
+        "description": "显式结束；null 继承场次",
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "id": {
+        "description": "唯一默认岗位 ID",
+        "type": "string",
+      },
+      "name": {
+        "description": "岗位名称",
+        "type": "string",
+      },
+      "startAt": {
+        "description": "显式开始；null 继承场次",
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "code",
+      "name",
+      "attendanceRoleCode",
+      "capacity",
+      "startAt",
+      "endAt",
+    ],
+    "type": "object",
+  },
+  "AdminSimpleDraftResponseDto": {
+    "properties": {
+      "activityId": {
+        "description": "活动 ID",
+        "type": "string",
+      },
+      "activityTypeCode": {
+        "description": "原活动类型",
+        "type": "string",
+      },
+      "allocationModeCode": {
+        "description": "首版固定先到先得",
+        "enum": [
+          "first_come",
+        ],
+        "type": "string",
+      },
+      "definitionHash": {
+        "description": "原精确模板定义摘要",
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "draftHash": {
+        "description": "本次读取的完整并发指纹",
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "editable": {
+        "description": "仅当前草稿无待审且模板仍可选时为 true，操作仍重新鉴权",
+        "type": "boolean",
+      },
+      "endAt": {
+        "description": "活动结束",
+        "format": "date-time",
+        "type": "string",
+      },
+      "instance": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminSimpleActivityInstanceDto",
+          },
+        ],
+        "description": "最终实例事实",
+      },
+      "location": {
+        "description": "最终主地点文字",
+        "type": "string",
+      },
+      "organizationId": {
+        "description": "承办组织 ID",
+        "type": "string",
+      },
+      "places": {
+        "description": "同样应用于活动和唯一场次的完整本地地点；读取以 inline 返回",
+        "items": {
+          "$ref": "#/components/schemas/AdminSimpleActivityPlaceDto",
+        },
+        "type": "array",
+      },
+      "policies": {
+        "description": "原时长/贡献政策的有权安全摘要，不是政策写入口",
+        "items": {
+          "$ref": "#/components/schemas/AdminSimpleDraftPolicyDto",
+        },
+        "type": "array",
+      },
+      "position": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminSimpleDraftPositionDto",
+          },
+        ],
+        "description": "唯一默认岗位最终事实",
+      },
+      "review": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminSimpleDraftReviewDto",
+          },
+        ],
+        "description": "最新审核；null 尚无审核",
+        "nullable": true,
+        "type": "object",
+      },
+      "selectedTemplateVersionId": {
+        "description": "原精确模板版本 ID",
+        "type": "string",
+      },
+      "session": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminSimpleDraftSessionDto",
+          },
+        ],
+        "description": "唯一场次最终事实",
+      },
+      "startAt": {
+        "description": "活动开始",
+        "format": "date-time",
+        "type": "string",
+      },
+      "statusCode": {
+        "description": "实际活动状态",
+        "type": "string",
+      },
+      "title": {
+        "description": "服务端活动标题",
+        "type": "string",
+      },
+    },
+    "required": [
+      "activityId",
+      "title",
+      "organizationId",
+      "activityTypeCode",
+      "allocationModeCode",
+      "startAt",
+      "endAt",
+      "location",
+      "instance",
+      "statusCode",
+      "review",
+      "editable",
+      "draftHash",
+      "selectedTemplateVersionId",
+      "definitionHash",
+      "session",
+      "position",
+      "places",
+      "policies",
+    ],
+    "type": "object",
+  },
+  "AdminSimpleDraftReviewDto": {
+    "properties": {
+      "id": {
+        "description": "最新审核 ID",
+        "type": "string",
+      },
+      "requestType": {
+        "description": "审核类型",
+        "enum": [
+          "initial",
+          "change",
+        ],
+        "type": "string",
+      },
+      "status": {
+        "description": "真实审核状态",
+        "enum": [
+          "pending",
+          "approved",
+          "returned",
+          "withdrawn",
+          "cancelled",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "status",
+      "requestType",
+    ],
+    "type": "object",
+  },
+  "AdminSimpleDraftSessionDto": {
+    "properties": {
+      "capacity": {
+        "description": "本次容量；null 不限",
+        "nullable": true,
+        "type": "number",
+      },
+      "checkInCloseAt": {
+        "description": "签到关闭",
+        "format": "date-time",
+        "type": "string",
+      },
+      "checkInOpenAt": {
+        "description": "签到开放",
+        "format": "date-time",
+        "type": "string",
+      },
+      "checkOutCloseAt": {
+        "description": "签退关闭",
+        "format": "date-time",
+        "type": "string",
+      },
+      "checkOutOpenAt": {
+        "description": "签退开放",
+        "format": "date-time",
+        "type": "string",
+      },
+      "code": {
+        "description": "稳定场次编码",
+        "type": "string",
+      },
+      "endAt": {
+        "description": "场次结束",
+        "format": "date-time",
+        "type": "string",
+      },
+      "id": {
+        "description": "唯一场次 ID",
+        "type": "string",
+      },
+      "name": {
+        "description": "场次名称",
+        "type": "string",
+      },
+      "preparationStartAt": {
+        "description": "准备时间",
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "startAt": {
+        "description": "场次开始",
+        "format": "date-time",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "code",
+      "name",
+      "startAt",
+      "endAt",
+      "capacity",
+      "checkInOpenAt",
+      "checkInCloseAt",
+      "checkOutOpenAt",
+      "checkOutCloseAt",
+      "preparationStartAt",
+    ],
+    "type": "object",
+  },
+  "AdminSimpleInlinePlaceDto": {
+    "properties": {
+      "addressText": {
+        "description": "地点文字，同步活动和唯一场次",
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string",
+      },
+      "checkInEligible": {
+        "description": "签到候选地点，不自动启用定位策略",
+        "type": "boolean",
+      },
+      "coordinate": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminSimplePlaceCoordinateDto",
+          },
+        ],
+        "description": "明确坐标，省略为纯文字地点",
+      },
+      "instruction": {
+        "description": "有界地点说明",
+        "maxLength": 2000,
+        "type": "string",
+      },
+      "name": {
+        "description": "地点名称",
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string",
+      },
+      "providerCode": {
+        "description": "地图来源标识",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "providerPlaceId": {
+        "description": "地图来源内部地点标识",
+        "maxLength": 200,
+        "type": "string",
+      },
+      "radiusMeters": {
+        "description": "签到候选半径（米）",
+        "maximum": 10000,
+        "minimum": 1,
+        "type": "number",
+      },
+    },
+    "required": [
+      "name",
+      "addressText",
+      "checkInEligible",
+    ],
+    "type": "object",
+  },
+  "AdminSimpleOrganizationOptionDto": {
+    "properties": {
+      "membershipType": {
+        "description": "有效任职种类；跨组织授权时可空",
+        "enum": [
+          "PRIMARY",
+          "SECONDARY",
+          "TEMPORARY",
+          "SUPPORT",
+        ],
+        "nullable": true,
+        "type": "string",
+      },
+      "name": {
+        "description": "组织名称",
+        "type": "string",
+      },
+      "organizationId": {
+        "description": "有权发起组织 ID",
+        "type": "string",
+      },
+      "pathLabel": {
+        "description": "组织路径文字",
+        "type": "string",
+      },
+      "source": {
+        "description": "发起资格来源",
+        "enum": [
+          "membership",
+          "cross-org-grant",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "organizationId",
+      "name",
+      "pathLabel",
+      "source",
+      "membershipType",
+    ],
+    "type": "object",
+  },
+  "AdminSimplePlaceCoordinateDto": {
+    "properties": {
+      "coordinateSystemCode": {
+        "description": "明确坐标系，不自动转换",
+        "enum": [
+          "wgs84",
+          "gcj02",
+          "bd09",
+        ],
+        "type": "string",
+      },
+      "latitude": {
+        "description": "声明坐标系中的纬度",
+        "maximum": 90,
+        "minimum": -90,
+        "type": "number",
+      },
+      "longitude": {
+        "description": "声明坐标系中的经度",
+        "maximum": 180,
+        "minimum": -180,
+        "type": "number",
+      },
+    },
+    "required": [
+      "longitude",
+      "latitude",
+      "coordinateSystemCode",
+    ],
+    "type": "object",
+  },
+  "AdminSimpleTemplateFamilyOptionDto": {
+    "properties": {
+      "categoryCode": {
+        "description": "模板分类码",
+        "type": "string",
+      },
+      "code": {
+        "description": "模板族稳定编码",
+        "type": "string",
+      },
+      "id": {
+        "description": "全局模板族 ID",
+        "type": "string",
+      },
+      "name": {
+        "description": "模板族名称",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "code",
+      "name",
+      "categoryCode",
+    ],
+    "type": "object",
+  },
+  "AdminSimpleTemplateVersionOptionDto": {
+    "properties": {
+      "activityTypeCode": {
+        "description": "活动类型码",
+        "type": "string",
+      },
+      "code": {
+        "description": "模板稳定编码",
+        "type": "string",
+      },
+      "createdAt": {
+        "description": "创建时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "definitionHash": {
+        "description": "精确版本 hash",
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "effectiveFrom": {
+        "description": "有效期元数据起点",
+        "format": "date-time",
+        "type": "string",
+      },
+      "effectiveTo": {
+        "description": "有效期元数据终点",
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "family": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminSimpleTemplateFamilyOptionDto",
+          },
+        ],
+        "description": "模板族安全摘要",
+      },
+      "id": {
+        "description": "精确模板版本 ID",
+        "type": "string",
+      },
+      "name": {
+        "description": "模板版本名称",
+        "type": "string",
+      },
+      "schemaVersion": {
+        "description": "定义 schema 版本",
+        "enum": [
+          1,
+          2,
+          3,
+          4,
+          5,
+        ],
+        "type": "number",
+      },
+      "statusCode": {
+        "description": "当前可新选版本",
+        "enum": [
+          "active",
+        ],
+        "type": "string",
+      },
+      "updatedAt": {
+        "description": "更新时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "version": {
+        "description": "显式版本号",
+        "minimum": 1,
+        "type": "number",
+      },
+    },
+    "required": [
+      "id",
+      "code",
+      "name",
+      "version",
+      "schemaVersion",
+      "definitionHash",
+      "statusCode",
+      "activityTypeCode",
+      "family",
+      "effectiveFrom",
+      "effectiveTo",
+      "createdAt",
+      "updatedAt",
+    ],
+    "type": "object",
+  },
+  "AdminSubmitSimpleActivityReviewDto": {
+    "properties": {
+      "confirmation": {
+        "description": "确认读取最终草稿并提交审核，只能为 true",
+        "example": true,
+        "type": "boolean",
+      },
+      "operationKey": {
+        "description": "提交审核幂等键",
+        "maxLength": 128,
+        "minLength": 8,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "confirmation",
     ],
     "type": "object",
   },
@@ -39802,6 +40678,278 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
+  "/api/admin/v1/activities/from-template": {
+    "post": {
+      "operationId": "AdminSimpleActivitiesController_create",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AdminCreateSimpleActivityDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminSimpleActivityCreationResultDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20011: 活动不允许挂在组织根节点; 20135: 场次签到或签退窗口无效; 20015: 活动起止时间无效(startAt 必须早于 endAt); 20016: 报名截止时间不得晚于活动结束时间",
+                    "enum": [
+                      40000,
+                      20011,
+                      20135,
+                      20015,
+                      20016,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 活动不允许挂在组织根节点(code=20011) / 场次签到或签退窗口无效(code=20135) / 活动起止时间无效(startAt 必须早于 endAt)(code=20015) / 报名截止时间不得晚于活动结束时间(code=20016)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作; 20019: 只有正式队员可以发起活动; 20020: 无权为该组织发起活动",
+                    "enum": [
+                      40300,
+                      30100,
+                      20019,
+                      20020,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100) / 只有正式队员可以发起活动(code=20019) / 无权为该组织发起活动(code=20020)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "11001: 组织节点不存在",
+                    "enum": [
+                      11001,
+                    ],
+                    "example": 11001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "组织节点不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "组织节点不存在(code=11001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作; 17031: 组织节点状态非活跃,不能挂队员; 20161: 该活动模板版本当前不可用于创建活动; 20162: 从模板创建活动的操作键与首次请求不一致; 20210: 当前时长政策引用不可用于新的选择; 20252: 当前贡献政策引用不可用于新的选择",
+                    "enum": [
+                      20030,
+                      17031,
+                      20161,
+                      20162,
+                      20210,
+                      20252,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030) / 组织节点状态非活跃,不能挂队员(code=17031) / 该活动模板版本当前不可用于创建活动(code=20161) / 从模板创建活动的操作键与首次请求不一致(code=20162) / 当前时长政策引用不可用于新的选择(code=20210) / 当前贡献政策引用不可用于新的选择(code=20252)",
+        },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20163: 活动新建控制面暂未开放",
+                    "enum": [
+                      20163,
+                    ],
+                    "example": 20163,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动新建控制面暂未开放",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动新建控制面暂未开放(code=20163)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "本人从精确模板原子创建单场次草稿 [rbac: activity.create.record]",
+      "tags": [
+        "Admin - Simple Activities",
+      ],
+    },
+  },
   "/api/admin/v1/activities/options": {
     "get": {
       "operationId": "ActivitiesController_options",
@@ -39965,6 +41113,402 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "活动选择器投影(q 模糊 title;USER 强制只见 published/completed) [auth]",
       "tags": [
         "Admin - Activities",
+      ],
+    },
+  },
+  "/api/admin/v1/activities/organization-options": {
+    "get": {
+      "operationId": "AdminSimpleActivitiesController_organizationOptions",
+      "parameters": [],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "items": {
+                      "$ref": "#/components/schemas/AdminSimpleOrganizationOptionDto",
+                    },
+                    "type": "array",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 20019: 只有正式队员可以发起活动",
+                    "enum": [
+                      40300,
+                      20019,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 只有正式队员可以发起活动(code=20019)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "当前正式成员本人可发起组织，不授予 GLOBAL 权限 [auth]",
+      "tags": [
+        "Admin - Simple Activities",
+      ],
+    },
+  },
+  "/api/admin/v1/activities/template-version-options": {
+    "get": {
+      "operationId": "AdminSimpleActivitiesController_templateOptions",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "本人拟发起组织 ID",
+          "in": "query",
+          "name": "organizationId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/AdminSimpleTemplateVersionOptionDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20011: 活动不允许挂在组织根节点",
+                    "enum": [
+                      40000,
+                      20011,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 活动不允许挂在组织根节点(code=20011)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 20019: 只有正式队员可以发起活动; 20020: 无权为该组织发起活动",
+                    "enum": [
+                      40300,
+                      20019,
+                      20020,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 只有正式队员可以发起活动(code=20019) / 无权为该组织发起活动(code=20020)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "11001: 组织节点不存在",
+                    "enum": [
+                      11001,
+                    ],
+                    "example": 11001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "组织节点不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "组织节点不存在(code=11001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "17031: 组织节点状态非活跃,不能挂队员; 20183: 可选目录候选数量超过安全上限，请联系管理员整理目录",
+                    "enum": [
+                      17031,
+                      20183,
+                    ],
+                    "example": 17031,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "组织节点状态非活跃,不能挂队员",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "组织节点状态非活跃,不能挂队员(code=17031) / 可选目录候选数量超过安全上限，请联系管理员整理目录(code=20183)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "本人可发起组织的安全模板版本摘要，与 App 同源 [auth]",
+      "tags": [
+        "Admin - Simple Activities",
       ],
     },
   },
@@ -49274,6 +50818,252 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
+  "/api/admin/v1/activities/{id}/publish-reviews": {
+    "post": {
+      "operationId": "AdminSimpleActivitiesController_submit",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AdminSubmitSimpleActivityReviewDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ActivityPublishReviewResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20011: 活动不允许挂在组织根节点",
+                    "enum": [
+                      40000,
+                      20011,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 活动不允许挂在组织根节点(code=20011)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 20019: 只有正式队员可以发起活动; 20020: 无权为该组织发起活动",
+                    "enum": [
+                      40300,
+                      20019,
+                      20020,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 只有正式队员可以发起活动(code=20019) / 无权为该组织发起活动(code=20020)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在; 11001: 组织节点不存在",
+                    "enum": [
+                      20001,
+                      11001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001) / 组织节点不存在(code=11001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作; 20032: 活动已有待处理的发布审核; 20143: 相同操作标识已用于不同的发布审核内容,请更换操作标识; 17031: 组织节点状态非活跃,不能挂队员",
+                    "enum": [
+                      20030,
+                      20032,
+                      20143,
+                      17031,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030) / 活动已有待处理的发布审核(code=20032) / 相同操作标识已用于不同的发布审核内容,请更换操作标识(code=20143) / 组织节点状态非活跃,不能挂队员(code=17031)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "本人用客户端幂等键提交现行发布审核，成功不代表已发布 [auth]",
+      "tags": [
+        "Admin - Simple Activities",
+      ],
+    },
+  },
   "/api/admin/v1/activities/{id}/publish-with-audience-tags": {
     "patch": {
       "operationId": "ActivitiesController_publishWithAudienceTags",
@@ -49546,6 +51336,492 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "按会员受众标签发布活动(空数组面向全部有效会员；开关关闭时 503) [rbac: activity.publish.record]",
       "tags": [
         "Admin - Activities",
+      ],
+    },
+  },
+  "/api/admin/v1/activities/{id}/simple-draft": {
+    "get": {
+      "operationId": "AdminSimpleActivitiesController_get",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminSimpleDraftResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20011: 活动不允许挂在组织根节点",
+                    "enum": [
+                      40000,
+                      20011,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 活动不允许挂在组织根节点(code=20011)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 20019: 只有正式队员可以发起活动; 20020: 无权为该组织发起活动",
+                    "enum": [
+                      40300,
+                      20019,
+                      20020,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 只有正式队员可以发起活动(code=20019) / 无权为该组织发起活动(code=20020)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在; 11001: 组织节点不存在; 20206: 活动时长政策选择引用不存在或不可访问; 20248: 活动贡献政策选择引用不存在或不可访问",
+                    "enum": [
+                      20001,
+                      11001,
+                      20206,
+                      20248,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001) / 组织节点不存在(code=11001) / 活动时长政策选择引用不存在或不可访问(code=20206) / 活动贡献政策选择引用不存在或不可访问(code=20248)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作; 17031: 组织节点状态非活跃,不能挂队员",
+                    "enum": [
+                      20030,
+                      17031,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030) / 组织节点状态非活跃,不能挂队员(code=17031)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "本人简单活动最终事实、并发指纹和真实审核状态 [auth]",
+      "tags": [
+        "Admin - Simple Activities",
+      ],
+    },
+    "put": {
+      "operationId": "AdminSimpleActivitiesController_save",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AdminSaveSimpleActivityDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminSimpleDraftResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20011: 活动不允许挂在组织根节点; 20135: 场次签到或签退窗口无效; 20015: 活动起止时间无效(startAt 必须早于 endAt); 20016: 报名截止时间不得晚于活动结束时间",
+                    "enum": [
+                      40000,
+                      20011,
+                      20135,
+                      20015,
+                      20016,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 活动不允许挂在组织根节点(code=20011) / 场次签到或签退窗口无效(code=20135) / 活动起止时间无效(startAt 必须早于 endAt)(code=20015) / 报名截止时间不得晚于活动结束时间(code=20016)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在; 11001: 组织节点不存在",
+                    "enum": [
+                      20001,
+                      11001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001) / 组织节点不存在(code=11001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "17031: 组织节点状态非活跃,不能挂队员; 20030: 活动当前状态不允许此操作; 20037: 已发布活动修改需先提交审核; 20032: 活动已有待处理的发布审核; 20255: 活动草稿已变化，请重新读取后再保存; 20161: 该活动模板版本当前不可用于创建活动; 20210: 当前时长政策引用不可用于新的选择; 20252: 当前贡献政策引用不可用于新的选择",
+                    "enum": [
+                      17031,
+                      20030,
+                      20037,
+                      20032,
+                      20255,
+                      20161,
+                      20210,
+                      20252,
+                    ],
+                    "example": 17031,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "组织节点状态非活跃,不能挂队员",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "组织节点状态非活跃,不能挂队员(code=17031) / 活动当前状态不允许此操作(code=20030) / 已发布活动修改需先提交审核(code=20037) / 活动已有待处理的发布审核(code=20032) / 活动草稿已变化，请重新读取后再保存(code=20255) / 该活动模板版本当前不可用于创建活动(code=20161) / 当前时长政策引用不可用于新的选择(code=20210) / 当前贡献政策引用不可用于新的选择(code=20252)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "根锁和指纹保护的一次完整草稿保存 [rbac: activity.update.record]",
+      "tags": [
+        "Admin - Simple Activities",
       ],
     },
   },

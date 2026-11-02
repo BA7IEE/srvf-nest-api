@@ -23,6 +23,8 @@ import { ActivityStatusCommandService } from './activity-status-command.service'
 import { ActivityWriteService } from './activity-write.service';
 import { ActivityFromTemplateService } from './activity-from-template.service';
 import { ActivityCreationService } from './activity-creation.service';
+import { ActivitySimpleDraftService } from './activity-simple-draft.service';
+import { AdminSimpleActivitiesController } from './controllers/admin-simple-activities.controller';
 import { ActivityControlPlaneGate } from './activity-control-plane.gate';
 import { AppManagedActivityControlPlaneController } from './controllers/app-managed-activity-control-plane.controller';
 import { ActivityCreationQuick } from './activity-creation-quick';
@@ -270,6 +272,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     AdminActivityTemplateVersionsController,
     AppManagedActivityControlPlaneController,
     AppManagedActivityCreationController,
+    AdminSimpleActivitiesController,
     ActivitiesController,
     AppActivitiesController,
     AdminActivityParticipationController,
@@ -319,6 +322,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityContributionSettlementQueryService,
     ActivityControlPlaneGate,
     ActivityCreationService,
+    ActivitySimpleDraftService,
     ActivityCreationQuick,
     ActivityCreationProfessional,
     ActivityCreationEmergency,
