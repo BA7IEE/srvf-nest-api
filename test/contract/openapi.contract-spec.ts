@@ -2261,7 +2261,7 @@ describe('OpenAPI 契约快照', () => {
       'updatedAt',
       'version',
     ]);
-    expect(template.properties?.schemaVersion.enum).toEqual([1, 2, 3]);
+    expect(template.properties?.schemaVersion.enum).toEqual([1, 2, 3, 4, 5]);
     expect(template.properties?.statusCode.enum).toEqual(['active']);
     expect(JSON.stringify(template)).not.toContain('Admin');
     expect(JSON.stringify(metric)).not.toContain('Admin');

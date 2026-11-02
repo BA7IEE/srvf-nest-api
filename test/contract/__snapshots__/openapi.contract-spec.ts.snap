@@ -9648,6 +9648,8 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
           1,
           2,
           3,
+          4,
+          5,
         ],
         "type": "number",
       },
