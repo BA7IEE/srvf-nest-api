@@ -1,6 +1,7 @@
 import { registerAs } from '@nestjs/config';
 
 const DEFAULT_JWT_SECRET = 'please-change-me-in-production-min-32-chars';
+const PUBLIC_TEST_JWT_SECRET = 'test-secret-please-keep-this-string-long-enough-32-chars';
 
 export interface JwtConfig {
   secret: string;
@@ -49,7 +50,7 @@ function parseDurationMs(name: string, value: string, minMs: number, maxMs: numb
 
 // 启动强校验(详见 docs/reference/config-env.md §14):
 // - JWT_SECRET 必须存在且 ≥ 32 字符
-// - APP_ENV=production 时 JWT_SECRET 不能等于 .env.example 默认值
+// - APP_ENV=production 时 JWT_SECRET 不能等于公开的默认值或测试值
 // - JWT_EXPIRES_IN 必须带单位且在 1m-24h
 // - JWT_REFRESH_EXPIRES_IN 必须带单位且在 1d-365d(P0-E PR-3)
 //
@@ -75,6 +76,10 @@ export function loadJwtConfig(env: NodeJS.ProcessEnv = process.env): JwtConfig {
     throw new Error(
       "生产环境 JWT_SECRET 不能等于 .env.example 默认值;推荐用 'openssl rand -base64 48' 生成",
     );
+  }
+
+  if (env.APP_ENV === 'production' && secret === PUBLIC_TEST_JWT_SECRET) {
+    throw new Error('生产环境 JWT_SECRET 不能使用公开测试值');
   }
 
   const expiresIn = env.JWT_EXPIRES_IN;
