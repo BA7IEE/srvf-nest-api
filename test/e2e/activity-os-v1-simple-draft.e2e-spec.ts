@@ -716,4 +716,207 @@ describe('ActivityOS V1 simple draft ordinary HTTP chain', () => {
     };
     evidence.outcome = 'PASS';
   }, 30000);
+
+  async function pendingReturnReview() {
+    const created = await request(httpServer(app))
+      .post(`${ROOT}/from-template`)
+      .set('Authorization', publisher.auth)
+      .send({
+        operationKey: key('return_create'),
+        templateVersionId: templateId,
+        title: '合成退回授权复核',
+        organizationId,
+        startAt: '2099-09-01T00:00:00.000Z',
+        endAt: '2099-09-01T03:00:00.000Z',
+        location: '合成会场',
+        defaultPlaceVisibilityCode: 'staff',
+        confirmedCapacity: 2,
+        instance: {
+          capacity: 2,
+          registrationDeadline: null,
+          description: null,
+          registrationNotes: null,
+        },
+      })
+      .expect(201);
+    const activityId = created.body.data.activityId as string;
+    const submitted = await request(httpServer(app))
+      .post(`${ROOT}/${activityId}/publish-reviews`)
+      .set('Authorization', publisher.auth)
+      .send({ operationKey: key('return_submit'), confirmation: true })
+      .expect(200);
+    expect(submitted.body.data.status).toBe('pending');
+    return { activityId, reviewId: submitted.body.data.id as string };
+  }
+
+  async function returnOnlyActor() {
+    const actor = await user('return_only');
+    const binding = await grant(actor.id, ['activity-review.return.request']);
+    // Initial RBAC fixture: the ordinary publisher may end a custom, non-system role binding.
+    const revoker = await grant(publisher.id, ['role-binding.delete.record']);
+    await db.roleBinding.update({
+      where: { id: revoker.id },
+      data: { scopeType: 'GLOBAL', scopeOrgId: null },
+    });
+    expect(
+      await db.roleBinding.count({
+        where: { principalId: actor.id, status: 'ACTIVE', deletedAt: null },
+      }),
+    ).toBe(1);
+    return { ...actor, bindingId: binding.id };
+  }
+
+  async function returnEffects(activityId: string, reviewId: string) {
+    return db.$queryRaw<Array<{ kind: string; xid: string }>>`
+      SELECT 'review' AS kind, xmin::text AS xid FROM activity_publish_reviews WHERE id = ${reviewId}
+      UNION ALL SELECT 'audit', xmin::text FROM audit_logs
+        WHERE "resourceId" = ${activityId} AND context->'extra'->>'operation' = 'publish-review-return'
+      UNION ALL SELECT 'outbox', xmin::text FROM notification_outbox_intents
+        WHERE "aggregateType" = 'activity_publish_review' AND "aggregateId" = ${reviewId}`;
+  }
+
+  it('returns and replays with only the return permission, but rejects replay after normal revocation', async () => {
+    const actor = await returnOnlyActor();
+    const { activityId, reviewId } = await pendingReturnReview();
+    const path = `/api/admin/v1/activity-publish-reviews/${reviewId}/return`;
+    const body = { operationKey: key('return_once'), reviewNote: '合成退回说明' };
+    const first = await request(httpServer(app))
+      .post(path)
+      .set('Authorization', actor.auth)
+      .send(body)
+      .expect(200);
+    expect(first.body.data.status).toBe('returned');
+    const effects = await returnEffects(activityId, reviewId);
+    expect(effects.map((row) => row.kind).sort()).toEqual(['audit', 'outbox', 'review']);
+    expect(new Set(effects.map((row) => row.xid)).size).toBe(1);
+    const xid = effects[0].xid;
+    expect(
+      (
+        await db.$queryRaw<Array<{ state: string }>>`SELECT pg_xact_status(${xid}::xid8) AS state`
+      )[0].state,
+    ).toBe('committed');
+    const replay = await request(httpServer(app))
+      .post(path)
+      .set('Authorization', actor.auth)
+      .send(body)
+      .expect(200);
+    expect(replay.body.data).toEqual(first.body.data);
+    expect(await returnEffects(activityId, reviewId)).toEqual(effects);
+    await request(httpServer(app))
+      .delete(`/api/admin/v1/role-bindings/${actor.bindingId}`)
+      .set('Authorization', publisher.auth)
+      .expect(200);
+    expectBizError(
+      await request(httpServer(app)).post(path).set('Authorization', actor.auth).send(body),
+      BizCode.RBAC_FORBIDDEN,
+    );
+    expect(await returnEffects(activityId, reviewId)).toEqual(effects);
+    evidence.returnOnlyReplay = { activityId, reviewId, xid, effects, revokedReplay: 'DENIED' };
+  });
+
+  it('rejects an already waiting return after normal revocation commits, with no return audit or outbox', async () => {
+    const actor = await returnOnlyActor();
+    const { activityId, reviewId } = await pendingReturnReview();
+    const beforeEffects = await returnEffects(activityId, reviewId);
+    expect(beforeEffects.map((row) => row.kind)).toEqual(['review']);
+    let pending: Promise<request.Response> | undefined;
+    let finished = false;
+    let waiterPid = 0;
+    let blockerPid = 0;
+    let revocationXid = '';
+    const times: Record<string, string> = {};
+    try {
+      await db.$transaction(async (tx) => {
+        blockerPid = (await tx.$queryRaw<Array<{ pid: number }>>`SELECT pg_backend_pid() AS pid`)[0]
+          .pid;
+        await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${activityId} FOR UPDATE`;
+        times.rootLocked = new Date().toISOString();
+        pending = request(httpServer(app))
+          .post(`/api/admin/v1/activity-publish-reviews/${reviewId}/return`)
+          .set('Authorization', actor.auth)
+          .send({ operationKey: key('return_waiting'), reviewNote: '合成锁等待后的撤权复核' })
+          .then((response) => {
+            finished = true;
+            times.httpFinished = new Date().toISOString();
+            return response;
+          });
+        const deadline = Date.now() + 2000;
+        while (Date.now() < deadline) {
+          const waiting = await db.$queryRaw<Array<{ pid: number }>>`
+            SELECT pid FROM pg_stat_activity
+            WHERE datname = current_database() AND backend_type = 'client backend'
+              AND pid <> pg_backend_pid() AND wait_event_type = 'Lock'
+              AND ${blockerPid} = ANY(pg_blocking_pids(pid))
+              AND query LIKE '%FROM "Activity"%FOR UPDATE%'`;
+          if (waiting.length === 1) {
+            waiterPid = waiting[0].pid;
+            times.waitObserved = new Date().toISOString();
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        expect(waiterPid).toBeGreaterThan(0);
+        expect(finished).toBe(false);
+        await request(httpServer(app))
+          .delete(`/api/admin/v1/role-bindings/${actor.bindingId}`)
+          .set('Authorization', publisher.auth)
+          .expect(200);
+        times.revocationFinished = new Date().toISOString();
+        const binding = await db.$queryRaw<
+          Array<{ status: string; deleted: boolean; xid: string }>
+        >`
+          SELECT status::text AS status, "deletedAt" IS NOT NULL AS deleted, xmin::text AS xid
+          FROM role_bindings WHERE id = ${actor.bindingId}`;
+        expect(binding[0]).toMatchObject({ status: 'ENDED', deleted: true });
+        revocationXid = binding[0].xid;
+        expect(
+          (
+            await db.$queryRaw<
+              Array<{ state: string }>
+            >`SELECT pg_xact_status(${revocationXid}::xid8) AS state`
+          )[0].state,
+        ).toBe('committed');
+        expect(
+          await db.roleBinding.count({
+            where: { principalId: actor.id, status: 'ACTIVE', deletedAt: null },
+          }),
+        ).toBe(0);
+        expectBizError(
+          await request(httpServer(app))
+            .post(`/api/admin/v1/activity-publish-reviews/${reviewId}/return`)
+            .set('Authorization', actor.auth)
+            .send({ operationKey: key('return_fresh'), reviewNote: '合成新请求立即拒绝' }),
+          BizCode.RBAC_FORBIDDEN,
+        );
+        expect(finished).toBe(false);
+        const stillWaiting = await db.$queryRaw<Array<{ waiting: boolean }>>`
+          SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
+            AND pid = ${waiterPid} AND wait_event_type = 'Lock'
+            AND ${blockerPid} = ANY(pg_blocking_pids(pid))) AS waiting`;
+        expect(stillWaiting[0].waiting).toBe(true);
+        times.beforeRootRelease = new Date().toISOString();
+      });
+      times.rootReleased = new Date().toISOString();
+    } finally {
+      if (pending) await pending;
+    }
+    expect(pending).toBeDefined();
+    expectBizError(await pending!, BizCode.RBAC_FORBIDDEN);
+    expect(await returnEffects(activityId, reviewId)).toEqual(beforeEffects);
+    expect(
+      await db.activityPublishReview.findUniqueOrThrow({
+        where: { id: reviewId },
+        select: { status: true, reviewedByUserId: true, reviewOperationKey: true },
+      }),
+    ).toEqual({ status: 'pending', reviewedByUserId: null, reviewOperationKey: null });
+    evidence.revokedWaitingReturn = {
+      activityId,
+      reviewId,
+      blockerPid,
+      waiterPid,
+      revocationXid,
+      times,
+      outcome: 'DENIED_WITH_NO_RETURN_WRITES',
+    };
+  });
 });

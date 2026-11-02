@@ -1091,6 +1091,21 @@ export class ActivityPublishReviewService {
       result = await this.prisma.$transaction(async (tx) => {
         await lockActivity(seed.activityId, tx);
         await this.lockReview(reviewId, tx);
+        const actor = await loadActiveUserIdentityInTx(tx, user.id);
+        if (!actor) throw new BizException(BizCode.UNAUTHORIZED);
+        const currentAuthz = await this.authz.explain(
+          actor,
+          'activity-review.return.request',
+          { type: 'activity_publish_review', id: reviewId },
+          tx,
+        );
+        if (!currentAuthz.allow) {
+          throw new BizException(
+            currentAuthz.reason === 'resource_not_found'
+              ? BizCode.ACTIVITY_PUBLISH_REVIEW_NOT_FOUND
+              : BizCode.RBAC_FORBIDDEN,
+          );
+        }
         const review = await tx.activityPublishReview.findUniqueOrThrow({
           where: { id: reviewId },
         });
@@ -1101,7 +1116,7 @@ export class ActivityPublishReviewService {
           const replay = await this.findReviewReplay(tx, dto.operationKey, reviewRequestHash);
           if (replay) return { dto: replay, missingChangeOwner: false };
         }
-        if (review.submittedByUserId === user.id) {
+        if (review.submittedByUserId === actor.id) {
           throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SELF_REVIEW_FORBIDDEN);
         }
         const decision = this.stateMachine.decide('return', review.status);
@@ -1111,7 +1126,7 @@ export class ActivityPublishReviewService {
           where: { id: review.id },
           data: {
             status: decision.nextStatus,
-            reviewedByUserId: user.id,
+            reviewedByUserId: actor.id,
             reviewedAt,
             reviewNote: dto.reviewNote.trim(),
             ...(dto.operationKey === undefined || reviewRequestHash === null
@@ -1127,8 +1142,8 @@ export class ActivityPublishReviewService {
           requestVersion: review.requestVersion,
           requestType: review.requestType,
           directPublish: false,
-          actorUserId: user.id,
-          actorRoleSnap: user.role,
+          actorUserId: actor.id,
+          actorRoleSnap: actor.role,
           auditMeta,
           tx,
         });
