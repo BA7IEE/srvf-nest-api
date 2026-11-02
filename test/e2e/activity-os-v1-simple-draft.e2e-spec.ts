@@ -14,6 +14,7 @@ import { seedActivityResponsibilitySystemRoles } from '../fixtures/activity-resp
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
+import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
 const ROOT = '/api/admin/v1/activities';
@@ -48,7 +49,7 @@ const baseDefinition = {
   ],
 };
 
-/** A fresh ordinary-account API chain. It never resets, reuses or connects to a retained R5 database. */
+/** A fresh ordinary-account API chain using guarded worker cleanup, never a retained R5 database. */
 describe('ActivityOS V1 simple draft ordinary HTTP chain', () => {
   let app: INestApplication, db: PrismaService;
   let publisher: { id: string; auth: string },
@@ -114,6 +115,7 @@ describe('ActivityOS V1 simple draft ordinary HTTP chain', () => {
     process.env.ACTIVITY_OS_CONTROL_PLANE_MODE = 'active';
     app = await createTestApp();
     db = app.get(PrismaService);
+    await resetDb(app);
     expect(await db.activity.count()).toBe(0);
     expect(await db.user.count()).toBe(0);
     const root = await db.organization.create({
