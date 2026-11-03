@@ -30,21 +30,27 @@ interface CliArgs {
 
 function parseArgs(argv: readonly string[]): CliArgs {
   const args: CliArgs = { actorUserId: '' };
-  for (let i = 0; i < argv.length; i += 1) {
-    if (argv[i].startsWith('--activity-id=')) {
-      console.error('用法: 不支持 --activity-id=<活动id>;请使用 --activity-id <活动id>');
+  if (argv.some((arg) => arg.startsWith('--activity-id='))) {
+    console.error('用法: 不支持 --activity-id=<活动id>;请使用 --activity-id <活动id>');
+    process.exit(2);
+  }
+  for (let i = 0; i < argv.length; i += 2) {
+    const option = argv[i];
+    if (option !== '--actor-user-id' && option !== '--activity-id') {
+      console.error('用法: 未知参数;只支持 --actor-user-id <维护者用户id> [--activity-id <活动id>]');
       process.exit(2);
     }
-    if (argv[i] === '--actor-user-id') args.actorUserId = argv[i + 1] ?? '';
-    else if (argv[i] === '--activity-id') {
-      const activityId = argv[i + 1];
-      if (activityId === undefined || activityId.trim() === '' || activityId.startsWith('--')) {
-        console.error('用法: --activity-id <活动id> 缺少有效值;全量候选扫描请完全省略 --activity-id');
-        process.exit(2);
-      }
-      args.activityId = activityId;
+    const value = argv[i + 1];
+    if (value === undefined || value.trim() === '' || value.startsWith('-')) {
+      console.error(
+        option === '--actor-user-id'
+          ? '用法: --actor-user-id <维护者用户id> 必填(审计归属);--activity-id 可选'
+          : '用法: --activity-id <活动id> 缺少有效值;全量候选扫描请完全省略 --activity-id',
+      );
+      process.exit(2);
     }
-    i += 0;
+    if (option === '--actor-user-id') args.actorUserId = value;
+    else args.activityId = value;
   }
   if (args.actorUserId === '') {
     console.error('用法: --actor-user-id <维护者用户id> 必填(审计归属);--activity-id 可选');

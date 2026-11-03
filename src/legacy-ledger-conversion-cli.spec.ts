@@ -136,6 +136,121 @@ describe('legacy ledger conversion CLI activity selector', () => {
   );
 
   it.each([
+    [
+      'misspelled activity option',
+      ['--actor-user-id', 'synthetic-actor', '--activty-id', 'synthetic-target'],
+    ],
+    [
+      'misspelled inline option',
+      ['--actor-user-id', 'synthetic-actor', '--activty-id=synthetic-target'],
+    ],
+    ['unknown long option', ['--actor-user-id', 'synthetic-actor', '--unknown']],
+    ['unknown short option', ['--actor-user-id', 'synthetic-actor', '-a', 'synthetic-target']],
+    ['unsupported help option', ['--actor-user-id', 'synthetic-actor', '--help']],
+    [
+      'unsupported separator',
+      ['--actor-user-id', 'synthetic-actor', '--', '--activity-id', 'synthetic-target'],
+    ],
+    ['unexpected positional value', ['--actor-user-id', 'synthetic-actor', 'synthetic-target']],
+    [
+      'extra positional value',
+      ['--actor-user-id', 'synthetic-actor', '--activity-id', 'synthetic-target', 'extra'],
+    ],
+    [
+      'unknown option after a selector',
+      ['--actor-user-id', 'synthetic-actor', '--activity-id', 'synthetic-target', '--unknown'],
+    ],
+    ['unknown option before an actor', ['--unknown', '--actor-user-id', 'synthetic-actor']],
+    [
+      'unsupported inline actor',
+      ['--actor-user-id=synthetic-actor', '--activity-id', 'synthetic-target'],
+    ],
+    [
+      'misspelled actor option',
+      ['--actor-userid', 'synthetic-actor', '--activity-id', 'synthetic-target'],
+    ],
+  ])('rejects %s before application creation or database access', async (_name, argv) => {
+    const cli = runCli(argv);
+    await expect(cli.completion).rejects.toMatchObject({ status: 2 });
+    expect(cli.exit).toHaveBeenCalledTimes(1);
+    expect(cli.error).toHaveBeenCalledWith(expect.stringContaining('未知参数'));
+    expect(cli.createApplicationContext).not.toHaveBeenCalled();
+    expect(cli.findUnique).not.toHaveBeenCalled();
+    expect(cli.findMany).not.toHaveBeenCalled();
+    expect(cli.convertActivity).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['missing actor value', ['--actor-user-id'], '--actor-user-id'],
+    ['empty actor value', ['--actor-user-id', ''], '--actor-user-id'],
+    ['blank actor value', ['--actor-user-id', ' \t '], '--actor-user-id'],
+    [
+      'known option as actor value',
+      ['--actor-user-id', '--activity-id', 'synthetic-target'],
+      '--actor-user-id',
+    ],
+    ['unknown option as actor value', ['--actor-user-id', '--unknown'], '--actor-user-id'],
+    [
+      'short option as activity value',
+      ['--actor-user-id', 'synthetic-actor', '--activity-id', '-x'],
+      '--activity-id',
+    ],
+  ])('rejects %s before application creation or database access', async (_name, argv, option) => {
+    const cli = runCli(argv);
+    await expect(cli.completion).rejects.toMatchObject({ status: 2 });
+    expect(cli.exit).toHaveBeenCalledTimes(1);
+    expect(cli.error).toHaveBeenCalledWith(expect.stringContaining(option));
+    expect(cli.createApplicationContext).not.toHaveBeenCalled();
+    expect(cli.findUnique).not.toHaveBeenCalled();
+    expect(cli.findMany).not.toHaveBeenCalled();
+    expect(cli.convertActivity).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'repeated activity option',
+      [
+        '--actor-user-id',
+        'synthetic-actor',
+        '--activity-id',
+        'synthetic-first',
+        '--activity-id',
+        'synthetic-last',
+      ],
+      'synthetic-actor',
+      'synthetic-last',
+    ],
+    [
+      'repeated actor option',
+      [
+        '--actor-user-id',
+        'synthetic-first',
+        '--actor-user-id',
+        'synthetic-last',
+        '--activity-id',
+        'synthetic-target',
+      ],
+      'synthetic-last',
+      'synthetic-target',
+    ],
+    [
+      'opaque values containing equals',
+      ['--actor-user-id', 'synthetic=actor', '--activity-id', 'synthetic=target'],
+      'synthetic=actor',
+      'synthetic=target',
+    ],
+  ])('preserves %s', async (_name, argv, actorId, activityId) => {
+    const cli = runCli(argv);
+    await cli.completion;
+    expect(cli.findUnique).toHaveBeenCalledWith({ where: { id: actorId } });
+    expect(cli.findMany).not.toHaveBeenCalled();
+    expect(cli.convertActivity).toHaveBeenCalledTimes(1);
+    expect(cli.convertActivity).toHaveBeenCalledWith(expect.objectContaining({ activityId }));
+    expect(cli.close).toHaveBeenCalledTimes(1);
+    expect(cli.exit).not.toHaveBeenCalled();
+  });
+
+  it.each([
     ['actor first', ['--actor-user-id', 'synthetic-actor', '--activity-id', 'synthetic-target']],
     ['selector first', ['--activity-id', 'synthetic-target', '--actor-user-id', 'synthetic-actor']],
   ])('converts only the selected activity with %s', async (_name, argv) => {
