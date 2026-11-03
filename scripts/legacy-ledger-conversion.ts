@@ -32,7 +32,14 @@ function parseArgs(argv: readonly string[]): CliArgs {
   const args: CliArgs = { actorUserId: '' };
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--actor-user-id') args.actorUserId = argv[i + 1] ?? '';
-    else if (argv[i] === '--activity-id') args.activityId = argv[i + 1];
+    else if (argv[i] === '--activity-id') {
+      const activityId = argv[i + 1];
+      if (activityId === undefined || activityId.trim() === '' || activityId.startsWith('--')) {
+        console.error('用法: --activity-id <活动id> 缺少有效值;全量候选扫描请完全省略 --activity-id');
+        process.exit(2);
+      }
+      args.activityId = activityId;
+    }
     i += 0;
   }
   if (args.actorUserId === '') {

@@ -32,6 +32,7 @@ pnpm exec tsx scripts/legacy-ledger-conversion.ts --actor-user-id <你的用户i
 pnpm exec tsx scripts/legacy-ledger-conversion.ts --actor-user-id <你的用户id>
 ```
 
+- `--activity-id` 明确出现时必须跟有效值;缺值、空白或紧跟另一个长选项时,CLI 在应用初始化与数据库访问前报错并以状态码 2 退出。只有完全省略该参数才沿用全量候选扫描;
 - 逐活动一行结论;`[D1 零窗兜底]` / `[D2 合成报名头]` 逐条点名,**留档到本次切换记录**;
 - 任一活动失败即整停(fail-closed),修复后可安全重跑(幂等,见下);
 - **可重跑**:`requestKey=legacy-conversion:<activityId>` 单列 unique,已转过的活动返回
