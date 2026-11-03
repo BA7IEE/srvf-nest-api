@@ -97,6 +97,45 @@ describe('legacy ledger conversion CLI activity selector', () => {
   });
 
   it.each([
+    ['inline target', ['--actor-user-id', 'synthetic-actor', '--activity-id=synthetic-target']],
+    ['empty inline target', ['--actor-user-id', 'synthetic-actor', '--activity-id=']],
+    ['blank inline target', ['--actor-user-id', 'synthetic-actor', '--activity-id= \t ']],
+    [
+      'inline target after a separated target',
+      [
+        '--actor-user-id',
+        'synthetic-actor',
+        '--activity-id',
+        'synthetic-separated-target',
+        '--activity-id=synthetic-inline-target',
+      ],
+    ],
+    [
+      'inline target before a separated target',
+      [
+        '--actor-user-id',
+        'synthetic-actor',
+        '--activity-id=synthetic-inline-target',
+        '--activity-id',
+        'synthetic-separated-target',
+      ],
+    ],
+    ['both inline options', ['--actor-user-id=synthetic-actor', '--activity-id=synthetic-target']],
+  ])(
+    'rejects unsupported %s before application creation or database access',
+    async (_name, argv) => {
+      const cli = runCli(argv);
+      await expect(cli.completion).rejects.toMatchObject({ status: 2 });
+      expect(cli.exit).toHaveBeenCalledTimes(1);
+      expect(cli.error).toHaveBeenCalledWith(expect.stringContaining('不支持 --activity-id='));
+      expect(cli.createApplicationContext).not.toHaveBeenCalled();
+      expect(cli.findUnique).not.toHaveBeenCalled();
+      expect(cli.findMany).not.toHaveBeenCalled();
+      expect(cli.convertActivity).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
     ['actor first', ['--actor-user-id', 'synthetic-actor', '--activity-id', 'synthetic-target']],
     ['selector first', ['--activity-id', 'synthetic-target', '--actor-user-id', 'synthetic-actor']],
   ])('converts only the selected activity with %s', async (_name, argv) => {

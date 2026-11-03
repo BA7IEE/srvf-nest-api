@@ -31,6 +31,10 @@ interface CliArgs {
 function parseArgs(argv: readonly string[]): CliArgs {
   const args: CliArgs = { actorUserId: '' };
   for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i].startsWith('--activity-id=')) {
+      console.error('用法: 不支持 --activity-id=<活动id>;请使用 --activity-id <活动id>');
+      process.exit(2);
+    }
     if (argv[i] === '--actor-user-id') args.actorUserId = argv[i + 1] ?? '';
     else if (argv[i] === '--activity-id') {
       const activityId = argv[i + 1];
