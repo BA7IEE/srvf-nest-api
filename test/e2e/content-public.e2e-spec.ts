@@ -2,12 +2,13 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 import type { INestApplication } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import appConfig from '../../src/config/app.config';
 import { PrismaService } from '../../src/database/prisma.service';
+import { AuditLogsService } from '../../src/modules/audit-logs/audit-logs.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { conformingAttachmentKey } from '../helpers/attachment-key';
@@ -190,6 +191,134 @@ describe('CMS 内容发布模块(第 28 模块)open/v1 公开读取面 e2e', () 
   });
 
   describe('详情:published + public 才可见,否则 404 防枚举', () => {
+    it('公开读取等待管理员改私密提交后返回 404，且不增加 PV', async () => {
+      const id = await makeContent({ body: 'Original public body' });
+      const audit = app.get(AuditLogsService);
+      const log = audit.log.bind(audit);
+      let signalEditor!: () => void;
+      let releaseEditor!: () => void;
+      const editorHasWritten = new Promise<void>((resolve) => {
+        signalEditor = resolve;
+      });
+      const editorMayCommit = new Promise<void>((resolve) => {
+        releaseEditor = resolve;
+      });
+      let editorPid = 0;
+      let editorXid = '';
+      let stopPolling = false;
+      let polling: Promise<void> | undefined;
+      const within = async <T>(promise: Promise<T>): Promise<T> => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          return await Promise.race([
+            promise,
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(
+                () => reject(new Error('content visibility barrier timed out')),
+                5000,
+              );
+            }),
+          ]);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      };
+      const spy = jest.spyOn(audit, 'log').mockImplementation(async (input) => {
+        await log(input);
+        if (input.event === 'content.update' && input.resourceId === id) {
+          if (!input.tx) throw new Error('editor audit requires its transaction');
+          const [editor] = await input.tx.$queryRaw<Array<{ pid: number; xid: string }>>(Prisma.sql`
+            SELECT pg_backend_pid() AS pid, pg_current_xact_id()::text AS xid
+          `);
+          editorPid = editor.pid;
+          editorXid = editor.xid;
+          signalEditor();
+          await editorMayCommit;
+        }
+      });
+      const editing = request(httpServer(app))
+        .patch(`/api/admin/v1/contents/${id}`)
+        .set('Authorization', superAuth)
+        .send({ visibilityCode: 'management', body: 'Never public replacement body' })
+        .then(
+          (value) => ({ value, error: null }),
+          (error: unknown) => ({ value: null, error: requestError(error) }),
+        );
+      let reading: typeof editing | undefined;
+      let failure: Error | undefined;
+      function requestError(error: unknown): Error {
+        return error instanceof Error ? error : new Error('content request failed');
+      }
+      try {
+        await within(editorHasWritten);
+        reading = detailOpen(id).then(
+          (value) => ({ value, error: null }),
+          (error: unknown) => ({ value: null, error: requestError(error) }),
+        );
+        // A real UPDATE waiting on the editor's row lock proves the public read
+        // passed the old committed row's visibility check. Never infer this from a sleep.
+        polling = (async () => {
+          const deadline = Date.now() + 5000;
+          while (!stopPolling && Date.now() < deadline) {
+            const waiting = await prisma.$queryRaw<Array<{ pid: number }>>(Prisma.sql`
+              SELECT waiter.pid FROM pg_stat_activity AS waiter
+              JOIN pg_stat_activity AS editor ON editor.pid = ${editorPid}
+              WHERE waiter.datname = current_database() AND waiter.pid <> pg_backend_pid()
+                AND editor.datname = current_database() AND editor.backend_xid::text = ${editorXid}
+                AND ${editorPid} = ANY(pg_blocking_pids(waiter.pid))
+                AND waiter.state = 'active' AND waiter.wait_event_type = 'Lock'
+                AND waiter.query LIKE '%UPDATE%' AND waiter.query LIKE '%"contents"%'
+                AND waiter.query LIKE '%"viewCount"%'
+            `);
+            if (waiting.length > 0) {
+              expect(waiting).toHaveLength(1);
+              expect(waiting[0].pid).toBeGreaterThan(0);
+              return;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+          if (stopPolling) return;
+          throw new Error('no content PV UPDATE lock waiter observed');
+        })();
+        await polling;
+        releaseEditor();
+        const edited = await editing;
+        if (!edited.value) throw edited.error;
+        expect(edited.value.status).toBe(200);
+        expect(edited.value.body.data.visibilityCode).toBe('management');
+        const response = await reading;
+        if (!response.value) throw response.error;
+        expectBizError(response.value, BizCode.CONTENT_NOT_FOUND);
+        expect(response.value.body).toEqual({
+          code: BizCode.CONTENT_NOT_FOUND.code,
+          message: BizCode.CONTENT_NOT_FOUND.message,
+          data: null,
+        });
+        await expect(prisma.content.findUnique({ where: { id } })).resolves.toMatchObject({
+          visibilityCode: 'management',
+          body: 'Never public replacement body',
+          viewCount: 0,
+        });
+      } catch (error) {
+        failure = requestError(error);
+      } finally {
+        stopPolling = true;
+        releaseEditor();
+        try {
+          // Restore the spy only after every started task has really settled.
+          // A timeout is a failed test, never evidence that a backend stopped.
+          await Promise.allSettled([
+            editing,
+            ...(reading ? [reading] : []),
+            ...(polling ? [polling] : []),
+          ]);
+        } finally {
+          spy.mockRestore();
+        }
+      }
+      if (failure !== undefined) throw failure;
+    });
+
     it('published+public → 200 + 详情;含 body / visibilityCode;零 authorUserId / 零 visibleOrganizationIds', async () => {
       const id = await makeContent({
         body: '正文正文',
