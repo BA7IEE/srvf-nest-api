@@ -139,12 +139,20 @@ export class ContentReadService {
     if (!row || !canSeeContent(ctx, row)) {
       throw new BizException(BizCode.CONTENT_NOT_FOUND);
     }
-    // 可见级通过后才计 PV:非事务原子自增(失败不阻断返回;评审稿 §6 C)。
-    const updated = await this.prisma.content.update({
-      where: { id },
-      data: { viewCount: { increment: 1 } },
-    });
-    return this.toReadDetailDto(updated);
+    // PV 与返回行使用同一次原子可见性判定。管理员在首次读取后收紧可见性时，
+    // 不能凭旧行的授权返回 UPDATE 取得的新私密正文，也不能给拒绝的读取计 PV。
+    try {
+      const updated = await this.prisma.content.update({
+        where: { ...buildVisibilityWhere(ctx), id },
+        data: { viewCount: { increment: 1 } },
+      });
+      return this.toReadDetailDto(updated);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        throw new BizException(BizCode.CONTENT_NOT_FOUND);
+      }
+      throw error;
+    }
   }
 
   // ============ open/v1 列表(@Public;ANON 上下文只命中 public)============
