@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { DatabaseModule } from '../../database/database.module';
+import { PermissionsModule } from '../permissions/permissions.module';
 
 import { ServicePrincipalsController } from './service-principals.controller';
 import { ServicePrincipalsService } from './service-principals.service';
@@ -13,7 +14,7 @@ import { ServicePrincipalsService } from './service-principals.service';
  * DelegationGrant 管理端点归 PR5。本模块不 import 业务模块(零业务耦合)。
  */
 @Module({
-  imports: [DatabaseModule, AuditLogsModule],
+  imports: [DatabaseModule, AuditLogsModule, PermissionsModule],
   controllers: [ServicePrincipalsController],
   providers: [ServicePrincipalsService],
   exports: [ServicePrincipalsService],

@@ -9,6 +9,7 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { RbacService } from '../permissions/rbac.service';
 import type {
   ServicePrincipalCredentialCreatedDto,
   ServicePrincipalCredentialResponseDto,
@@ -36,6 +37,7 @@ export class ServicePrincipalsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
+    private readonly rbac: RbacService,
   ) {}
 
   // ===== 静态原语(PR3 token 交换复用;不挂实例状态)=====
@@ -66,6 +68,7 @@ export class ServicePrincipalsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ServicePrincipalResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'service-principal.create.record');
     const created = await this.prisma.$transaction(async (tx) => {
       if (dto.ownerOrganizationId != null) {
         await this.assertOrganizationExists(tx, dto.ownerOrganizationId);
@@ -89,12 +92,16 @@ export class ServicePrincipalsService {
     return this.present(created);
   }
 
-  async list(query: { status?: 'ACTIVE' | 'SUSPENDED'; page: number; pageSize: number }): Promise<{
+  async list(
+    query: { status?: 'ACTIVE' | 'SUSPENDED'; page: number; pageSize: number },
+    currentUser: CurrentUserPayload,
+  ): Promise<{
     items: ServicePrincipalResponseDto[];
     total: number;
     page: number;
     pageSize: number;
   }> {
+    await this.assertCanOrThrow(currentUser, 'service-principal.read.record');
     const where: Prisma.ServicePrincipalWhereInput = {
       deletedAt: null,
       ...(query.status !== undefined ? { status: query.status } : {}),
@@ -116,7 +123,11 @@ export class ServicePrincipalsService {
     };
   }
 
-  async findById(id: string): Promise<ServicePrincipalResponseDto> {
+  async findById(
+    id: string,
+    currentUser: CurrentUserPayload,
+  ): Promise<ServicePrincipalResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'service-principal.read.record');
     return this.present(await this.findOrThrow(this.prisma, id));
   }
 
@@ -126,6 +137,7 @@ export class ServicePrincipalsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ServicePrincipalResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'service-principal.update.record');
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.findOrThrow(tx, id, { forUpdate: true });
       if (dto.ownerOrganizationId != null) {
@@ -155,6 +167,7 @@ export class ServicePrincipalsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ServicePrincipalResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'service-principal.update.status');
     const updated = await this.prisma.$transaction(async (tx) => {
       const sp = await this.findOrThrow(tx, id, { forUpdate: true });
       if (sp.status === status) {
@@ -177,6 +190,7 @@ export class ServicePrincipalsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ServicePrincipalCredentialCreatedDto> {
+    await this.assertCanOrThrow(currentUser, 'service-principal.create.credential');
     const secret = ServicePrincipalsService.generateClientSecret();
     const secretHash = ServicePrincipalsService.hashClientSecret(secret);
     const created = await this.prisma.$transaction(async (tx) => {
@@ -217,7 +231,9 @@ export class ServicePrincipalsService {
 
   async listCredentials(
     servicePrincipalId: string,
+    currentUser: CurrentUserPayload,
   ): Promise<ServicePrincipalCredentialResponseDto[]> {
+    await this.assertCanOrThrow(currentUser, 'service-principal.read.record');
     await this.findOrThrow(this.prisma, servicePrincipalId);
     const rows = await this.prisma.servicePrincipalCredential.findMany({
       where: { servicePrincipalId },
@@ -233,6 +249,7 @@ export class ServicePrincipalsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ServicePrincipalCredentialResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'service-principal.revoke.credential');
     const revoked = await this.prisma.$transaction(async (tx) => {
       await this.findOrThrow(tx, servicePrincipalId, { forUpdate: true });
       const credential = await tx.servicePrincipalCredential.findFirst({
@@ -273,6 +290,12 @@ export class ServicePrincipalsService {
   }
 
   // ===== 内部 =====
+
+  private async assertCanOrThrow(user: CurrentUserPayload, permission: string): Promise<void> {
+    if (!(await this.rbac.can(user, permission))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
 
   private present(sp: {
     id: string;

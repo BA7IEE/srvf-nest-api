@@ -43,7 +43,7 @@ export class ServicePrincipalsController {
   })
   @RequiresPermission('service-principal.create.record')
   @ApiWrappedCreatedResponse(ServicePrincipalResponseDto)
-  @ApiBizErrorResponse(BizCode.ORGANIZATION_NOT_FOUND)
+  @ApiBizErrorResponse(BizCode.ORGANIZATION_NOT_FOUND, BizCode.RBAC_FORBIDDEN)
   async create(
     @Body() dto: CreateServicePrincipalDto,
     @CurrentUser() currentUser: CurrentUserPayload,
@@ -56,8 +56,12 @@ export class ServicePrincipalsController {
   @ApiOperation({ summary: '服务主体分页列表 [rbac: service-principal.read.record]' })
   @RequiresPermission('service-principal.read.record')
   @ApiWrappedPageResponse(ServicePrincipalResponseDto)
-  async list(@Query() query: ListServicePrincipalsQueryDto) {
-    return this.servicePrincipals.list(query);
+  @ApiBizErrorResponse(BizCode.RBAC_FORBIDDEN)
+  async list(
+    @Query() query: ListServicePrincipalsQueryDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.servicePrincipals.list(query, user);
   }
 
   @Get(':id')
@@ -66,9 +70,12 @@ export class ServicePrincipalsController {
   })
   @RequiresPermission('service-principal.read.record')
   @ApiWrappedOkResponse(ServicePrincipalResponseDto)
-  @ApiBizErrorResponse(BizCode.SERVICE_PRINCIPAL_NOT_FOUND)
-  async findById(@Param() params: IdParamDto): Promise<ServicePrincipalResponseDto> {
-    return this.servicePrincipals.findById(params.id);
+  @ApiBizErrorResponse(BizCode.SERVICE_PRINCIPAL_NOT_FOUND, BizCode.RBAC_FORBIDDEN)
+  async findById(
+    @Param() params: IdParamDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<ServicePrincipalResponseDto> {
+    return this.servicePrincipals.findById(params.id, user);
   }
 
   @Patch(':id')
@@ -77,7 +84,7 @@ export class ServicePrincipalsController {
   })
   @RequiresPermission('service-principal.update.record')
   @ApiWrappedOkResponse(ServicePrincipalResponseDto)
-  @ApiBizErrorResponse(BizCode.SERVICE_PRINCIPAL_NOT_FOUND)
+  @ApiBizErrorResponse(BizCode.SERVICE_PRINCIPAL_NOT_FOUND, BizCode.RBAC_FORBIDDEN)
   async update(
     @Param() params: IdParamDto,
     @Body() dto: UpdateServicePrincipalDto,
@@ -95,6 +102,7 @@ export class ServicePrincipalsController {
   @ApiWrappedOkResponse(ServicePrincipalResponseDto)
   @ApiBizErrorResponse(BizCode.SERVICE_PRINCIPAL_NOT_FOUND)
   @ApiBizErrorResponse(BizCode.SERVICE_PRINCIPAL_ALREADY_SUSPENDED_OR_ACTIVE)
+  @ApiBizErrorResponse(BizCode.RBAC_FORBIDDEN)
   async updateStatus(
     @Param() params: IdParamDto,
     @Body() dto: UpdateServicePrincipalStatusDto,
@@ -118,6 +126,7 @@ export class ServicePrincipalsController {
   @ApiWrappedCreatedResponse(ServicePrincipalCredentialCreatedDto)
   @ApiBizErrorResponse(BizCode.SERVICE_PRINCIPAL_NOT_FOUND)
   @ApiBizErrorResponse(BizCode.SERVICE_CREDENTIAL_LIMIT_EXCEEDED)
+  @ApiBizErrorResponse(BizCode.RBAC_FORBIDDEN)
   async createCredential(
     @Param() params: IdParamDto,
     @CurrentUser() currentUser: CurrentUserPayload,
@@ -136,11 +145,12 @@ export class ServicePrincipalsController {
   })
   @RequiresPermission('service-principal.read.record')
   @ApiWrappedOkResponse(ServicePrincipalCredentialResponseDto)
-  @ApiBizErrorResponse(BizCode.SERVICE_PRINCIPAL_NOT_FOUND)
+  @ApiBizErrorResponse(BizCode.SERVICE_PRINCIPAL_NOT_FOUND, BizCode.RBAC_FORBIDDEN)
   async listCredentials(
     @Param() params: IdParamDto,
+    @CurrentUser() user: CurrentUserPayload,
   ): Promise<ServicePrincipalCredentialResponseDto[]> {
-    return this.servicePrincipals.listCredentials(params.id);
+    return this.servicePrincipals.listCredentials(params.id, user);
   }
 
   @Post(':id/credentials/:credentialId/revoke')
@@ -153,6 +163,7 @@ export class ServicePrincipalsController {
   @ApiBizErrorResponse(BizCode.SERVICE_PRINCIPAL_NOT_FOUND)
   @ApiBizErrorResponse(BizCode.SERVICE_CREDENTIAL_NOT_FOUND)
   @ApiBizErrorResponse(BizCode.SERVICE_CREDENTIAL_ALREADY_REVOKED)
+  @ApiBizErrorResponse(BizCode.RBAC_FORBIDDEN)
   async revokeCredential(
     @Param() params: IdParamDto & { credentialId: string },
     @CurrentUser() currentUser: CurrentUserPayload,
