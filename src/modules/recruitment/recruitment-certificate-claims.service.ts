@@ -660,7 +660,11 @@ export class RecruitmentCertificateClaimsService {
       issuedAt: row.issuedAt,
       expiredAt: row.expiredAt,
       imageCount: this.imageCountOf(row.imageKeys),
-      reviewNote: row.reviewNote,
+      reviewNote:
+        row.status === RecruitmentCertificateClaimStatus.REJECTED ||
+        row.status === RecruitmentCertificateClaimStatus.NEEDS_INFO
+          ? row.reviewNote
+          : null,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
