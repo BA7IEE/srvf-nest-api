@@ -665,7 +665,10 @@ export class CorrectionApplicationService {
           resubmittedFromRequestId: input.resubmittedFromRequestId,
           participationIdentityId: input.participationIdentityId,
           requestTypeCode: input.requestTypeCode,
-          requestedChangeJson: input.requestedChangeJson,
+          requestedChangeJson:
+            changeSet.schemaVersion === 2
+              ? serializeCorrectionChangeSetForHash(changeSet)
+              : input.requestedChangeJson,
           reason: input.reason,
           attachmentIds: input.attachmentIds ?? null,
           operationKey: input.operationKey,
