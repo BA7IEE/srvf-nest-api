@@ -2854,6 +2854,129 @@ describe('D7-1 recognition correction real transaction', () => {
     return { p, timeRevision, root, roots, source, allocation, sources, allocations };
   }
 
+  it('accepts and replays Human V2 corrections with nonempty result amounts', async () => {
+    const { p, timeRevision, root, roots, source } = await createCommittedFactCorrectionBase();
+    const baseResult = await f.db.participantSettlementResultRevision.findFirstOrThrow({
+      where: {
+        settlementVersionId: timeRevision.settlementVersionId,
+        participationIdentityId: source.participationIdentityId,
+      },
+    });
+    const result = {
+      participationIdentityId: source.participationIdentityId,
+      resultCode: baseResult.resultCode,
+      recognizedServiceHours: baseResult.recognizedServiceHours.toFixed(2),
+      recognizedContributionPoints: baseResult.recognizedContributionPoints.toFixed(2),
+      adjustmentReason: baseResult.adjustmentReason,
+      lateFlag: baseResult.lateFlag,
+      earlyLeaveFlag: baseResult.earlyLeaveFlag,
+    };
+    const correctionUrl = `${D13_APP}/${p.activityId}/time-corrections`;
+    const body = {
+      participationIdentityId: source.participationIdentityId,
+      requestTypeCode: 'time',
+      requestedChangeJson: {
+        schemaVersion: 2,
+        results: [result],
+        segments: [],
+        timeCorrection: {
+          baseSettlementVersionId: timeRevision.settlementVersionId,
+          baseTimeLedgerHash: root.contentHash,
+          reason: '复核分类认定',
+          items: roots.map((entry) => ({
+            rootEntryId: entry.id,
+            recognizedSeconds:
+              entry.categoryCode === 'volunteer_service' ? 3540 : entry.recognizedSeconds,
+          })),
+        },
+      },
+      reason: '复核时长和人员结果',
+      operationKey: f.key('human_v2_submit'),
+    };
+
+    for (const invalid of [1.2, '1.005']) {
+      const response = await request(httpServer(humanCorrectionTestApp(f)))
+        .post(correctionUrl)
+        .set('Authorization', f.creator.auth)
+        .send({
+          ...body,
+          requestedChangeJson: {
+            ...body.requestedChangeJson,
+            results: [{ ...result, recognizedServiceHours: invalid }],
+          },
+        });
+      expect({ status: response.status, code: response.body.code }).toEqual({
+        status: BizCode.CORRECTION_CHANGE_SET_INVALID.httpStatus,
+        code: BizCode.CORRECTION_CHANGE_SET_INVALID.code,
+      });
+    }
+
+    const submitted = await request(httpServer(humanCorrectionTestApp(f)))
+      .post(correctionUrl)
+      .set('Authorization', f.creator.auth)
+      .send(body)
+      .expect(201);
+    const first = submitted.body.data as { requestId: string; requestVersion: number };
+    expect(submitted.body.data).toMatchObject({ statusCode: 'pending', replayed: false });
+    const submitReplay = await request(httpServer(humanCorrectionTestApp(f)))
+      .post(correctionUrl)
+      .set('Authorization', f.creator.auth)
+      .send(body)
+      .expect(201);
+    expect(submitReplay.body.data).toMatchObject({ requestId: first.requestId, replayed: true });
+    const submitConflict = await request(httpServer(humanCorrectionTestApp(f)))
+      .post(correctionUrl)
+      .set('Authorization', f.creator.auth)
+      .send({ ...body, reason: '同标识的不同申请' });
+    expect({ status: submitConflict.status, code: submitConflict.body.code }).toEqual({
+      status: BizCode.CORRECTION_OPERATION_KEY_CONFLICT.httpStatus,
+      code: BizCode.CORRECTION_OPERATION_KEY_CONFLICT.code,
+    });
+
+    await request(httpServer(humanCorrectionTestApp(f)))
+      .post(`${correctionUrl}/${first.requestId}/review`)
+      .set('Authorization', f.reviewer.auth)
+      .send({
+        actionCode: 'return',
+        expectedRequestVersion: first.requestVersion,
+        note: '补充说明',
+      })
+      .expect(200);
+    const resubmitBody = {
+      ...body,
+      operationKey: f.key('human_v2_resubmit'),
+      reason: '已补充说明',
+    };
+    const resubmitted = await request(httpServer(humanCorrectionTestApp(f)))
+      .post(`${correctionUrl}/${first.requestId}/resubmit`)
+      .set('Authorization', f.creator.auth)
+      .send(resubmitBody)
+      .expect(201);
+    const next = resubmitted.body.data as { requestId: string };
+    expect(resubmitted.body.data).toMatchObject({ outcome: 'resubmitted', replayed: false });
+    const resubmitReplay = await request(httpServer(humanCorrectionTestApp(f)))
+      .post(`${correctionUrl}/${first.requestId}/resubmit`)
+      .set('Authorization', f.creator.auth)
+      .send(resubmitBody)
+      .expect(201);
+    expect(resubmitReplay.body.data).toMatchObject({ requestId: next.requestId, replayed: true });
+    const resubmitConflict = await request(httpServer(humanCorrectionTestApp(f)))
+      .post(`${correctionUrl}/${first.requestId}/resubmit`)
+      .set('Authorization', f.creator.auth)
+      .send({ ...resubmitBody, reason: '同标识的不同重提' });
+    expect({ status: resubmitConflict.status, code: resubmitConflict.body.code }).toEqual({
+      status: BizCode.CORRECTION_OPERATION_KEY_CONFLICT.httpStatus,
+      code: BizCode.CORRECTION_OPERATION_KEY_CONFLICT.code,
+    });
+    const persisted = await f.db.attendanceCorrectionRequest.findUniqueOrThrow({
+      where: { id: next.requestId },
+    });
+    expect(persisted).toMatchObject({
+      resubmittedFromRequestId: first.requestId,
+      requestedChangeJson: { schemaVersion: 2, results: [result] },
+    });
+  }, 120000);
+
   it('runs the Human V3 submit, returned-resubmit, review, prepare and commit chain', async () => {
     const { p, timeRevision, root, roots, source, allocation } =
       await createCommittedFactCorrectionBase();

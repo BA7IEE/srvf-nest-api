@@ -39,7 +39,7 @@ describe('Human V2 request compatibility across command and application', () => 
   it('accepts and stores a reparsable nonempty result on fresh submit and resubmit', async () => {
     const dto = {
       participationIdentityId: null,
-      requestTypeCode: 'time',
+      requestTypeCode: 'time' as const,
       requestedChangeJson: change([result]),
       reason: 'reason',
       operationKey: 'operation',
@@ -136,7 +136,7 @@ describe('Human V2 request compatibility across command and application', () => 
       );
       const dto = {
         participationIdentityId: null,
-        requestTypeCode: 'time',
+        requestTypeCode: 'time' as const,
         requestedChangeJson: raw,
         reason: 'reason',
         operationKey: 'operation',
