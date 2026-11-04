@@ -25,6 +25,8 @@ import { CorrectionAuditRecorder } from '../../src/modules/activities/correction
 import { CorrectionTimeAllocationService } from '../../src/modules/activities/correction-time-allocation.service';
 import { AttendanceCorrectionWriteService } from '../../src/modules/attendances/attendance-correction-write.service';
 import { ParticipationTimeCorrectionService } from '../../src/modules/activities/participation-time-correction.service';
+import { ParticipationTimeTruthQueryService } from '../../src/modules/activities/participation-time-truth-query.service';
+import { ACTIVITY_TIME_CUTOVER_RECEIPT_ID } from '../../src/modules/activities/activity-time-cutover-command';
 import { LedgerPreparationService } from '../../src/modules/activities/ledger-preparation.service';
 import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
 import { LedgerReadyBatchCommitter } from '../../src/modules/activities/ledger-ready-batch-committer.service';
@@ -2976,6 +2978,139 @@ describe('D7-1 recognition correction real transaction', () => {
       requestedChangeJson: { schemaVersion: 2, results: [result] },
     });
   }, 120000);
+
+  it('keeps member proofs and totals correct across shared-manifest corrections', async () => {
+    // The cutover receipt must exist before the real root batch is committed.
+    await f.db.$executeRaw`
+      INSERT INTO "ActivityTimeCutoverReceipt" (
+        id, "operationKey", "requestHash", "deployedMainSha",
+        "evidenceBundleHash", "actorUserId", "contentHash"
+      ) VALUES (
+        ${ACTIVITY_TIME_CUTOVER_RECEIPT_ID}, ${f.key('cutover')}, ${'5'.repeat(64)},
+        ${'6'.repeat(40)}, ${'7'.repeat(64)}, ${actor.id}, ${'0'.repeat(64)}
+      )
+    `;
+    const { p, timeRevision, root, roots } = await createCommittedFactCorrectionBase(2);
+    const identities = await f.db.activityParticipationIdentity.findMany({
+      where: { id: { in: [...new Set(roots.map((row) => row.participationIdentityId))] } },
+      select: { id: true, memberId: true },
+    });
+    expect(identities).toHaveLength(2);
+    const memberA = identities.find((row) => row.id === p.identityId);
+    const memberB = identities.find((row) => row.id !== p.identityId);
+    if (!memberA || !memberB) throw new Error('two distinct members required');
+    const changedRoot = roots.find(
+      (row) =>
+        row.participationIdentityId === memberA.id && row.categoryCode === 'volunteer_service',
+    );
+    if (!changedRoot || changedRoot.recognizedSeconds <= 120) {
+      throw new Error('positive volunteer root required');
+    }
+    const truth = f.app.get(ParticipationTimeTruthQueryService);
+    const read = async (memberId: string) =>
+      f.db.$transaction(async (tx) => ({
+        proof: await truth.readMemberTruthInTx(tx, {
+          memberId,
+          dateFrom: '2020-01-01',
+          dateTo: '2020-12-31',
+        }),
+        totals: await truth.readOfficialTotalsInTx(tx, {
+          memberIds: [memberId],
+          activityIds: [p.activityId],
+        }),
+      }));
+    let baseVersionId = timeRevision.settlementVersionId;
+    let baseHash = root.contentHash;
+    for (const reduction of [60, 120]) {
+      const url = `${D13_APP}/${p.activityId}/time-corrections`;
+      const submitted = await request(httpServer(humanCorrectionTestApp(f)))
+        .post(url)
+        .set('Authorization', f.creator.auth)
+        .send({
+          participationIdentityId: memberA.id,
+          requestTypeCode: 'time',
+          requestedChangeJson: {
+            schemaVersion: 2,
+            results: [],
+            segments: [],
+            timeCorrection: {
+              baseSettlementVersionId: baseVersionId,
+              baseTimeLedgerHash: baseHash,
+              reason: 'member truth correction regression',
+              items: roots.map((entry) => ({
+                rootEntryId: entry.id,
+                recognizedSeconds:
+                  entry.id === changedRoot.id
+                    ? entry.recognizedSeconds - reduction
+                    : entry.recognizedSeconds,
+              })),
+            },
+          },
+          reason: 'member truth correction regression',
+          operationKey: f.key('truth_submit'),
+        })
+        .expect(201);
+      const submittedData = submitted.body.data as { requestId: string; requestVersion: number };
+      await request(httpServer(humanCorrectionTestApp(f)))
+        .post(`${url}/${submittedData.requestId}/review`)
+        .set('Authorization', f.reviewer.auth)
+        .send({ actionCode: 'approve', expectedRequestVersion: submittedData.requestVersion })
+        .expect(200);
+      const prepared = await request(httpServer(humanCorrectionTestApp(f)))
+        .post(`${url}/${submittedData.requestId}/prepare`)
+        .set('Authorization', f.reviewer.auth)
+        .send({
+          expectedBaseSettlementVersionId: baseVersionId,
+          operationKey: f.key('truth_prepare'),
+        })
+        .expect(200);
+      const preparedData = prepared.body.data as {
+        applicationId: string;
+        postingBatchId: string;
+        settlementVersionId: string;
+      };
+      await request(httpServer(humanCorrectionTestApp(f)))
+        .post(`${url}/${submittedData.requestId}/commit`)
+        .set('Authorization', f.reviewer.auth)
+        .send({
+          expectedBaseSettlementVersionId: baseVersionId,
+          correctionApplicationId: preparedData.applicationId,
+          postingBatchId: preparedData.postingBatchId,
+          operationKey: f.key('truth_commit'),
+        })
+        .expect(200);
+      const manifest = await f.db.participationTimeCorrectionManifest.findUniqueOrThrow({
+        where: { postingBatchId: preparedData.postingBatchId },
+      });
+      for (const member of [memberA, memberB]) {
+        const result = await read(member.memberId);
+        const expected =
+          roots
+            .filter(
+              (entry) =>
+                entry.participationIdentityId === member.id &&
+                entry.categoryCode === 'volunteer_service',
+            )
+            .reduce((sum, entry) => sum + entry.recognizedSeconds, 0) -
+          (member.id === memberA.id ? reduction : 0);
+        const volunteer = result.proof.items.filter(
+          (item) => item.sourceCategoryCode === 'volunteer_service',
+        );
+        expect(volunteer.reduce((sum, item) => sum + item.recognizedSeconds, 0)).toBe(expected);
+        expect(result.proof.items.every((item) => item.participationIdentityId === member.id)).toBe(
+          true,
+        );
+        expect(volunteer.every((item) => item.latestCorrectionManifestId === manifest.id)).toBe(
+          true,
+        );
+        expect(result.totals?.totals).toEqual([
+          { activityId: p.activityId, memberId: member.memberId, eligibleSeconds: expected },
+        ]);
+      }
+      baseVersionId = preparedData.settlementVersionId;
+      baseHash = manifest.contentHash;
+    }
+  }, 120_000);
 
   it('runs the Human V3 submit, returned-resubmit, review, prepare and commit chain', async () => {
     const { p, timeRevision, root, roots, source, allocation } =
