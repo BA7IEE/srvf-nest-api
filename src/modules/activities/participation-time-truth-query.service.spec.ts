@@ -315,6 +315,10 @@ describe('D8-1 truth selector', () => {
           {
             manifestId: 'correction-1',
             rootEntryId: 'root-entry-1',
+            entryRootManifestId: 'root-manifest-1',
+            entryIdentityId: 'identity-1',
+            entryCategoryCode: 'volunteer_service',
+            entryRecognizedSeconds: 3600,
             participationIdentityId: 'identity-1',
             categoryCode: 'volunteer_service',
             secondsDelta: -3600,
@@ -322,6 +326,10 @@ describe('D8-1 truth selector', () => {
           {
             manifestId: 'correction-1',
             rootEntryId: 'root-entry-1',
+            entryRootManifestId: 'root-manifest-1',
+            entryIdentityId: 'identity-1',
+            entryCategoryCode: 'volunteer_service',
+            entryRecognizedSeconds: 3600,
             participationIdentityId: 'identity-1',
             categoryCode: 'volunteer_service',
             secondsDelta: 5400,
@@ -329,6 +337,10 @@ describe('D8-1 truth selector', () => {
           {
             manifestId: 'correction-2',
             rootEntryId: 'root-entry-2',
+            entryRootManifestId: 'root-manifest-2',
+            entryIdentityId: 'identity-2',
+            entryCategoryCode: 'training',
+            entryRecognizedSeconds: 1800,
             participationIdentityId: 'identity-2',
             categoryCode: 'training',
             secondsDelta: -1800,
@@ -336,9 +348,35 @@ describe('D8-1 truth selector', () => {
           {
             manifestId: 'correction-2',
             rootEntryId: 'root-entry-2',
+            entryRootManifestId: 'root-manifest-2',
+            entryIdentityId: 'identity-2',
+            entryCategoryCode: 'training',
+            entryRecognizedSeconds: 1800,
             participationIdentityId: 'identity-2',
             categoryCode: 'training',
             secondsDelta: 2400,
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            rootEntryId: 'root-entry-1',
+            rootManifestId: 'root-manifest-1',
+            activityId: 'activity-1',
+            participationIdentityId: 'identity-1',
+            memberId: 'member',
+            categoryCode: 'volunteer_service',
+            recognizedSeconds: 3600,
+            rootExpectedEntryCount: 1,
+          },
+          {
+            rootEntryId: 'root-entry-2',
+            rootManifestId: 'root-manifest-2',
+            activityId: 'activity-2',
+            participationIdentityId: 'identity-2',
+            memberId: 'member',
+            categoryCode: 'training',
+            recognizedSeconds: 1800,
+            rootExpectedEntryCount: 1,
           },
         ])
         .mockResolvedValueOnce([
@@ -439,6 +477,18 @@ describe('D8-1 truth selector', () => {
           }),
         ])
         .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            rootEntryId: 'root-entry',
+            rootManifestId: 'root-manifest',
+            activityId: 'activity',
+            participationIdentityId: 'identity',
+            memberId: 'member',
+            categoryCode: 'volunteer_service',
+            recognizedSeconds: 3600,
+            rootExpectedEntryCount: 1,
+          },
+        ])
         .mockResolvedValueOnce([
           {
             rootEntryId: 'root-entry',
@@ -570,6 +620,10 @@ describe('D8-1 truth selector', () => {
           {
             manifestId: 'correction',
             rootEntryId: 'root-entry',
+            entryRootManifestId: 'root-manifest',
+            entryIdentityId: 'identity',
+            entryCategoryCode: 'volunteer_service',
+            entryRecognizedSeconds: 1,
             participationIdentityId: 'identity',
             categoryCode: 'volunteer_service',
             secondsDelta: Number.MAX_SAFE_INTEGER,
@@ -577,11 +631,16 @@ describe('D8-1 truth selector', () => {
           {
             manifestId: 'correction',
             rootEntryId: 'root-entry',
+            entryRootManifestId: 'root-manifest',
+            entryIdentityId: 'identity',
+            entryCategoryCode: 'volunteer_service',
+            entryRecognizedSeconds: 1,
             participationIdentityId: 'identity',
             categoryCode: 'volunteer_service',
             secondsDelta: 1,
           },
         ])
+        .mockResolvedValueOnce(roots.map((root) => ({ ...root, rootExpectedEntryCount: 1 })))
         .mockResolvedValueOnce(rootSlices(roots)),
     };
 
@@ -592,6 +651,312 @@ describe('D8-1 truth selector', () => {
         dateTo: '2099-12-31',
       }),
     ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_TIME_PROOF_INVALID });
+  });
+
+  describe('member-scoped corrections for a shared manifest', () => {
+    const roots = classifiedRoots(2).map((root) => ({
+      ...root,
+      rootManifestId: 'root-manifest',
+      recognizedSeconds: 100,
+    }));
+    const manifests = [
+      correctionManifest({ id: 'correction-1' }),
+      correctionManifest({ id: 'correction-2', predecessorManifestId: 'correction-1' }),
+    ];
+    const entry = (
+      root: (typeof roots)[number],
+      manifestId: string,
+      secondsDelta: number,
+      entryTypeCode: 'reversal' | 'credit',
+      reversesCorrectionEntryId: string | null = null,
+    ) => ({
+      id: `${manifestId}-${root.rootEntryId}-${entryTypeCode}`,
+      manifestId,
+      rootEntryId: root.rootEntryId,
+      participationIdentityId: root.participationIdentityId,
+      categoryCode: root.categoryCode,
+      entryTypeCode,
+      reversesCorrectionEntryId,
+      secondsDelta,
+      entryRootManifestId: root.rootManifestId as string | null,
+      entryIdentityId: root.participationIdentityId as string | null,
+      entryCategoryCode: root.categoryCode as string | null,
+      entryRecognizedSeconds: root.recognizedSeconds as number | null,
+    });
+    const corrections = [
+      entry(roots[0], 'correction-1', -100, 'reversal'),
+      entry(roots[0], 'correction-1', 100, 'credit'),
+      entry(roots[1], 'correction-1', -100, 'reversal'),
+      entry(roots[1], 'correction-1', 200, 'credit'),
+      entry(
+        roots[0],
+        'correction-2',
+        -100,
+        'reversal',
+        `correction-1-${roots[0].rootEntryId}-credit`,
+      ),
+      entry(roots[0], 'correction-2', 300, 'credit'),
+      entry(
+        roots[1],
+        'correction-2',
+        -200,
+        'reversal',
+        `correction-1-${roots[1].rootEntryId}-credit`,
+      ),
+      entry(roots[1], 'correction-2', 200, 'credit'),
+    ];
+    const txFor = (
+      selected: (typeof roots)[number],
+      official: boolean,
+      correctionRows = corrections,
+      manifestRows = manifests,
+      manifestRootRows = roots.map((root) => ({ ...root, rootExpectedEntryCount: roots.length })),
+      slices = rootSlices(roots),
+      proofSlices?: ReturnType<typeof rootSlices>,
+    ) => {
+      const query = jest.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([selected]);
+      if (!official) query.mockResolvedValueOnce([{ asOf: new Date('2099-09-21T01:00:00Z') }]);
+      query
+        .mockResolvedValueOnce(manifestRows)
+        .mockResolvedValueOnce(correctionRows)
+        .mockResolvedValueOnce(manifestRootRows)
+        .mockResolvedValueOnce(slices);
+      if (proofSlices) {
+        query
+          .mockResolvedValueOnce([
+            {
+              id: 'proof',
+              rootManifestId: 'root-manifest',
+              sourceSetHash: 'b'.repeat(64),
+              expectedBindingCount: 2,
+              actualBindingCount: 2n,
+            },
+          ])
+          .mockResolvedValueOnce(
+            proofSlices.map((slice) => ({ ...slice, rootEntryId: null, proofId: 'proof' })),
+          );
+      }
+      return {
+        activityTimeCutoverReceipt: { findUnique: jest.fn().mockResolvedValue(receipt()) },
+        $queryRaw: query,
+      };
+    };
+
+    it.each([
+      [0, 100],
+      [1, 200],
+    ])('returns member %i when only one member is corrected', async (index, expectedSeconds) => {
+      const selected = roots[index];
+      const service = new ParticipationTimeTruthQueryService();
+      const proofTx = txFor(selected, false, corrections.slice(0, 4), manifests.slice(0, 1));
+      const proof = await service.readMemberTruthInTx(proofTx as never, {
+        memberId: selected.memberId,
+        dateFrom: '2099-01-01',
+        dateTo: '2099-12-31',
+      });
+      expect(proof.items).toMatchObject([
+        {
+          participationIdentityId: selected.participationIdentityId,
+          recognizedSeconds: expectedSeconds,
+        },
+      ]);
+      const totalTx = txFor(selected, true, corrections.slice(0, 4), manifests.slice(0, 1));
+      const snapshot = await service.readOfficialTotalsInTx(totalTx as never, {
+        memberIds: [selected.memberId],
+      });
+      expect(snapshot?.totals).toEqual([
+        {
+          activityId: selected.activityId,
+          memberId: selected.memberId,
+          eligibleSeconds: expectedSeconds,
+        },
+      ]);
+    });
+
+    it.each([
+      [0, 300],
+      [1, 200],
+    ])(
+      'projects member %i after validating both members across successive corrections',
+      async (index, expectedSeconds) => {
+        const selected = roots[index];
+        const service = new ParticipationTimeTruthQueryService();
+        const proofTx = txFor(selected, false);
+        const proof = await service.readMemberTruthInTx(proofTx as never, {
+          memberId: selected.memberId,
+          dateFrom: '2099-01-01',
+          dateTo: '2099-12-31',
+        });
+        expect(proof.items).toMatchObject([
+          {
+            participationIdentityId: selected.participationIdentityId,
+            recognizedSeconds: expectedSeconds,
+            latestCorrectionManifestId: 'correction-2',
+          },
+        ]);
+        expect(proofTx.$queryRaw).toHaveBeenCalledTimes(7);
+
+        const totalTx = txFor(selected, true);
+        const snapshot = await service.readOfficialTotalsInTx(totalTx as never, {
+          memberIds: [selected.memberId],
+        });
+        expect(snapshot?.totals).toEqual([
+          {
+            activityId: selected.activityId,
+            memberId: selected.memberId,
+            eligibleSeconds: expectedSeconds,
+          },
+        ]);
+        expect(totalTx.$queryRaw).toHaveBeenCalledTimes(6);
+      },
+    );
+
+    it.each([
+      ['missing root', { entryRootManifestId: null }],
+      ['another manifest root', { entryRootManifestId: 'other-manifest' }],
+      ['identity mismatch', { entryIdentityId: 'other-identity' }],
+      ['category mismatch', { entryCategoryCode: 'training' }],
+      ['unsafe delta', { secondsDelta: Number.MAX_SAFE_INTEGER + 1 }],
+      ['negative final balance', { secondsDelta: -301 }],
+    ])('rejects an out-of-scope member correction with %s', async (_label, change) => {
+      const malformed = corrections.map((row, index) =>
+        index === 2 ? { ...row, ...change } : row,
+      );
+      const tx = txFor(roots[0], false, malformed);
+      await expect(
+        new ParticipationTimeTruthQueryService().readMemberTruthInTx(tx as never, {
+          memberId: roots[0].memberId,
+          dateFrom: '2099-01-01',
+          dateTo: '2099-12-31',
+        }),
+      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_TIME_PROOF_INVALID });
+    });
+
+    it('rejects a missing root in the complete manifest', async () => {
+      const incomplete = [{ ...roots[0], rootExpectedEntryCount: 2 }];
+      const tx = txFor(roots[0], false, corrections, manifests, incomplete);
+      await expect(
+        new ParticipationTimeTruthQueryService().readMemberTruthInTx(tx as never, {
+          memberId: roots[0].memberId,
+          dateFrom: '2099-01-01',
+          dateTo: '2099-12-31',
+        }),
+      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_TIME_PROOF_INVALID });
+    });
+
+    it('rejects missing original slices for another member', async () => {
+      const tx = txFor(roots[0], false, corrections, manifests, undefined, rootSlices([roots[0]]));
+      await expect(
+        new ParticipationTimeTruthQueryService().readMemberTruthInTx(tx as never, {
+          memberId: roots[0].memberId,
+          dateFrom: '2099-01-01',
+          dateTo: '2099-12-31',
+        }),
+      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_TIME_PROOF_INVALID });
+    });
+
+    it('accepts complete frozen slices and projects only the requested member', async () => {
+      const latest = { ...manifests[1], sourceProofId: 'proof', sourceProofHash: 'b'.repeat(64) };
+      const slices = rootSlices(roots);
+      const tx = txFor(
+        roots[0],
+        false,
+        corrections,
+        [manifests[0], latest],
+        undefined,
+        slices,
+        slices,
+      );
+      const result = await new ParticipationTimeTruthQueryService().readMemberTruthInTx(
+        tx as never,
+        {
+          memberId: roots[0].memberId,
+          dateFrom: '2099-01-01',
+          dateTo: '2099-12-31',
+        },
+      );
+      expect(result.items).toMatchObject([
+        { participationIdentityId: roots[0].participationIdentityId, recognizedSeconds: 300 },
+      ]);
+      expect(result.items).toHaveLength(1);
+      expect(tx.$queryRaw).toHaveBeenCalledTimes(9);
+    });
+
+    it.each(['missing', 'invalid interval'])(
+      'rejects %s frozen slices for another member',
+      async (failure) => {
+        const latest = { ...manifests[1], sourceProofId: 'proof', sourceProofHash: 'b'.repeat(64) };
+        const slices = rootSlices(roots);
+        const proofSlices =
+          failure === 'missing'
+            ? slices.slice(0, 1)
+            : [slices[0], { ...slices[1], endAt: slices[1].startAt }];
+        const tx = txFor(
+          roots[0],
+          false,
+          corrections,
+          [manifests[0], latest],
+          undefined,
+          slices,
+          proofSlices,
+        );
+        await expect(
+          new ParticipationTimeTruthQueryService().readMemberTruthInTx(tx as never, {
+            memberId: roots[0].memberId,
+            dateFrom: '2099-01-01',
+            dateTo: '2099-12-31',
+          }),
+        ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_TIME_PROOF_INVALID });
+      },
+    );
+
+    it.each([1, 100, 2_000])(
+      'keeps a fixed query count with %i corrected members',
+      async (count) => {
+        const all = classifiedRoots(count).map((root) => ({
+          ...root,
+          rootManifestId: 'root-manifest',
+        }));
+        const entries = all.flatMap((root, index) => [
+          entry(root, 'correction-1', -1, 'reversal'),
+          entry(root, 'correction-1', index === 0 ? 2 : 1, 'credit'),
+        ]);
+        const tx = txFor(
+          all[0],
+          false,
+          entries,
+          manifests.slice(0, 1),
+          all.map((root) => ({ ...root, rootExpectedEntryCount: count })),
+          rootSlices(all),
+        );
+        const result = await new ParticipationTimeTruthQueryService().readMemberTruthInTx(
+          tx as never,
+          {
+            memberId: all[0].memberId,
+            dateFrom: '2099-01-01',
+            dateTo: '2099-12-31',
+          },
+        );
+        expect(result.items).toHaveLength(1);
+        expect(tx.$queryRaw).toHaveBeenCalledTimes(7);
+        const calls = tx.$queryRaw.mock.calls as unknown as Array<[unknown]>;
+        expect(calls[6][0]).toMatchObject({ values: ['root-manifest'] });
+      },
+    );
+
+    it.each([
+      ['broken predecessor', [manifests[0], { ...manifests[1], predecessorManifestId: 'missing' }]],
+      ['invalid receipt', [manifests[0], { ...manifests[1], receiptContentHash: 'wrong' }]],
+    ])('rejects %s before projecting a member', async (_label, invalidManifests) => {
+      const tx = txFor(roots[0], false, corrections, invalidManifests);
+      await expect(
+        new ParticipationTimeTruthQueryService().readMemberTruthInTx(tx as never, {
+          memberId: roots[0].memberId,
+          dateFrom: '2099-01-01',
+          dateTo: '2099-12-31',
+        }),
+      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_TIME_PROOF_INVALID });
+    });
   });
 
   it('keeps legacy eligible time, counts classified non-eligible-only pairs as zero, and folds by activity/member', async () => {

@@ -6,6 +6,7 @@ import {
   FACT_CORRECTION_CHANGE_SCHEMA_VERSION,
   parseCorrectionChangeSet,
   serializeCorrectionChangeSetForHash,
+  serializeCorrectionChangeSetForInput,
 } from './correction-change-set';
 import { evaluateCorrectionReviewSeparation } from './correction-review-separation';
 
@@ -103,6 +104,22 @@ describe('D7-1 V2 分类认定更正闭集', () => {
         requestedChangeJson: parsed,
       }).definitionHash,
     );
+  });
+  it('V2 非空结果的业务输入可再次解析，哈希投影仍保留数字', () => {
+    const parsed = parseCorrectionChangeSet(v2({ results: [validResult()] }));
+    const input = serializeCorrectionChangeSetForInput(parsed);
+    expect(parseCorrectionChangeSet(input)).toEqual(parsed);
+    expect(input.results).toEqual([
+      expect.objectContaining({
+        recognizedServiceHours: '4.00',
+        recognizedContributionPoints: '1.20',
+      }),
+    ]);
+    expect(serializeCorrectionChangeSetForHash(parsed).results).toEqual([
+      expect.objectContaining({ recognizedServiceHours: 4, recognizedContributionPoints: 1.2 }),
+    ]);
+    expectRejected(v2({ results: [validResult({ recognizedServiceHours: 4 })] }));
+    expectRejected(v2({ results: [validResult({ recognizedServiceHours: '1.001' })] }));
   });
   it('V1 返回结构不增加字段，禁止夹带新内容', () => {
     expect(Object.keys(parseCorrectionChangeSet(changeSet()))).toEqual([
@@ -307,6 +324,7 @@ describe('D7-2 V3 事实更正闭集', () => {
   it('V3 规范化后仍是可再次解析的闭集，并保留十进制字符串入口', () => {
     const parsed = parseCorrectionChangeSet(v3({ results: [validResult()] }));
     const serialized = serializeCorrectionChangeSetForHash(parsed);
+    expect(serializeCorrectionChangeSetForInput(parsed)).toEqual(serialized);
     expect(serialized).toMatchObject({
       results: [
         {
