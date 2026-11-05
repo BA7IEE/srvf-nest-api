@@ -190,12 +190,8 @@ export class RolePermissionsService {
    *   有人扩大或收窄都得显式改登记,PR 8 删掉旧端点时该判据会红并要求重看。
    *
    * ──────────────────────────────────────────────────────────────────────
-   * ⚠️ **差集在锁外算,这是安全的,理由要写下来免得后人当 bug 修**:
-   *    本闸取的现状是**未加锁**的一次读。它之所以不会与锁内真相分家,是因为
-   *    `set` 语义**必带 `expectedRevision`**,而 `permissionRevision` 在每次非空转的
-   *    替换里都 +1(原语第 9 步)。⇒ 锁内 revision 与 `expectedRevision` 相等
-   *    ⟺ 期间没有人改过这个角色的权限集 ⟺ 锁外读到的现状就是锁内那一份。
-   *    不相等的那条路径整批返 30111,请求本来就失败,不存在"按错误差集放行"。
+   * ⚠️ 锁外快检保留原有错误顺序,但不能作为最终判定:客户端可以提交未来 revision,
+   *    并发写入恰好推进到该版本时,锁外与锁内差集可能不同。锁内必须再按真实现状检查。
    *
    * ⚠️ **要不要拦的判断在闸内部,不在调用点** —— 调用点必须是无条件语句。
    *    把它写成 `if (isHighRisk) this.assertStepUp...` 会让「dry-run 时跳过」
@@ -206,12 +202,16 @@ export class RolePermissionsService {
     roleId: string,
     dto: ReplaceRolePermissionsDto,
     uniqueCodes: string[],
+    lockedCurrentCodes?: readonly string[],
   ): Promise<void> {
-    const current = await this.prisma.rolePermission.findMany({
-      where: { roleId },
-      select: { permission: { select: { code: true } } },
-    });
-    const currentCodes = current.map((row) => row.permission.code);
+    const currentCodes =
+      lockedCurrentCodes ??
+      (
+        await this.prisma.rolePermission.findMany({
+          where: { roleId },
+          select: { permission: { select: { code: true } } },
+        })
+      ).map((row) => row.permission.code);
     const currentSet = new Set(currentCodes);
     const targetSet = new Set(uniqueCodes);
     const addedCodes = uniqueCodes.filter((code) => !currentSet.has(code));
@@ -358,6 +358,7 @@ export class RolePermissionsService {
       targetCodes: string[];
       /** 乐观并发期望值(`PUT` / `preview` 必填,DTO 侧 `@IsInt() @Min(0)`)。 */
       expectedRevision: number;
+      stepUpToken?: string;
       commit: {
         audit: (delta: RolePermissionSetDelta) => {
           event: AuditLogEvent;
@@ -416,6 +417,21 @@ export class RolePermissionsService {
       const removedCodes = removedIds.map((id) => currentCodeById.get(id) as string);
       const resultCodes = [...targetCodeById.values()];
       const unchangedCount = targetCodeById.size - addedIds.length;
+
+      // Revision matching alone does not prove that the earlier unlocked
+      // difference was current: a client can submit a future revision. Check
+      // the same proof against the transaction's locked permission set.
+      await this.assertStepUpProofOrThrow(
+        user,
+        roleId,
+        {
+          permissionCodes: input.targetCodes,
+          expectedRevision: input.expectedRevision,
+          stepUpToken: input.stepUpToken,
+        },
+        input.targetCodes,
+        current.map((row) => row.permission.code),
+      );
 
       // C2:若任意未软删 ServicePrincipal Binding 已指向本 Role，目标**最终集**必须全部合格。
       // 必须排在 no-op 之前：历史脏集不能因「这次没改」被静默当作有效配置回显。
@@ -563,6 +579,7 @@ export class RolePermissionsService {
     return this.replaceRolePermissionSet(user, roleId, {
       targetCodes: uniqueCodes,
       expectedRevision: dto.expectedRevision,
+      stepUpToken: dto.stepUpToken,
       commit:
         commitMeta === null
           ? null
