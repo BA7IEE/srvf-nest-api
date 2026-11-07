@@ -26,6 +26,7 @@ import {
   simpleDraftLayout,
 } from './activity-simple-draft-plan';
 import { parseStoredTemplateVersion } from './activity-template-version-presenter';
+import { matchesSimpleReviewProfile } from './activity-simple-review-profile';
 import { ActivityTimePolicySelectionAccess } from './activity-time-policy-selection-access';
 import { ActivityTimePolicySelectionService } from './activity-time-policy-selection.service';
 import { ActivityContributionPolicySelectionAccess } from './activity-contribution-policy-selection-access';
@@ -117,6 +118,12 @@ export class ActivitySimpleDraftService {
     user: CurrentUserPayload,
     meta: AuditMeta,
   ) {
+    if (
+      input.expectedDraftHash !== undefined &&
+      (typeof input.expectedDraftHash !== 'string' ||
+        !/^[0-9a-f]{64}$/u.test(input.expectedDraftHash))
+    )
+      throw new BizException(BizCode.BAD_REQUEST);
     return this.reviewSubmit.submitInitialProposal(
       activityId,
       { operationKey: input.operationKey, confirmation: input.confirmation },
@@ -125,6 +132,31 @@ export class ActivitySimpleDraftService {
       async (tx) => {
         await this.authorize(tx, activityId, user, false);
       },
+      input.expectedDraftHash === undefined
+        ? undefined
+        : {
+            expectedDraftHash: input.expectedDraftHash,
+            assertCurrent: async (tx) => {
+              const { activity } = await this.authorize(tx, activityId, user, false);
+              // Called after exact replay under the Activity lock, also held by rule writers.
+              // The simple screen/hash omits all three scopes of qualification rules.
+              const qualification = await tx.activityQualificationRuleSet.findFirst({
+                where: { activityId, statusCode: { in: ['draft', 'active'] } },
+                select: { id: true },
+              });
+              if (qualification)
+                throw new BizException(BizCode.ACTIVITY_SIMPLE_REVIEW_REQUIRES_PROFESSIONAL_FLOW);
+              const bundle = await this.readBundle(tx, activity);
+              this.assertSimple(bundle);
+              if (this.hash(bundle) !== input.expectedDraftHash)
+                throw new BizException(BizCode.ACTIVITY_SIMPLE_DRAFT_STALE);
+              const template = parseStoredTemplateVersion(bundle.template);
+              return (proposal) => {
+                if (!matchesSimpleReviewProfile(proposal, template))
+                  throw new BizException(BizCode.ACTIVITY_SIMPLE_REVIEW_REQUIRES_PROFESSIONAL_FLOW);
+              };
+            },
+          },
     );
   }
 
