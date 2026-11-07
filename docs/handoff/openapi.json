@@ -55781,6 +55781,235 @@
         ]
       }
     },
+    "/api/admin/v1/activity-publish-reviews/{id}/referenced-policies": {
+      "get": {
+        "operationId": "AdminActivityPublishReviewsController_referencedPolicies",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "资源主键(cuid 字符串)",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "example": "cl9z3a8b00000abcd1234efgh",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ActivityPublishReviewReferencedPoliciesResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100
+                      ],
+                      "description": "30100: 无权执行此操作",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动发布审核记录不存在(code=20004)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20004
+                      ],
+                      "description": "20004: 活动发布审核记录不存在",
+                      "example": 20004
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动发布审核记录不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "活动审核快照无效或已过期(code=20022)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20022
+                      ],
+                      "description": "20022: 活动审核快照无效或已过期",
+                      "example": 20022
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动审核快照无效或已过期"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "仅读取本审核冻结base和target实际引用的完整政策版本；不授予政策目录读取权 [rbac: activity-review.read.request]",
+        "tags": [
+          "Admin - Activity Publish Reviews"
+        ]
+      }
+    },
     "/api/admin/v1/activity-publish-reviews/{id}/approve": {
       "post": {
         "operationId": "AdminActivityPublishReviewsController_approve",
@@ -161110,6 +161339,520 @@
           }
         }
       },
+      "TimePolicyRoleMappingDto": {
+        "type": "object",
+        "properties": {
+          "attendanceRoleCode": {
+            "type": "string",
+            "description": "出勤角色代码",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "category": {
+            "type": "string",
+            "description": "时间类别",
+            "enum": [
+              "volunteer_service",
+              "training",
+              "organization",
+              "non_creditable"
+            ]
+          }
+        },
+        "required": [
+          "attendanceRoleCode",
+          "category"
+        ]
+      },
+      "TimePolicySpecialIntervalDto": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "description": "区间处理方式",
+            "enum": [
+              "exclude",
+              "category",
+              "manual"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "description": "仅category模式必填；其余模式禁止",
+            "enum": [
+              "volunteer_service",
+              "training",
+              "organization",
+              "non_creditable"
+            ]
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "TimePolicySpecialIntervalsDto": {
+        "type": "object",
+        "properties": {
+          "preparation": {
+            "description": "preparation区间规则",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TimePolicySpecialIntervalDto"
+              }
+            ]
+          },
+          "duty": {
+            "description": "duty区间规则",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TimePolicySpecialIntervalDto"
+              }
+            ]
+          },
+          "travel": {
+            "description": "travel区间规则",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TimePolicySpecialIntervalDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "preparation",
+          "duty",
+          "travel"
+        ]
+      },
+      "TimePolicyRoundingDto": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "description": "取整模式",
+            "enum": [
+              "floor"
+            ]
+          },
+          "quantumSeconds": {
+            "type": "number",
+            "description": "取整量子秒数",
+            "minimum": 1,
+            "maximum": 3600
+          }
+        },
+        "required": [
+          "mode",
+          "quantumSeconds"
+        ]
+      },
+      "TimePolicyEvidenceDto": {
+        "type": "object",
+        "properties": {
+          "requiredSources": {
+            "type": "array",
+            "description": "全部要求的证据来源",
+            "maxItems": 3,
+            "items": {
+              "type": "string",
+              "enum": [
+                "punch_event",
+                "service_segment",
+                "attachment"
+              ]
+            }
+          },
+          "requireManualRecognition": {
+            "type": "boolean",
+            "description": "要求人工认定"
+          }
+        },
+        "required": [
+          "requiredSources",
+          "requireManualRecognition"
+        ]
+      },
+      "TimePolicyManualAdjustmentDto": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "是否允许人工调整"
+          },
+          "reasonRequired": {
+            "type": "boolean",
+            "description": "enabled=true时必填且为true；false时禁止"
+          },
+          "evidenceRequired": {
+            "type": "boolean",
+            "description": "enabled=true时必填；false时禁止"
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
+      "TimePolicyDefinitionDto": {
+        "type": "object",
+        "properties": {
+          "defaultCategory": {
+            "type": "string",
+            "description": "默认类别",
+            "enum": [
+              "volunteer_service",
+              "training",
+              "organization",
+              "non_creditable"
+            ]
+          },
+          "roleMappings": {
+            "description": "出勤角色映射；无重复角色代码",
+            "maxItems": 64,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimePolicyRoleMappingDto"
+            }
+          },
+          "allowSplit": {
+            "type": "boolean",
+            "description": "是否允许按类别拆分"
+          },
+          "specialIntervals": {
+            "description": "specialIntervals规则",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TimePolicySpecialIntervalsDto"
+              }
+            ]
+          },
+          "rounding": {
+            "description": "rounding规则",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TimePolicyRoundingDto"
+              }
+            ]
+          },
+          "evidence": {
+            "description": "evidence规则",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TimePolicyEvidenceDto"
+              }
+            ]
+          },
+          "manualAdjustment": {
+            "description": "manualAdjustment规则",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TimePolicyManualAdjustmentDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "defaultCategory",
+          "roleMappings",
+          "allowSplit",
+          "specialIntervals",
+          "rounding",
+          "evidence",
+          "manualAdjustment"
+        ]
+      },
+      "ActivityPublishReviewReferencedTimePolicyDto": {
+        "type": "object",
+        "properties": {
+          "policyId": {
+            "type": "string",
+            "description": "冻结审核实际引用的政策ID"
+          },
+          "versionId": {
+            "type": "string",
+            "description": "冻结审核实际引用的不可变版本ID"
+          },
+          "version": {
+            "type": "number",
+            "description": "版本号"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "description": "政策定义结构版本",
+            "enum": [
+              1
+            ]
+          },
+          "evaluatorVersion": {
+            "type": "number",
+            "description": "政策解释器版本",
+            "enum": [
+              1
+            ]
+          },
+          "definitionHash": {
+            "type": "string",
+            "description": "与冻结引用和完整政策定义重新计算结果一致的摘要",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "effectiveFrom": {
+            "type": "string",
+            "description": "已绑定到定义摘要的生效开始时刻"
+          },
+          "effectiveUntil": {
+            "type": "string",
+            "description": "已绑定到定义摘要的生效结束时刻",
+            "nullable": true
+          },
+          "definition": {
+            "description": "审核引用版本的完整时长政策定义",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TimePolicyDefinitionDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "policyId",
+          "versionId",
+          "version",
+          "schemaVersion",
+          "evaluatorVersion",
+          "definitionHash",
+          "effectiveFrom",
+          "effectiveUntil",
+          "definition"
+        ]
+      },
+      "ContributionPolicyResultDto": {
+        "type": "object",
+        "properties": {
+          "recognizedPoints": {
+            "type": "string",
+            "description": "确认积分，固定两位小数，范围0.00–999.99",
+            "example": "1.50"
+          },
+          "explanationCode": {
+            "type": "string",
+            "description": "稳定解释代码",
+            "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
+          }
+        },
+        "required": [
+          "recognizedPoints",
+          "explanationCode"
+        ]
+      },
+      "ContributionPolicyDurationBandDto": {
+        "type": "object",
+        "properties": {
+          "recognizedPoints": {
+            "type": "string",
+            "description": "确认积分，固定两位小数，范围0.00–999.99",
+            "example": "1.50"
+          },
+          "explanationCode": {
+            "type": "string",
+            "description": "稳定解释代码",
+            "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
+          },
+          "maxSecondsInclusive": {
+            "type": "number",
+            "description": "包含式时长上限（秒）；最后一档固定为null",
+            "nullable": true
+          }
+        },
+        "required": [
+          "recognizedPoints",
+          "explanationCode",
+          "maxSecondsInclusive"
+        ]
+      },
+      "ContributionPolicyCategoryRuleDto": {
+        "type": "object",
+        "properties": {
+          "timeCategoryCode": {
+            "type": "string",
+            "description": "时长分类代码",
+            "enum": [
+              "volunteer_service",
+              "training",
+              "organization",
+              "non_creditable"
+            ]
+          },
+          "durationBands": {
+            "description": "严格递增的时长档；最后一档必须无上限",
+            "minItems": 1,
+            "maxItems": 16,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContributionPolicyDurationBandDto"
+            }
+          }
+        },
+        "required": [
+          "timeCategoryCode",
+          "durationBands"
+        ]
+      },
+      "ContributionPolicyRoleRuleDto": {
+        "type": "object",
+        "properties": {
+          "attendanceRoleCode": {
+            "type": "string",
+            "description": "出勤角色代码",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "categoryRules": {
+            "description": "该角色的分类规则；同一分类不得重复",
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContributionPolicyCategoryRuleDto"
+            }
+          }
+        },
+        "required": [
+          "attendanceRoleCode",
+          "categoryRules"
+        ]
+      },
+      "ContributionPolicyDefinitionDto": {
+        "type": "object",
+        "properties": {
+          "defaultResult": {
+            "description": "无匹配规则时的默认结果",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ContributionPolicyResultDto"
+              }
+            ]
+          },
+          "roleRules": {
+            "description": "按出勤角色定义的贡献规则；角色代码不得重复",
+            "maxItems": 64,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContributionPolicyRoleRuleDto"
+            }
+          }
+        },
+        "required": [
+          "defaultResult",
+          "roleRules"
+        ]
+      },
+      "ActivityPublishReviewReferencedContributionPolicyDto": {
+        "type": "object",
+        "properties": {
+          "policyId": {
+            "type": "string",
+            "description": "冻结审核实际引用的政策ID"
+          },
+          "versionId": {
+            "type": "string",
+            "description": "冻结审核实际引用的不可变版本ID"
+          },
+          "version": {
+            "type": "number",
+            "description": "版本号"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "description": "政策定义结构版本",
+            "enum": [
+              1
+            ]
+          },
+          "evaluatorVersion": {
+            "type": "number",
+            "description": "政策解释器版本",
+            "enum": [
+              1
+            ]
+          },
+          "definitionHash": {
+            "type": "string",
+            "description": "与冻结引用和完整政策定义重新计算结果一致的摘要",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "effectiveFrom": {
+            "type": "string",
+            "description": "已绑定到定义摘要的生效开始时刻"
+          },
+          "effectiveUntil": {
+            "type": "string",
+            "description": "已绑定到定义摘要的生效结束时刻",
+            "nullable": true
+          },
+          "definition": {
+            "description": "审核引用版本的完整贡献政策定义",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ContributionPolicyDefinitionDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "policyId",
+          "versionId",
+          "version",
+          "schemaVersion",
+          "evaluatorVersion",
+          "definitionHash",
+          "effectiveFrom",
+          "effectiveUntil",
+          "definition"
+        ]
+      },
+      "ActivityPublishReviewReferencedPoliciesResponseDto": {
+        "type": "object",
+        "properties": {
+          "reviewId": {
+            "type": "string",
+            "description": "关联的审核记录ID"
+          },
+          "activityId": {
+            "type": "string",
+            "description": "关联的活动ID"
+          },
+          "snapshotSchemaVersion": {
+            "type": "number",
+            "description": "经现有提案解析器验证的冻结快照结构版本"
+          },
+          "snapshotHash": {
+            "type": "string",
+            "description": "关联冻结快照的摘要；不是当前草稿hash",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "timePolicies": {
+            "description": "冻结base和target中实际引用的时长版本，去重且不包含目录其他版本",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityPublishReviewReferencedTimePolicyDto"
+            }
+          },
+          "contributionPolicies": {
+            "description": "冻结base和target中实际引用的贡献版本，去重且不包含目录其他版本",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityPublishReviewReferencedContributionPolicyDto"
+            }
+          }
+        },
+        "required": [
+          "reviewId",
+          "activityId",
+          "snapshotSchemaVersion",
+          "snapshotHash",
+          "timePolicies",
+          "contributionPolicies"
+        ]
+      },
       "ApproveActivityPublishReviewDto": {
         "type": "object",
         "properties": {
@@ -161880,228 +162623,6 @@
           "updatedAt"
         ]
       },
-      "TimePolicyRoleMappingDto": {
-        "type": "object",
-        "properties": {
-          "attendanceRoleCode": {
-            "type": "string",
-            "description": "出勤角色代码",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "category": {
-            "type": "string",
-            "description": "时间类别",
-            "enum": [
-              "volunteer_service",
-              "training",
-              "organization",
-              "non_creditable"
-            ]
-          }
-        },
-        "required": [
-          "attendanceRoleCode",
-          "category"
-        ]
-      },
-      "TimePolicySpecialIntervalDto": {
-        "type": "object",
-        "properties": {
-          "mode": {
-            "type": "string",
-            "description": "区间处理方式",
-            "enum": [
-              "exclude",
-              "category",
-              "manual"
-            ]
-          },
-          "category": {
-            "type": "string",
-            "description": "仅category模式必填；其余模式禁止",
-            "enum": [
-              "volunteer_service",
-              "training",
-              "organization",
-              "non_creditable"
-            ]
-          }
-        },
-        "required": [
-          "mode"
-        ]
-      },
-      "TimePolicySpecialIntervalsDto": {
-        "type": "object",
-        "properties": {
-          "preparation": {
-            "description": "preparation区间规则",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/TimePolicySpecialIntervalDto"
-              }
-            ]
-          },
-          "duty": {
-            "description": "duty区间规则",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/TimePolicySpecialIntervalDto"
-              }
-            ]
-          },
-          "travel": {
-            "description": "travel区间规则",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/TimePolicySpecialIntervalDto"
-              }
-            ]
-          }
-        },
-        "required": [
-          "preparation",
-          "duty",
-          "travel"
-        ]
-      },
-      "TimePolicyRoundingDto": {
-        "type": "object",
-        "properties": {
-          "mode": {
-            "type": "string",
-            "description": "取整模式",
-            "enum": [
-              "floor"
-            ]
-          },
-          "quantumSeconds": {
-            "type": "number",
-            "description": "取整量子秒数",
-            "minimum": 1,
-            "maximum": 3600
-          }
-        },
-        "required": [
-          "mode",
-          "quantumSeconds"
-        ]
-      },
-      "TimePolicyEvidenceDto": {
-        "type": "object",
-        "properties": {
-          "requiredSources": {
-            "type": "array",
-            "description": "全部要求的证据来源",
-            "maxItems": 3,
-            "items": {
-              "type": "string",
-              "enum": [
-                "punch_event",
-                "service_segment",
-                "attachment"
-              ]
-            }
-          },
-          "requireManualRecognition": {
-            "type": "boolean",
-            "description": "要求人工认定"
-          }
-        },
-        "required": [
-          "requiredSources",
-          "requireManualRecognition"
-        ]
-      },
-      "TimePolicyManualAdjustmentDto": {
-        "type": "object",
-        "properties": {
-          "enabled": {
-            "type": "boolean",
-            "description": "是否允许人工调整"
-          },
-          "reasonRequired": {
-            "type": "boolean",
-            "description": "enabled=true时必填且为true；false时禁止"
-          },
-          "evidenceRequired": {
-            "type": "boolean",
-            "description": "enabled=true时必填；false时禁止"
-          }
-        },
-        "required": [
-          "enabled"
-        ]
-      },
-      "TimePolicyDefinitionDto": {
-        "type": "object",
-        "properties": {
-          "defaultCategory": {
-            "type": "string",
-            "description": "默认类别",
-            "enum": [
-              "volunteer_service",
-              "training",
-              "organization",
-              "non_creditable"
-            ]
-          },
-          "roleMappings": {
-            "description": "出勤角色映射；无重复角色代码",
-            "maxItems": 64,
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TimePolicyRoleMappingDto"
-            }
-          },
-          "allowSplit": {
-            "type": "boolean",
-            "description": "是否允许按类别拆分"
-          },
-          "specialIntervals": {
-            "description": "specialIntervals规则",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/TimePolicySpecialIntervalsDto"
-              }
-            ]
-          },
-          "rounding": {
-            "description": "rounding规则",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/TimePolicyRoundingDto"
-              }
-            ]
-          },
-          "evidence": {
-            "description": "evidence规则",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/TimePolicyEvidenceDto"
-              }
-            ]
-          },
-          "manualAdjustment": {
-            "description": "manualAdjustment规则",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/TimePolicyManualAdjustmentDto"
-              }
-            ]
-          }
-        },
-        "required": [
-          "defaultCategory",
-          "roleMappings",
-          "allowSplit",
-          "specialIntervals",
-          "rounding",
-          "evidence",
-          "manualAdjustment"
-        ]
-      },
       "AdminTimePolicyVersionResponseDto": {
         "type": "object",
         "properties": {
@@ -162495,126 +163016,6 @@
           "retiredAt",
           "createdAt",
           "updatedAt"
-        ]
-      },
-      "ContributionPolicyResultDto": {
-        "type": "object",
-        "properties": {
-          "recognizedPoints": {
-            "type": "string",
-            "description": "确认积分，固定两位小数，范围0.00–999.99",
-            "example": "1.50"
-          },
-          "explanationCode": {
-            "type": "string",
-            "description": "稳定解释代码",
-            "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
-          }
-        },
-        "required": [
-          "recognizedPoints",
-          "explanationCode"
-        ]
-      },
-      "ContributionPolicyDurationBandDto": {
-        "type": "object",
-        "properties": {
-          "recognizedPoints": {
-            "type": "string",
-            "description": "确认积分，固定两位小数，范围0.00–999.99",
-            "example": "1.50"
-          },
-          "explanationCode": {
-            "type": "string",
-            "description": "稳定解释代码",
-            "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
-          },
-          "maxSecondsInclusive": {
-            "type": "number",
-            "description": "包含式时长上限（秒）；最后一档固定为null",
-            "nullable": true
-          }
-        },
-        "required": [
-          "recognizedPoints",
-          "explanationCode",
-          "maxSecondsInclusive"
-        ]
-      },
-      "ContributionPolicyCategoryRuleDto": {
-        "type": "object",
-        "properties": {
-          "timeCategoryCode": {
-            "type": "string",
-            "description": "时长分类代码",
-            "enum": [
-              "volunteer_service",
-              "training",
-              "organization",
-              "non_creditable"
-            ]
-          },
-          "durationBands": {
-            "description": "严格递增的时长档；最后一档必须无上限",
-            "minItems": 1,
-            "maxItems": 16,
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ContributionPolicyDurationBandDto"
-            }
-          }
-        },
-        "required": [
-          "timeCategoryCode",
-          "durationBands"
-        ]
-      },
-      "ContributionPolicyRoleRuleDto": {
-        "type": "object",
-        "properties": {
-          "attendanceRoleCode": {
-            "type": "string",
-            "description": "出勤角色代码",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "categoryRules": {
-            "description": "该角色的分类规则；同一分类不得重复",
-            "maxItems": 4,
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ContributionPolicyCategoryRuleDto"
-            }
-          }
-        },
-        "required": [
-          "attendanceRoleCode",
-          "categoryRules"
-        ]
-      },
-      "ContributionPolicyDefinitionDto": {
-        "type": "object",
-        "properties": {
-          "defaultResult": {
-            "description": "无匹配规则时的默认结果",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ContributionPolicyResultDto"
-              }
-            ]
-          },
-          "roleRules": {
-            "description": "按出勤角色定义的贡献规则；角色代码不得重复",
-            "maxItems": 64,
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ContributionPolicyRoleRuleDto"
-            }
-          }
-        },
-        "required": [
-          "defaultResult",
-          "roleRules"
         ]
       },
       "SystemContributionPolicyVersionResponseDto": {

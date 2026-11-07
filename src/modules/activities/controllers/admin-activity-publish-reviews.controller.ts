@@ -32,6 +32,11 @@ import {
 } from '../activity-publish-review.dto';
 import { ActivityPublishReviewQueryService } from '../activity-publish-review-query.service';
 import { ActivityPublishReviewService } from '../activity-publish-review.service';
+import { ActivityPublishReviewPolicyQueryService } from '../activity-publish-review-policy-query.service';
+import {
+  ActivityPublishReviewReferencedPoliciesQueryDto,
+  ActivityPublishReviewReferencedPoliciesResponseDto,
+} from '../activity-publish-review-policy.dto';
 import { RequiresPermission } from '../../../common/decorators/route-authz.decorator';
 
 @ApiTags('Admin - Activity Publish Reviews')
@@ -41,6 +46,7 @@ export class AdminActivityPublishReviewsController {
   constructor(
     private readonly queryService: ActivityPublishReviewQueryService,
     private readonly reviewService: ActivityPublishReviewService,
+    private readonly policyQueryService: ActivityPublishReviewPolicyQueryService,
   ) {}
 
   private auditMeta(req: Request): AuditMeta {
@@ -83,6 +89,28 @@ export class AdminActivityPublishReviewsController {
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<ActivityPublishReviewResponseDto> {
     return this.queryService.findOne(params.id, user);
+  }
+
+  @Get(':id/referenced-policies')
+  @RequiresPermission('activity-review.read.request', { require: 'all', engine: 'rbac-global' })
+  @ApiOperation({
+    summary:
+      '仅读取本审核冻结base和target实际引用的完整政策版本；不授予政策目录读取权 [rbac: activity-review.read.request]',
+  })
+  @ApiWrappedOkResponse(ActivityPublishReviewReferencedPoliciesResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_PUBLISH_REVIEW_NOT_FOUND,
+    BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID,
+  )
+  referencedPolicies(
+    @Param() params: IdParamDto,
+    @Query() _query: ActivityPublishReviewReferencedPoliciesQueryDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<ActivityPublishReviewReferencedPoliciesResponseDto> {
+    return this.policyQueryService.findOne(params.id, user);
   }
 
   @Post(':id/approve')

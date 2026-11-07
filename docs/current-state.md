@@ -33,7 +33,7 @@
 |---|---|
 | 模块 | 43 |
 | Controller | 130 |
-| Endpoint | 672 |
+| Endpoint | 673 |
 | Migration | 155 |
 | BizCode | 584 |
 | 权限码 | 273 |
