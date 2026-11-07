@@ -16,8 +16,8 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.1.0 |
-| inputDigest | sha256:780a79d1bd2a4e75c8e0740ca26d53d86e9c9372e2dbebc7d070798e94453e7b |
-| endpoint count | 672 |
+| inputDigest | sha256:b2e2b865b470e2698100c248d31bd88f8ccaa5183cca398d70f2fedee70973f4 |
+| endpoint count | 673 |
 | legacy [auth] count | 187 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
@@ -29,7 +29,7 @@
 
 | surface | routes | declared in code | undeclared |
 |---|---:|---:|---:|
-| admin | 322 | 322 | 0 |
+| admin | 323 | 323 | 0 |
 | app | 208 | 208 | 0 |
 | system | 102 | 102 | 0 |
 | auth | 22 | 22 | 0 |
@@ -41,7 +41,7 @@
 | marker | count |
 |---|---:|
 | public | 33 |
-| rbac | 452 |
+| rbac | 453 |
 | auth | 187 |
 | unclassified | 0 |
 
@@ -117,7 +117,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.1.0",
-  "inputDigest": "sha256:780a79d1bd2a4e75c8e0740ca26d53d86e9c9372e2dbebc7d070798e94453e7b",
+  "inputDigest": "sha256:b2e2b865b470e2698100c248d31bd88f8ccaa5183cca398d70f2fedee70973f4",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -1439,6 +1439,25 @@
       "routeKey": "GET /api/admin/v1/activity-publish-reviews/:id",
       "controller": "AdminActivityPublishReviewsController",
       "handler": "findOne",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-review.read.request",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/admin/v1/activity-publish-reviews/:id/referenced-policies",
+      "controller": "AdminActivityPublishReviewsController",
+      "handler": "referencedPolicies",
       "legacy": "rbac",
       "policy": {
         "admission": null,
@@ -12503,6 +12522,7 @@
 | `membership.list.record` | 4 | GET /api/admin/v1/members/:memberId/memberships · GET /api/admin/v1/memberships · GET /api/admin/v1/memberships/conflicts · GET /api/admin/v1/organizations/:orgId/memberships |
 | `rbac.role.read` | 4 | GET /api/system/v1/roles · GET /api/system/v1/roles/:id · GET /api/system/v1/roles/:id/permissions · GET /api/system/v1/roles/options |
 | `role-binding.read.record` | 4 | GET /api/admin/v1/role-bindings · GET /api/admin/v1/role-bindings/:id · GET /api/admin/v1/role-bindings/page · GET /api/admin/v1/role-bindings/preview |
+| `activity-review.read.request` | 3 | GET /api/admin/v1/activity-publish-reviews · GET /api/admin/v1/activity-publish-reviews/:id · GET /api/admin/v1/activity-publish-reviews/:id/referenced-policies |
 | `activity.contribution-policy.read` | 3 | GET /api/admin/v1/activities/:id/contribution-policy-selection · GET /api/app/v1/my/managed-activities/:activityId/contribution-policy-selection · GET /api/app/v1/my/managed-activities/contribution-policy-options |
 | `activity.publish.record` | 3 | PATCH /api/admin/v1/activities/:id/publish · PATCH /api/admin/v1/activities/:id/publish-with-audience-tags · POST /api/admin/v1/activity-publish-reviews/:id/approve |
 | `activity.time-policy.read` | 3 | GET /api/admin/v1/activities/:id/time-policy-selection · GET /api/app/v1/my/managed-activities/:activityId/time-policy-selection · GET /api/app/v1/my/managed-activities/time-policy-options |
@@ -12521,7 +12541,6 @@
 | `activity-registration.approve.record` | 2 | PATCH /api/admin/v1/activities/:activityId/registrations/:id/approve · PATCH /api/admin/v1/activities/:activityId/registrations/bulk-approve |
 | `activity-registration.create.record` | 2 | POST /api/admin/v1/activities/:activityId/registrations · POST /api/app/v1/my/managed-activities/:activityId/onsite-participations |
 | `activity-registration.reject.record` | 2 | PATCH /api/admin/v1/activities/:activityId/registrations/:id/reject · PATCH /api/admin/v1/activities/:activityId/registrations/bulk-reject |
-| `activity-review.read.request` | 2 | GET /api/admin/v1/activity-publish-reviews · GET /api/admin/v1/activity-publish-reviews/:id |
 | `activity-template.read.catalog` | 2 | GET /api/admin/v1/activity-template-versions · GET /api/admin/v1/activity-template-versions/:id |
 | `activity.contribution-policy.select` | 2 | PATCH /api/admin/v1/activities/:id/contribution-policy-selection · PATCH /api/app/v1/my/managed-activities/:activityId/contribution-policy-selection |
 | `activity.outcome.correct` | 2 | POST /api/app/v1/my/managed-activities/:activityId/outcome-corrections · POST /api/app/v1/my/managed-activities/:activityId/outcome-corrections/:outcomeRevisionId/cancel |
@@ -12796,8 +12815,9 @@
 | GET | /api/admin/v1/activity-metric-rule-bindings | Admin - Activity Metric Rule Bindings | rbac | RBAC; admission=-; codes=activity-metric.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-rule-bindings.controller.ts:57; src/modules/activities/controllers/admin-activity-metric-rule-bindings.controller.ts:63 |
 | GET | /api/admin/v1/activity-metric-sets | Admin - Activity Metric Sets | rbac | RBAC; admission=-; codes=activity-metric.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:38; src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:47 |
 | GET | /api/admin/v1/activity-metric-sets/:id | Admin - Activity Metric Sets | rbac | RBAC; admission=-; codes=activity-metric.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:50; src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:61 |
-| GET | /api/admin/v1/activity-publish-reviews | Admin - Activity Publish Reviews | rbac | RBAC; admission=-; codes=activity-review.read.request; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:54; src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:66 |
-| GET | /api/admin/v1/activity-publish-reviews/:id | Admin - Activity Publish Reviews | rbac | RBAC; admission=-; codes=activity-review.read.request; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:69; src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:85 |
+| GET | /api/admin/v1/activity-publish-reviews | Admin - Activity Publish Reviews | rbac | RBAC; admission=-; codes=activity-review.read.request; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:60; src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:72 |
+| GET | /api/admin/v1/activity-publish-reviews/:id | Admin - Activity Publish Reviews | rbac | RBAC; admission=-; codes=activity-review.read.request; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:75; src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:91 |
+| GET | /api/admin/v1/activity-publish-reviews/:id/referenced-policies | Admin - Activity Publish Reviews | rbac | RBAC; admission=-; codes=activity-review.read.request; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:94; src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:113 |
 | GET | /api/admin/v1/activity-template-versions | Admin - Activity Template Versions | rbac | RBAC; admission=-; codes=activity-template.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-template-versions.controller.ts:37; src/modules/activities/controllers/admin-activity-template-versions.controller.ts:46 |
 | GET | /api/admin/v1/activity-template-versions/:id | Admin - Activity Template Versions | rbac | RBAC; admission=-; codes=activity-template.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-template-versions.controller.ts:48; src/modules/activities/controllers/admin-activity-template-versions.controller.ts:60 |
 | GET | /api/admin/v1/activity-time-policies | Admin - Activity Time Policies | rbac | RBAC; admission=-; codes=activity-time-policy.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-time-policies.controller.ts:56; src/modules/activities/controllers/admin-activity-time-policies.controller.ts:72 |
@@ -13143,8 +13163,8 @@
 | POST | /api/admin/v1/activity-metric-sets | Admin - Activity Metric Sets | rbac | RBAC; admission=-; codes=activity-metric.manage.set; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:64; src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:86 |
 | POST | /api/admin/v1/activity-metric-sets/:id/activate | Admin - Activity Metric Sets | rbac | RBAC; admission=-; codes=activity-metric.manage.set; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:124; src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:148 |
 | POST | /api/admin/v1/activity-metric-sets/:id/retire | Admin - Activity Metric Sets | rbac | RBAC; admission=-; codes=activity-metric.manage.set; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:155; src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:179 |
-| POST | /api/admin/v1/activity-publish-reviews/:id/approve | Admin - Activity Publish Reviews | rbac | RBAC; admission=-; codes=activity.publish.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:88; src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:120 |
-| POST | /api/admin/v1/activity-publish-reviews/:id/return | Admin - Activity Publish Reviews | rbac | RBAC; admission=-; codes=activity-review.return.request; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:123; src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:146 |
+| POST | /api/admin/v1/activity-publish-reviews/:id/approve | Admin - Activity Publish Reviews | rbac | RBAC; admission=-; codes=activity.publish.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:116; src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:148 |
+| POST | /api/admin/v1/activity-publish-reviews/:id/return | Admin - Activity Publish Reviews | rbac | RBAC; admission=-; codes=activity-review.return.request; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:151; src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:174 |
 | POST | /api/admin/v1/activity-template-versions | Admin - Activity Template Versions | rbac | RBAC; admission=-; codes=activity-template.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-template-versions.controller.ts:62; src/modules/activities/controllers/admin-activity-template-versions.controller.ts:88 |
 | POST | /api/admin/v1/activity-template-versions/:id/activate | Admin - Activity Template Versions | rbac | RBAC; admission=-; codes=activity-template.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-template-versions.controller.ts:119; src/modules/activities/controllers/admin-activity-template-versions.controller.ts:145 |
 | POST | /api/admin/v1/activity-template-versions/:id/retire | Admin - Activity Template Versions | rbac | RBAC; admission=-; codes=activity-template.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-template-versions.controller.ts:147; src/modules/activities/controllers/admin-activity-template-versions.controller.ts:170 |

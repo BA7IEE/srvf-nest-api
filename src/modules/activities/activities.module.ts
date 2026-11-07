@@ -131,6 +131,7 @@ import { ActivityPublishReviewService } from './activity-publish-review.service'
 import { ActivityPublishReviewSubmitService } from './activity-publish-review-submit.service';
 import { ActivityPublishProposalV2Service } from './activity-publish-proposal-v2.service';
 import { ActivityPublishReviewQueryService } from './activity-publish-review-query.service';
+import { ActivityPublishReviewPolicyQueryService } from './activity-publish-review-policy-query.service';
 import { AdminActivityPublishReviewsController } from './controllers/admin-activity-publish-reviews.controller';
 import { ActivityResponsibilityPolicy } from './activity-responsibility-policy';
 import { ActivityResponsibilityGrantProjector } from './activity-responsibility-grant-projector';
@@ -403,6 +404,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityPublishReviewService,
     ActivityPublishReviewSubmitService,
     ActivityPublishReviewQueryService,
+    ActivityPublishReviewPolicyQueryService,
     ActivityResponsibilityPolicy,
     ActivityResponsibilityGrantProjector,
     ActivityResponsibilityAuditRecorder,

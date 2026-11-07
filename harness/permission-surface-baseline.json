@@ -58,8 +58,8 @@
       "description": "sha256:58c9a9c7ebc8e3447402297958dc2417f1be6136bf99b9d0822ee8fc585ac257"
     },
     "activity-review.read.request": {
-      "endpoints": 2,
-      "surface": "sha256:99a47a2344571be852d70f052fc8f228273e4d91b6f228927faa0b489d6785cc",
+      "endpoints": 3,
+      "surface": "sha256:d570eca86ef4dc757d4857b0104f30bdbb5b788de2f648d00da663f54aa5cc68",
       "description": "sha256:c47e82ec24adff488ab59b80d9b3017e7beaea1628f0ab6ed7f3646e0302899a"
     },
     "activity-review.return.request": {

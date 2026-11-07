@@ -3,11 +3,11 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:4b7eb70fada9f991a4aa3428694ca2352a3b58aacf443fa7e597d8b364bfa5d7
+// inputDigest: sha256:cafe03b012f3eceb544738caaf818dd89f3e4640f35d9d863b4c88c4175c40ef
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
-import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
-export type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, PageResultDto, UserLinkedMemberDto, UserResponseDto };
+import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContributionPolicyCategoryRuleDto, ContributionPolicyDefinitionDto, ContributionPolicyDurationBandDto, ContributionPolicyResultDto, ContributionPolicyRoleRuleDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
+export type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContributionPolicyCategoryRuleDto, ContributionPolicyDefinitionDto, ContributionPolicyDurationBandDto, ContributionPolicyResultDto, ContributionPolicyRoleRuleDto, PageResultDto, UserLinkedMemberDto, UserResponseDto };
 
 export interface ActionStateBatchDto {
   "items": ActionStateItemDto[];
@@ -107,6 +107,39 @@ export interface ActivityPositionResponseDto {
   "sortOrder": number;
   "createdAt": string;
   "updatedAt": string;
+}
+
+export interface ActivityPublishReviewReferencedContributionPolicyDto {
+  "policyId": string;
+  "versionId": string;
+  "version": number;
+  "schemaVersion": 1;
+  "evaluatorVersion": 1;
+  "definitionHash": string;
+  "effectiveFrom": string;
+  "effectiveUntil": string | null;
+  "definition": ContributionPolicyDefinitionDto;
+}
+
+export interface ActivityPublishReviewReferencedPoliciesResponseDto {
+  "reviewId": string;
+  "activityId": string;
+  "snapshotSchemaVersion": number;
+  "snapshotHash": string;
+  "timePolicies": ActivityPublishReviewReferencedTimePolicyDto[];
+  "contributionPolicies": ActivityPublishReviewReferencedContributionPolicyDto[];
+}
+
+export interface ActivityPublishReviewReferencedTimePolicyDto {
+  "policyId": string;
+  "versionId": string;
+  "version": number;
+  "schemaVersion": 1;
+  "evaluatorVersion": 1;
+  "definitionHash": string;
+  "effectiveFrom": string;
+  "effectiveUntil": string | null;
+  "definition": TimePolicyDefinitionDto;
 }
 
 export interface ActivityReconciliationDto {

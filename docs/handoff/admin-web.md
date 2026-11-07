@@ -35,6 +35,10 @@ PATCH 传 `operationKey`、`expectedRevision` 与增量 `changes`；活动根必
 不得展示政策定义全文或把 Readiness 通过解释为正式贡献已结算。本候选尚未合入或部署，生成 Admin client 仅用于联调；
 前端页面、角色授予、D8-OPS、正式贡献结算、Gate 和生产验收均未完成。
 
+> **审核引用政策读面（本地独立候选，未推送或部署）**：新增 `GET /api/admin/v1/activity-publish-reviews/:id/referenced-policies`，只沿既有 `activity-review.read.request` 和该审核资源的组织范围读取冻结 base/target 实际引用的完整时长、贡献版本。无 body/query，不能按任意 policyId/versionId 查目录；原 `changeDiff` 摘要边界不变，完整定义仅由这个新受限读面提供。响应为 `{reviewId,activityId,snapshotSchemaVersion,snapshotHash,timePolicies,contributionPolicies}`，数组项含 `policyId/versionId/version/schemaVersion/evaluatorVersion/definitionHash/effectiveFrom/effectiveUntil/definition`；不提供目录、创建者或可变名称信息。前端必须将响应身份和 snapshotHash 与正在展示的冻结申请核对，按全部引用匹配并完整显示定义，不得把读取失败当空配置。服务在同一 Repeatable Read 事务检查审核读权限、现有快照解析、引用及完整定义摘要；不一致整份 `409/20022`，不返回半份。相同已退役不可变版本可供历史核对，不代表当前可审批。原 approve/return、自审、状态及精确重放合同均不改；没有新增目录权限、政策规则、角色或生产 Gate。
+
+本读面数组项的 `effectiveFrom/effectiveUntil` 始终表示政策版本有效期。冻结 `timePolicyPointers.resolved[].effectiveFrom/effectiveUntil` 表示该活动／场次／岗位的执行适用区间，只要求被政策有效期覆盖，不可要求与版本有效期相等；冻结贡献 `resolved` 的同名字段则是政策版本有效期。两类语义沿既有提案合同，完整定义摘要仍绑定版本有效期与解释器。
+
 ## E1-2 贡献政策 System 目录（后端分支实现中，前端未发布）
 
 后端新增 `/api/system/v1/contribution-policies` 下 8 个 Human System 接口：政策列表／详情、版本列表／详情，
