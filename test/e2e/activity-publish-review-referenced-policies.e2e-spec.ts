@@ -1,4 +1,5 @@
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { hashCanonical } from '../../src/modules/activities/activity-publish-review-idempotency';
 import { ActivityPublishReviewPolicyQueryService } from '../../src/modules/activities/activity-publish-review-policy-query.service';
 import { ActivityPublishProposalV2Service } from '../../src/modules/activities/activity-publish-proposal-v2.service';
@@ -6,6 +7,7 @@ import type { INestApplication } from '@nestjs/common';
 import { Prisma, Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import appConfig, { type AppConfig } from '../../src/config/app.config';
 import { PrismaService } from '../../src/database/prisma.service';
 import { computeActivityTemplateDefinitionHash } from '../../src/modules/activities/activity-template-definition';
 import { fingerprintTimePolicyVersion } from '../../src/modules/activities/activity-time-policy-definition';
@@ -324,7 +326,12 @@ describe('review-referenced policy real HTTP and database boundary', () => {
       });
       expect(await db.notificationDelivery.count()).toBe(0);
       expect(await db.notificationOutboxIntent.count({ where: { attempts: { gt: 0 } } })).toBe(0);
-      writeFileSync('/evidence/policy-api-db-evidence.json', JSON.stringify(evidence, null, 2));
+      const storageRoot = app.get<AppConfig>(appConfig.KEY).storage.localRoot;
+      mkdirSync(storageRoot, { recursive: true });
+      writeFileSync(
+        resolve(storageRoot, 'policy-api-db-evidence.json'),
+        JSON.stringify(evidence, null, 2),
+      );
     } finally {
       await app?.close();
       if (priorWorkflow === undefined) delete process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
