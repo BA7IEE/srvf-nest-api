@@ -16,7 +16,7 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.1.0 |
-| inputDigest | sha256:05bdf473104932176e28869ed063f6cff89a6656601b5cf531f1df6b866a48ce |
+| inputDigest | sha256:780a79d1bd2a4e75c8e0740ca26d53d86e9c9372e2dbebc7d070798e94453e7b |
 | endpoint count | 672 |
 | legacy [auth] count | 187 |
 | source of truth | normalized controller declarations |
@@ -65,7 +65,7 @@
 | admin individual | GET /api/admin/v1/me | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/users/controllers/admin-me.controller.ts:34; src/modules/users/controllers/admin-me.controller.ts:43 |
 | admin individual | GET /api/admin/v1/meta/dashboard-summary | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=org-scope; engine=authz-scoped | code | src/modules/meta/meta.controller.ts:59; src/modules/meta/meta.controller.ts:68 |
 | admin individual | GET /api/admin/v1/meta/participation-overview | RBAC; admission=-; codes=activity-registration.read.record,attendance.read.sheet; require=all; scopes=-; engine=authz-scoped | code | src/modules/meta/meta.controller.ts:71; src/modules/meta/meta.controller.ts:86 |
-| admin individual | POST /api/admin/v1/activities/:id/publish-reviews | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-simple-activities.controller.ts:201; src/modules/activities/controllers/admin-simple-activities.controller.ts:231 |
+| admin individual | POST /api/admin/v1/activities/:id/publish-reviews | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-simple-activities.controller.ts:201; src/modules/activities/controllers/admin-simple-activities.controller.ts:233 |
 | admin individual | POST /api/admin/v1/contents/:id/attachments/confirm | RBAC; admission=-; codes=attachment.upload.content-file,attachment.upload.content-image; require=any; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:248; src/modules/content/content-admin.controller.ts:274 |
 | app tag family | Mobile - Activities (4) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=visibility:app-activity-catalog; engine=authz-scoped | code | src/modules/activities/controllers/app-activities.controller.ts:47 |
 | app tag family | Mobile - Activity Registration Upload Sessions (2) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-registration-upload-sessions.controller.ts:78 |
@@ -117,7 +117,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.1.0",
-  "inputDigest": "sha256:05bdf473104932176e28869ed063f6cff89a6656601b5cf531f1df6b866a48ce",
+  "inputDigest": "sha256:780a79d1bd2a4e75c8e0740ca26d53d86e9c9372e2dbebc7d070798e94453e7b",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -13134,7 +13134,7 @@
 | POST | /api/admin/v1/activities/:activityId/responsibilities/collaborators | Admin - Activity Responsibilities | rbac | RBAC; admission=-; codes=activity-responsibility.override.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-responsibilities.controller.ts:74; src/modules/activities/controllers/admin-activity-responsibilities.controller.ts:98 |
 | POST | /api/admin/v1/activities/:activityId/responsibilities/transfer | Admin - Activity Responsibilities | rbac | RBAC; admission=-; codes=activity-responsibility.override.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-responsibilities.controller.ts:132; src/modules/activities/controllers/admin-activity-responsibilities.controller.ts:158 |
 | POST | /api/admin/v1/activities/:id/complete | Admin - Activities | rbac | RBAC; admission=-; codes=activity.complete.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/activities.controller.ts:357; src/modules/activities/activities.controller.ts:377 |
-| POST | /api/admin/v1/activities/:id/publish-reviews | Admin - Simple Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-simple-activities.controller.ts:201; src/modules/activities/controllers/admin-simple-activities.controller.ts:231 |
+| POST | /api/admin/v1/activities/:id/publish-reviews | Admin - Simple Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-simple-activities.controller.ts:201; src/modules/activities/controllers/admin-simple-activities.controller.ts:233 |
 | POST | /api/admin/v1/activities/from-template | Admin - Simple Activities | rbac | RBAC; admission=app-member; codes=activity.create.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-simple-activities.controller.ts:99; src/modules/activities/controllers/admin-simple-activities.controller.ts:133 |
 | POST | /api/admin/v1/activity-metric-definitions | Admin - Activity Metric Definitions | rbac | RBAC; admission=-; codes=activity-metric.manage.definition; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:64; src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:89 |
 | POST | /api/admin/v1/activity-metric-definitions/:id/activate | Admin - Activity Metric Definitions | rbac | RBAC; admission=-; codes=activity-metric.manage.definition; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:130; src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:157 |

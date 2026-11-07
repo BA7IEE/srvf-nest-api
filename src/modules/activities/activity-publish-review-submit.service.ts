@@ -45,6 +45,17 @@ import {
   hashCanonical,
 } from './activity-publish-review-idempotency';
 
+/** An adapter's opt-in concurrency guard; authorization remains a separate pre-replay check. */
+export interface InitialProposalConfirmation {
+  expectedDraftHash: string;
+  assertCurrent: (
+    tx: PrismaTx,
+  ) => Promise<
+    | void
+    | ((proposal: Awaited<ReturnType<ActivityPublishProposalV2Service['buildInitial']>>) => void)
+  >;
+}
+
 /**
  * 发布审核 —— **提交/直发命令族**。
  *
@@ -245,6 +256,7 @@ export class ActivityPublishReviewSubmitService {
     user: CurrentUserPayload,
     auditMeta: AuditMeta,
     revalidateAdapter?: (tx: PrismaTx) => Promise<void>,
+    confirmation?: InitialProposalConfirmation,
   ): Promise<ActivityPublishReviewResponseDto> {
     return this.submitInitialProposalInternal(
       activityId,
@@ -254,6 +266,7 @@ export class ActivityPublishReviewSubmitService {
       null,
       [],
       revalidateAdapter,
+      confirmation,
     );
   }
 
@@ -460,12 +473,17 @@ export class ActivityPublishReviewSubmitService {
     audienceTagCodes: string[] | null,
     audienceOrganizationIds: string[] = [],
     revalidateAdapter?: (tx: PrismaTx) => Promise<void>,
+    confirmation?: InitialProposalConfirmation,
   ): Promise<ActivityPublishReviewResponseDto> {
     // 幂等哈希:不按组织定向时 payload 逐字节沿用本刀之前的形状 —— 否则同一 operationKey 的
     // 存量 pending 提交会算出新哈希,replay 对不上,当场变成「幂等键冲突」而不是幂等命中。
     const requestHash =
       audienceTagCodes === null
-        ? this.submitRequestHash('initial', activityId, dto)
+        ? this.submitRequestHash(
+            'initial',
+            activityId,
+            confirmation ? { ...dto, expectedDraftHash: confirmation.expectedDraftHash } : dto,
+          )
         : audienceOrganizationIds.length === 0
           ? hashCanonical({ requestType: 'initial', activityId, dto, audienceTagCodes })
           : hashCanonical({
@@ -507,6 +525,9 @@ export class ActivityPublishReviewSubmitService {
         });
         const replay = await this.findSubmitReplay(tx, dto.operationKey, requestHash);
         if (replay) return replay;
+        // The successful submission itself changes simple-draft's review component.
+        // Only new submissions compare the confirmed version, while still holding Activity.
+        const assertConfirmedProposal = await confirmation?.assertCurrent(tx);
         ensureInitialPublishable(activity);
         if (audienceTagCodes !== null) {
           if (!activity.isPublicRegistration) throw new BizException(BizCode.BAD_REQUEST);
@@ -530,6 +551,8 @@ export class ActivityPublishReviewSubmitService {
             audienceOrganizationIds,
           );
         });
+        // Inspect the exact snapshot after the builder's reference locks, before any review write.
+        if (assertConfirmedProposal) assertConfirmedProposal(snapshot);
         const review = await tx.activityPublishReview.create({
           data: {
             activityId,
@@ -733,7 +756,7 @@ export class ActivityPublishReviewSubmitService {
   private submitRequestHash(
     action: 'initial' | 'change',
     activityId: string,
-    dto: SubmitActivityPublishReviewDto | ChangeReviewDto,
+    dto: (SubmitActivityPublishReviewDto & { expectedDraftHash?: string }) | ChangeReviewDto,
   ): string {
     return hashCanonical({
       action: `publish-review-submit:${action}`,

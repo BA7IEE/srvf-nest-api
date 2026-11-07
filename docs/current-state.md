@@ -35,7 +35,7 @@
 | Controller | 130 |
 | Endpoint | 672 |
 | Migration | 155 |
-| BizCode | 583 |
+| BizCode | 584 |
 | 权限码 | 273 |
 | AuditLogEvent | 178 |
 | 内建角色 | 15 |

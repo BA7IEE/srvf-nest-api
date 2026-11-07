@@ -1817,6 +1817,11 @@ export const BizCode = {
     message: '活动草稿已变化，请重新读取后再保存',
     httpStatus: HttpStatus.CONFLICT,
   },
+  ACTIVITY_SIMPLE_REVIEW_REQUIRES_PROFESSIONAL_FLOW: {
+    code: 20256,
+    message: '活动包含简单界面未展示的专业配置，请使用专业流程确认后提审',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // Activity OS R2 / B7: three B6 draft creation commands only; not a permission failure.
   ACTIVITY_CONTROL_PLANE_UNAVAILABLE: {

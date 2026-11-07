@@ -1,3 +1,4 @@
+import { hashCanonical } from '../../src/modules/activities/activity-publish-review-idempotency';
 import type { INestApplication } from '@nestjs/common';
 import { Prisma, Role } from '@prisma/client';
 import request from 'supertest';
@@ -5,6 +6,7 @@ import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { BizException } from '../../src/common/exceptions/biz.exception';
 import { PrismaService } from '../../src/database/prisma.service';
 import { ActivityDraftAuditRecorder } from '../../src/modules/activities/activity-draft-audit-recorder';
+import { ActivityPublishProposalV2Service } from '../../src/modules/activities/activity-publish-proposal-v2.service';
 import { computeActivityTemplateDefinitionHash } from '../../src/modules/activities/activity-template-definition';
 import { fingerprintTimePolicyVersion } from '../../src/modules/activities/activity-time-policy-definition';
 import { fingerprintContributionPolicyVersion } from '../../src/modules/activities/activity-contribution-policy-definition';
@@ -716,6 +718,1058 @@ describe('ActivityOS V1 simple draft ordinary HTTP chain', () => {
     };
     evidence.outcome = 'PASS';
   }, 30000);
+
+  async function confirmationDraft(auth = publisher.auth, templateVersionId = templateId) {
+    const created = await request(httpServer(app))
+      .post(`${ROOT}/from-template`)
+      .set('Authorization', auth)
+      .send({
+        operationKey: key('confirm_create'),
+        templateVersionId,
+        title: '合成确认版本',
+        organizationId,
+        startAt: '2099-09-01T00:00:00.000Z',
+        endAt: '2099-09-01T02:00:00.000Z',
+        location: '合成会场',
+        defaultPlaceVisibilityCode: 'staff',
+        confirmedCapacity: 2,
+        instance: {
+          capacity: 2,
+          registrationDeadline: null,
+          description: null,
+          registrationNotes: null,
+        },
+      })
+      .expect(201);
+    const id = created.body.data.activityId as string;
+    const read = () =>
+      request(httpServer(app))
+        .get(`${ROOT}/${id}/simple-draft`)
+        .set('Authorization', auth)
+        .expect(200);
+    const draft = (await read()).body.data;
+    return { id, draft, read };
+  }
+
+  it('confirmation: preserves legacy submission and its exact request fingerprint after an intervening edit', async () => {
+    const { id } = await confirmationDraft();
+    await db.activity.update({ where: { id }, data: { title: '旧客户端最新提交' } });
+    const body = { operationKey: key('confirm_legacy'), confirmation: true };
+    const first = await request(httpServer(app))
+      .post(`${ROOT}/${id}/publish-reviews`)
+      .set('Authorization', publisher.auth)
+      .send(body)
+      .expect(200);
+    const stored = await db.activityPublishReview.findUniqueOrThrow({
+      where: { operationKey: body.operationKey },
+    });
+    expect(stored.requestHash).toBe(
+      hashCanonical({ action: 'publish-review-submit:initial', activityId: id, payload: body }),
+    );
+    const retry = await request(httpServer(app))
+      .post(`${ROOT}/${id}/publish-reviews`)
+      .set('Authorization', publisher.auth)
+      .send(body)
+      .expect(200);
+    expect(retry.body.data).toEqual(first.body.data);
+  });
+
+  it('confirmation: replays the full versioned request before checking the changed review hash and rejects key reuse', async () => {
+    const { id, draft, read } = await confirmationDraft();
+    const body = {
+      operationKey: key('confirm_once'),
+      confirmation: true,
+      expectedDraftHash: draft.draftHash,
+    };
+    const post = (payload: object, auth = publisher.auth) =>
+      request(httpServer(app))
+        .post(`${ROOT}/${id}/publish-reviews`)
+        .set('Authorization', auth)
+        .send(payload);
+    const first = await post(body).expect(200);
+    const after = (await read()).body.data;
+    expect(after.draftHash).not.toBe(draft.draftHash);
+    const effects = await db.auditLog.count({ where: { resourceId: id } });
+    expect((await post(body).expect(200)).body.data).toEqual(first.body.data);
+    expect(await db.auditLog.count({ where: { resourceId: id } })).toBe(effects);
+    expect(await db.activityPublishReview.count({ where: { activityId: id } })).toBe(1);
+    expectBizError(
+      await post({ ...body, expectedDraftHash: after.draftHash }),
+      BizCode.ACTIVITY_PUBLISH_REVIEW_OPERATION_KEY_CONFLICT,
+    );
+    expectBizError(
+      await post({ operationKey: body.operationKey, confirmation: true }),
+      BizCode.ACTIVITY_PUBLISH_REVIEW_OPERATION_KEY_CONFLICT,
+    );
+    expectBizError(await post(body, outsider.auth), BizCode.ACTIVITY_NOT_FOUND);
+    expectBizError(
+      await post({ ...body, operationKey: key('confirm_stale_new') }),
+      BizCode.ACTIVITY_SIMPLE_DRAFT_STALE,
+    );
+  });
+
+  it.each([false, true])(
+    'confirmation: real simple-save lock race, versioned=%s',
+    async (versioned) => {
+      const { id, draft, read } = await confirmationDraft();
+      let release!: () => void, reached!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const saved = new Promise<void>((resolve) => {
+        reached = resolve;
+      });
+      const audit = app.get(ActivityDraftAuditRecorder);
+      const original = audit.log.bind(audit);
+      let blockerPid = 0;
+      const spy = jest.spyOn(audit, 'log').mockImplementation(async (input) => {
+        await original(input);
+        if (input.activityId === id && input.operation === 'simple-draft-update') {
+          blockerPid = (
+            await input.tx.$queryRaw<Array<{ pid: number }>>`SELECT pg_backend_pid() AS pid`
+          )[0].pid;
+          reached();
+          await gate;
+        }
+      });
+      const body = {
+        operationKey: key('confirm_race'),
+        confirmation: true,
+        ...(versioned ? { expectedDraftHash: draft.draftHash } : {}),
+      };
+      let submit: Promise<request.Response> | undefined;
+      const save = request(httpServer(app))
+        .put(`${ROOT}/${id}/simple-draft`)
+        .set('Authorization', publisher.auth)
+        .send({
+          title: '确认后另一次保存',
+          organizationId,
+          startAt: draft.startAt,
+          endAt: draft.endAt,
+          location: draft.location,
+          instance: draft.instance,
+          expectedDraftHash: draft.draftHash,
+          places: [
+            {
+              roleCode: 'primary',
+              visibilityCode: 'staff',
+              inline: { name: '合成会场', addressText: '合成会场', checkInEligible: false },
+            },
+          ],
+        })
+        .then((response) => response);
+      try {
+        let barrierTimer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            saved,
+            save.then(() => {
+              throw new Error('save did not reach the in-transaction barrier');
+            }),
+            new Promise<never>((_resolve, reject) => {
+              barrierTimer = setTimeout(() => reject(new Error('save barrier timeout')), 3000);
+            }),
+          ]);
+        } finally {
+          clearTimeout(barrierTimer);
+        }
+        submit = request(httpServer(app))
+          .post(`${ROOT}/${id}/publish-reviews`)
+          .set('Authorization', publisher.auth)
+          .send(body)
+          .then((response) => response);
+        let waiterPid = 0;
+        const deadline = Date.now() + 2000;
+        while (Date.now() < deadline) {
+          const rows = await db.$queryRaw<Array<{ pid: number }>>`
+          SELECT pid FROM pg_stat_activity WHERE datname = current_database()
+          AND wait_event_type = 'Lock' AND ${blockerPid} = ANY(pg_blocking_pids(pid))
+          AND query LIKE '%FROM "Activity"%FOR UPDATE%'`;
+          if (rows.length === 1) {
+            waiterPid = rows[0].pid;
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        expect(waiterPid).toBeGreaterThan(0);
+        expect(waiterPid).not.toBe(blockerPid);
+      } finally {
+        release();
+        await Promise.allSettled([save, ...(submit ? [submit] : [])]);
+        spy.mockRestore();
+      }
+      expect((await save).status).toBe(200);
+      if (!versioned) {
+        expect((await submit).status).toBe(200);
+        expect((await read()).body.data.title).toBe('确认后另一次保存');
+        return;
+      }
+      expectBizError(await submit, BizCode.ACTIVITY_SIMPLE_DRAFT_STALE);
+      expect(await db.activityPublishReview.count({ where: { activityId: id } })).toBe(0);
+      expect(
+        await db.auditLog.count({
+          where: {
+            resourceId: id,
+            context: { path: ['extra', 'operation'], equals: 'publish-review-submit' },
+          },
+        }),
+      ).toBe(0);
+      const refreshed = (await read()).body.data;
+      expect(refreshed.title).toBe('确认后另一次保存');
+      await request(httpServer(app))
+        .post(`${ROOT}/${id}/publish-reviews`)
+        .set('Authorization', publisher.auth)
+        .send({ ...body, expectedDraftHash: refreshed.draftHash })
+        .expect(200);
+    },
+  );
+
+  it.each([null, '', 'invalid', 'A'.repeat(64), 1])(
+    'confirmation: rejects malformed version %p',
+    async (expectedDraftHash) => {
+      const { id } = await confirmationDraft();
+      expectBizError(
+        await request(httpServer(app))
+          .post(`${ROOT}/${id}/publish-reviews`)
+          .set('Authorization', publisher.auth)
+          .send({ operationKey: key('confirm_bad'), confirmation: true, expectedDraftHash }),
+        BizCode.BAD_REQUEST,
+        { strictMessage: false },
+      );
+      expect(await db.activityPublishReview.count({ where: { activityId: id } })).toBe(0);
+    },
+  );
+
+  async function configureQualification(
+    id: string,
+    level: 'activity' | 'session' | 'position',
+    auth = publisher.auth,
+  ) {
+    const session = await db.activitySession.findFirstOrThrow({ where: { activityId: id } });
+    const position = await db.activitySessionPosition.findFirstOrThrow({
+      where: { activityId: id },
+    });
+    return await request(httpServer(app))
+      .put(`/api/app/v1/my/managed-activities/${id}/qualification-rules`)
+      .set('Authorization', auth)
+      .send({
+        ruleSets: [
+          {
+            scope: {
+              sessionId: level === 'activity' ? null : session.id,
+              positionId: level === 'position' ? position.id : null,
+            },
+            rules: [
+              {
+                ruleTypeCode: 'age',
+                enforcementCode: 'block',
+                operator: 'between',
+                minYears: 18,
+                sortOrder: 10,
+              },
+            ],
+          },
+        ],
+      })
+      .expect(200);
+  }
+
+  it.each(['activity', 'session', 'position'] as const)(
+    'qualification guard: rejects invisible %s rules without changing them, while preserving legacy submit',
+    async (level) => {
+      const { id, draft, read } = await confirmationDraft();
+      await configureQualification(id, level);
+      expect((await read()).body.data).toEqual(draft);
+      const rules = await db.activityQualificationRuleSet.findMany({
+        where: { activityId: id },
+        include: { rules: true },
+      });
+      expect(rules).toHaveLength(1);
+      const post = (body: object) =>
+        request(httpServer(app))
+          .post(`${ROOT}/${id}/publish-reviews`)
+          .set('Authorization', publisher.auth)
+          .send(body);
+      const beforeAudit = await db.auditLog.count({ where: { resourceId: id } });
+      const body = {
+        operationKey: key('qual_block'),
+        confirmation: true,
+        expectedDraftHash: draft.draftHash,
+      };
+      expectBizError(await post(body), BizCode.ACTIVITY_SIMPLE_REVIEW_REQUIRES_PROFESSIONAL_FLOW);
+      expect(await db.activityPublishReview.count({ where: { activityId: id } })).toBe(0);
+      expect(await db.auditLog.count({ where: { resourceId: id } })).toBe(beforeAudit);
+      expect(
+        await db.activityQualificationRuleSet.findMany({
+          where: { activityId: id },
+          include: { rules: true },
+        }),
+      ).toEqual(rules);
+      // A rejected versioned request did not reserve its key; the legacy contract stays unchanged.
+      const legacy = { operationKey: body.operationKey, confirmation: true };
+      const first = await post(legacy).expect(200);
+      expect((await post(legacy).expect(200)).body.data).toEqual(first.body.data);
+      const stored = await db.activityPublishReview.findUniqueOrThrow({
+        where: { id: first.body.data.id },
+      });
+      expect(stored.requestHash).toBe(
+        hashCanonical({ action: 'publish-review-submit:initial', activityId: id, payload: legacy }),
+      );
+      expect(
+        (stored.snapshot as { qualificationRuleSets: { ruleSets: unknown[] } })
+          .qualificationRuleSets.ruleSets,
+      ).toHaveLength(1);
+    },
+  );
+
+  it('qualification guard: a normal explicit removal permits submission and keeps retired rule history', async () => {
+    const { id, draft, read } = await confirmationDraft();
+    await configureQualification(id, 'activity');
+    await request(httpServer(app))
+      .put(`/api/app/v1/my/managed-activities/${id}/qualification-rules`)
+      .set('Authorization', publisher.auth)
+      .send({ ruleSets: [] })
+      .expect(200);
+    expect((await read()).body.data).toEqual(draft);
+    const rows = await db.activityQualificationRuleSet.findMany({ where: { activityId: id } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].statusCode).toBe('retired');
+    await request(httpServer(app))
+      .post(`${ROOT}/${id}/publish-reviews`)
+      .set('Authorization', publisher.auth)
+      .send({
+        operationKey: key('qual_removed'),
+        confirmation: true,
+        expectedDraftHash: draft.draftHash,
+      })
+      .expect(200);
+  });
+
+  it('qualification guard: conservatively rejects an active rule set attached to a draft', async () => {
+    const { id, draft } = await confirmationDraft();
+    await configureQualification(id, 'position');
+    // A defensive persisted-state fixture; ordinary draft editing creates draft rule sets.
+    await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${id} FOR UPDATE`;
+      const row = await tx.activityQualificationRuleSet.findFirstOrThrow({
+        where: { activityId: id },
+      });
+      await tx.activityQualificationRuleSet.update({
+        where: { id: row.id },
+        data: { statusCode: 'active' },
+      });
+    });
+    expectBizError(
+      await request(httpServer(app))
+        .post(`${ROOT}/${id}/publish-reviews`)
+        .set('Authorization', publisher.auth)
+        .send({
+          operationKey: key('qual_active'),
+          confirmation: true,
+          expectedDraftHash: draft.draftHash,
+        }),
+      BizCode.ACTIVITY_SIMPLE_REVIEW_REQUIRES_PROFESSIONAL_FLOW,
+    );
+    expect(await db.activityPublishReview.count({ where: { activityId: id } })).toBe(0);
+    expect(
+      await db.activityQualificationRuleSet.count({
+        where: { activityId: id, statusCode: 'active' },
+      }),
+    ).toBe(1);
+  });
+
+  it('qualification guard: rejects a real rule-addition transaction that wins the Activity lock after confirmation', async () => {
+    const { id, draft, read } = await confirmationDraft();
+    let release!: () => void, reached!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const changed = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const audit = app.get(ActivityDraftAuditRecorder);
+    const original = audit.log.bind(audit);
+    let blockerPid = 0;
+    const spy = jest.spyOn(audit, 'log').mockImplementation(async (input) => {
+      await original(input);
+      if (input.activityId === id && input.changedFields?.includes('qualificationRuleSets')) {
+        blockerPid = (
+          await input.tx.$queryRaw<Array<{ pid: number }>>`SELECT pg_backend_pid() AS pid`
+        )[0].pid;
+        reached();
+        await gate;
+      }
+    });
+    const save = configureQualification(id, 'position');
+    let submit: Promise<request.Response> | undefined;
+    try {
+      let barrierTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          changed,
+          save.then(() => {
+            throw new Error('rule update did not reach its transaction barrier');
+          }),
+          new Promise<never>((_resolve, reject) => {
+            barrierTimer = setTimeout(() => reject(new Error('rule barrier timeout')), 3000);
+          }),
+        ]);
+      } finally {
+        clearTimeout(barrierTimer);
+      }
+      submit = request(httpServer(app))
+        .post(`${ROOT}/${id}/publish-reviews`)
+        .set('Authorization', publisher.auth)
+        .send({
+          operationKey: key('qual_race'),
+          confirmation: true,
+          expectedDraftHash: draft.draftHash,
+        })
+        .then((response) => response);
+      let waiterPid = 0;
+      const deadline = Date.now() + 2000;
+      while (Date.now() < deadline) {
+        const rows = await db.$queryRaw<Array<{ pid: number }>>`
+          SELECT pid FROM pg_stat_activity WHERE datname = current_database()
+          AND wait_event_type = 'Lock' AND ${blockerPid} = ANY(pg_blocking_pids(pid))
+          AND query LIKE '%FROM "Activity"%FOR UPDATE%'`;
+        if (rows.length === 1) {
+          waiterPid = rows[0].pid;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(waiterPid).toBeGreaterThan(0);
+      expect(waiterPid).not.toBe(blockerPid);
+    } finally {
+      release();
+      await Promise.allSettled([save, ...(submit ? [submit] : [])]);
+      spy.mockRestore();
+    }
+    await save;
+    expectBizError(await submit, BizCode.ACTIVITY_SIMPLE_REVIEW_REQUIRES_PROFESSIONAL_FLOW);
+    expect((await read()).body.data).toEqual(draft);
+    expect(await db.activityPublishReview.count({ where: { activityId: id } })).toBe(0);
+    expect(
+      await db.activityQualificationRuleSet.count({
+        where: { activityId: id, statusCode: 'draft' },
+      }),
+    ).toBe(1);
+    expect(
+      await db.auditLog.count({
+        where: {
+          resourceId: id,
+          context: { path: ['extra', 'operation'], equals: 'publish-review-submit' },
+        },
+      }),
+    ).toBe(0);
+  });
+
+  it('qualification guard: authorizes before exact replay but checks new rules only after replay', async () => {
+    const actor = await user('confirm_owner');
+    const binding = await grant(actor.id, [
+      'activity.create.record',
+      'activity.update.record',
+      'activity.time-policy.read',
+      'activity.time-policy.select',
+      'activity.contribution-policy.read',
+      'activity.contribution-policy.select',
+    ]);
+    const { id, draft } = await confirmationDraft(actor.auth);
+    const body = {
+      operationKey: key('qual_replay'),
+      confirmation: true,
+      expectedDraftHash: draft.draftHash,
+    };
+    const post = (payload: object, auth = actor.auth) =>
+      request(httpServer(app))
+        .post(`${ROOT}/${id}/publish-reviews`)
+        .set('Authorization', auth)
+        .send(payload);
+    const first = await post(body).expect(200);
+    await configureQualification(id, 'activity', actor.auth);
+    const effects = await db.auditLog.count({ where: { resourceId: id } });
+    expect((await post(body).expect(200)).body.data).toEqual(first.body.data);
+    expectBizError(
+      await post({ ...body, expectedDraftHash: '0'.repeat(64) }),
+      BizCode.ACTIVITY_PUBLISH_REVIEW_OPERATION_KEY_CONFLICT,
+    );
+    expectBizError(
+      await post({ ...body, operationKey: key('qual_new') }),
+      BizCode.ACTIVITY_SIMPLE_REVIEW_REQUIRES_PROFESSIONAL_FLOW,
+    );
+    expectBizError(await post(body, outsider.auth), BizCode.ACTIVITY_NOT_FOUND);
+    const revoker = await grant(publisher.id, ['role-binding.delete.record']);
+    await db.roleBinding.update({
+      where: { id: revoker.id },
+      data: { scopeType: 'GLOBAL', scopeOrgId: null },
+    });
+    await request(httpServer(app))
+      .delete(`/api/admin/v1/role-bindings/${binding.id}`)
+      .set('Authorization', publisher.auth)
+      .expect(200);
+    expectBizError(await post(body), BizCode.FORBIDDEN);
+    expectBizError(
+      await post({ ...body, operationKey: key('qual_revoked_new') }),
+      BizCode.FORBIDDEN,
+    );
+    expect(await db.auditLog.count({ where: { resourceId: id } })).toBe(effects);
+    expect(await db.activityPublishReview.count({ where: { activityId: id } })).toBe(1);
+    expect(
+      await db.activityQualificationRuleSet.count({
+        where: { activityId: id, statusCode: 'draft' },
+      }),
+    ).toBe(1);
+  });
+
+  it.each(['activity', 'session'] as const)(
+    'confirmation coverage: hidden %s values change the hash but are still absent from the simple response',
+    async (scope) => {
+      const { id, draft, read } = await confirmationDraft();
+      const preview = () =>
+        db.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${id} FOR UPDATE`;
+          return app.get(ActivityPublishProposalV2Service).buildInitial(tx, id);
+        });
+      const before = await preview();
+      // Synthetic persisted-state control, not a claim that this exercises a UI editing route.
+      await db.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${id} FOR UPDATE`;
+        if (scope === 'activity') {
+          await tx.activity.update({ where: { id }, data: { archiveWaitingDays: 13 } });
+        } else {
+          const session = await tx.activitySession.findFirstOrThrow({ where: { activityId: id } });
+          await tx.activitySession.update({
+            where: { id: session.id },
+            data: { evacuationPoint: '合成撤离点' },
+          });
+        }
+      });
+      const after = await preview();
+      if (scope === 'activity') {
+        expect(before.activity.archiveWaitingDays).not.toBe(13);
+        expect(after.activity.archiveWaitingDays).toBe(13);
+      } else {
+        expect(before.sessions[0].evacuationPoint).not.toBe('合成撤离点');
+        expect(after.sessions[0].evacuationPoint).toBe('合成撤离点');
+      }
+      const current = (await read()).body.data;
+      expect(current.draftHash).not.toBe(draft.draftHash);
+      expect({ ...current, draftHash: null }).toEqual({ ...draft, draftHash: null });
+      expectBizError(
+        await request(httpServer(app))
+          .post(`${ROOT}/${id}/publish-reviews`)
+          .set('Authorization', publisher.auth)
+          .send({
+            operationKey: key('hidden_stale'),
+            confirmation: true,
+            expectedDraftHash: draft.draftHash,
+          }),
+        BizCode.ACTIVITY_SIMPLE_DRAFT_STALE,
+      );
+      expect(await db.activityPublishReview.count({ where: { activityId: id } })).toBe(0);
+    },
+  );
+
+  it.each(['activity', 'session', 'position', 'form'] as const)(
+    'simple whitelist: rejects refreshed hidden %s configuration, preserves it for professional approval',
+    async (kind) => {
+      const { id, draft, read } = await confirmationDraft();
+      const sessionId = draft.session.id as string;
+      const positionId = draft.position.id as string;
+      const managed = `/api/app/v1/my/managed-activities/${id}`;
+      const preview = () =>
+        db.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${id} FOR UPDATE`;
+          return app.get(ActivityPublishProposalV2Service).buildInitial(tx, id);
+        });
+      const before = await preview();
+      const genderType = await db.dictType.upsert({
+        where: { code: 'gender_requirement' },
+        update: {},
+        create: { code: 'gender_requirement', label: '合成资格字典' },
+      });
+      await db.dictItem.upsert({
+        where: { typeId_code: { typeId: genderType.id, code: 'synthetic_requirement' } },
+        update: {},
+        create: { typeId: genderType.id, code: 'synthetic_requirement', label: '合成限定' },
+      });
+      let path = managed;
+      let payload: Record<string, unknown>;
+      if (kind === 'activity') {
+        payload = {
+          genderRequirementCode: 'synthetic_requirement',
+          isPublicRegistration: !before.activity.isPublicRegistration,
+          requiresInsurance: !before.activity.requiresInsurance,
+          registrationModeCode: 'invitation_only',
+          visibilityCode: 'invitation',
+          defaultLocationRequired: true,
+          defaultCheckInRadiusMeters: 250,
+          archiveWaitingDays: 13,
+          content: { text: '合成新增正文' },
+          registrationSchema: { syntheticNote: { type: 'string' } },
+          locationLongitude: 120.25,
+          locationLatitude: 30.25,
+        };
+      } else if (kind === 'session') {
+        path += `/sessions/${sessionId}`;
+        payload = {
+          locationText: '合成另一集合地文字',
+          meetingPoint: '合成集合点',
+          executionPoint: '合成执行点',
+          evacuationPoint: '合成撤离点',
+          longitude: 120.25,
+          latitude: 30.25,
+          locationRequired: true,
+          radiusMeters: 250,
+          lateGraceMinutes: 12,
+          earlyLeaveThresholdMinutes: 13,
+          sortOrder: 9,
+        };
+      } else if (kind === 'position') {
+        // A normal prerequisite for the position's real location policy, also hidden by simple GET.
+        await request(httpServer(app))
+          .patch(`${managed}/sessions/${sessionId}`)
+          .set('Authorization', publisher.auth)
+          .send({ longitude: 120.25, latitude: 30.25, locationRequired: true, radiusMeters: 300 })
+          .expect(200);
+        const actor = await db.user.findUniqueOrThrow({
+          where: { id: publisher.id },
+          select: { memberId: true },
+        });
+        path += `/sessions/${sessionId}/positions/${positionId}`;
+        payload = {
+          genderRequirementCode: 'synthetic_requirement',
+          locationRequired: true,
+          radiusMeters: 250,
+          leaderMemberId: actor.memberId,
+          description: '合成岗位职责',
+          equipmentNotes: '合成必需装备',
+          sortOrder: 9,
+        };
+      } else {
+        path += '/registration-form';
+        payload = {
+          form: {
+            fields: [
+              {
+                fieldCode: 'synthetic_note',
+                typeCode: 'short_text',
+                label: '合成必填说明',
+                required: true,
+                visibilityCode: 'self_only',
+                exportable: false,
+                sortOrder: 1,
+                minLength: 1,
+                maxLength: 100,
+              },
+            ],
+          },
+        };
+      }
+      const edit =
+        kind === 'form' ? request(httpServer(app)).put(path) : request(httpServer(app)).patch(path);
+      await edit.set('Authorization', publisher.auth).send(payload).expect(200);
+      const current = (await read()).body.data;
+      expect(current.draftHash).not.toBe(draft.draftHash);
+      expect({ ...current, draftHash: null }).toEqual({ ...draft, draftHash: null });
+      const after = await preview();
+      expect(hashCanonical(after)).not.toBe(hashCanonical(before));
+      const project = (snapshot: typeof after): Record<string, unknown> =>
+        kind === 'activity'
+          ? { ...snapshot.activity }
+          : kind === 'session'
+            ? { ...snapshot.sessions[0] }
+            : kind === 'position'
+              ? { ...snapshot.sessions[0].positions[0] }
+              : { registrationForm: snapshot.registrationForm };
+      const oldFields = project(before),
+        newFields = project(after);
+      const changedFields = Object.keys(newFields).filter(
+        (key) => JSON.stringify(newFields[key]) !== JSON.stringify(oldFields[key]),
+      );
+      expect(changedFields.length).toBeGreaterThan(0);
+      if (kind !== 'form') {
+        for (const [field, value] of Object.entries(payload)) {
+          // Proposal decimals have their established canonical string representation.
+          expect(newFields[field]).toEqual(
+            ['longitude', 'latitude', 'locationLongitude', 'locationLatitude'].includes(field)
+              ? String(value)
+              : value,
+          );
+          expect(changedFields).toContain(field);
+        }
+      } else {
+        expect(after.registrationForm?.definition.fields[0]).toMatchObject({
+          fieldCode: 'synthetic_note',
+          required: true,
+        });
+      }
+      const body = {
+        operationKey: key('hidden_http_submit'),
+        confirmation: true,
+        expectedDraftHash: draft.draftHash,
+      };
+      const post = (payload: object) =>
+        request(httpServer(app))
+          .post(`${ROOT}/${id}/publish-reviews`)
+          .set('Authorization', publisher.auth)
+          .send(payload);
+      expectBizError(await post(body), BizCode.ACTIVITY_SIMPLE_DRAFT_STALE);
+      expect(await db.activityPublishReview.count({ where: { activityId: id } })).toBe(0);
+      expectBizError(
+        await post({ ...body, expectedDraftHash: current.draftHash }),
+        BizCode.ACTIVITY_SIMPLE_REVIEW_REQUIRES_PROFESSIONAL_FLOW,
+      );
+      expect(await db.activityPublishReview.count({ where: { activityId: id } })).toBe(0);
+      expect(await preview()).toEqual(after);
+      const submitted = await request(httpServer(app))
+        .post(`${managed}/publish-reviews`)
+        .set('Authorization', publisher.auth)
+        .send({ operationKey: body.operationKey, confirmation: true })
+        .expect(200);
+      const reviewId = submitted.body.data.id;
+      const stored = await db.activityPublishReview.findUniqueOrThrow({ where: { id: reviewId } });
+      expect(stored.snapshot).toEqual(JSON.parse(JSON.stringify(after)));
+      await request(httpServer(app))
+        .get(`/api/admin/v1/activity-publish-reviews/${reviewId}`)
+        .set('Authorization', reviewer.auth)
+        .expect(200);
+      await request(httpServer(app))
+        .post(`/api/admin/v1/activity-publish-reviews/${reviewId}/approve`)
+        .set('Authorization', reviewer.auth)
+        .send({ operationKey: key('hidden_http_approve'), requiresInsuranceConfirmed: true })
+        .expect(200);
+      expect(
+        (await db.activity.findUniqueOrThrow({ where: { id }, select: { statusCode: true } }))
+          .statusCode,
+      ).toBe('published');
+      expect(
+        (await db.activityPublishReview.findUniqueOrThrow({ where: { id: reviewId } })).status,
+      ).toBe('approved');
+      const applied =
+        kind === 'activity'
+          ? await db.activity.findUniqueOrThrow({ where: { id } })
+          : kind === 'session'
+            ? await db.activitySession.findUniqueOrThrow({ where: { id: sessionId } })
+            : kind === 'position'
+              ? await db.activitySessionPosition.findUniqueOrThrow({ where: { id: positionId } })
+              : null;
+      if (applied) {
+        for (const [field, value] of Object.entries(payload)) {
+          const actual = (applied as unknown as Record<string, unknown>)[field];
+          expect(
+            ['longitude', 'latitude', 'locationLongitude', 'locationLatitude'].includes(field)
+              ? String(actual)
+              : actual,
+          ).toEqual(
+            ['longitude', 'latitude', 'locationLongitude', 'locationLatitude'].includes(field)
+              ? String(value)
+              : value,
+          );
+        }
+      } else {
+        const form = await db.registrationFormVersion.findFirstOrThrow({
+          where: { activityId: id, statusCode: 'active' },
+          include: { fields: true },
+        });
+        expect(form.fields[0]).toMatchObject({ fieldCode: 'synthetic_note', required: true });
+      }
+      expect(changedFields).toHaveLength(
+        kind === 'activity' ? 12 : kind === 'session' ? 11 : kind === 'position' ? 7 : 1,
+      );
+    },
+  );
+
+  it('simple whitelist: retains explicit normal template defaults and its governed form through approval', async () => {
+    const source = await db.activityTemplate.findUniqueOrThrow({ where: { id: templateId } });
+    const definition = JSON.parse(JSON.stringify(source.definitionJson));
+    Object.assign(definition.activity, {
+      isPublicRegistration: false,
+      requiresInsurance: true,
+      registrationModeCode: 'invitation_only',
+      visibilityCode: 'invitation',
+      defaultLocationRequired: false,
+      defaultCheckInRadiusMeters: 250,
+      archiveWaitingDays: 0,
+    });
+    Object.assign(definition.sessions[0], {
+      lateGraceMinutes: 12,
+      earlyLeaveThresholdMinutes: 13,
+      sortOrder: 9,
+    });
+    Object.assign(definition.sessions[0].positions[0], {
+      locationRequired: false,
+      description: '模板固定职责',
+      equipmentNotes: '模板固定装备',
+      sortOrder: 8,
+    });
+    definition.registrationForm = {
+      fields: [
+        {
+          fieldCode: 'travel_note',
+          typeCode: 'short_text',
+          label: '模板固定说明',
+          required: false,
+          visibilityCode: 'self_only',
+          exportable: false,
+          sortOrder: 0,
+          governance: {
+            purposeCode: 'transport_logistics',
+            dataClassCode: 'ordinary',
+            retentionPolicyCode: 'activity_lifecycle',
+            maskingPolicyCode: 'none',
+            prefillSourceCode: null,
+          },
+        },
+      ],
+    };
+    const selected = await db.activityTemplate.create({
+      data: {
+        code: key('whitelist_template'),
+        name: '合成固定默认模板',
+        activityTypeCode: 'training',
+        version: source.version + 1,
+        familyId: source.familyId,
+        statusCode: 'draft',
+        schemaVersion: 5,
+        definitionJson: definition,
+        definitionHash: computeActivityTemplateDefinitionHash({ schemaVersion: 5, definition }),
+        effectiveFrom: source.effectiveFrom,
+      },
+    });
+    await db.activityTemplate.update({
+      where: { id: selected.id },
+      data: { statusCode: 'active' },
+    });
+    const { id, draft } = await confirmationDraft(publisher.auth, selected.id);
+    const submitted = await request(httpServer(app))
+      .post(`${ROOT}/${id}/publish-reviews`)
+      .set('Authorization', publisher.auth)
+      .send({
+        operationKey: key('whitelist_normal'),
+        confirmation: true,
+        expectedDraftHash: draft.draftHash,
+      })
+      .expect(200);
+    await request(httpServer(app))
+      .post(`/api/admin/v1/activity-publish-reviews/${submitted.body.data.id}/approve`)
+      .set('Authorization', reviewer.auth)
+      .send({ operationKey: key('whitelist_normal_approve'), requiresInsuranceConfirmed: true })
+      .expect(200);
+    const row = await db.activity.findUniqueOrThrow({
+      where: { id },
+      include: { sessions: { include: { positions: true } } },
+    });
+    expect(row).toMatchObject({
+      statusCode: 'published',
+      isPublicRegistration: false,
+      requiresInsurance: true,
+      registrationModeCode: 'invitation_only',
+      visibilityCode: 'invitation',
+      defaultLocationRequired: false,
+      defaultCheckInRadiusMeters: 250,
+      archiveWaitingDays: 0,
+    });
+    expect(row.sessions[0]).toMatchObject({
+      lateGraceMinutes: 12,
+      earlyLeaveThresholdMinutes: 13,
+      sortOrder: 9,
+    });
+    expect(row.sessions[0].positions[0]).toMatchObject({
+      locationRequired: false,
+      description: '模板固定职责',
+      equipmentNotes: '模板固定装备',
+      sortOrder: 8,
+    });
+    const form = await db.registrationFormVersion.findFirstOrThrow({
+      where: { activityId: id, statusCode: 'active' },
+      include: { fields: true },
+    });
+    expect(form.fields[0]).toMatchObject({
+      fieldCode: 'travel_note',
+      label: '模板固定说明',
+      required: false,
+      purposeCode: 'transport_logistics',
+    });
+  });
+
+  it('simple whitelist: observes concurrent professional edit, rejects stale and then rejects refreshed unsupported configuration', async () => {
+    const { id, draft, read } = await confirmationDraft();
+    let release!: () => void, reached!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const changed = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const audit = app.get(ActivityDraftAuditRecorder);
+    const original = audit.log.bind(audit);
+    let blockerPid = 0;
+    const spy = jest.spyOn(audit, 'log').mockImplementation(async (input) => {
+      await original(input);
+      if (input.activityId === id && input.operation === 'draft-session-update') {
+        blockerPid = (
+          await input.tx.$queryRaw<Array<{ pid: number }>>`SELECT pg_backend_pid() AS pid`
+        )[0].pid;
+        reached();
+        await gate;
+      }
+    });
+    const save = request(httpServer(app))
+      .patch(`/api/app/v1/my/managed-activities/${id}/sessions/${draft.session.id}`)
+      .set('Authorization', publisher.auth)
+      .send({ evacuationPoint: '确认后新增撤离点' })
+      .expect(200)
+      .then((response) => response);
+    let submit: Promise<request.Response> | undefined;
+    try {
+      let barrierTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          changed,
+          save.then(() => {
+            throw new Error('rule update did not reach its transaction barrier');
+          }),
+          new Promise<never>((_resolve, reject) => {
+            barrierTimer = setTimeout(() => reject(new Error('rule barrier timeout')), 3000);
+          }),
+        ]);
+      } finally {
+        clearTimeout(barrierTimer);
+      }
+      submit = request(httpServer(app))
+        .post(`${ROOT}/${id}/publish-reviews`)
+        .set('Authorization', publisher.auth)
+        .send({
+          operationKey: key('qual_race'),
+          confirmation: true,
+          expectedDraftHash: draft.draftHash,
+        })
+        .then((response) => response);
+      let waiterPid = 0;
+      const deadline = Date.now() + 2000;
+      while (Date.now() < deadline) {
+        const rows = await db.$queryRaw<Array<{ pid: number }>>`
+          SELECT pid FROM pg_stat_activity WHERE datname = current_database()
+          AND wait_event_type = 'Lock' AND ${blockerPid} = ANY(pg_blocking_pids(pid))
+          AND query LIKE '%FROM "Activity"%FOR UPDATE%'`;
+        if (rows.length === 1) {
+          waiterPid = rows[0].pid;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(waiterPid).toBeGreaterThan(0);
+      expect(waiterPid).not.toBe(blockerPid);
+    } finally {
+      release();
+      await Promise.allSettled([save, ...(submit ? [submit] : [])]);
+      spy.mockRestore();
+    }
+    await save;
+    expectBizError(await submit, BizCode.ACTIVITY_SIMPLE_DRAFT_STALE);
+    const current = (await read()).body.data;
+    expect({ ...current, draftHash: null }).toEqual({ ...draft, draftHash: null });
+    expect(current.draftHash).not.toBe(draft.draftHash);
+    expectBizError(
+      await request(httpServer(app))
+        .post(`${ROOT}/${id}/publish-reviews`)
+        .set('Authorization', publisher.auth)
+        .send({
+          operationKey: key('whitelist_race_retry'),
+          confirmation: true,
+          expectedDraftHash: current.draftHash,
+        }),
+      BizCode.ACTIVITY_SIMPLE_REVIEW_REQUIRES_PROFESSIONAL_FLOW,
+    );
+    expect(await db.activityPublishReview.count({ where: { activityId: id } })).toBe(0);
+    expect(
+      (await db.activitySession.findUniqueOrThrow({ where: { id: draft.session.id } }))
+        .evacuationPoint,
+    ).toBe('确认后新增撤离点');
+    expect(
+      await db.auditLog.count({
+        where: {
+          resourceId: id,
+          context: { path: ['extra', 'operation'], equals: 'publish-review-submit' },
+        },
+      }),
+    ).toBe(0);
+  });
+
+  it('simple whitelist: exact replay survives later custom form, with authorization still before replay', async () => {
+    const actor = await user('confirm_owner');
+    const binding = await grant(actor.id, [
+      'activity.create.record',
+      'activity.update.record',
+      'activity.time-policy.read',
+      'activity.time-policy.select',
+      'activity.contribution-policy.read',
+      'activity.contribution-policy.select',
+    ]);
+    const { id, draft } = await confirmationDraft(actor.auth);
+    const body = {
+      operationKey: key('qual_replay'),
+      confirmation: true,
+      expectedDraftHash: draft.draftHash,
+    };
+    const post = (payload: object, auth = actor.auth) =>
+      request(httpServer(app))
+        .post(`${ROOT}/${id}/publish-reviews`)
+        .set('Authorization', auth)
+        .send(payload);
+    const first = await post(body).expect(200);
+    await request(httpServer(app))
+      .put(`/api/app/v1/my/managed-activities/${id}/registration-form`)
+      .set('Authorization', actor.auth)
+      .send({
+        form: {
+          fields: [
+            {
+              fieldCode: 'extra',
+              typeCode: 'short_text',
+              label: '新增字段',
+              required: true,
+              visibilityCode: 'self_only',
+              exportable: false,
+              sortOrder: 0,
+            },
+          ],
+        },
+      })
+      .expect(200);
+    const effects = await db.auditLog.count({ where: { resourceId: id } });
+    expect((await post(body).expect(200)).body.data).toEqual(first.body.data);
+    expectBizError(
+      await post({ ...body, expectedDraftHash: '0'.repeat(64) }),
+      BizCode.ACTIVITY_PUBLISH_REVIEW_OPERATION_KEY_CONFLICT,
+    );
+    expectBizError(
+      await post({ ...body, operationKey: key('qual_new') }),
+      BizCode.ACTIVITY_SIMPLE_DRAFT_STALE,
+    );
+    expectBizError(await post(body, outsider.auth), BizCode.ACTIVITY_NOT_FOUND);
+    const revoker = await grant(publisher.id, ['role-binding.delete.record']);
+    await db.roleBinding.update({
+      where: { id: revoker.id },
+      data: { scopeType: 'GLOBAL', scopeOrgId: null },
+    });
+    await request(httpServer(app))
+      .delete(`/api/admin/v1/role-bindings/${binding.id}`)
+      .set('Authorization', publisher.auth)
+      .expect(200);
+    expectBizError(await post(body), BizCode.FORBIDDEN);
+    expectBizError(
+      await post({ ...body, operationKey: key('qual_revoked_new') }),
+      BizCode.FORBIDDEN,
+    );
+    expect(await db.auditLog.count({ where: { resourceId: id } })).toBe(effects);
+    expect(await db.activityPublishReview.count({ where: { activityId: id } })).toBe(1);
+    expect(
+      await db.registrationFormVersion.count({ where: { activityId: id, statusCode: 'draft' } }),
+    ).toBe(1);
+  });
 
   async function pendingReturnReview() {
     const created = await request(httpServer(app))
