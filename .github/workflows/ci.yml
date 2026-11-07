@@ -944,3 +944,64 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t u-nest-api-starter:ci .
+
+      # One reviewed source candidate only; the image archive expires after one day.
+      - name: Export reviewed candidate image archive
+        if: github.repository == 'BA7IEE/srvf-nest-api' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'ci/review-image-retention'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYCODE'
+          import hashlib, json, os, re, subprocess
+          from pathlib import Path
+          expected = {'Dockerfile': '0ce409c57d27dbfabf544cf4ab88dd5da08456bf', '.dockerignore': '470513fcbad358addc0be00215fab4a86798e809', 'package.json': 'df0750cd6391f7377b00a31c9482c34ec015f57e', 'pnpm-lock.yaml': 'adc9f50c3e917138a398ceb966c1e26366e4309c', 'tsconfig.json': 'e4d2704ea60b4a2d618fffb163b7a8eec7ba598a', 'tsconfig.build.json': '64f86c6bd2bb30e3d22e752295eb7c7923fc191e', 'nest-cli.json': 'f9aa683b1ad5cffc76da9ad4b77c562ac4c2b399', 'src': 'c7706b6acfde7ce714e823118bcb66c42b5b55fd', 'prisma': '8c861b84152b089233f5626ae878525be60bd7d3'}
+          observed = {p: subprocess.check_output(["git", "rev-parse", "HEAD:" + p], text=True).strip() for p in expected}
+          if observed != expected:
+              raise SystemExit("SOURCE_INPUT_CLOSURE_MISMATCH: do not export this image")
+          subprocess.run(["git", "diff", "--exit-code", "HEAD", "--", *expected], check=True)
+          untracked = subprocess.check_output(["git", "ls-files", "--others", "--exclude-standard", "--", "src", "prisma"], text=True)
+          if untracked:
+              raise SystemExit("UNTRACKED_SOURCE_INPUT: do not export this image")
+          output = Path(os.environ["RUNNER_TEMP"]) / ("srvf-image-" + os.environ["GITHUB_RUN_ID"] + "-" + os.environ["GITHUB_RUN_ATTEMPT"])
+          output.mkdir(mode=0o700, exist_ok=False)
+          image = "u-nest-api-starter:ci"
+          info = json.loads(subprocess.check_output(["docker", "image", "inspect", image], text=True))[0]
+          if not re.fullmatch(r"sha256:[0-9a-f]{64}", info["Id"]):
+              raise SystemExit("INVALID_LOCAL_IMAGE_ID")
+          archive = output / "image.tar"
+          subprocess.run(["docker", "image", "save", "--output", str(archive), image], check=True)
+          digest = hashlib.sha256()
+          with archive.open("rb") as stream:
+              for block in iter(lambda: stream.read(1048576), b""):
+                  digest.update(block)
+          config = info["Config"]
+          manifest = {
+              "schema": 1,
+              "claim": "Runner-recorded image archive identity; no deployment or signed-attestation claim",
+              "referenceSourceCommit": "923c6c57673883d4b4834ea7e2ff0c8e18b5da5d",
+              "referenceSourceTree": "428c26afba383ba682c7fccb8b63d5e4e3dd3ccd",
+              "actualCheckoutCommit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+              "actualCheckoutTree": subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip(),
+              "buildInputs": observed,
+              "runId": os.environ["GITHUB_RUN_ID"],
+              "runAttempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "workflowRef": os.environ["GITHUB_WORKFLOW_REF"],
+              "imageId": info["Id"],
+              "imagePlatform": {"os": info["Os"], "architecture": info["Architecture"]},
+              "runtimeConfig": {k: config.get(k) for k in ["User", "WorkingDir", "Entrypoint", "Cmd", "ExposedPorts"]},
+              "rootFsLayers": info["RootFS"]["Layers"],
+              "archive": {"name": archive.name, "sizeBytes": archive.stat().st_size, "sha256": digest.hexdigest()},
+              "runtimeAcceptance": "NOT_RUN",
+          }
+          (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          PYCODE
+
+      - name: Retain reviewed candidate image for one day
+        if: github.repository == 'BA7IEE/srvf-nest-api' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'ci/review-image-retention'
+        uses: actions/upload-artifact@v4
+        with:
+          name: srvf-image-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/srvf-image-${{ github.run_id }}-${{ github.run_attempt }}/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
