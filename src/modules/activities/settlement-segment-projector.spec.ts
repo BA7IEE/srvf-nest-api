@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   rebuildServiceSegments,
+  PunchOperationGraphError,
   resolveEffectiveFacts,
   type ProjectorPunchEvent,
   type SessionThresholds,
@@ -193,6 +194,104 @@ describe('settlement segment projector — ⭐ void / replace 链解析', () => 
       event('e1', 'check_in', '2020-03-01T00:00:00.000Z'),
     ];
     expect(resolveEffectiveFacts(shuffled).map((fact) => fact.eventId)).toStrictEqual(['e1', 'e2']);
+  });
+
+  it('多层 void 交替恢复与作废,输入和发生时间乱序都不影响事实', () => {
+    for (let depth = 0; depth <= 9; depth += 1) {
+      const chain = [event('original', 'check_in', '2020-03-01T00:00:00.000Z')];
+      let target = 'original';
+      for (let index = 1; index <= depth; index += 1) {
+        const id = `void-${index}`;
+        chain.push(event(id, 'void', new Date(1_000 * (depth - index)).toISOString(), target));
+        target = id;
+      }
+      const expected = depth % 2 === 0 ? ['original'] : [];
+      for (const order of [chain, [...chain].reverse(), [...chain.slice(1), chain[0]]]) {
+        expect(resolveEffectiveFacts(order).map((fact) => fact.eventId)).toStrictEqual(expected);
+      }
+    }
+  });
+
+  it('多层替换与作废只保留最终有效的签退,不凭空产生异常或工时', () => {
+    const events = [
+      ...BASE,
+      event('replacement', 'replace', '2020-03-01T02:00:00.000Z', 'e2'),
+      event('undo', 'void', '2020-03-01T05:00:00.000Z', 'replacement'),
+      event('undo-undo', 'void', '2020-03-01T06:00:00.000Z', 'undo'),
+    ];
+    for (const order of [events, [...events].reverse()]) {
+      const projection = rebuildServiceSegments(order, THRESHOLDS);
+      expect(projection.chainAnomalies).toStrictEqual([]);
+      expect(projection.segments).toHaveLength(1);
+      expect(projection.segments[0]).toMatchObject({
+        sourceCloseEventId: 'replacement',
+        serviceHours: 2,
+      });
+    }
+  });
+
+  it('替换再替换不会让最初签退复活成多余事实', () => {
+    const events = [
+      ...BASE,
+      event('first-replace', 'replace', '2020-03-01T02:00:00.000Z', 'e2'),
+      event('second-replace', 'replace', '2020-03-01T01:30:00.000Z', 'first-replace'),
+    ];
+    const projection = rebuildServiceSegments(events, THRESHOLDS);
+    expect(projection.chainAnomalies).toStrictEqual([]);
+    expect(projection.segments).toHaveLength(1);
+    expect(projection.segments[0]).toMatchObject({
+      sourceCloseEventId: 'second-replace',
+      serviceHours: 1.5,
+    });
+  });
+
+  it('枚举混合操作链:replace 选自身,void 撤销其目标后继续回看', () => {
+    for (let depth = 0; depth <= 8; depth += 1) {
+      for (let mask = 0; mask < 2 ** depth; mask += 1) {
+        const chain = [event('original', 'check_in', '2020-03-01T00:00:00.000Z')];
+        const types: string[] = [];
+        for (let index = 0; index < depth; index += 1) {
+          const type = (mask & (1 << index)) === 0 ? 'void' : 'replace';
+          types.push(type);
+          const target = index === 0 ? 'original' : `op-${index - 1}`;
+          chain.push(
+            event(`op-${index}`, type, new Date((depth - index) * 1000).toISOString(), target),
+          );
+        }
+        let index = depth - 1;
+        while (index >= 0 && types[index] === 'void') index -= 2;
+        const expected = index >= 0 ? [`op-${index}`] : index === -1 ? ['original'] : [];
+        for (const order of [chain, [...chain].reverse(), [...chain.slice(1), chain[0]]]) {
+          expect(resolveEffectiveFacts(order).map((fact) => fact.eventId)).toStrictEqual(expected);
+        }
+      }
+    }
+  });
+
+  it('无效操作图 fail closed:重复 id、缺目标、分叉与环均不可当成零事实', () => {
+    const t = '2020-03-01T00:00:00.000Z';
+    const malformed = [
+      [event('same', 'check_in', t), event('same', 'check_out', t)],
+      [event('void', 'void', t, 'missing')],
+      [
+        event('base', 'check_in', t),
+        event('one', 'void', t, 'base'),
+        event('two', 'replace', t, 'base'),
+      ],
+      [event('cycle', 'void', t, 'cycle')],
+      [event('one', 'void', t, 'two'), event('two', 'void', t, 'one')],
+    ];
+    for (const input of malformed)
+      expect(() => resolveEffectiveFacts(input)).toThrow(PunchOperationGraphError);
+  });
+
+  it('长链可迭代解析而不耗尽调用栈', () => {
+    const chain = [event('original', 'check_in', '2020-03-01T00:00:00.000Z')];
+    for (let index = 0; index < 10000; index += 1) {
+      const target = index === 0 ? 'original' : `void-${index - 1}`;
+      chain.push(event(`void-${index}`, 'void', new Date(index * 1000).toISOString(), target));
+    }
+    expect(resolveEffectiveFacts(chain).map((fact) => fact.eventId)).toStrictEqual(['original']);
   });
 });
 

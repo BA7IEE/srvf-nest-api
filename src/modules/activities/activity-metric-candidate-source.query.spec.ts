@@ -260,6 +260,18 @@ describe('C3-1 complete current participation source', () => {
       new BizException(BizCode.ACTIVITY_METRIC_SOURCE_INCOMPLETE),
     );
   });
+  it('maps an invalid punch graph to the existing incomplete-source business error', async () => {
+    const f = fixture();
+    f.populate();
+    f.owner.readActivityPunchProjectionInputTrusted.mockResolvedValue([
+      ...f.events,
+      { ...f.events[0], id: 'bad', eventTypeCode: 'void', supersedesEventId: 'missing' },
+    ]);
+    await expect(f.run()).rejects.toThrow(
+      new BizException(BizCode.ACTIVITY_METRIC_SOURCE_INCOMPLETE),
+    );
+  });
+
   it('maps source limits separately from incomplete data and preserves infrastructure errors', async () => {
     const f = fixture();
     f.owner.readActivityPunchProjectionInputTrusted.mockRejectedValue(new RangeError('limit'));
