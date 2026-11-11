@@ -7,6 +7,8 @@
 
 ## 1. 现实世界状态(机器查不到,必须人维护)
 
+> **考勤方向（2026-11-11）**：以新版打卡、结算、账本与关账为统一目标链，逐步替换旧实现。旧写入口和部分旧读面仍在；旧流程测试不能当作新版验收。实际部署、开关与数据状态须按环境复核。
+
 > **R5收口（2026-10-24 UTC）**：原容量隔离全链已PASS，153审阅结论经用户真实认可并已登记；active500不变。prepare／两审／普通policy_v1 E4提交60秒，标准7／D7 15／取锁4／10槽及完整校验、原子审计outbox不变；更长锁连接占用非SLA或性能提升。最终CI／Smoke／Trusted待完成，未Ready、合并、部署或开闸。技术明细及全部旧FAIL见[验收台账](plans/activity-os-r5-limited500-release-readiness.md)，预算见[工程合同](plans/activity-os-r5-e4-ledger-commit-budget.md)。
 
 | 项 | 当前值 |
