@@ -203,6 +203,22 @@ export class ActivityQualificationEvaluatorService {
     const targets = this.normalizeTargets(input.targets ?? []);
     await this.validateTargets(input.activity.id, targets, input.tx);
     const applicable = this.applicableRuleSets(parsedRuleSets, targets);
+    // Target and configuration validation must precede this fast path. No rule
+    // consumes member facts here, so acquiring their write-privileged row locks
+    // is unnecessary; retain the same per-target projections and no snapshots.
+    if (applicable.length === 0) {
+      return {
+        resultCode: 'pass',
+        activity: this.toProjection([]),
+        sessions: new Map(targets.map((target) => [target.sessionId, this.toProjection([])])),
+        positions: new Map(
+          targets
+            .filter((target) => target.positionId !== null)
+            .map((target) => [target.positionId!, this.toProjection([])]),
+        ),
+        snapshotCandidates: [],
+      };
+    }
     const facts = await this.memberFacts.readForQualification(input.memberId, input.tx);
     const needsCertificates = applicable.some((ruleSet) =>
       ruleSet.rules.some(
