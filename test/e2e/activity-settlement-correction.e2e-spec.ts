@@ -15,6 +15,7 @@ import { CorrectionAuditRecorder } from '../../src/modules/activities/correction
 import { CORRECTION_CHANGE_SCHEMA_VERSION } from '../../src/modules/activities/correction-change-set';
 import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
 import { LedgerPreparationService } from '../../src/modules/activities/ledger-preparation.service';
+import { LedgerQueryService } from '../../src/modules/activities/ledger-query.service';
 import { ActivityFeedbacksService } from '../../src/modules/activity-feedbacks/activity-feedbacks.service';
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
@@ -565,6 +566,40 @@ describe('更正应用 —— 冲回 / 补记 / 原子切换 / 重新关账 (合
   // ② 正对照 —— 整条链走得通 + DoD 8「更正后重新关账能成功」
   // =========================================================================
   describe('② 整条链:提交 → 审核 → 准备 → 生效 → 重新关账', () => {
+    it('更正准备期与两次生效后,当前身份日数不因冲回和全人口补记重复', async () => {
+      const fixture = await createSettledActivity({ memberCount: 2 });
+      const ledgerQuery = app.get(LedgerQueryService);
+      const expected = { activityCount: 1, recordCount: 1 };
+      const counts = () =>
+        Promise.all(
+          fixture.memberIds.map((memberId) =>
+            ledgerQuery.countCommittedParticipationForMember(memberId),
+          ),
+        );
+      expect(await counts()).toEqual([expected, expected]);
+
+      const first = await submitAndApprove(fixture, pointsChange(fixture, '0.60'), 'count-one');
+      const firstInput = applyInput(fixture, first, 'count-one');
+      await correction.prepare(firstInput, reviewer, auditMeta);
+      // preparing/ready 尚未改变 currentPostedVersion。
+      expect(await counts()).toEqual([expected, expected]);
+      await expect(correction.apply(firstInput, reviewer, auditMeta)).resolves.toMatchObject({
+        commit: { correctionStatus: 'applied' },
+        reclose: { outcome: 'closed' },
+      });
+      // 未变更的第二位同样经历了全人口补记,不能被统计两次。
+      expect(await counts()).toEqual([expected, expected]);
+
+      const second = await submitAndApprove(fixture, pointsChange(fixture, '0.30'), 'count-two');
+      await expect(
+        correction.apply(applyInput(fixture, second, 'count-two'), reviewer, auditMeta),
+      ).resolves.toMatchObject({
+        commit: { correctionStatus: 'applied' },
+        reclose: { outcome: 'closed' },
+      });
+      expect(await counts()).toEqual([expected, expected]);
+    });
+
     it('🔴 更正把 1.20 改成 0.60 ⇒ 账净变 -0.60,且重新关账成功', async () => {
       const fixture = await createSettledActivity();
       const before = await dayStates([fixture.memberIds[0]]);
@@ -1278,6 +1313,61 @@ describe('更正应用 —— 冲回 / 补记 / 原子切换 / 重新关账 (合
         data: { statusCode: 'completed' },
       });
     }
+
+    it('当前缺席结果保留零值日行则计数,作废服务段后无日行则不计历史分录', async () => {
+      const fixture = await createSettledActivity({ memberCount: 1 });
+      const ledgerQuery = app.get(LedgerQueryService);
+      const count = () => ledgerQuery.countCommittedParticipationForMember(fixture.memberIds[0]);
+      expect(await count()).toEqual({ activityCount: 1, recordCount: 1 });
+
+      const absent = await submitAndApprove(
+        fixture,
+        resultCodeChange(fixture, 0, 'absent'),
+        'count-zero-day',
+      );
+      await expect(
+        correction.apply(applyInput(fixture, absent, 'count-zero-day'), reviewer, auditMeta),
+      ).resolves.toMatchObject({
+        commit: { correctionStatus: 'applied' },
+        reclose: { outcome: 'closed' },
+      });
+      const zeroDayResult = await prisma.participantSettlementResultRevision.findFirstOrThrow({
+        where: { participationIdentityId: fixture.identityIds[0], statusCode: 'committed' },
+        include: { settlementDays: true },
+      });
+      expect(zeroDayResult.resultCode).toBe('absent');
+      expect(zeroDayResult.settlementDays).toHaveLength(1);
+      expect(zeroDayResult.settlementDays[0].serviceHours.toString()).toBe('0');
+      expect(await count()).toEqual({ activityCount: 1, recordCount: 1 });
+
+      const noDayChange = {
+        ...resultCodeChange(fixture, 0, 'absent'),
+        segments: [
+          {
+            participationIdentityId: fixture.identityIds[0],
+            segmentKey: 'seg-0',
+            checkInAt: SESSION_START.toISOString(),
+            checkOutAt: new Date(SESSION_START.getTime() + 2 * 3600_000).toISOString(),
+            resultCode: 'voided',
+            serviceHours: '0.00',
+          },
+        ],
+      };
+      const noDay = await submitAndApprove(fixture, noDayChange, 'count-no-day');
+      await expect(
+        correction.apply(applyInput(fixture, noDay, 'count-no-day'), reviewer, auditMeta),
+      ).resolves.toMatchObject({
+        commit: { correctionStatus: 'applied' },
+        reclose: { outcome: 'closed' },
+      });
+      const noDayResult = await prisma.participantSettlementResultRevision.findFirstOrThrow({
+        where: { participationIdentityId: fixture.identityIds[0], statusCode: 'committed' },
+        include: { settlementDays: true },
+      });
+      expect(noDayResult.settlementDays).toHaveLength(0);
+      expect(await count()).toEqual({ activityCount: 0, recordCount: 0 });
+      expect(await snapshotCommittedEntries(fixture.activityId)).not.toHaveLength(0);
+    });
 
     it('🔴 AC-060 出勤改缺席:五格一起变,未被更正的那位五格原样不动', async () => {
       const fixture = await createSettledActivity({ memberCount: 2 });
