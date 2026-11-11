@@ -126,8 +126,8 @@ export class ParticipationSummaryQueryService {
   /**
    * 闸开后的取数:三个数字全部来自**已 committed 的账本分录**。
    *
-   * 小时数直接复用已经取到的 `committedServiceHours`(同一次 loadMemberLedgerTotals 的结果),
-   * 计数另取一次 —— 两者过滤条件在 LedgerQueryService 内部逐字同源,不会半切换。
+   * 小时数复用已入账分录正负净额，计数另取当前正式版本的身份日行。
+   * 两次读取并非同一个数据库快照；并发更正期间不保证两个字段来自同一版本。
    */
   private async loadCommittedPositive(
     memberId: string,
