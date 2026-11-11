@@ -496,6 +496,48 @@ describe('settlement draft generation (合同 §5.9)', () => {
   });
 
   describe('DoD 3 ②⭐ void / replace 链必须解析', () => {
+    it('深层 replace/void 合成链进入真实草稿,不静默还原旧签退工时', async () => {
+      // Direct DB fixture exercises a schema-valid chain beyond current public correction API scope.
+      const fixture = await createSealedActivity();
+      await createPunchEvent(fixture, fixture.identityId, 'check_in', '2020-03-01T00:00:00.000Z');
+      const original = await createPunchEvent(
+        fixture,
+        fixture.identityId,
+        'check_out',
+        '2020-03-01T03:00:00.000Z',
+      );
+      const replacement = await createPunchEvent(
+        fixture,
+        fixture.identityId,
+        'replace',
+        '2020-03-01T02:00:00.000Z',
+        original,
+      );
+      const undo = await createPunchEvent(
+        fixture,
+        fixture.identityId,
+        'void',
+        '2020-03-01T05:00:00.000Z',
+        replacement,
+      );
+      await createPunchEvent(fixture, fixture.identityId, 'void', '2020-03-01T06:00:00.000Z', undo);
+
+      const result = await service.generate(fixture.activityId, actor, auditMeta);
+      expect(result.items[0]).toMatchObject({
+        decision: 'machine_determined',
+        resultCode: 'present',
+        calculatedServiceHours: 2,
+        pendingReasons: [],
+      });
+      const segment = await prisma.participantServiceSegmentRevision.findFirstOrThrow({
+        where: { participationIdentityId: fixture.identityId, statusCode: 'draft' },
+        select: { sourceCloseEventId: true, checkOutAt: true, serviceHours: true },
+      });
+      expect(segment.sourceCloseEventId).toBe(replacement);
+      expect(segment.checkOutAt?.toISOString()).toBe('2020-03-01T02:00:00.000Z');
+      expect(Number(segment.serviceHours)).toBe(2);
+    });
+
     it('同一组事件在有/无 void 时产出不同段(签退被作废 ⇒ 段回到开放态,新 revision,旧的 superseded)', async () => {
       const fixture = await createSealedActivity();
       await createPunchEvent(fixture, fixture.identityId, 'check_in', '2020-03-01T00:00:00.000Z');
