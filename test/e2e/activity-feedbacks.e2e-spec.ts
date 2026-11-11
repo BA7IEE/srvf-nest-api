@@ -1,6 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import request from 'supertest';
+import { ActivityWorkflowGate } from '../../src/common/activity-workflow/activity-workflow.gate';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
@@ -460,6 +461,38 @@ describe('activity feedbacks F2-F4', () => {
     expect(summary.status).toBe(200);
     expect(summary.body.data).toMatchObject({ count: 2, avgRating: 4, feedbackRate: 0.6667 });
     expect(summary.body.data.feedbackRate).toBeLessThanOrEqual(1);
+  });
+
+  it('v1.1 无旧考勤时,评价率以正式资格人数而非已评价人数为分母', async () => {
+    const memberA = await createMemberUser('feedback-v11-rate-a', '新版评价 A');
+    const memberB = await createMemberUser('feedback-v11-rate-b', '新版评价 B');
+    const now = Date.now();
+    const activityId = await createActivity('新版评价率活动', 'completed', now - DAY_MS);
+    // Synthetic database fixture: validates the HTTP reader against current closure and ledger.
+    await createFeedbackSettlement({
+      activityId,
+      tag: 'feedback-v11-rate',
+      members: [
+        { memberId: memberA.memberId, resultCode: 'present' },
+        { memberId: memberB.memberId, resultCode: 'present' },
+      ],
+      closedAt: new Date(now - DAY_MS),
+    });
+    await prisma.activityFeedback.create({
+      data: { activityId, memberId: memberA.memberId, rating: 5 },
+    });
+    expect(await prisma.attendanceRecord.count({ where: { sheet: { activityId } } })).toBe(0);
+    const gate = app.get(ActivityWorkflowGate);
+    const gateSpy = jest.spyOn(gate, 'participationReadSource').mockReturnValue('committed-ledger');
+    try {
+      const response = await request(httpServer(app))
+        .get(`/api/admin/v1/activities/${activityId}/feedback-summary`)
+        .set('Authorization', adminAuth);
+      expect(response.status).toBe(200);
+      expect(response.body.data).toMatchObject({ count: 1, feedbackRate: 0.5 });
+    } finally {
+      gateSpy.mockRestore();
+    }
   });
 
   it('participation-summary.feedback 与 feedback-summary 聚合严格一致', async () => {

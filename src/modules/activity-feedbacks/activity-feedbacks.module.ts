@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ActivityWorkflowModule } from '../../common/activity-workflow/activity-workflow.module';
 import { DatabaseModule } from '../../database/database.module';
 import { AuthzModule } from '../authz/authz.module';
 import { PermissionsModule } from '../permissions/permissions.module';
@@ -10,7 +11,7 @@ import { AppActivityFeedbacksController } from './controllers/app-activity-feedb
 
 // F3 注册 Admin list/summary，并导出只读 aggregate 给 activity participation-summary 单向复用。
 @Module({
-  imports: [DatabaseModule, UsersModule, AuthzModule, PermissionsModule],
+  imports: [DatabaseModule, UsersModule, AuthzModule, PermissionsModule, ActivityWorkflowModule],
   controllers: [AppActivityFeedbacksController, AdminActivityFeedbacksController],
   providers: [ActivityFeedbacksService, ActivityFeedbacksQueryService],
   exports: [ActivityFeedbacksQueryService],

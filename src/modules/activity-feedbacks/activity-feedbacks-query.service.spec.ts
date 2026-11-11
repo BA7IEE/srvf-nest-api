@@ -1,4 +1,5 @@
 import { Role, UserStatus } from '@prisma/client';
+import type { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { PrismaService } from '../../database/prisma.service';
@@ -51,7 +52,9 @@ function makeService() {
   const rbacCan = jest.fn().mockResolvedValue(false);
   const rbac = { can: rbacCan } as unknown as RbacService;
   return {
-    service: new ActivityFeedbacksQueryService(prisma, authz, rbac),
+    service: new ActivityFeedbacksQueryService(prisma, authz, rbac, {
+      participationReadSource: () => 'approved-attendance',
+    } as ActivityWorkflowGate),
     activityFindFirst,
     feedbackFindMany,
     feedbackCount,

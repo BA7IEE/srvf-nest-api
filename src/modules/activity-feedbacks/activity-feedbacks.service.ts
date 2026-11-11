@@ -7,6 +7,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
 import { AppIdentityResolver } from '../users/app-identity.resolver';
+import { feedbackEligibilityWhere } from './feedback-eligibility';
 import {
   AppActivityFeedbackResponseDto,
   UpsertActivityFeedbackDto,
@@ -181,17 +182,8 @@ export class ActivityFeedbacksService {
   ): Promise<boolean> {
     const result = await client.participantSettlementResultRevision.findFirst({
       where: {
-        settlementVersionId: closure.settlementVersionId,
-        statusCode: 'committed',
-        resultCode: 'present',
+        ...feedbackEligibilityWhere(closure),
         identity: { activityId, memberId },
-        ledgerEntries: {
-          some: {
-            postingBatchId: closure.postingBatchId,
-            entryTypeCode: 'service_credit',
-            serviceHoursDelta: { gt: 0 },
-          },
-        },
       },
       select: { id: true },
     });

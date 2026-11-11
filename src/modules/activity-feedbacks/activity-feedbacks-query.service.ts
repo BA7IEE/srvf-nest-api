@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import type { PageResultDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -8,6 +10,7 @@ import { AuthzService } from '../authz/authz.service';
 import { ATTENDANCE_SHEET_STATUS } from '../attendances/attendances.dto';
 import { RbacService } from '../permissions/rbac.service';
 import { toMemberLabelFields } from '../../common/identity/member-label.util';
+import { feedbackEligibleMemberIdsSql } from './feedback-eligibility';
 import {
   ActivityFeedbackAggregateDto,
   AdminActivityFeedbackListItemDto,
@@ -22,6 +25,7 @@ export class ActivityFeedbacksQueryService {
     private readonly prisma: PrismaService,
     private readonly authz: AuthzService,
     private readonly rbac: RbacService,
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
   ) {}
 
   async list(
@@ -72,6 +76,10 @@ export class ActivityFeedbacksQueryService {
     await this.assertCanReadActivity(activityId, currentUser);
     await this.findActivityOrThrow(activityId);
 
+    if (this.activityWorkflowGate.participationReadSource() === 'committed-ledger') {
+      return this.summaryV11(activityId);
+    }
+
     // 正常路径固定 4 次业务读：Activity exists + aggregate + 1 次 groupBy + 分母 member 并集 count。
     // 分母实时计算为「当前 approved distinct member ∪ 已提交 live feedback member」，使 reopen 后
     // 历史评价仍同时留在分子和分母，feedbackRate 恒不超过 1；不落库、不改评价资格写侧。
@@ -115,9 +123,58 @@ export class ActivityFeedbacksQueryService {
     };
   }
 
+  /** Current eligibility and live feedback must be read in the same correction snapshot. */
+  private async summaryV11(activityId: string): Promise<AdminActivityFeedbackSummaryDto> {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const [closure, aggregate, grouped] = await Promise.all([
+          tx.activitySettlementClosureRevision.findFirst({
+            where: { activityId, statusCode: 'active' },
+            select: { settlementVersionId: true, postingBatchId: true },
+            orderBy: { revision: 'desc' },
+          }),
+          this.aggregateForActivity(activityId, tx),
+          tx.activityFeedback.groupBy({
+            by: ['rating'],
+            where: { activityId, deletedAt: null },
+            _count: { _all: true },
+            orderBy: { rating: 'asc' },
+          }),
+        ]);
+        // Both sources refer to existing members by FK. Counting their ID union in PostgreSQL
+        // avoids a new cross-domain Member read and retains history after eligibility is revoked.
+        const eligible =
+          closure === null
+            ? Prisma.empty
+            : Prisma.sql`${feedbackEligibleMemberIdsSql(activityId, closure)} UNION`;
+        const rows = await tx.$queryRaw<Array<{ total: number }>>(Prisma.sql`
+          SELECT COUNT(*)::int AS total FROM (
+            ${eligible}
+            SELECT DISTINCT f."memberId" FROM "activity_feedbacks" f
+            WHERE f."activityId" = ${activityId} AND f."deletedAt" IS NULL
+          ) relevant_members
+        `);
+        const denominator = rows[0]?.total ?? 0;
+        const counts = new Map(grouped.map((row) => [row.rating, row._count._all]));
+        return {
+          ...aggregate,
+          ratingDistribution: [1, 2, 3, 4, 5].map((rating) => ({
+            rating,
+            count: counts.get(rating) ?? 0,
+          })),
+          feedbackRate: denominator === 0 ? 0 : this.round(aggregate.count / denominator, 4),
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+  }
+
   // Activities participation-summary 的唯一复用出口：恰好 1 次 aggregate，不做鉴权/存在性重复查询。
-  async aggregateForActivity(activityId: string): Promise<ActivityFeedbackAggregateDto> {
-    const aggregate = await this.prisma.activityFeedback.aggregate({
+  async aggregateForActivity(
+    activityId: string,
+    client: Pick<Prisma.TransactionClient, 'activityFeedback'> = this.prisma,
+  ): Promise<ActivityFeedbackAggregateDto> {
+    const aggregate = await client.activityFeedback.aggregate({
       where: { activityId, deletedAt: null },
       _count: { _all: true },
       _avg: { rating: true },
