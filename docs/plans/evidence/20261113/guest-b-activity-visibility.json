@@ -1,0 +1,40 @@
+{
+  "evidence": "GUI; Chrome Guest; ordinary synthetic USER B in organization B",
+  "deploymentSha": "UNKNOWN",
+  "activity": "synthetic organization A activity; identifiers and title redacted",
+  "list": {
+    "time": "2026-11-13T05:55:11+08:00",
+    "path": "/#/srvf/activities-domain/activities",
+    "sameSyntheticTitleVisible": true,
+    "visibleFields": [
+      "title",
+      "team_training",
+      "synthetic location",
+      "start time",
+      "published",
+      "nonpublic"
+    ],
+    "action": "clicked matching Manage button",
+    "createPermissionFeedback": "当前账号没有创建活动权限"
+  },
+  "detail": {
+    "time": "2026-11-13T05:57:44+08:00",
+    "path": "/#/srvf/activities-domain/activities/{id}",
+    "sameSyntheticActivityIdInAddress": true,
+    "sameSyntheticTitleVisible": true,
+    "syntheticLocationVisible": true,
+    "publishedVisible": true,
+    "registrationPanelFeedback": "您没有查看报名记录的权限",
+    "registrationPermissionCode": "activity-registration.read.record"
+  },
+  "httpStatus": "UNKNOWN",
+  "requestId": "UNKNOWN",
+  "screenshot": "NOT_CAPTURED: synthetic username and activity ID appeared in native window; Guest tab inaccessible to controlled browser API",
+  "noRegistrationOrWriteByB": true,
+  "contractComparison": {
+    "liveAdminOpenapi": "USER limited to published/completed; no organization or invitation filter stated",
+    "liveAppOpenapi": "invitation activity visible only to the invited user",
+    "localAdminSource": "list and detail use status visibility; deployment SHA unverified",
+    "assessment": "cross-organization nonpublic visibility observed; backend product/security expectation requires review, not claimed as pass or confirmed vulnerability"
+  }
+}
