@@ -164,9 +164,17 @@ describe('activity list v1.1 statistics', () => {
       where: { id: { in: ['a', 'b'] }, deletedAt: null },
       select: { id: true },
     });
-    expect(
-      tx.attendanceSettlementRun.findMany.mock.calls[0][0].select._count.select.versions.where,
-    ).toEqual({ statusCode: { not: 'draft' }, submittedAt: { not: null } });
+    expect(tx.attendanceSettlementRun.findMany).toHaveBeenCalledWith({
+      where: { activityId: { in: ['a', 'b'] }, activity: { deletedAt: null } },
+      select: {
+        activityId: true,
+        _count: {
+          select: {
+            versions: { where: { statusCode: { not: 'draft' }, submittedAt: { not: null } } },
+          },
+        },
+      },
+    });
   });
 
   it('fails closed if scope disappears after the global permission check', async () => {

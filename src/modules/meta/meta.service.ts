@@ -3,7 +3,6 @@ import { Prisma, Role } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
-import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { RbacService } from '../permissions/rbac.service';
 import { DashboardSummaryResponseDto, ResolveLabelsDto } from './meta.dto';

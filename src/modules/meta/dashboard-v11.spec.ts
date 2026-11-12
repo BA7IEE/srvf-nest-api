@@ -60,7 +60,8 @@ function setup(options: {
       readonlyMaintenance: options.readonly ?? false,
     },
   } as never);
-  const service = Object.assign(Object.create(MetaService.prototype) as MetaService, {
+  const service = Object.create(MetaService.prototype) as MetaService;
+  Object.assign(service, {
     prisma,
     rbac,
     authz,
