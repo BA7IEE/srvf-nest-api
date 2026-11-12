@@ -3,6 +3,7 @@ import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-wo
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { MetaService } from './meta.service';
 import { ActivityDashboardQueryService } from '../activities/activity-dashboard-query.service';
+import type { VisibleOrganizationScope } from '../authz/authz.service';
 
 const user: CurrentUserPayload = {
   id: 'user-1',
@@ -11,9 +12,13 @@ const user: CurrentUserPayload = {
   status: UserStatus.ACTIVE,
   memberId: null,
 };
-const none = { hasPermission: false, global: false, organizationIds: [] };
-const limited = (ids: string[]) => ({ hasPermission: true, global: false, organizationIds: ids });
-const global = { hasPermission: true, global: true, organizationIds: [] };
+const none: VisibleOrganizationScope = { hasPermission: false, global: false, organizationIds: [] };
+const limited = (ids: string[]): VisibleOrganizationScope => ({
+  hasPermission: true,
+  global: false,
+  organizationIds: ids,
+});
+const global: VisibleOrganizationScope = { hasPermission: true, global: true, organizationIds: [] };
 
 function setup(options: {
   enabled: boolean;
@@ -42,7 +47,7 @@ function setup(options: {
       ),
     ),
   };
-  const scopes: Record<string, typeof none> = {
+  const scopes: Record<string, VisibleOrganizationScope> = {
     'activity-registration.read.record': limited(['org-1']),
     'activity-review.read.request': none,
     'attendance.read.sheet': limited(['org-1', 'org-2']),
