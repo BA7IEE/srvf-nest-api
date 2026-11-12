@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { MemberStatus, MembershipStatus, OrganizationStatus, Prisma } from '@prisma/client';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { toMemberLabelFields } from '../../common/identity/member-label.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -10,7 +11,6 @@ import appConfig from '../../config/app.config';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { AuthzService } from '../authz/authz.service';
 import { isFormalMemberGradeCode } from '../members/member-grade';
-import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { ActivityDraftService } from './activity-draft.service';
 import type {
   CreateActivityPositionDto,
@@ -60,7 +60,7 @@ export class AppManagedActivitiesService {
     private readonly reviews: ActivityPublishReviewService,
     private readonly responsibilities: ActivityResponsibilityService,
     private readonly workflowQuery: ActivityWorkflowQueryService,
-    private readonly auditRecorder: ActivityAuditRecorder,
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
     @Inject(appConfig.KEY)
     private readonly config: ConfigType<typeof appConfig>,
   ) {}
@@ -363,67 +363,14 @@ export class AppManagedActivitiesService {
     return this.reviews.withdraw(pending.id, user, auditMeta);
   }
 
-  async declareAttendanceComplete(
-    activityId: string,
-    user: CurrentUserPayload,
-    auditMeta: AuditMeta,
-  ): Promise<AppManagedActivityDetailDto> {
+  async declareAttendanceComplete(activityId: string, user: CurrentUserPayload): Promise<never> {
     if (!user.memberId) throw new BizException(BizCode.FORBIDDEN);
-    const memberId = user.memberId;
-    await this.prisma.$transaction(async (tx) => {
-      const locked = await tx.$queryRaw<Array<{ id: string }>>`
-        SELECT id FROM "Activity"
-        WHERE id = ${activityId} AND "deletedAt" IS NULL
-        FOR UPDATE
-      `;
-      if (locked.length === 0) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-
-      const activity = await tx.activity.findFirst({
-        where: {
-          id: activityId,
-          deletedAt: null,
-          responsibilityAssignments: {
-            some: {
-              memberId,
-              responsibilityType: 'owner',
-              status: 'active',
-            },
-          },
-        },
-        select: {
-          statusCode: true,
-          endAt: true,
-          attendanceDeclaredCompleteAt: true,
-        },
-      });
-      if (!activity) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-
-      const declaredAt = new Date();
-      if (
-        !['published', 'completed'].includes(activity.statusCode) ||
-        activity.endAt.getTime() >= declaredAt.getTime() ||
-        activity.attendanceDeclaredCompleteAt !== null
-      ) {
-        throw new BizException(BizCode.ACTIVITY_ATTENDANCE_DECLARATION_INVALID);
-      }
-
-      await tx.activity.update({
-        where: { id: activityId },
-        data: {
-          attendanceDeclaredCompleteAt: declaredAt,
-          attendanceDeclaredCompleteByUserId: user.id,
-        },
-      });
-      await this.auditRecorder.logAttendanceDeclaration({
-        activityId,
-        actorUserId: user.id,
-        actorRoleSnap: user.role,
-        declaredAt,
-        auditMeta,
-        tx,
-      });
-    });
-    return this.detail(activityId, memberId, user);
+    // Preserve the owner-only visibility boundary before revealing the workflow state.
+    await this.workflowQuery.loadOwned(activityId, user.memberId);
+    // Even when the old gate would historically permit this write, the retired
+    // declaration must never mutate the Activity or be mistaken for v1.1 closure.
+    this.activityWorkflowGate.assertLegacyWriteAllowed();
+    throw new BizException(BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED);
   }
 
   async listPositions(activityId: string, memberId: string) {

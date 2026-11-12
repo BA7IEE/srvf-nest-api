@@ -1538,22 +1538,26 @@ export class AppManagedActivitiesController {
     engine: 'authz-scoped',
   })
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'App 主负责人声明活动考勤已全部提交 [auth]' })
-  @ApiWrappedOkResponse(AppManagedActivityDetailDto)
+  @ApiOperation({
+    summary: '旧考勤提交声明已退休 [auth]',
+    description: '此旧入口不再写入声明；活动结束请使用 v1.1 结算与关账流程。',
+    deprecated: true,
+  })
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
     BizCode.FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
-    BizCode.ACTIVITY_ATTENDANCE_DECLARATION_INVALID,
+    BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
+    BizCode.ACTIVITY_LEGACY_ATTENDANCE_WRITE_CLOSED,
+    BizCode.ACTIVITY_WORKFLOW_READONLY_MAINTENANCE,
   )
   async declareAttendanceComplete(
     @CurrentUser() user: CurrentUserPayload,
     @Param() params: AppManagedActivityParamsDto,
-    @Req() req: Request,
-  ): Promise<AppManagedActivityDetailDto> {
+  ): Promise<never> {
     await this.resolveMemberId(user);
-    return this.service.declareAttendanceComplete(params.activityId, user, this.auditMeta(req));
+    return this.service.declareAttendanceComplete(params.activityId, user);
   }
 
   private async resolveMemberId(user: CurrentUserPayload): Promise<string> {

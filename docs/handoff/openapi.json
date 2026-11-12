@@ -75206,6 +75206,8 @@
     },
     "/api/app/v1/my/managed-activities/{activityId}/declare-attendance-complete": {
       "post": {
+        "deprecated": true,
+        "description": "此旧入口不再写入声明；活动结束请使用 v1.1 结算与关账流程。",
         "operationId": "AppManagedActivitiesController_declareAttendanceComplete",
         "parameters": [
           {
@@ -75221,35 +75223,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "example": 0,
-                      "description": "业务码,0 表示成功"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "ok"
-                    },
-                    "data": {
-                      "$ref": "#/components/schemas/AppManagedActivityDetailDto"
-                    }
-                  }
-                }
-              }
-            }
-          },
           "400": {
             "description": "请求参数错误(code=40000)",
             "content": {
@@ -75386,8 +75359,8 @@
               }
             }
           },
-          "409": {
-            "description": "当前活动不能声明考勤已全部提交(code=20039)",
+          "410": {
+            "description": "本实例已切换至活动 v1.1,旧考勤写入口已关闭(code=20154)",
             "content": {
               "application/json": {
                 "schema": {
@@ -75401,14 +75374,49 @@
                     "code": {
                       "type": "integer",
                       "enum": [
-                        20039
+                        20154
                       ],
-                      "description": "20039: 当前活动不能声明考勤已全部提交",
-                      "example": 20039
+                      "description": "20154: 本实例已切换至活动 v1.1,旧考勤写入口已关闭",
+                      "example": 20154
                     },
                     "message": {
                       "type": "string",
-                      "example": "当前活动不能声明考勤已全部提交"
+                      "example": "本实例已切换至活动 v1.1,旧考勤写入口已关闭"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "活动 v1.1 工作流未启用(code=20153) / 本实例处于活动结算只读维护态,暂不接受考勤与结算写入(code=20158)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20153,
+                        20158
+                      ],
+                      "description": "20153: 活动 v1.1 工作流未启用; 20158: 本实例处于活动结算只读维护态,暂不接受考勤与结算写入",
+                      "example": 20153
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动 v1.1 工作流未启用"
                     },
                     "data": {
                       "type": "object",
@@ -75426,7 +75434,7 @@
             "bearer": []
           }
         ],
-        "summary": "App 主负责人声明活动考勤已全部提交 [auth]",
+        "summary": "旧考勤提交声明已退休 [auth]",
         "tags": [
           "Mobile - Managed Activities"
         ]

@@ -4,6 +4,10 @@
 
 第五轮相对 `ffb70913` 仍为 643 项、无新增或删除操作；另外两个保留操作 `GET /api/admin/v1/activities` 和 `GET /api/admin/v1/meta/dashboard-summary` 的文案／响应结构有意改变，分别用 `settlementStats` 和 `settlementReviews` 替代旧字段，详见[参与投影](v11-participation-projection.md)。该字段变更独立于下表 30 条退役操作，旧 E2E 与受保护快照尚待审查。
 
+第六轮额外停止一条仍注册的旧写入口：`POST /api/app/v1/my/managed-activities/{activityId}/declare-attendance-complete`。它先保留 App 成员和活动主负责人检查；无成员为 `FORBIDDEN`，非主负责人或活动不可见为 `ACTIVITY_NOT_FOUND`。通过检查后，开闸返回 `20154`／410，关闸返回 `20153`／503，只读维护返回 `20158`／503，任何闸态都不再写旧声明或审计成功。此路径暂时保留以明确告知调用方，**不是**下表已注销的第 31 个路由；新版相关能力是 `.../{activityId}/settlement` 下的结算与关账，权限、请求和效果不同。OpenAPI 不声明此方法的成功响应；当前生成器仍生成 `Promise<ApiEnvelope<void>>` 的方法签名，该签名不表示此方法可成功。旧 HTTP E2E 原有成功断言尚需按流程获准审查，未在本轮修改。
+
+负责人列表／详情的旧 Sheet 统计和旧 `nextAction` 仍待替换，因此它们仍可能提示调用此已退休入口；此候选未完成负责人工作流迁移，不得部署或将该提示视为可执行动作。独立 Admin 前端需另行适配并回执，后端生成客户端更新不能证明前端实际采用。
+
 旧控制器类缩写：C=`AttendanceSheetsCollectionController`，R=`AttendanceSheetsResourceController`（均在 `src/modules/attendances/attendances.controller.ts`）；A=`AdminActivityCheckInsController`，M=`AdminMemberAttendanceController`，P=`AppActivityCheckInsController`，U=`AppMyAttendanceRecordsController`，W=`AppManagedActivityAttendancesController`（各自在 `src/modules/attendances/controllers/` 下）。旧生成客户端方法是完整控制器类名加下表方法名首字母大写，例如 `R.finalApprove` 对应 `AttendanceSheetsResourceControllerFinalApprove`。C/R/A/P/U/W 已注销，M 类保留但 `attendanceRecords` 方法移除。
 
 下表“相关能力”仅供前端重新设计流程，不代表旧 Sheet ID、请求方法、DTO、权限或数据可一比一替换。新版结算读可使用 `GET /api/admin/v1/attendance-settlements`、`GET /api/admin/v1/attendance-settlements/{settlementVersionId}/review-detail`；新版 App 负责人结算入口位于 `/api/app/v1/my/managed-activities/{activityId}/settlement`。新版审核为 `POST /api/admin/v1/attendance-settlements/{id}/{first-approve,first-return,final-approve,final-return}`，分别使用 `activity.settlement-first-review.record` 和 `activity.settlement-final-review.record`，不自动继承旧审核权限。新版本人打卡为 `POST /api/app/v1/activities/{activityId}/sessions/{sessionId}/punches/check-in`、`check-out` 及 `GET .../my-punch-state`。个人参与账本和时长证明不是旧考勤记录列表。

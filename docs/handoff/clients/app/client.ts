@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:dbf989a995b515f98a1dd560b833aab21a4089f4c77c31460cb36f8b9546ac28
+// inputDigest: sha256:f25fee6d0aac01fbff47fd5ea1927e200db4ffbbf8212066fefcf3d00766c0d9
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -677,9 +677,9 @@ export function createAppClient(fetcher: Fetcher) {
     AppManagedActivitiesControllerSetCover(activityId: string, body: SetAppManagedActivityCoverDto): Promise<ApiEnvelope<AppManagedActivityDetailDto>> {
       return fetcher<AppManagedActivityDetailDto>({ method: "PUT", path: `/api/app/v1/my/managed-activities/${activityId}/cover`, body });
     },
-    /** App 主负责人声明活动考勤已全部提交 [auth] */
-    AppManagedActivitiesControllerDeclareAttendanceComplete(activityId: string): Promise<ApiEnvelope<AppManagedActivityDetailDto>> {
-      return fetcher<AppManagedActivityDetailDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/declare-attendance-complete` });
+    /** 旧考勤提交声明已退休 [auth] */
+    AppManagedActivitiesControllerDeclareAttendanceComplete(activityId: string): Promise<ApiEnvelope<void>> {
+      return fetcher<void>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/declare-attendance-complete` });
     },
     /** App 发起人在持有效发布审核 grant 时直接发布 [auth] */
     AppManagedActivitiesControllerDirectPublish(activityId: string): Promise<ApiEnvelope<AppManagedActivityDetailDto>> {
