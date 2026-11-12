@@ -266,6 +266,10 @@ describe('D4 write orchestration and replay safety', () => {
       });
       expect(segments.lockActivityForTimeAllocationWrite).toHaveBeenCalledWith(tx, activityId);
       expect(access.authorize).toHaveBeenCalledTimes(7);
+      const rootLockOrder = segments.lockActivityForTimeAllocationWrite.mock.invocationCallOrder[0];
+      expect(access.authorize.mock.invocationCallOrder[0]).toBeLessThan(rootLockOrder);
+      expect(access.authorize.mock.invocationCallOrder[1]).toBeLessThan(rootLockOrder);
+      expect(access.authorize.mock.invocationCallOrder[2]).toBeGreaterThan(rootLockOrder);
       expect(
         access.authorize.mock.calls.every((args) => args[0] === tx && args[3] === method),
       ).toBe(true);

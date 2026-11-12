@@ -7,7 +7,6 @@ import { PermissionsModule } from '../permissions/permissions.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { AttachmentsModule } from '../attachments/attachments.module';
 import { UsersModule } from '../users/users.module';
-import { AttendanceAccessService } from './attendance-access.service';
 import { ContributionShadowEvidenceService } from './contribution-shadow-evidence.service';
 import { ContributionShadowEvidenceQueryService } from './contribution-shadow-evidence.query.service';
 import { ContributionShadowEvidencePresenter } from './contribution-shadow-evidence.presenter';
@@ -73,7 +72,6 @@ import { AppMyAttendanceMemberCredentialController } from './controllers/app-my-
     AttendanceMetricSourceQueryService,
     AttendanceCorrectionWriteService,
     ParticipationSegmentFacade,
-    AttendanceAccessService,
     ParticipationSummaryQueryService,
     AttendanceQrCredentialService,
     AttendanceQrPresenter,

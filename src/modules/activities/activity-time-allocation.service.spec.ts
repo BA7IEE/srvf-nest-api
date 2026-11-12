@@ -96,6 +96,13 @@ describe('D3 time-allocation service transaction boundary', () => {
 
     expect(f.access.authorize).toHaveBeenCalledTimes(3);
     expect(f.segments.lockActivityForTimeAllocationWrite).toHaveBeenCalledWith(f.tx, 'activity');
+    const rootLockOrder = f.segments.lockActivityForTimeAllocationWrite.mock.invocationCallOrder[0];
+    expect(f.access.authorize.mock.invocationCallOrder[0]).toBeLessThan(rootLockOrder);
+    expect(f.access.authorize.mock.invocationCallOrder[1]).toBeLessThan(rootLockOrder);
+    expect(f.access.authorize.mock.invocationCallOrder[2]).toBeGreaterThan(rootLockOrder);
+    expect(
+      f.tx.participantTimeAllocationCommandReceipt.findUnique.mock.invocationCallOrder[0],
+    ).toBeGreaterThan(f.access.authorize.mock.invocationCallOrder[2]);
     expect(f.tx.participantTimeAllocationCommandReceipt.findUnique).toHaveBeenCalledWith({
       where: {
         actorUserId_operationCode_operationKey: {
@@ -112,6 +119,44 @@ describe('D3 time-allocation service transaction boundary', () => {
     expect(f.tx.participantTimeAllocationRevision.findFirst).not.toHaveBeenCalled();
     expect(f.audit.log).not.toHaveBeenCalled();
   });
+
+  it('rejects a revoked actor after the root lock before reading or replaying a receipt', async () => {
+    const f = fixture(replayReceipt('a'.repeat(64)));
+    let authorizationPoint = 0;
+    f.access.authorize.mockImplementation(() => {
+      authorizationPoint += 1;
+      if (authorizationPoint === 3) throw new BizException(BizCode.FORBIDDEN);
+      return Promise.resolve({ actor: user, activity: { id: 'activity' } });
+    });
+
+    await expect(f.service.recognize('activity', input, user, meta)).rejects.toMatchObject({
+      biz: BizCode.FORBIDDEN,
+    });
+    expect(f.segments.lockActivityForTimeAllocationWrite).toHaveBeenCalledWith(f.tx, 'activity');
+    expect(f.tx.participantTimeAllocationCommandReceipt.findUnique).not.toHaveBeenCalled();
+    expect(f.segments.readActivityCurrentSegmentsTrusted).not.toHaveBeenCalled();
+    expect(f.audit.log).not.toHaveBeenCalled();
+  });
+
+  it.each([1, 2])(
+    'does not take the root lock or read a receipt when authorization point %s rejects',
+    async (rejectionPoint) => {
+      const f = fixture(replayReceipt('a'.repeat(64)));
+      let authorizationPoint = 0;
+      f.access.authorize.mockImplementation(() => {
+        authorizationPoint += 1;
+        if (authorizationPoint === rejectionPoint) throw new BizException(BizCode.FORBIDDEN);
+        return Promise.resolve({ actor: user, activity: { id: 'activity' } });
+      });
+
+      await expect(f.service.recognize('activity', input, user, meta)).rejects.toMatchObject({
+        biz: BizCode.FORBIDDEN,
+      });
+      expect(f.segments.lockActivityForTimeAllocationWrite).not.toHaveBeenCalled();
+      expect(f.tx.participantTimeAllocationCommandReceipt.findUnique).not.toHaveBeenCalled();
+      expect(f.audit.log).not.toHaveBeenCalled();
+    },
+  );
 
   it('rejects same-key/different-payload receipt reuse without touching allocation state', async () => {
     const f = fixture(replayReceipt('b'.repeat(64)));

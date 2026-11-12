@@ -1,4 +1,5 @@
 import type { Prisma } from '@prisma/client';
+import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { AttendanceAccessService } from './attendance-access.service';
 import {
   PARTICIPATION_SEGMENT_FACADE_LIMITS,
@@ -6,8 +7,7 @@ import {
 } from './participation-segment.facade';
 
 describe('ParticipationSegmentFacade', () => {
-  const access = { lockActivityForAttendanceWrite: jest.fn().mockResolvedValue(undefined) };
-  const service = new ParticipationSegmentFacade(access as unknown as AttendanceAccessService);
+  const service = new ParticipationSegmentFacade();
 
   function row(overrides: Record<string, unknown> = {}) {
     return {
@@ -77,9 +77,48 @@ describe('ParticipationSegmentFacade', () => {
   }
 
   it('exposes only the D3 narrow activity lock bridge', async () => {
-    const tx = {} as Prisma.TransactionClient;
-    await service.lockActivityForTimeAllocationWrite(tx, 'activity');
-    expect(access.lockActivityForAttendanceWrite).toHaveBeenCalledWith('activity', tx);
+    const activityId = "activity' OR true --";
+    const f = fixture([{ id: activityId }]);
+    await service.lockActivityForTimeAllocationWrite(f.tx, activityId);
+    expect(f.queries).toEqual([
+      {
+        sql: 'SELECT id FROM "Activity" WHERE id = ? AND "deletedAt" IS NULL FOR UPDATE',
+        values: [activityId],
+      },
+    ]);
+    expect(f.queries[0].sql).not.toContain(activityId);
+  });
+
+  it('keeps the legacy lock delegate on the same primitive and transaction semantics', async () => {
+    const access = new AttendanceAccessService(
+      undefined as never,
+      undefined as never,
+      undefined as never,
+    );
+    const current = fixture([{ id: 'activity' }]);
+    const legacy = fixture([{ id: 'activity' }]);
+
+    await service.lockActivityForTimeAllocationWrite(current.tx, 'activity');
+    await access.lockActivityForAttendanceWrite('activity', legacy.tx);
+
+    expect(legacy.queries).toEqual(current.queries);
+  });
+
+  it('rejects a missing or soft-deleted activity with the existing business error', async () => {
+    const f = fixture();
+    await expect(service.lockActivityForTimeAllocationWrite(f.tx, 'missing')).rejects.toMatchObject(
+      {
+        biz: BizCode.ACTIVITY_NOT_FOUND,
+      },
+    );
+  });
+
+  it('propagates transaction lock errors without attempting another query', async () => {
+    const f = fixture();
+    const error = new Error('lock failed');
+    f.db.$queryRaw.mockRejectedValueOnce(error);
+    await expect(service.lockActivityForTimeAllocationWrite(f.tx, 'activity')).rejects.toBe(error);
+    expect(f.db.$queryRaw).toHaveBeenCalledTimes(1);
   });
 
   it('uses the supplied transaction and the exact bounded current projection', async () => {

@@ -52,6 +52,7 @@ describe('new attendance workflow module composition', () => {
       'AttendancesService',
       'AttendanceReviewService',
       'AttendanceReadService',
+      'AttendanceAccessService',
       'AppActivityCheckInsService',
       'AppManagedActivityAttendancesService',
       'AdminActivityCheckInsService',
