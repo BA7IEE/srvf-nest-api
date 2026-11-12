@@ -1,0 +1,63 @@
+{
+  "recordedAt": "2026-11-13T06:24:32+08:00",
+  "evidence": "read-only projection of running API container compiled artifacts; not HTTP execution or GUI acceptance",
+  "deploymentSha": "UNKNOWN",
+  "container": "target API container (redacted)",
+  "scope": "ordinary self-registration; no registration request sent and no configuration changed",
+  "policy": {
+    "path": "/app/dist/modules/activities/activity-participation-policy.js",
+    "method": "canRegisterSelf",
+    "statusCheckedFirst": true,
+    "publicRegistrationFalseReturnsBusinessCode": "ACTIVITY_NOT_PUBLIC_REGISTRATION",
+    "decisionIsRejected": true
+  },
+  "legacy": {
+    "method": "POST",
+    "path": "/api/app/v1/my/registrations",
+    "compiledPaths": [
+      "/app/dist/modules/activity-registrations/controllers/app-my-registrations.controller.js",
+      "/app/dist/modules/activity-registrations/app-my-registrations.service.js",
+      "/app/dist/modules/activity-registrations/activity-registrations.service.js",
+      "/app/dist/modules/activity-registrations/activity-registration-create.service.js",
+      "/app/dist/modules/activity-registrations/activity-registration-access.service.js"
+    ],
+    "directOrder": [
+      "controller createMy",
+      "createMyForApp admission and published checks",
+      "delegating createMy",
+      "resolve member and lock activity",
+      "legacy-flow prerequisites",
+      "assertActivityRegistrable with self",
+      "canRegisterSelf rejects false",
+      "persistLegacyRegistrationSubmission after gate"
+    ],
+    "gateBeforeRegistrationPersistence": true,
+    "beforeGateDirectRegistrationMutationFound": false,
+    "beforeGateDirectOutboxFound": false,
+    "inspectedAuxiliaryMethodCount": 7,
+    "inspectedAuxiliaryMethodsDirectMutationFound": false,
+    "inspectedAuxiliaryMethodsDirectOutboxFound": false,
+    "readsAndRowLocksOccurBeforeGate": true,
+    "priorLegacyFlowChecksCanRejectBeforePublicFlag": true
+  },
+  "canonical": {
+    "method": "POST",
+    "path": "/api/app/v1/activities/{activityId}/registrations",
+    "compiledPaths": [
+      "/app/dist/modules/activity-registrations/controllers/app-activity-registrations.controller.js",
+      "/app/dist/modules/activity-registrations/registration-command.service.js"
+    ],
+    "sourceIsSelf": true,
+    "selfPolicyBeforeRegistrationHeaderAndRevisionCreate": true,
+    "preGateDirectMutationFound": false,
+    "preGateDirectOutboxFound": false,
+    "sameOperationKeyExistingReceiptCanReplayBeforePolicy": true,
+    "invitationAcceptanceUsesDifferentPolicy": true
+  },
+  "limits": [
+    "No request was executed; exact HTTP response for either endpoint not proven.",
+    "DTO, identity, published state and legacy-flow checks can reject first.",
+    "Pre-gate helpers were inspected for direct mutation and outbox references; deeper indirect calls, database triggers and external runtime behavior remain UNKNOWN.",
+    "No notification delivery or outbox state was tested."
+  ]
+}
