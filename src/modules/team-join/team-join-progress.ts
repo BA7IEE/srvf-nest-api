@@ -18,6 +18,9 @@ import {
 import type { GateStatusDto, TeamJoinApplicationAdminDto } from './team-join.dto';
 import { formatMemberLabel } from '../../common/identity/member-label.util';
 
+export { contributionMilestoneIntent } from './team-join-contribution-milestone';
+export { APP_STATUS_JOINING } from './team-join.constants';
+
 // 招新三期(入队)进度派生(贡献值汇总 + gate 实况);admin 面与 app 自助面共用,避免逻辑分叉
 // (评审稿 §4.2/§4.3;2026-06-19 元核验后抽出:同一份「本轮按北京日 / years / 延长期」判定单一真相源)。
 

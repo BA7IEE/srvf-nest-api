@@ -2,6 +2,7 @@ import type { AppConfig } from '../../config/app.config';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Prisma } from '@prisma/client';
 
+import { LedgerQueryService } from '../activities/ledger-query.service';
 import type { NotificationOutboxService } from '../notifications/notification-outbox.service';
 import type { NotificationOutboxEnqueueInput } from '../notifications/notification-outbox.types';
 import { AttendanceNotificationProducer } from './attendance-notification-producer';
@@ -227,6 +228,85 @@ describe('AttendanceNotificationProducer', () => {
       ]),
     ).resolves.toEqual([]);
     expect(tx.attendanceRecord.findMany).not.toHaveBeenCalled();
+  });
+
+  it('keeps an empty ledger as a legitimate zero before snapshot', async () => {
+    const outbox = makeOutboxMock();
+    const tx = makeTxMock();
+    tx.teamJoinApplication.findMany.mockResolvedValue([
+      { id: 'application-1', memberId: 'member-1', cycle: { year: 2027 } },
+    ]);
+    tx.participationLedgerEntry.groupBy.mockResolvedValue([]);
+    const producer = new AttendanceNotificationProducer(
+      outbox as unknown as NotificationOutboxService,
+      ledgerGate,
+    );
+
+    const snapshots = await producer.prepareContributionThresholdSnapshots(
+      tx as unknown as Prisma.TransactionClient,
+      [{ memberId: 'member-1' }],
+    );
+    expect(snapshots[0]?.beforePoints.toString()).toBe('0');
+  });
+
+  it('rejects an incomplete batch result instead of fabricating a zero before snapshot', async () => {
+    const outbox = makeOutboxMock();
+    const tx = makeTxMock();
+    tx.teamJoinApplication.findMany.mockResolvedValue([
+      { id: 'application-1', memberId: 'member-1', cycle: { year: 2027 } },
+    ]);
+    const reader = jest
+      .spyOn(LedgerQueryService, 'sumCommittedCreditedPointsForMembersInTx')
+      .mockResolvedValueOnce(new Map());
+    const producer = new AttendanceNotificationProducer(
+      outbox as unknown as NotificationOutboxService,
+      ledgerGate,
+    );
+    try {
+      await expect(
+        producer.prepareContributionThresholdSnapshots(tx as unknown as Prisma.TransactionClient, [
+          { memberId: 'member-1' },
+        ]),
+      ).rejects.toThrow('ledger snapshot is incomplete');
+      expect(outbox.enqueueMany).not.toHaveBeenCalled();
+    } finally {
+      reader.mockRestore();
+    }
+  });
+
+  it('rejects an incomplete after snapshot rather than silently dropping the milestone', async () => {
+    const outbox = makeOutboxMock();
+    const tx = makeTxMock();
+    const reader = jest
+      .spyOn(LedgerQueryService, 'sumCommittedCreditedPointsForMembersInTx')
+      .mockResolvedValueOnce(new Map());
+    const producer = new AttendanceNotificationProducer(
+      outbox as unknown as NotificationOutboxService,
+      ledgerGate,
+    );
+    try {
+      await expect(
+        producer.enqueueFinalApproved(tx as unknown as Prisma.TransactionClient, {
+          sheetId: 'sheet-2',
+          activityId: 'activity-2',
+          finalReviewedAt,
+          records: [{ id: 'record-1', memberId: 'member-1', contributionPoints: '1' }],
+          contributionThresholdSnapshots: [
+            {
+              applicationId: 'application-1',
+              memberId: 'member-1',
+              cycleYear: 2027,
+              beforePoints: new Prisma.Decimal(4),
+            },
+          ],
+        }),
+      ).rejects.toThrow('ledger snapshot is incomplete');
+      // The caller's transaction must roll back the earlier result intent. A mock cannot
+      // establish rollback; that remains an isolated PostgreSQL integration test.
+      expect(outbox.enqueueMany).toHaveBeenCalledTimes(1);
+    } finally {
+      reader.mockRestore();
+    }
   });
 
   it('committed ledger 4→5 时发送稳定 application+threshold milestone', async () => {
