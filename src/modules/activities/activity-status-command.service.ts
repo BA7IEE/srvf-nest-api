@@ -112,11 +112,7 @@ export class ActivityStatusCommandService {
         if (reviewCount > 0) {
           throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
         }
-        if (
-          registrationCount > 0 ||
-          identityCount > 0 ||
-          settlementRunCount > 0
-        ) {
+        if (registrationCount > 0 || identityCount > 0 || settlementRunCount > 0) {
           throw new BizException(BizCode.ACTIVITY_PARTICIPATION_EXISTS_DELETE_FORBIDDEN);
         }
       } else {
