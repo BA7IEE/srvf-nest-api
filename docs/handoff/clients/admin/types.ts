@@ -3,7 +3,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:ccfbd2cba1848206916548e550ba8f9fcc7728ea79b50262f77b31ad9c018cba
+// inputDigest: sha256:d1e7d25db5589f786d3c80e754cd12c86e5051112a8b380f64ed2fb1d4edc12b
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContributionPolicyCategoryRuleDto, ContributionPolicyDefinitionDto, ContributionPolicyDurationBandDto, ContributionPolicyResultDto, ContributionPolicyRoleRuleDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -87,10 +87,16 @@ export interface ActivityParticipationSummaryDto {
   "registeredAttendeeCount": number;
   "temporaryAttendeeCount": number;
   "noShowCount": number;
-  "attendanceRate": number;
-  "totalServiceHours": string;
+  "pendingCount": number;
+  "pendingSessionCount": number;
+  "otherResultCount": number;
+  "mixedOriginAttendeeCount": number;
+  "unknownOriginAttendeeCount": number;
+  "attendanceRate": number | null;
+  "totalServiceHours": string | null;
   "totalContributionPoints": string;
   "durationHistogram": DurationHistogramDto;
+  "durationUnknownCount": number;
   "feedback": ActivityFeedbackAggregateDto;
 }
 
@@ -2638,9 +2644,17 @@ export interface ParticipationOverviewMonthDto {
   "activityCount": number;
   "completedActivityCount": number;
   "participationCount": number;
-  "totalServiceHours": string;
-  "averageAttendanceRate": number;
-  "noShowRate": number;
+  "registeredParticipationCount": number;
+  "temporaryParticipationCount": number;
+  "mixedOriginParticipationCount": number;
+  "unknownOriginParticipationCount": number;
+  "totalServiceHours": string | null;
+  "pendingCount": number;
+  "pendingSessionCount": number;
+  "otherResultCount": number;
+  "durationUnknownCount": number;
+  "averageAttendanceRate": number | null;
+  "noShowRate": number | null;
   "durationHistogram": DurationHistogramDto;
 }
 

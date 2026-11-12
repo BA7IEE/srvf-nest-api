@@ -24,7 +24,17 @@ function fixture(enabled: boolean, readonlyMaintenance: boolean) {
   const activities = jest.fn().mockRejectedValue(new Error('unexpected activity read'));
   const records = jest.fn().mockRejectedValue(new Error('unexpected old attendance read'));
   const registrations = jest.fn().mockRejectedValue(new Error('unexpected registration read'));
-  const transaction = jest.fn().mockRejectedValue(new Error('unexpected official-time read'));
+  const official = jest.fn().mockRejectedValue(new Error('unexpected official-time read'));
+  const identities = jest.fn().mockResolvedValue([]);
+  const queryRaw = jest.fn().mockResolvedValue([]);
+  const tx = {
+    activity: { findMany: activities },
+    activityRegistration: { findMany: registrations },
+    attendanceRecord: { findMany: records },
+    activityParticipationIdentity: { findMany: identities },
+    $queryRaw: queryRaw,
+  };
+  const transaction = jest.fn((run: (client: typeof tx) => unknown) => Promise.resolve(run(tx)));
   const ledger = jest.fn().mockRejectedValue(new Error('unexpected ledger read'));
   const gate = new ActivityWorkflowGate({
     activityV11Workflow: { enabled, readonlyMaintenance },
@@ -38,10 +48,25 @@ function fixture(enabled: boolean, readonlyMaintenance: boolean) {
     } as unknown as PrismaService,
     { getVisibleOrganizationScope: scope } as unknown as AuthzService,
     { queryDescendantOrgIds: jest.fn() } as unknown as OrganizationsService,
-    { sumCommittedByMemberForActivities: ledger } as unknown as LedgerQueryService,
+    {
+      sumCommittedByMemberForActivities: ledger,
+      readOfficialParticipationTimeTotalsInTx: official,
+    } as unknown as LedgerQueryService,
     gate,
   );
-  return { service, scope, activities, records, registrations, transaction, ledger };
+  return {
+    service,
+    scope,
+    activities,
+    records,
+    registrations,
+    transaction,
+    ledger,
+    official,
+    identities,
+    queryRaw,
+    tx,
+  };
 }
 
 describe('monthly participation gate after legacy retirement', () => {
@@ -56,7 +81,9 @@ describe('monthly participation gate after legacy retirement', () => {
       expect(f.activities).not.toHaveBeenCalled();
       expect(f.records).not.toHaveBeenCalled();
       expect(f.registrations).not.toHaveBeenCalled();
-      expect(f.transaction).not.toHaveBeenCalled();
+      expect(f.transaction).toHaveBeenCalledTimes(1);
+      expect(f.queryRaw).not.toHaveBeenCalled();
+      expect(f.official).not.toHaveBeenCalled();
       expect(f.ledger).not.toHaveBeenCalled();
     },
   );
@@ -103,7 +130,35 @@ describe('monthly participation gate after legacy retirement', () => {
         sheet: { activityId: 'a1', statusCode: 'approved' },
       },
     ]);
-    f.transaction.mockResolvedValue(null);
+    f.official.mockResolvedValue(null);
+    f.identities.mockResolvedValue([
+      {
+        id: 'i1',
+        activityId: 'a1',
+        sessionId: 's1',
+        memberId: 'm1',
+        registrationId: 'r1',
+        currentRevision: 1,
+        currentStatusCode: 'pass',
+        populationIncluded: true,
+        revisions: [{ revision: 1, statusCode: 'pass', sourceCode: 'self' }],
+        member: { memberNo: 'm1', realName: 'm1', nickname: null },
+        registration: { deletedAt: null },
+      },
+    ]);
+    f.queryRaw.mockResolvedValue([
+      {
+        activityId: 'a1',
+        currentPostedVersion: 1,
+        versionId: 'v1',
+        expectedCount: 1,
+        batchId: 'b1',
+        resultId: 'rr1',
+        identityId: 'i1',
+        resultCode: 'present',
+        identityActivityId: 'a1',
+      },
+    ]);
     f.ledger.mockResolvedValue([
       { activityId: 'a1', memberId: 'm1', serviceHours: '3', creditedPoints: '2' },
     ]);
@@ -113,6 +168,7 @@ describe('monthly participation gate after legacy retirement', () => {
       totalServiceHours: '3',
       participationCount: 1,
     });
-    expect(f.ledger).toHaveBeenCalledWith(['a1']);
+    expect(f.ledger).toHaveBeenCalledWith(['a1'], f.tx);
+    expect(f.records).not.toHaveBeenCalled();
   });
 });

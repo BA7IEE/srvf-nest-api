@@ -54042,6 +54042,40 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "活动 v1.1 工作流未启用(code=20153)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20153
+                      ],
+                      "description": "20153: 活动 v1.1 工作流未启用",
+                      "example": 20153
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动 v1.1 工作流未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -54235,6 +54269,40 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "活动 v1.1 工作流未启用(code=20153)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20153
+                      ],
+                      "description": "20153: 活动 v1.1 工作流未启用",
+                      "example": 20153
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动 v1.1 工作流未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -54242,7 +54310,7 @@
             "bearer": []
           }
         ],
-        "summary": "活动参与合计(报名状态/实到/到场率/approved 时长与贡献/固定时长桶；需同时持 attendance.read.sheet 与 activity-registration.read.record，按活动资源范围判定) [auth]",
+        "summary": "活动参与合计（正式到场/缺席/待定、入账贡献与正式时长；需同时持两项读取权限并按活动资源范围判定） [auth]",
         "tags": [
           "Admin - Activities"
         ]
@@ -119360,6 +119428,40 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "活动 v1.1 工作流未启用(code=20153)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20153
+                      ],
+                      "description": "20153: 活动 v1.1 工作流未启用",
+                      "example": 20153
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动 v1.1 工作流未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -154396,19 +154498,19 @@
         "properties": {
           "under2Hours": {
             "type": "number",
-            "description": "approved record 时长落在 [0,2) 小时的记录数"
+            "description": "已知时长落在 [0,2) 小时的观测数；具体单位见调用接口"
           },
           "from2To4Hours": {
             "type": "number",
-            "description": "approved record 时长落在 [2,4) 小时的记录数"
+            "description": "已知时长落在 [2,4) 小时的观测数；具体单位见调用接口"
           },
           "from4To8Hours": {
             "type": "number",
-            "description": "approved record 时长落在 [4,8) 小时的记录数"
+            "description": "已知时长落在 [4,8) 小时的观测数；具体单位见调用接口"
           },
           "atLeast8Hours": {
             "type": "number",
-            "description": "approved record 时长落在 [8,∞) 小时的记录数"
+            "description": "已知时长落在 [8,∞) 小时的观测数；具体单位见调用接口"
           }
         },
         "required": [
@@ -154457,39 +154559,65 @@
           },
           "attendeeCount": {
             "type": "number",
-            "description": "有任意未软删考勤记录的 distinct member 人数"
+            "description": "当前已入账版本有 present 结果的去重成员数；合法零值仍计入"
           },
           "registeredAttendeeCount": {
             "type": "number",
-            "description": "pass 报名且有任意状态 Sheet 考勤记录的人数"
+            "description": "已到场且有普通报名通过记录、无现场通过记录的成员数"
           },
           "temporaryAttendeeCount": {
             "type": "number",
-            "description": "无任何未软删报名但有考勤记录的临时参加人数"
+            "description": "已到场且有现场通过记录、无普通报名通过记录的成员数"
           },
           "noShowCount": {
             "type": "number",
-            "description": "completed 活动中 pass 报名且零考勤记录的人数；其他活动恒 0"
+            "description": "已入账结果均为 absent 且无待定场次的成员数"
+          },
+          "pendingCount": {
+            "type": "number",
+            "description": "仍有未决参与场次或通过报名尚无身份的成员数；已有正式到场者不重复计入"
+          },
+          "pendingSessionCount": {
+            "type": "number",
+            "description": "未决的应结算场次身份数，包括同一成员已在其他场次到场的情况"
+          },
+          "otherResultCount": {
+            "type": "number",
+            "description": "仅有请假、早退零值等其他正式结果的成员数"
+          },
+          "mixedOriginAttendeeCount": {
+            "type": "number",
+            "description": "已到场但同时存在普通和现场通过记录的成员数"
+          },
+          "unknownOriginAttendeeCount": {
+            "type": "number",
+            "description": "已到场但来源记录不足或存在未知来源的成员数"
           },
           "attendanceRate": {
             "type": "number",
-            "description": "到场率=有记录 pass 人数/pass 人数，0–1，四位小数"
+            "description": "正式到场人数/(正式到场人数+正式缺席人数)，无已判定人数时为 null",
+            "nullable": true
           },
           "totalServiceHours": {
             "type": "string",
-            "description": "approved Sheet 内未软删记录 serviceHours 合计"
+            "description": "正式时长收据存在时为 eligible 时长，否则为已入账正负工时净额；存在未明时长时为 null",
+            "nullable": true
           },
           "totalContributionPoints": {
             "type": "string",
-            "description": "该活动 approved Sheet 内未软删记录 contributionPoints 原始合计"
+            "description": "该活动已入账 credited 贡献的正负净额"
           },
           "durationHistogram": {
-            "description": "approved record 按 serviceHours 固定四桶分布",
+            "description": "有明确时长的正式到场成员按活动×成员去重后固定四桶分布",
             "allOf": [
               {
                 "$ref": "#/components/schemas/DurationHistogramDto"
               }
             ]
+          },
+          "durationUnknownCount": {
+            "type": "number",
+            "description": "正式到场但缺少可验证时长来源的成员数，未计入时长直方图"
           },
           "feedback": {
             "description": "该活动未软删评价数与两位平均星级",
@@ -154508,10 +154636,16 @@
           "registeredAttendeeCount",
           "temporaryAttendeeCount",
           "noShowCount",
+          "pendingCount",
+          "pendingSessionCount",
+          "otherResultCount",
+          "mixedOriginAttendeeCount",
+          "unknownOriginAttendeeCount",
           "attendanceRate",
           "totalServiceHours",
           "totalContributionPoints",
           "durationHistogram",
+          "durationUnknownCount",
           "feedback"
         ]
       },
@@ -171110,22 +171244,57 @@
           },
           "participationCount": {
             "type": "number",
-            "description": "该月参与人次（逐活动 distinct 到场 member 人数之和）"
+            "description": "该月正式到场人次（逐活动去重后求和；合法零值仍计入）"
+          },
+          "registeredParticipationCount": {
+            "type": "number",
+            "description": "普通报名通过、无现场通过记录的正式到场人次"
+          },
+          "temporaryParticipationCount": {
+            "type": "number",
+            "description": "现场通过、无普通报名通过记录的正式到场人次"
+          },
+          "mixedOriginParticipationCount": {
+            "type": "number",
+            "description": "同时有普通和现场通过记录的正式到场人次"
+          },
+          "unknownOriginParticipationCount": {
+            "type": "number",
+            "description": "来源记录不足或存在未知来源的正式到场人次"
           },
           "totalServiceHours": {
             "type": "string",
-            "description": "该月所有活动 approved record serviceHours 合计"
+            "description": "该月正式时长或入账工时净额；存在到场成员时长未知时为 null",
+            "nullable": true
+          },
+          "pendingCount": {
+            "type": "number",
+            "description": "该月未决参与人次（逐活动去重后求和）"
+          },
+          "pendingSessionCount": {
+            "type": "number",
+            "description": "该月未决应结算场次身份数，含成员其他场次已到场的情况"
+          },
+          "otherResultCount": {
+            "type": "number",
+            "description": "该月请假、早退零值等其他正式结果人次"
+          },
+          "durationUnknownCount": {
+            "type": "number",
+            "description": "该月正式到场但时长来源未知的人次，未计入直方图"
           },
           "averageAttendanceRate": {
             "type": "number",
-            "description": "completed 活动加权到场率=sum(有记录 pass)/sum(pass)，0–1，四位小数"
+            "description": "completed 活动正式到场人次/(正式到场+缺席人次)，无已判定人次时为 null",
+            "nullable": true
           },
           "noShowRate": {
             "type": "number",
-            "description": "completed 活动缺席率=sum(no-show)/sum(pass)，0–1，四位小数"
+            "description": "completed 活动正式缺席人次/(正式到场+缺席人次)，无已判定人次时为 null",
+            "nullable": true
           },
           "durationHistogram": {
-            "description": "approved record 按 serviceHours 固定四桶分布",
+            "description": "有明确时长的正式到场成员按活动×成员计入固定四桶",
             "allOf": [
               {
                 "$ref": "#/components/schemas/DurationHistogramDto"
@@ -171138,7 +171307,15 @@
           "activityCount",
           "completedActivityCount",
           "participationCount",
+          "registeredParticipationCount",
+          "temporaryParticipationCount",
+          "mixedOriginParticipationCount",
+          "unknownOriginParticipationCount",
           "totalServiceHours",
+          "pendingCount",
+          "pendingSessionCount",
+          "otherResultCount",
+          "durationUnknownCount",
           "averageAttendanceRate",
           "noShowRate",
           "durationHistogram"

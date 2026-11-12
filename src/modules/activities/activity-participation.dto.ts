@@ -13,16 +13,16 @@ export class ActivityParticipationIdParamDto {
 }
 
 export class DurationHistogramDto {
-  @ApiProperty({ description: 'approved record 时长落在 [0,2) 小时的记录数' })
+  @ApiProperty({ description: '已知时长落在 [0,2) 小时的观测数；具体单位见调用接口' })
   under2Hours!: number;
 
-  @ApiProperty({ description: 'approved record 时长落在 [2,4) 小时的记录数' })
+  @ApiProperty({ description: '已知时长落在 [2,4) 小时的观测数；具体单位见调用接口' })
   from2To4Hours!: number;
 
-  @ApiProperty({ description: 'approved record 时长落在 [4,8) 小时的记录数' })
+  @ApiProperty({ description: '已知时长落在 [4,8) 小时的观测数；具体单位见调用接口' })
   from4To8Hours!: number;
 
-  @ApiProperty({ description: 'approved record 时长落在 [8,∞) 小时的记录数' })
+  @ApiProperty({ description: '已知时长落在 [8,∞) 小时的观测数；具体单位见调用接口' })
   atLeast8Hours!: number;
 }
 
@@ -56,35 +56,64 @@ export class ActivityParticipationSummaryDto {
   @ApiProperty({ description: '按报名状态统计', type: ActivityRegistrationCountsDto })
   registrationCounts!: ActivityRegistrationCountsDto;
 
-  @ApiProperty({ description: '有任意未软删考勤记录的 distinct member 人数' })
+  @ApiProperty({ description: '当前已入账版本有 present 结果的去重成员数；合法零值仍计入' })
   attendeeCount!: number;
 
-  @ApiProperty({ description: 'pass 报名且有任意状态 Sheet 考勤记录的人数' })
+  @ApiProperty({ description: '已到场且有普通报名通过记录、无现场通过记录的成员数' })
   registeredAttendeeCount!: number;
 
-  @ApiProperty({ description: '无任何未软删报名但有考勤记录的临时参加人数' })
+  @ApiProperty({ description: '已到场且有现场通过记录、无普通报名通过记录的成员数' })
   temporaryAttendeeCount!: number;
 
-  @ApiProperty({ description: 'completed 活动中 pass 报名且零考勤记录的人数；其他活动恒 0' })
+  @ApiProperty({ description: '已入账结果均为 absent 且无待定场次的成员数' })
   noShowCount!: number;
 
-  @ApiProperty({ description: '到场率=有记录 pass 人数/pass 人数，0–1，四位小数' })
-  attendanceRate!: number;
+  @ApiProperty({
+    description: '仍有未决参与场次或通过报名尚无身份的成员数；已有正式到场者不重复计入',
+  })
+  pendingCount!: number;
 
-  @ApiProperty({ description: 'approved Sheet 内未软删记录 serviceHours 合计', type: String })
-  totalServiceHours!: string;
+  @ApiProperty({ description: '未决的应结算场次身份数，包括同一成员已在其他场次到场的情况' })
+  pendingSessionCount!: number;
+
+  @ApiProperty({ description: '仅有请假、早退零值等其他正式结果的成员数' })
+  otherResultCount!: number;
+
+  @ApiProperty({ description: '已到场但同时存在普通和现场通过记录的成员数' })
+  mixedOriginAttendeeCount!: number;
+
+  @ApiProperty({ description: '已到场但来源记录不足或存在未知来源的成员数' })
+  unknownOriginAttendeeCount!: number;
 
   @ApiProperty({
-    description: '该活动 approved Sheet 内未软删记录 contributionPoints 原始合计',
+    description: '正式到场人数/(正式到场人数+正式缺席人数)，无已判定人数时为 null',
+    nullable: true,
+    type: Number,
+  })
+  attendanceRate!: number | null;
+
+  @ApiProperty({
+    description:
+      '正式时长收据存在时为 eligible 时长，否则为已入账正负工时净额；存在未明时长时为 null',
+    type: String,
+    nullable: true,
+  })
+  totalServiceHours!: string | null;
+
+  @ApiProperty({
+    description: '该活动已入账 credited 贡献的正负净额',
     type: String,
   })
   totalContributionPoints!: string;
 
   @ApiProperty({
-    description: 'approved record 按 serviceHours 固定四桶分布',
+    description: '有明确时长的正式到场成员按活动×成员去重后固定四桶分布',
     type: DurationHistogramDto,
   })
   durationHistogram!: DurationHistogramDto;
+
+  @ApiProperty({ description: '正式到场但缺少可验证时长来源的成员数，未计入时长直方图' })
+  durationUnknownCount!: number;
 
   @ApiProperty({
     description: '该活动未软删评价数与两位平均星级',

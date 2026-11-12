@@ -11,41 +11,18 @@ import { ActivityFeedbacksQueryService } from '../activity-feedbacks/activity-fe
 import { ATTENDANCE_SHEET_STATUS } from '../attendances/attendances.dto';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { LedgerQueryService } from './ledger-query.service';
-import { decimalToHundredths, hundredthsToDecimal } from './ledger-day-allocation';
 import { RbacService } from '../permissions/rbac.service';
 import {
   ActivityParticipationSummaryDto,
   ActivityReconciliationDto,
 } from './activity-participation.dto';
-import {
-  buildActivityParticipationMetrics,
-  buildOfficialDurationHistogram,
-} from './activity-participation-metrics';
+import { readPostedParticipationFactsInTx } from './activity-participation-projection-query';
+import { buildV11ParticipationMetrics } from './activity-participation-v11-metrics';
 import { toMemberLabelFields } from '../../common/identity/member-label.util';
 import {
   ParticipationTimeTruthQueryService,
   eligibleSecondsToServiceHours,
-  sumOfficialEligibleSeconds,
 } from './participation-time-truth-query.service';
-
-/**
- * 「活动 × 队员」小计 → 活动两轴总计。**整数分累加**,不用浮点 ——
- * 逐队员字符串直接 `Number` 相加会在末位漂出 `5.000000000000001`。
- */
-function foldActivityTotals(
-  byMember: ReadonlyMap<string, { serviceHours: string; creditedPoints: string }>,
-): { totalServiceHours: string; totalContributionPoints: string } {
-  let serviceHundredths = 0;
-  let creditedHundredths = 0;
-  for (const totals of byMember.values()) {
-    serviceHundredths += decimalToHundredths(totals.serviceHours);
-    creditedHundredths += decimalToHundredths(totals.creditedPoints);
-  }
-  return {
-    totalServiceHours: hundredthsToDecimal(serviceHundredths).toString(),
-    totalContributionPoints: hundredthsToDecimal(creditedHundredths).toString(),
-  };
-}
 
 const PARTICIPATION_READ_ACTIONS = [
   'attendance.read.sheet',
@@ -75,12 +52,21 @@ export class ActivityParticipationQueryService {
   private async assertCanReadActivity(
     currentUser: CurrentUserPayload,
     activityId: string,
+    tx?: Prisma.TransactionClient,
   ): Promise<void> {
     const ref: ResourceRef = { type: 'activity', id: activityId };
     for (const action of PARTICIPATION_READ_ACTIONS) {
-      const decision = await this.authz.explain(currentUser, action, ref);
+      const decision =
+        tx === undefined
+          ? await this.authz.explain(currentUser, action, ref)
+          : await this.authz.explain(currentUser, action, ref, tx);
       if (decision.allow) continue;
-      if (decision.reason === 'resource_not_found' && (await this.rbac.can(currentUser, action))) {
+      if (
+        decision.reason === 'resource_not_found' &&
+        (tx === undefined
+          ? await this.rbac.can(currentUser, action)
+          : await this.rbac.can(currentUser, action, undefined, tx))
+      ) {
         continue;
       }
       throw new BizException(BizCode.RBAC_FORBIDDEN);
@@ -89,8 +75,9 @@ export class ActivityParticipationQueryService {
 
   private async findActivityOrThrow(
     activityId: string,
+    tx?: Prisma.TransactionClient,
   ): Promise<{ id: string; statusCode: string }> {
-    const activity = await this.prisma.activity.findFirst({
+    const activity = await (tx ?? this.prisma).activity.findFirst({
       where: { id: activityId, deletedAt: null },
       select: { id: true, statusCode: true },
     });
@@ -242,59 +229,34 @@ export class ActivityParticipationQueryService {
     activityId: string,
     currentUser: CurrentUserPayload,
   ): Promise<ActivityParticipationSummaryDto> {
-    await this.assertCanReadActivity(currentUser, activityId);
-    const activity = await this.findActivityOrThrow(activityId);
-    this.assertV11ReadAvailable();
-
-    // 原有四路读取保持批量；D8-2 统一选择器另以固定查询数读取 official time，无 N+1。
-    const [registrations, records, feedback, officialTime] = await Promise.all([
-      this.prisma.activityRegistration.findMany({
-        where: { activityId, deletedAt: null },
-        select: { id: true, memberId: true, statusCode: true },
-      }),
-      this.prisma.attendanceRecord.findMany({
-        where: { deletedAt: null, sheet: { activityId, deletedAt: null } },
-        select: {
-          memberId: true,
-          serviceHours: true,
-          contributionPoints: true,
-          sheet: { select: { statusCode: true } },
-        },
-      }),
-      this.feedbacks.aggregateForActivity(activityId),
-      this.readOfficialTime(activityId),
-    ]);
-    const metrics = buildActivityParticipationMetrics(activity.statusCode, registrations, records);
-
-    // 工时与贡献只来自 committed 账本；参与事实的旧来源仍待迁移。
-    const preCutoverSettlement = foldActivityTotals(
-      await this.loadCommittedTotalsByMember(activityId),
+    return this.prisma.$transaction(
+      async (tx) => {
+        await this.assertCanReadActivity(currentUser, activityId, tx);
+        const activity = await this.findActivityOrThrow(activityId, tx);
+        this.assertV11ReadAvailable();
+        const [registrations, facts, feedback, officialTime, ledgerRows] = await Promise.all([
+          tx.activityRegistration.findMany({
+            where: { activityId, deletedAt: null },
+            select: { id: true, memberId: true, statusCode: true },
+          }),
+          readPostedParticipationFactsInTx(tx, [activityId]),
+          this.feedbacks.aggregateForActivity(activityId, tx),
+          this.participationTimeTruth.readOfficialTotalsInTx(tx, { activityIds: [activityId] }),
+          this.ledgerQuery.sumCommittedByMemberForActivities([activityId], tx),
+        ]);
+        return {
+          activityId,
+          activityStatusCode: activity.statusCode,
+          ...buildV11ParticipationMetrics({
+            registrations,
+            facts,
+            ledgerRows,
+            officialRows: officialTime?.totals ?? null,
+          }),
+          feedback,
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
-    const settlement =
-      officialTime === null
-        ? preCutoverSettlement
-        : {
-            ...preCutoverSettlement,
-            totalServiceHours: eligibleSecondsToServiceHours(
-              sumOfficialEligibleSeconds(officialTime.totals),
-            ).toString(),
-          };
-
-    return {
-      activityId,
-      activityStatusCode: activity.statusCode,
-      registrationCounts: metrics.registrationCounts,
-      attendeeCount: metrics.attendeeCount,
-      registeredAttendeeCount: metrics.registeredAttendeeCount,
-      temporaryAttendeeCount: metrics.temporaryAttendeeCount,
-      noShowCount: metrics.noShowCount,
-      attendanceRate: metrics.attendanceRate,
-      ...settlement,
-      durationHistogram:
-        officialTime === null
-          ? metrics.durationHistogram
-          : buildOfficialDurationHistogram(officialTime.totals),
-      feedback,
-    };
   }
 }

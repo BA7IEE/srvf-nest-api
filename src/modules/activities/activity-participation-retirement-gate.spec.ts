@@ -23,7 +23,29 @@ function fixture(enabled: boolean, readonlyMaintenance: boolean) {
   const activity = jest.fn().mockResolvedValue({ id: 'activity-1', statusCode: 'completed' });
   const records = jest.fn().mockRejectedValue(new Error('unexpected old attendance read'));
   const registrations = jest.fn().mockRejectedValue(new Error('unexpected registration read'));
-  const transaction = jest.fn().mockRejectedValue(new Error('unexpected official-time read'));
+  const official = jest.fn().mockRejectedValue(new Error('unexpected official-time read'));
+  const identities = jest.fn().mockResolvedValue([]);
+  const queryRaw = jest.fn().mockResolvedValue([
+    {
+      activityId: 'activity-1',
+      currentPostedVersion: null,
+      versionId: null,
+      expectedCount: null,
+      batchId: null,
+      resultId: null,
+      identityId: null,
+      resultCode: null,
+      identityActivityId: null,
+    },
+  ]);
+  const tx = {
+    activity: { findFirst: activity },
+    activityRegistration: { findMany: registrations },
+    attendanceRecord: { findMany: records },
+    activityParticipationIdentity: { findMany: identities },
+    $queryRaw: queryRaw,
+  };
+  const transaction = jest.fn((run: (client: typeof tx) => unknown) => Promise.resolve(run(tx)));
   const ledger = jest.fn().mockRejectedValue(new Error('unexpected ledger read'));
   const feedback = jest.fn().mockRejectedValue(new Error('unexpected feedback read'));
   const authz = jest.fn().mockResolvedValue({ allow: true, reason: 'allowed' });
@@ -41,10 +63,22 @@ function fixture(enabled: boolean, readonlyMaintenance: boolean) {
     { can: jest.fn().mockResolvedValue(false) } as unknown as RbacService,
     { aggregateForActivity: feedback } as unknown as ActivityFeedbacksQueryService,
     { sumCommittedByMemberForActivities: ledger } as unknown as LedgerQueryService,
-    {} as ParticipationTimeTruthQueryService,
+    { readOfficialTotalsInTx: official } as unknown as ParticipationTimeTruthQueryService,
     gate,
   );
-  return { service, authz, activity, records, registrations, transaction, ledger, feedback };
+  return {
+    service,
+    authz,
+    activity,
+    records,
+    registrations,
+    transaction,
+    ledger,
+    feedback,
+    official,
+    identities,
+    queryRaw,
+  };
 }
 
 describe('activity participation gate after legacy retirement', () => {
@@ -61,7 +95,11 @@ describe('activity participation gate after legacy retirement', () => {
       expect(f.authz).toHaveBeenCalledTimes(4);
       expect(f.records).not.toHaveBeenCalled();
       expect(f.registrations).not.toHaveBeenCalled();
-      expect(f.transaction).not.toHaveBeenCalled();
+      // Summary now starts a repeatable-read transaction before authorization and gate checks.
+      expect(f.transaction).toHaveBeenCalledTimes(1);
+      expect(f.queryRaw).not.toHaveBeenCalled();
+      expect(f.identities).not.toHaveBeenCalled();
+      expect(f.official).not.toHaveBeenCalled();
       expect(f.ledger).not.toHaveBeenCalled();
       expect(f.feedback).not.toHaveBeenCalled();
     },
@@ -97,7 +135,7 @@ describe('activity participation gate after legacy retirement', () => {
       const f = fixture(true, readonly);
       f.registrations.mockResolvedValue([]);
       f.records.mockResolvedValue([]);
-      f.transaction.mockResolvedValue(null);
+      f.official.mockResolvedValue(null);
       f.ledger.mockResolvedValue([]);
       f.feedback.mockResolvedValue({ count: 0, avgRating: null });
       await expect(f.service.participationSummary('activity-1', user)).resolves.toMatchObject({
@@ -119,7 +157,7 @@ describe('activity participation gate after legacy retirement', () => {
         member,
       },
     ]);
-    f.transaction.mockResolvedValue({
+    f.official.mockResolvedValue({
       receipt: {},
       totals: [{ activityId: 'activity-1', memberId: 'm1', eligibleSeconds: 7200 }],
     });
@@ -150,12 +188,13 @@ describe('activity participation gate after legacy retirement', () => {
           sheet: { statusCode: 'approved' },
         },
       ]);
-      f.transaction.mockResolvedValue(null);
+      f.official.mockResolvedValue(null);
       f.ledger.mockResolvedValue(rows);
       f.feedback.mockResolvedValue({ count: 0, avgRating: null });
       const result = await f.service.participationSummary('activity-1', user);
       expect(result.totalServiceHours).toBe(hours);
       expect(result.totalContributionPoints).toBe(points);
+      expect(f.records).not.toHaveBeenCalled();
     },
   );
 });

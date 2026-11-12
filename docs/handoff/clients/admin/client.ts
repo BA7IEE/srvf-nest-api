@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:ccfbd2cba1848206916548e550ba8f9fcc7728ea79b50262f77b31ad9c018cba
+// inputDigest: sha256:d1e7d25db5589f786d3c80e754cd12c86e5051112a8b380f64ed2fb1d4edc12b
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -470,7 +470,7 @@ export function createAdminClient(fetcher: Fetcher) {
     AdminActivityParticipationControllerParticipationLedger(activityId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<PageResultDto & { "items": AdminParticipationLedgerEntryDto[] }>> {
       return fetcher<PageResultDto & { "items": AdminParticipationLedgerEntryDto[] }>({ method: "GET", path: `/api/admin/v1/activities/${activityId}/participation-ledger`, query });
     },
-    /** 活动参与合计(报名状态/实到/到场率/approved 时长与贡献/固定时长桶；需同时持 attendance.read.sheet 与 activity-registration.read.record，按活动资源范围判定) [auth] */
+    /** 活动参与合计（正式到场/缺席/待定、入账贡献与正式时长；需同时持两项读取权限并按活动资源范围判定） [auth] */
     AdminActivityParticipationControllerParticipationSummary(activityId: string): Promise<ApiEnvelope<ActivityParticipationSummaryDto>> {
       return fetcher<ActivityParticipationSummaryDto>({ method: "GET", path: `/api/admin/v1/activities/${activityId}/participation-summary` });
     },

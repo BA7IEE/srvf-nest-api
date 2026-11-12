@@ -17,8 +17,33 @@ const CURRENT_USER: CurrentUserPayload = {
   memberId: null,
 };
 
+const identity = (id: string, memberId: string) => ({
+  id,
+  activityId: 'activity-1',
+  sessionId: 'session-' + id,
+  memberId,
+  registrationId: 'registration-' + id,
+  currentRevision: 1,
+  currentStatusCode: 'pass',
+  populationIncluded: true,
+  revisions: [{ revision: 1, statusCode: 'pass', sourceCode: 'self' }],
+  registration: { deletedAt: null },
+  member: { memberNo: memberId, realName: memberId, nickname: null },
+});
+const posted = (id: string, resultCode: string, expectedCount: number) => ({
+  activityId: 'activity-1',
+  currentPostedVersion: 1,
+  versionId: 'version-1',
+  expectedCount,
+  batchId: 'batch-1',
+  resultId: 'result-' + id,
+  identityId: id,
+  resultCode,
+  identityActivityId: 'activity-1',
+});
+
 describe('ActivityParticipationQueryService feedback aggregate integration', () => {
-  it('participation-summary 在既有 3 读上只追加 1 次 feedback aggregate', async () => {
+  it('participation-summary 在同一事务调用一次 feedback aggregate，旧考勤不再参与', async () => {
     const activityFindFirst = jest
       .fn()
       .mockResolvedValue({ id: 'activity-1', statusCode: 'completed' });
@@ -33,11 +58,18 @@ describe('ActivityParticipationQueryService feedback aggregate integration', () 
         sheet: { statusCode: 'approved' },
       },
     ]);
-    const prisma = {
+    const tx = {
       activity: { findFirst: activityFindFirst },
       activityRegistration: { findMany: registrationFindMany },
       attendanceRecord: { findMany: attendanceFindMany },
-      $transaction: jest.fn((run: (tx: unknown) => unknown) => run({})),
+      activityParticipationIdentity: {
+        findMany: jest.fn().mockResolvedValue([identity('1', 'member-1')]),
+      },
+      $queryRaw: jest.fn().mockResolvedValue([posted('1', 'present', 1)]),
+    };
+    const prisma = {
+      ...tx,
+      $transaction: jest.fn((run: (client: typeof tx) => unknown) => run(tx)),
     } as unknown as PrismaService;
     const authzExplain = jest.fn().mockResolvedValue({ allow: true, reason: 'allowed' });
     const authz = { explain: authzExplain } as unknown as AuthzService;
@@ -82,13 +114,13 @@ describe('ActivityParticipationQueryService feedback aggregate integration', () 
     expect(result.totalContributionPoints).toBe('2');
     expect(activityFindFirst).toHaveBeenCalledTimes(1);
     expect(registrationFindMany).toHaveBeenCalledTimes(1);
-    expect(attendanceFindMany).toHaveBeenCalledTimes(1);
+    expect(attendanceFindMany).not.toHaveBeenCalled();
     expect(feedbackAggregate).toHaveBeenCalledTimes(1);
-    expect(feedbackAggregate).toHaveBeenCalledWith('activity-1');
+    expect(feedbackAggregate).toHaveBeenCalledWith('activity-1', tx);
   });
 
-  it('receipt 存在后只切 eligible 工时与按人精确秒直方图，贡献和参与事实不漂移', async () => {
-    const prisma = {
+  it('receipt 后使用 eligible 精确秒，只对正式到场成员计直方图', async () => {
+    const tx = {
       activity: {
         findFirst: jest.fn().mockResolvedValue({ id: 'activity-1', statusCode: 'completed' }),
       },
@@ -108,7 +140,16 @@ describe('ActivityParticipationQueryService feedback aggregate integration', () 
           },
         ]),
       },
-      $transaction: jest.fn((run: (tx: unknown) => unknown) => run({})),
+      activityParticipationIdentity: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([identity('1', 'member-1'), identity('2', 'member-2')]),
+      },
+      $queryRaw: jest.fn().mockResolvedValue([posted('1', 'present', 2), posted('2', 'absent', 2)]),
+    };
+    const prisma = {
+      ...tx,
+      $transaction: jest.fn((run: (client: typeof tx) => unknown) => run(tx)),
     } as unknown as PrismaService;
     const authz = {
       explain: jest.fn().mockResolvedValue({ allow: true, reason: 'allowed' }),
@@ -152,12 +193,14 @@ describe('ActivityParticipationQueryService feedback aggregate integration', () 
     expect(result.totalContributionPoints).toBe('2');
     expect(result.durationHistogram).toEqual({
       under2Hours: 1,
-      from2To4Hours: 1,
+      from2To4Hours: 0,
       from4To8Hours: 0,
       atLeast8Hours: 0,
     });
     expect(result.registrationCounts.pass).toBe(2);
     expect(result.attendeeCount).toBe(1);
+    expect(result.noShowCount).toBe(1);
+    expect(tx.attendanceRecord.findMany).not.toHaveBeenCalled();
     expect(result.feedback).toEqual({ count: 3, avgRating: 4 });
   });
 });

@@ -78,7 +78,12 @@ export class MetaController {
       '参与度月度总览(活动日期/类型/组织筛选；两项读权限可见组织范围求交；无可见范围返空) [auth]',
   })
   @ApiWrappedOkResponse(ParticipationOverviewResponseDto)
-  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
+  )
   participationOverviewSummary(
     @Query() query: ParticipationOverviewQueryDto,
     @CurrentUser() user: CurrentUserPayload,
