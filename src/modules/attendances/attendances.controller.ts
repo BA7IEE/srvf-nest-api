@@ -360,17 +360,17 @@ export class AttendanceSheetsResourceController {
   @RequiresPermission('attendance.final-approve.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
-      '终审通过(ADMIN 级终审沿 P1-5 方案 A,部门级细分挂 Slow-3;pending_final_review → approved;贡献值正式生效;**触发** attendance.recorded;沿 D-S5 / D-S7) [rbac: attendance.final-approve.sheet]',
+      '旧考勤终审通过入口已停用：闸关经原授权后返回 20153，闸开返回 20154，只读维护返回 20158 [rbac: attendance.final-approve.sheet]',
   })
-  @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
-    BizCode.ATTENDANCE_SHEET_NOT_FOUND,
-    BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID,
     BizCode.ATTENDANCE_SELF_FINAL_REVIEW_FORBIDDEN,
     BizCode.ATTENDANCE_SAME_REVIEWER_FORBIDDEN,
+    BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
+    BizCode.ACTIVITY_LEGACY_ATTENDANCE_WRITE_CLOSED,
+    BizCode.ACTIVITY_WORKFLOW_READONLY_MAINTENANCE,
   )
   finalApprove(
     @Param() params: IdParamDto,

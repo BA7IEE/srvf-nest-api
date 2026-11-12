@@ -22,7 +22,7 @@ import { RequiresPermission } from '../../../common/decorators/route-authz.decor
 // admin/v1/members/:memberId 轴下的三个 attendance 派生只读端点(队员 360):
 //   1. GET attendance-records:某队员跨 sheet 考勤记录(仅 approved;复用 attendance-presenter;
 //      item 带 activity 上下文);
-//   2. GET contribution-summary:生涯贡献随单闸选源；闸关旧考勤封顶，闸开 committed credited。
+//   2. GET contribution-summary:生涯贡献只读 committed credited；工作流关闭时拒绝。
 //   3. GET participation-summary:时长/活动数/记录数 + 同一生涯贡献核，不叠加旧分与账本。
 //
 // 落 admin member 轴(贡献汇总是 attendance 派生读,非 contribution-rules 的 System surface 规则面;
@@ -64,7 +64,7 @@ export class AdminMemberAttendanceController {
   @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
-      '某队员生涯贡献汇总(队员 360；闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff；不存在/软删 → MEMBER_NOT_FOUND) [rbac: attendance.read.sheet]',
+      '某队员生涯贡献汇总(队员 360；只取 committed 账本 credited 净额；不叠加、不再封顶；闸关返回 20153/503，无 cutoff；不存在/软删 → MEMBER_NOT_FOUND) [rbac: attendance.read.sheet]',
   })
   @ApiWrappedOkResponse(MemberContributionSummaryDto)
   @ApiBizErrorResponse(
@@ -72,6 +72,7 @@ export class AdminMemberAttendanceController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
+    BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
   )
   contributionSummary(
     @Param('memberId') memberId: string,
@@ -84,7 +85,7 @@ export class AdminMemberAttendanceController {
   @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
-      '某队员参与累计(时长/活动次数/记录数；生涯贡献：闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff；member ref 点判) [rbac: attendance.read.sheet]',
+      '某队员参与累计(时长/活动次数/记录数；生涯贡献：只取 committed 账本 credited 净额；不叠加、不再封顶；闸关返回 20153/503，无 cutoff；member ref 点判) [rbac: attendance.read.sheet]',
   })
   @ApiWrappedOkResponse(MemberParticipationSummaryDto)
   @ApiBizErrorResponse(
@@ -92,6 +93,7 @@ export class AdminMemberAttendanceController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
+    BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
   )
   participationSummary(
     @Param('memberId') memberId: string,

@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:cafe03b012f3eceb544738caaf818dd89f3e4640f35d9d863b4c88c4175c40ef
+// inputDigest: sha256:2a2049ce4d55e5ed61056dad7e186eb17f2a4e0975dbcf90c177970070d5ea56
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -1178,7 +1178,7 @@ export function createAppClient(fetcher: Fetcher) {
     AppMyParticipationLedgerControllerList(query?: { "page"?: number; "pageSize"?: number; "activityId"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": AppParticipationLedgerEntryDto[] }>> {
       return fetcher<PageResultDto & { "items": AppParticipationLedgerEntryDto[] }>({ method: "GET", path: "/api/app/v1/my/participation-ledger", query });
     },
-    /** 我的参与累计(时长/活动次数/记录数；生涯贡献：闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff；恒本人范围) [auth] */
+    /** 我的参与累计(时长/活动次数/记录数；生涯贡献：只取 committed 账本 credited 净额；不叠加、不再封顶；闸关返回 20153/503，无 cutoff；恒本人范围) [auth] */
     AppMyParticipationSummaryControllerParticipationSummary(): Promise<ApiEnvelope<AppMyParticipationSummaryDto>> {
       return fetcher<AppMyParticipationSummaryDto>({ method: "GET", path: "/api/app/v1/my/participation-summary" });
     },

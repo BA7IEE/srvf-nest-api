@@ -1,5 +1,7 @@
 # 交接:后端 ↔ 小程序前端 / 招新 H5
 
+> **本地候选（未合入、未部署）**：本次仅退役队员参与汇总与入队贡献的旧考勤回退，并关闭旧考勤终审通过入口。工作流开启时这些汇总只读 committed 账本；关闭时返回 `20153`／HTTP 503，前端应显示不可用，不能展示为零。只读维护态下启用的账本读面仍可读。旧终审 `final-approve` 在工作流开启时返回 `20154`／HTTP 410，在关闭且通过原有授权后返回 `20153`／503，只读维护态返回 `20158`／503。新结算尚未接入入队贡献达标通知；活动核对、meta 和其他旧考勤入口仍待迁移。下方旧阶段描述有冲突时以本候选说明为准。
+
 ## Human 更正后台提交（2026-10-30 云端候选，未安装、未部署）
 
 原准备人完成既有准备后，可受理后台提交、查询进度，并在服务端已独立确认未生效时人工重试原任务。新增 controller 为 `AppManagedActivityTimeCorrectionJobsController`，调用签名和字段见本候选生成的 OpenAPI 与 App client。受理及轮询均重新判当前资格；受理成功、排队、执行、核对都不表示业务已经生效。
@@ -273,7 +275,7 @@ managed 活动下的 `outcomes` 提供人工草稿录入、分页历史和指定
 
 > **整单取消（第 4 批第三刀）**：负责人继续使用既有 managed activity cancel command，wire 不变。成功后刷新 managed detail 与报名列表：canonical pending/waitlisted 会关闭为 cancelled，已 pass 的历史审批和 active capacity 保留；混合头仍按 pass 展示。若服务端返回既有 `20147`，表示本次没有部分结果，应刷新后交给运营核对，不能用 legacy 候补入口或新 operationKey 静默补偿。
 > | 我的报名(报名/查/取消) | v1.1 活动固定走 `POST /api/app/v1/activities/:activityId/registrations`，body 只可为 `{operationKey,formVersion,answers,preferences}`；`preferences[].positionIds` 的数组顺序由后端派生为从 1 开始的志愿顺序。活动存在任一 live 岗位时 `preferences` 不可为空；已选场次存在 live 岗位时该场次 `positionIds` 也不可为空，二者均返 `21035`。活动性别不符或缺 profile 返 `21034`；启用保险且活动要求保险但无有效来源返 `26030`。成功/同 key 同 canonical 请求仅返 `{registrationId,registrationRevisionId,revision,submittedAt}`；不同 canonical 请求复用 key 返 `21003`。无 active Form 时仅可 `formVersion:null + answers:[]`；file 答案仅可给 `uploadSessionId`，提交后会被消费且不可重用。`POST /api/app/v1/my/registrations` 仅保留给没有 live session、也没有 active Form 的 legacy 活动；v1.1 活动统一返 `21038`，不可绕过答案、身份和附件链。`GET /api/app/v1/my/registrations` 与 `PATCH` 取消语义不变。 |
-> | 我的考勤 / 参与汇总 / 证书 | `GET /api/app/v1/my/attendance-records` · `GET /api/app/v1/my/participation-summary` · `GET /api/app/v1/my/certificates`。参与汇总严格锁当前 `AppIdentityResolver.memberId`：旧流程的计数读取 approved Sheet；v1.1 闸开启时，`activityCount` 只计当前正式版本中有已入账日行的不同活动，`recordCount` 按参与身份×北京日去重。合法零值日行仍计数；当前版本无日行时不计已冲回的历史分录。准备中的更正仍显示前一正式版本。这两个数字不是出勤人数；计数与时长分开读取，并发更正时不保证同一快照。`totalServiceHours` 沿既有正式时长证明优先规则；`contributionPoints` 闸关按旧考勤北京日封顶、闸开按已入账 credited 正负净额，不回退旧数据或二次封顶。**不返回 memberId / no-show / 他人数据**，前端直接展示、不要自行 SUM。本说明是此分支的合同，合入或部署须另行核实。 |
+> | 我的考勤 / 参与汇总 / 证书 | `GET /api/app/v1/my/attendance-records` · `GET /api/app/v1/my/participation-summary` · `GET /api/app/v1/my/certificates`。参与汇总严格锁当前 `AppIdentityResolver.memberId`：v1.1 闸开启时，`activityCount` 只计当前正式版本中有已入账日行的不同活动，`recordCount` 按参与身份×北京日去重。合法零值日行仍计数；当前版本无日行时不计已冲回的历史分录。准备中的更正仍显示前一正式版本。这两个数字不是出勤人数；计数与时长分开读取，并发更正时不保证同一快照。`totalServiceHours` 沿既有正式时长证明优先规则；`contributionPoints` 按已入账 credited 正负净额计算，不回退旧数据或二次封顶；闸关时该汇总返回 `20153`／503。**不返回 memberId / no-show / 他人数据**，前端直接展示、不要自行 SUM。本说明是此分支的合同，合入或部署须另行核实。 |
 > | **活动 GPS 自助签到 / 签退(F2)** | `POST /api/app/v1/my/activities/:activityId/check-in` · `POST .../check-out` · `GET .../check-in`。只认本人当前 `pass` 报名；⚠️ **首次写已收紧为 fail-closed**：活动/请求坐标完整合法且原始 Haversine 距离不超过配置半径才 200。已有合法 winner 的网络重试仍返回同一证据且不覆盖。App 仅收到时间、距离与历史兼容字段 `geoVerified/outOfRange`，**不返回原始经纬度、accuracy 或 memberId**。**审计口径**:签到/签退**成功本身不落 AuditLog** —— 事实记录就是那行 `ActivityCheckIn`(坐标、精度、距离、时间戳齐全且不可变),再写一条审计只是同一事实的副本;前端不要期待打卡会出现在任何审计/操作日志视图里。反过来,**管理端对签到记录的任何修改或删除必须留痕**(当前后端不存在这类写路径,新增时才会有对应审计事件) |
 > | **活动评价(F2–F4)** | `GET /api/app/v1/my/activities/:activityId/feedback` 初始化本人评价与 `canSubmit/windowClosesAt`；`PUT` 同路径提交 `{rating,comment?}`。只认 completed + 窗口内 + approved 到场，本人 scope；不返回他人评价/人数/均分 |
 > | 公开(无账号) | `POST /api/open/v1/recruitment/applications/*`(招新报名) · `GET /api/open/v1/contents`(内容;`expireAt <= now` 的附件行不返回、过期封面 URL 为 null,未来时间/null 不变) |
@@ -557,8 +559,8 @@ managed 活动下的 `outcomes` 提供人工草稿录入、分页历史和指定
 
 ## R5受限500贡献口径交接（后端，前端实施后置）
 
-App的贡献字段结构不变：闸关按approved考勤北京日全局封顶3，闸开只取committed账本credited净额（含真实冲回/重记），不混入在途/recognized，不二次封顶，不叠加旧分或空账回退。入队进度仍截至入队年3月31日，门槛5；成员生涯汇总没有该cutoff。readonly保留当前读源，直接关闭v1.1会读回旧考勤，不能当作无损回退。
+App 的贡献字段结构不变：工作流开启时只取 committed 账本 credited 净额（含冲回/重记），不混入在途/recognized、不二次封顶、不叠加旧分或空账回退。入队进度仍截至入队年3月31日，门槛5；成员生涯汇总没有该 cutoff。工作流关闭时这些读面返回 `20153`／503，已启用时只读维护态仍可读。
 
-已有ledgerTotals的committed/inFlight两轴字段保持；在途不计入入队资格。真实两活动同日封顶、跨日到5及最终入队、并发刷新、更正重放和旧分转换样本已补PG验证。现有8通用门槛标记、人工综合评估及final join流程保留，不新增账本提交达标通知触发。snapshot/OpenAPI同步8项来源文本，客户端同时刷新13摘要及3个方法注释，路由/tag/权限/类型/required/nullable均不改；这不是tag-only变更。
+已有ledgerTotals的committed/inFlight两轴字段保持；在途不计入入队资格。历史 R5 候选曾对两活动同日封顶、跨日到5及最终入队、并发刷新、更正重放和旧分转换样本做 PG 验证；该证据不覆盖本次本地候选。现有8通用门槛标记、人工综合评估及final join流程保留，不新增账本提交达标通知触发。snapshot/OpenAPI同步8项来源文本，客户端同时刷新13摘要及3个方法注释，路由/tag/权限/类型/required/nullable均不改；这不是tag-only变更。
 
 AC-013/020/025沿原决定上线后按诉求立项，AC-017仍搁置，四项保持TODO；显式r5-limited500只单列首发机器口径，默认全合同9a仍严格。保留500及全部native维度，原最大规模NOT_VALIDATED。前端页面/联调、真实服务器数据/转换/shadow/fleet/worker排空/稳定窗与10a10b均未完成，生产NO_GO。本段不是部署或开关授权。

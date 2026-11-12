@@ -2,14 +2,14 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
 import type { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
+import { BizCode } from '../../common/exceptions/biz-code.constant';
+import { BizException } from '../../common/exceptions/biz.exception';
 import type { ContributionLedgerReader } from './contribution-ledger-reader';
 import {
   ALL_GATE_CODES,
-  ATTENDANCE_SHEET_STATUS_APPROVED,
   CONTRIBUTION_THRESHOLD,
   type GateMarks,
   GENERAL_GATE_CODES,
-  GLOBAL_DAILY_CONTRIBUTION_CAP,
   allGeneralGatesSatisfied,
   beijingDayNumber,
   contributionCutoff,
@@ -26,51 +26,15 @@ export interface ContributionResult {
   satisfied: boolean;
 }
 
-// R5 获批单轨：闸关保留 approved 考勤的北京日封顶核；闸开仅累计 committed credited delta。
-// credited 已在写账时执行日封顶；读面不再封顶、不混入 recognized、不回退旧分。
-// 原账、冲回、重记均纳入，不能按 resultRevision 的当前状态丢掉旧分录。
-// cutoff=null 为生涯；入队传北京 4-1 exclusive 瞬间，账本转换为同一 civil DATE 边界。
+// Only committed credited deltas are supported. The ledger already applies the daily cap;
+// reversal and replacement entries remain part of the net total. A disabled workflow
+// fails closed rather than reading retired attendance data or returning a fabricated zero.
 type ContributionReadGate = Pick<ActivityWorkflowGate, 'participationReadSource'>;
 
-interface ContributionRecordRow {
-  checkInAt: Date;
-  contributionPoints: Prisma.Decimal | null;
-}
-
-/**
- * 封顶核的**纯函数**部分:按北京日历日分组求和 → 每日封顶 → 再加总。
- *
- * 单人版与批量版都必须经过这里。抽出来的唯一理由是 M3 要把逐人查询批量化,
- * 而本目录 CLAUDE.md 明文禁止「复制 cap 算法或用原始分反推」—— 两份实现迟早读数不同,
- * 而贡献值差 0.5 分就是「够不够 5 分入队」的分界。
- */
-function capByBeijingDay(records: readonly ContributionRecordRow[]): Prisma.Decimal {
-  const dayTotals = new Map<number, Prisma.Decimal>();
-  for (const r of records) {
-    const day = beijingDayNumber(r.checkInAt);
-    const prev = dayTotals.get(day) ?? new Prisma.Decimal(0);
-    dayTotals.set(day, prev.add(r.contributionPoints ?? new Prisma.Decimal(0)));
+function assertCommittedContributionSource(activityWorkflowGate: ContributionReadGate): void {
+  if (activityWorkflowGate.participationReadSource() !== 'committed-ledger') {
+    throw new BizException(BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED);
   }
-  let points = new Prisma.Decimal(0);
-  for (const daySum of dayTotals.values()) {
-    const capped = daySum.greaterThan(GLOBAL_DAILY_CONTRIBUTION_CAP)
-      ? GLOBAL_DAILY_CONTRIBUTION_CAP
-      : daySum;
-    points = points.add(capped);
-  }
-  return points;
-}
-
-function approvedRecordsWhere(
-  memberId: string | { in: readonly string[] },
-  cutoff: Date | null,
-): Prisma.AttendanceRecordWhereInput {
-  return {
-    memberId: typeof memberId === 'string' ? memberId : { in: [...memberId.in] },
-    deletedAt: null,
-    ...(cutoff ? { checkInAt: { lt: cutoff } } : {}),
-    sheet: { statusCode: ATTENDANCE_SHEET_STATUS_APPROVED, deletedAt: null },
-  };
 }
 
 function contributionLedgerCutoff(cutoff: Date | null): Date | null {
@@ -85,29 +49,17 @@ export async function computeCappedContribution(
   activityWorkflowGate: ContributionReadGate,
   contributionLedgerReader: ContributionLedgerReader,
 ): Promise<Prisma.Decimal> {
-  if (activityWorkflowGate.participationReadSource() === 'committed-ledger') {
-    return contributionLedgerReader.sumCommittedCreditedPointsForMemberInTx(
-      client,
-      memberId,
-      contributionLedgerCutoff(cutoff),
-    );
-  }
-  const records = await client.attendanceRecord.findMany({
-    where: approvedRecordsWhere(memberId, cutoff),
-    select: { checkInAt: true, contributionPoints: true },
-  });
-  return capByBeijingDay(records);
+  assertCommittedContributionSource(activityWorkflowGate);
+  return contributionLedgerReader.sumCommittedCreditedPointsForMemberInTx(
+    client,
+    memberId,
+    contributionLedgerCutoff(cutoff),
+  );
 }
 
 /**
- * 批量版(M3):**一次** SQL 取回整批人的 approved 记录,在内存里按人分组后走同一个封顶核。
- *
- * 为什么必须批量:考勤终审的每条 record 都要一次 before 与一次 after 贡献值快照,
- * 逐人查在 200 人的考勤单上就是 400 次往返 —— 加上逐条 outbox,整个事务约 1000+ 次 SQL,
- * 直接把 Prisma 默认 5s 交互事务预算跑穿(评审实测)。调大 timeout 只是把锁持有得更久,
- * 让 convoy 更严重,所以刀口只能落在查询次数上。
- *
- * 返回的 Map 对**每一个**入参 memberId 都有值(无记录者为 0),调用方不必再补默认值。
+ * Batch through the ledger owner once, retaining zero entries for absent members.
+ * The gate is checked even for an empty batch so disabled does not masquerade as success.
  */
 export async function computeCappedContributionBatch(
   client: PrismaService | Prisma.TransactionClient,
@@ -116,30 +68,14 @@ export async function computeCappedContributionBatch(
   activityWorkflowGate: ContributionReadGate,
   contributionLedgerReader: ContributionLedgerReader,
 ): Promise<Map<string, Prisma.Decimal>> {
+  assertCommittedContributionSource(activityWorkflowGate);
   const unique = [...new Set(memberIds)];
-  const result = new Map<string, Prisma.Decimal>(unique.map((id) => [id, new Prisma.Decimal(0)]));
-  if (unique.length === 0) return result;
-
-  if (activityWorkflowGate.participationReadSource() === 'committed-ledger') {
-    return contributionLedgerReader.sumCommittedCreditedPointsForMembersInTx(
-      client,
-      unique,
-      contributionLedgerCutoff(cutoff),
-    );
-  }
-
-  const records = await client.attendanceRecord.findMany({
-    where: approvedRecordsWhere({ in: unique }, cutoff),
-    select: { memberId: true, checkInAt: true, contributionPoints: true },
-  });
-  const byMember = new Map<string, ContributionRecordRow[]>();
-  for (const r of records) {
-    const list = byMember.get(r.memberId);
-    if (list) list.push(r);
-    else byMember.set(r.memberId, [r]);
-  }
-  for (const [memberId, rows] of byMember) result.set(memberId, capByBeijingDay(rows));
-  return result;
+  if (unique.length === 0) return new Map();
+  return contributionLedgerReader.sumCommittedCreditedPointsForMembersInTx(
+    client,
+    unique,
+    contributionLedgerCutoff(cutoff),
+  );
 }
 
 // 入队三期(招新)贡献值只读汇总:封顶核 + 入队年 3-31 cutoff + ≥5 gate 判定。

@@ -3,7 +3,6 @@ import { Role } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
-import { eventPlaceholder } from '../../common/event/event-placeholder';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
@@ -353,133 +352,19 @@ export class AttendanceReviewService {
 
   // ============ final-approve(PATCH;批次 4-B 新增 — 终审通过)============
 
-  // 沿 D-S5 / D-S7 / D-A2:
-  // - 状态机:pending_final_review → approved(贡献值正式生效)
-  // - 状态非 pending_final_review 抛 **22045** ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID
-  //   (终态 approved / rejected / final_rejected 再次调用一律走此码)
-  // - 写 finalReviewerUserId / finalReviewedAt / finalReviewNote
-  // - **触发** eventPlaceholder('attendance.recorded')(approved-only;同事务内;沿 D-S7)
-  // - audit:attendance-sheet.final-review(action='final-approve');沿 D-S11 / 业务规则文档 §8.4
-  // - **不重校验**逐条 records.contributionPoints(沿 D-S8;R31 在 APD 一级已校验)
-  // - 权限(终态 scoped-authz PR9 起):走 authz.explain('attendance.final-approve.sheet', ref)
-  //   —— biz-admin 全局终审保留(B 方案;摘码 = PR12 显式项)+ scoped RoleBinding 通路
-  //   + 自审禁止(22074,SUPER_ADMIN 亦拒)/ 同人默认禁止(22075,env 可配);
-  //   判权不足仍走 RBAC_FORBIDDEN(30100),22044 模块码维持不开。
+  // The legacy terminal approval is retired in both workflow modes. Keep the
+  // existing write guard and scoped authorization order, then fail explicitly
+  // before any transaction, state change, audit, or notification can begin.
   async finalApprove(
     id: string,
-    dto: FinalApproveAttendanceSheetDto,
+    _dto: FinalApproveAttendanceSheetDto,
     currentUser: CurrentUserPayload,
-    auditMeta: AuditMeta,
+    _auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
-    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸**开**后本实例已切到 v1.1,
-    // 旧考勤写入口永久关闭 —— 拒绝在此判,避免与新链并写形成合同禁止的混合态。
+    void _auditMeta; // Retain the existing service signature for the retired endpoint.
     this.activityWorkflowGate.assertLegacyWriteAllowed();
     await this.assertFinalReviewAuthzOrThrow(currentUser, 'attendance.final-approve.sheet', id);
-    // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
-    return runMemberLinearizedTransaction(this.prisma, async (tx) => {
-      const sheet = await this.access.findSheetOrThrow(id, tx);
-
-      const finalApproveTransition = this.sheetStateMachine.decide(
-        'finalApprove',
-        sheet.statusCode,
-      );
-      if (!finalApproveTransition.allowed) {
-        throw new BizException(finalApproveTransition.biz);
-      }
-
-      await claimAtStatus(tx, {
-        target: 'attendanceSheet',
-        id: sheet.id,
-        expectedStatus: sheet.statusCode,
-        invalidStatusBiz: BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID,
-      });
-      const lockedSheet = await this.access.findSheetOrThrow(id, tx);
-      this.assertLockedReviewSeparation('final', lockedSheet, currentUser);
-
-      const recordsForEvent = await tx.attendanceRecord.findMany({
-        where: notDeletedWhere({ sheetId: id }),
-        select: recordWithMemberSelect,
-        orderBy: { checkInAt: 'asc' },
-      });
-      // K3(B-F2 write skew):入队贡献值里程碑的判定依据是**跨 Sheet** 的 member 聚合,
-      // 而本事务只锁住了自己这一张 Sheet。缺共同键时两张 Sheet 同时终审会各读 before=3、
-      // 各算 after=4,谁都不跨 5 分、谁都不尝试 enqueue —— outbox 唯一键兜不住「两边都没插」,
-      // 通知就此永久丢失(同 application + 门槛只有一次首跨机会)。
-      // 取键位置固定在 **Sheet claim 之后**,与 submit/edit 的「聚合行锁在前、member 键在后」
-      // 同向;取在 claim 之前会与 edit 反向,凑出 40P01。
-      await lockMembersForWrite(
-        tx,
-        recordsForEvent.map((record) => record.memberId),
-      );
-      const contributionThresholdSnapshots =
-        await this.attendanceNotificationProducer.prepareContributionThresholdSnapshots(
-          tx,
-          recordsForEvent,
-        );
-
-      const finalReviewedAt = new Date();
-      const updated = await tx.attendanceSheet.update({
-        where: { id: lockedSheet.id },
-        data: {
-          statusCode: finalApproveTransition.nextStatusCode,
-          finalReviewerUserId: currentUser.id,
-          finalReviewedAt,
-          finalReviewNote: dto.finalReviewNote ?? null,
-        },
-        select: sheetSafeSelect,
-      });
-
-      // 触发 attendance.recorded(批次 4-B 移到终审通过时;沿 D-S7;Q-S13 context schema 沿用)
-      eventPlaceholder('attendance.recorded', {
-        activityId: updated.activityId,
-        sheetId: updated.id,
-        // context 沿 v0.4.0 Q-S13 schema;新增 finalReviewerUserId / finalReviewedAt 兼容字段
-        reviewerUserId: updated.reviewerUserId,
-        reviewedAt: updated.reviewedAt?.toISOString() ?? null,
-        finalReviewerUserId: currentUser.id,
-        finalReviewedAt: finalReviewedAt.toISOString(),
-        records: recordsForEvent.map((r) => ({
-          recordId: r.id,
-          memberId: r.memberId,
-          roleCode: r.roleCode,
-          attendanceStatusCode: r.attendanceStatusCode,
-          checkInAt: r.checkInAt.toISOString(),
-          checkOutAt: r.checkOutAt.toISOString(),
-          serviceHours: r.serviceHours.toString(),
-          contributionPoints: this.attendancePresenter.decimalToString(r.contributionPoints),
-          registrationId: r.registrationId,
-        })),
-      });
-
-      await this.attendanceAuditRecorder.logFinalReview({
-        sheetId: id,
-        beforeSheet: lockedSheet,
-        afterSheet: updated,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        action: 'final-approve',
-        priorStatusCode: lockedSheet.statusCode,
-        nextStatusCode: finalApproveTransition.nextStatusCode,
-        recordsCount: recordsForEvent.length,
-        eventTriggered: true,
-        auditMeta,
-        tx,
-      });
-
-      await this.attendanceNotificationProducer.enqueueFinalApproved(tx, {
-        sheetId: id,
-        activityId: updated.activityId,
-        finalReviewedAt,
-        records: recordsForEvent.map((r) => ({
-          id: r.id,
-          memberId: r.memberId,
-          contributionPoints: this.attendancePresenter.decimalToString(r.contributionPoints),
-        })),
-        contributionThresholdSnapshots,
-      });
-
-      return this.attendancePresenter.toSheetResponseDto(updated);
-    });
+    throw new BizException(BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED);
   }
 
   // ============ final-return(POST;独立终审退回修改)============

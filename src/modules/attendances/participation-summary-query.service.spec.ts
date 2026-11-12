@@ -27,7 +27,7 @@ const ledgerTotals = {
   inFlightContributionPoints: '0.75',
 };
 
-function setup(readonlyMaintenance: boolean, withOfficialTime: boolean) {
+function setup(readonlyMaintenance: boolean, withOfficialTime: boolean, enabled = true) {
   const legacyRead = jest.fn().mockRejectedValue(new Error('legacy attendance must not be read'));
   const aggregate = jest.fn().mockResolvedValue({
     _sum: { creditedPointsDelta: new Prisma.Decimal('5.25') },
@@ -63,7 +63,7 @@ function setup(readonlyMaintenance: boolean, withOfficialTime: boolean) {
     resolve: resolveIdentity,
   } as unknown as AppIdentityResolver;
   const gate = new ActivityWorkflowGate({
-    activityV11Workflow: { enabled: true, readonlyMaintenance },
+    activityV11Workflow: { enabled, readonlyMaintenance },
   } as AppConfig);
   const service = new ParticipationSummaryQueryService(
     prisma,
@@ -151,44 +151,75 @@ describe('participation summary in the ledger workflow', () => {
     },
   );
 
-  it('rejects an absent member before any participation read', async () => {
-    const { service, findMember, legacyRead, aggregate, loadMemberLedgerTotals } = setup(
-      false,
-      false,
-    );
-    findMember.mockResolvedValue(null);
-    await expect(service.forMemberAdmin('missing-member', user)).rejects.toMatchObject({
-      biz: BizCode.MEMBER_NOT_FOUND,
-    });
-    expect(legacyRead).not.toHaveBeenCalled();
-    expect(aggregate).not.toHaveBeenCalled();
-    expect(loadMemberLedgerTotals).not.toHaveBeenCalled();
-  });
+  it.each([false, true])(
+    'rejects an absent member before any participation read with enabled=%s',
+    async (enabled) => {
+      const { service, findMember, legacyRead, aggregate, loadMemberLedgerTotals } = setup(
+        false,
+        false,
+        enabled,
+      );
+      findMember.mockResolvedValue(null);
+      await expect(service.forMemberAdmin('missing-member', user)).rejects.toMatchObject({
+        biz: BizCode.MEMBER_NOT_FOUND,
+      });
+      expect(legacyRead).not.toHaveBeenCalled();
+      expect(aggregate).not.toHaveBeenCalled();
+      expect(loadMemberLedgerTotals).not.toHaveBeenCalled();
+    },
+  );
 
-  it('rejects an unauthorized admin before looking up the member or participation data', async () => {
-    const { service, explain, findMember, legacyRead, aggregate, loadMemberLedgerTotals } = setup(
-      false,
-      false,
-    );
-    explain.mockResolvedValue({ allow: false, reason: 'scope_denied' });
-    await expect(service.forMemberAdmin('member-1', user)).rejects.toMatchObject({
-      biz: BizCode.RBAC_FORBIDDEN,
-    });
-    expect(findMember).not.toHaveBeenCalled();
-    expect(legacyRead).not.toHaveBeenCalled();
-    expect(aggregate).not.toHaveBeenCalled();
-    expect(loadMemberLedgerTotals).not.toHaveBeenCalled();
-  });
+  it.each([false, true])(
+    'rejects an unauthorized admin before data lookup with enabled=%s',
+    async (enabled) => {
+      const { service, explain, findMember, legacyRead, aggregate, loadMemberLedgerTotals } = setup(
+        false,
+        false,
+        enabled,
+      );
+      explain.mockResolvedValue({ allow: false, reason: 'scope_denied' });
+      await expect(service.forMemberAdmin('member-1', user)).rejects.toMatchObject({
+        biz: BizCode.RBAC_FORBIDDEN,
+      });
+      expect(findMember).not.toHaveBeenCalled();
+      expect(legacyRead).not.toHaveBeenCalled();
+      expect(aggregate).not.toHaveBeenCalled();
+      expect(loadMemberLedgerTotals).not.toHaveBeenCalled();
+    },
+  );
 
-  it('rejects an ineligible app identity before any participation read', async () => {
-    const { service, resolveIdentity, legacyRead, aggregate, loadMemberLedgerTotals } = setup(
-      false,
-      false,
-    );
-    resolveIdentity.mockResolvedValue({ canUseApp: false, member: null });
-    await expect(service.forCurrentMember(user)).rejects.toMatchObject({ biz: BizCode.FORBIDDEN });
-    expect(legacyRead).not.toHaveBeenCalled();
-    expect(aggregate).not.toHaveBeenCalled();
-    expect(loadMemberLedgerTotals).not.toHaveBeenCalled();
-  });
+  it.each([false, true])(
+    'rejects an ineligible app identity before any participation read with enabled=%s',
+    async (enabled) => {
+      const { service, resolveIdentity, legacyRead, aggregate, loadMemberLedgerTotals } = setup(
+        false,
+        false,
+        enabled,
+      );
+      resolveIdentity.mockResolvedValue({ canUseApp: false, member: null });
+      await expect(service.forCurrentMember(user)).rejects.toMatchObject({
+        biz: BizCode.FORBIDDEN,
+      });
+      expect(legacyRead).not.toHaveBeenCalled();
+      expect(aggregate).not.toHaveBeenCalled();
+      expect(loadMemberLedgerTotals).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([false, true])(
+    'when the new workflow is disabled, rejects without reading either source in maintenance=%s',
+    async (readonlyMaintenance) => {
+      const { service, legacyRead, aggregate, loadMemberLedgerTotals } = setup(
+        readonlyMaintenance,
+        false,
+        false,
+      );
+      await expect(service.forCurrentMember(user)).rejects.toMatchObject({
+        biz: BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
+      });
+      expect(legacyRead).not.toHaveBeenCalled();
+      expect(aggregate).not.toHaveBeenCalled();
+      expect(loadMemberLedgerTotals).not.toHaveBeenCalled();
+    },
+  );
 });

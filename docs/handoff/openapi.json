@@ -99525,35 +99525,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "example": 0,
-                      "description": "业务码,0 表示成功"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "ok"
-                    },
-                    "data": {
-                      "$ref": "#/components/schemas/AttendanceSheetResponseDto"
-                    }
-                  }
-                }
-              }
-            }
-          },
           "400": {
             "description": "请求参数错误(code=40000)",
             "content": {
@@ -99658,8 +99629,8 @@
               }
             }
           },
-          "404": {
-            "description": "考勤单据不存在(code=22001)",
+          "410": {
+            "description": "本实例已切换至活动 v1.1,旧考勤写入口已关闭(code=20154)",
             "content": {
               "application/json": {
                 "schema": {
@@ -99673,14 +99644,14 @@
                     "code": {
                       "type": "integer",
                       "enum": [
-                        22001
+                        20154
                       ],
-                      "description": "22001: 考勤单据不存在",
-                      "example": 22001
+                      "description": "20154: 本实例已切换至活动 v1.1,旧考勤写入口已关闭",
+                      "example": 20154
                     },
                     "message": {
                       "type": "string",
-                      "example": "考勤单据不存在"
+                      "example": "本实例已切换至活动 v1.1,旧考勤写入口已关闭"
                     },
                     "data": {
                       "type": "object",
@@ -99692,8 +99663,8 @@
               }
             }
           },
-          "409": {
-            "description": "考勤单据当前状态不允许终审操作(code=22045)",
+          "503": {
+            "description": "活动 v1.1 工作流未启用(code=20153) / 本实例处于活动结算只读维护态,暂不接受考勤与结算写入(code=20158)",
             "content": {
               "application/json": {
                 "schema": {
@@ -99707,14 +99678,15 @@
                     "code": {
                       "type": "integer",
                       "enum": [
-                        22045
+                        20153,
+                        20158
                       ],
-                      "description": "22045: 考勤单据当前状态不允许终审操作",
-                      "example": 22045
+                      "description": "20153: 活动 v1.1 工作流未启用; 20158: 本实例处于活动结算只读维护态,暂不接受考勤与结算写入",
+                      "example": 20153
                     },
                     "message": {
                       "type": "string",
-                      "example": "考勤单据当前状态不允许终审操作"
+                      "example": "活动 v1.1 工作流未启用"
                     },
                     "data": {
                       "type": "object",
@@ -99732,7 +99704,7 @@
             "bearer": []
           }
         ],
-        "summary": "终审通过(ADMIN 级终审沿 P1-5 方案 A,部门级细分挂 Slow-3;pending_final_review → approved;贡献值正式生效;**触发** attendance.recorded;沿 D-S5 / D-S7) [rbac: attendance.final-approve.sheet]",
+        "summary": "旧考勤终审通过入口已停用：闸关经原授权后返回 20153，闸开返回 20154，只读维护返回 20158 [rbac: attendance.final-approve.sheet]",
         "tags": [
           "Admin - Attendances"
         ]
@@ -101549,6 +101521,40 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "活动 v1.1 工作流未启用(code=20153)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20153
+                      ],
+                      "description": "20153: 活动 v1.1 工作流未启用",
+                      "example": 20153
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动 v1.1 工作流未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -101556,7 +101562,7 @@
             "bearer": []
           }
         ],
-        "summary": "某队员生涯贡献汇总(队员 360；闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff；不存在/软删 → MEMBER_NOT_FOUND) [rbac: attendance.read.sheet]",
+        "summary": "某队员生涯贡献汇总(队员 360；只取 committed 账本 credited 净额；不叠加、不再封顶；闸关返回 20153/503，无 cutoff；不存在/软删 → MEMBER_NOT_FOUND) [rbac: attendance.read.sheet]",
         "tags": [
           "Admin - Attendances"
         ]
@@ -101740,6 +101746,40 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "活动 v1.1 工作流未启用(code=20153)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20153
+                      ],
+                      "description": "20153: 活动 v1.1 工作流未启用",
+                      "example": 20153
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动 v1.1 工作流未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -101747,7 +101787,7 @@
             "bearer": []
           }
         ],
-        "summary": "某队员参与累计(时长/活动次数/记录数；生涯贡献：闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff；member ref 点判) [rbac: attendance.read.sheet]",
+        "summary": "某队员参与累计(时长/活动次数/记录数；生涯贡献：只取 committed 账本 credited 净额；不叠加、不再封顶；闸关返回 20153/503，无 cutoff；member ref 点判) [rbac: attendance.read.sheet]",
         "tags": [
           "Admin - Attendances"
         ]
@@ -102740,6 +102780,40 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "活动 v1.1 工作流未启用(code=20153)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20153
+                      ],
+                      "description": "20153: 活动 v1.1 工作流未启用",
+                      "example": 20153
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动 v1.1 工作流未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -102747,7 +102821,7 @@
             "bearer": []
           }
         ],
-        "summary": "我的参与累计(时长/活动次数/记录数；生涯贡献：闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff；恒本人范围) [auth]",
+        "summary": "我的参与累计(时长/活动次数/记录数；生涯贡献：只取 committed 账本 credited 净额；不叠加、不再封顶；闸关返回 20153/503，无 cutoff；恒本人范围) [auth]",
         "tags": [
           "Mobile - My Attendance"
         ]
@@ -138248,6 +138322,40 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "活动 v1.1 工作流未启用(code=20153)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20153
+                      ],
+                      "description": "20153: 活动 v1.1 工作流未启用",
+                      "example": 20153
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动 v1.1 工作流未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -138483,6 +138591,40 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "活动 v1.1 工作流未启用(code=20153)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20153
+                      ],
+                      "description": "20153: 活动 v1.1 工作流未启用",
+                      "example": 20153
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动 v1.1 工作流未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -138708,6 +138850,40 @@
                     "message": {
                       "type": "string",
                       "example": "该入队申请当前状态不允许此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "活动 v1.1 工作流未启用(code=20153)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20153
+                      ],
+                      "description": "20153: 活动 v1.1 工作流未启用",
+                      "example": 20153
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动 v1.1 工作流未启用"
                     },
                     "data": {
                       "type": "object",
@@ -138957,6 +139133,40 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "活动 v1.1 工作流未启用(code=20153)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20153
+                      ],
+                      "description": "20153: 活动 v1.1 工作流未启用",
+                      "example": 20153
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动 v1.1 工作流未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -139187,6 +139397,40 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "活动 v1.1 工作流未启用(code=20153)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20153
+                      ],
+                      "description": "20153: 活动 v1.1 工作流未启用",
+                      "example": 20153
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动 v1.1 工作流未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -139325,6 +139569,40 @@
                     "message": {
                       "type": "string",
                       "example": "入队申请不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "活动 v1.1 工作流未启用(code=20153)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20153
+                      ],
+                      "description": "20153: 活动 v1.1 工作流未启用",
+                      "example": 20153
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动 v1.1 工作流未启用"
                     },
                     "data": {
                       "type": "object",
@@ -139563,6 +139841,40 @@
                     "message": {
                       "type": "string",
                       "example": "该入队申请当前状态不允许此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "活动 v1.1 工作流未启用(code=20153)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20153
+                      ],
+                      "description": "20153: 活动 v1.1 工作流未启用",
+                      "example": 20153
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动 v1.1 工作流未启用"
                     },
                     "data": {
                       "type": "object",
@@ -174309,7 +174621,7 @@
           },
           "contributionPoints": {
             "type": "string",
-            "description": "生涯累计贡献值（Decimal string；闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加）"
+            "description": "生涯累计贡献值（Decimal string；只取 committed 账本 credited 净额；不叠加、不再封顶；闸关返回 20153/503）"
           },
           "ledgerTotals": {
             "description": "账本口径两轴小计(已生效 / 在途);恒存在,无数据时四个值均为 \"0\"",
@@ -174335,19 +174647,19 @@
           },
           "totalServiceHours": {
             "type": "string",
-            "description": "approved Sheet 内未软删记录 serviceHours 生涯合计"
+            "description": "正式时长证明优先；无证明时为 committed 账本服务时长净额"
           },
           "activityCount": {
             "type": "number",
-            "description": "approved Sheet 记录覆盖的 distinct activityId 数"
+            "description": "当前正式版本中有已入账日行的不同活动数"
           },
           "recordCount": {
             "type": "number",
-            "description": "approved Sheet 内未软删考勤记录数"
+            "description": "当前正式版本已入账日行按参与身份和北京日去重数（包括合法零值日行）"
           },
           "contributionPoints": {
             "type": "string",
-            "description": "生涯累计贡献值（闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff）"
+            "description": "生涯累计贡献值（只取 committed 账本 credited 正负净额，不叠加、不再封顶，无 cutoff；闸关返回 20153/503）"
           },
           "ledgerTotals": {
             "description": "账本口径两轴小计(已生效 / 在途);恒存在,无数据时四个值均为 \"0\"",
@@ -174587,19 +174899,19 @@
         "properties": {
           "totalServiceHours": {
             "type": "string",
-            "description": "approved Sheet 内本人未软删记录 serviceHours 生涯合计"
+            "description": "正式时长证明优先；无证明时为 committed 账本服务时长净额"
           },
           "activityCount": {
             "type": "number",
-            "description": "approved Sheet 记录覆盖的 distinct activityId 数"
+            "description": "当前正式版本中有已入账日行的不同活动数"
           },
           "recordCount": {
             "type": "number",
-            "description": "approved Sheet 内本人未软删考勤记录数"
+            "description": "当前正式版本已入账日行按参与身份和北京日去重数（包括合法零值日行）"
           },
           "contributionPoints": {
             "type": "string",
-            "description": "本人生涯累计贡献值（闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff）"
+            "description": "本人生涯累计贡献值（只取 committed 账本 credited 正负净额，不叠加、不再封顶，无 cutoff；闸关返回 20153/503）"
           },
           "ledgerTotals": {
             "description": "账本口径两轴小计(已生效 / 在途);恒存在,无数据时四个值均为 \"0\"",
@@ -182398,7 +182710,7 @@
           },
           "contributionPoints": {
             "type": "object",
-            "description": "贡献值汇总（截至入队年 3-31；闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加；仅详情计算，列表为 null）",
+            "description": "贡献值汇总（截至入队年 3-31；只取 committed 账本 credited 净额；不叠加、不再封顶；闸关返回 20153/503；仅详情计算，列表为 null）",
             "nullable": true
           },
           "contributionSatisfied": {
@@ -182610,7 +182922,7 @@
           },
           "contributionPoints": {
             "type": "string",
-            "description": "贡献值汇总（截至入队年 3-31；闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加）"
+            "description": "贡献值汇总（截至入队年 3-31；只取 committed 账本 credited 净额；不叠加、不再封顶；闸关返回 20153/503）"
           },
           "contributionSatisfied": {
             "type": "boolean",

@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:cafe03b012f3eceb544738caaf818dd89f3e4640f35d9d863b4c88c4175c40ef
+// inputDigest: sha256:2a2049ce4d55e5ed61056dad7e186eb17f2a4e0975dbcf90c177970070d5ea56
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -890,9 +890,9 @@ export function createAdminClient(fetcher: Fetcher) {
     AttendanceSheetsResourceControllerApprove(id: string, body: ApproveAttendanceSheetDto): Promise<ApiEnvelope<AttendanceSheetResponseDto>> {
       return fetcher<AttendanceSheetResponseDto>({ method: "PATCH", path: `/api/admin/v1/attendance-sheets/${id}/approve`, body });
     },
-    /** 终审通过(ADMIN 级终审沿 P1-5 方案 A,部门级细分挂 Slow-3;pending_final_review → approved;贡献值正式生效;**触发** attendance.recorded;沿 D-S5 / D-S7) [rbac: attendance.final-approve.sheet] */
-    AttendanceSheetsResourceControllerFinalApprove(id: string, body: FinalApproveAttendanceSheetDto): Promise<ApiEnvelope<AttendanceSheetResponseDto>> {
-      return fetcher<AttendanceSheetResponseDto>({ method: "PATCH", path: `/api/admin/v1/attendance-sheets/${id}/final-approve`, body });
+    /** 旧考勤终审通过入口已停用：闸关经原授权后返回 20153，闸开返回 20154，只读维护返回 20158 [rbac: attendance.final-approve.sheet] */
+    AttendanceSheetsResourceControllerFinalApprove(id: string, body: FinalApproveAttendanceSheetDto): Promise<ApiEnvelope<void>> {
+      return fetcher<void>({ method: "PATCH", path: `/api/admin/v1/attendance-sheets/${id}/final-approve`, body });
     },
     /** 终审驳回(ADMIN 级终审沿 P1-5 方案 A,部门级细分挂 Slow-3;pending_final_review → final_rejected;finalReviewNote 必填;records 跟随软删;**不触发** attendance.recorded) [rbac: attendance.final-reject.sheet] */
     AttendanceSheetsResourceControllerFinalReject(id: string, body: FinalRejectAttendanceSheetDto): Promise<ApiEnvelope<AttendanceSheetResponseDto>> {
@@ -1178,7 +1178,7 @@ export function createAdminClient(fetcher: Fetcher) {
     CertificatesControllerVerify(memberId: string, id: string, body: VerifyCertificateDto): Promise<ApiEnvelope<CertificateResponseDto>> {
       return fetcher<CertificateResponseDto>({ method: "PATCH", path: `/api/admin/v1/members/${memberId}/certificates/${id}/verify`, body });
     },
-    /** 某队员生涯贡献汇总(队员 360；闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff；不存在/软删 → MEMBER_NOT_FOUND) [rbac: attendance.read.sheet] */
+    /** 某队员生涯贡献汇总(队员 360；只取 committed 账本 credited 净额；不叠加、不再封顶；闸关返回 20153/503，无 cutoff；不存在/软删 → MEMBER_NOT_FOUND) [rbac: attendance.read.sheet] */
     AdminMemberAttendanceControllerContributionSummary(memberId: string): Promise<ApiEnvelope<MemberContributionSummaryDto>> {
       return fetcher<MemberContributionSummaryDto>({ method: "GET", path: `/api/admin/v1/members/${memberId}/contribution-summary` });
     },
@@ -1242,7 +1242,7 @@ export function createAdminClient(fetcher: Fetcher) {
     AdminMemberParticipationLedgerControllerList(memberId: string, query?: { "page"?: number; "pageSize"?: number; "dateFrom"?: string; "dateTo"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": AdminParticipationLedgerEntryDto[] }>> {
       return fetcher<PageResultDto & { "items": AdminParticipationLedgerEntryDto[] }>({ method: "GET", path: `/api/admin/v1/members/${memberId}/participation-ledger`, query });
     },
-    /** 某队员参与累计(时长/活动次数/记录数；生涯贡献：闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff；member ref 点判) [rbac: attendance.read.sheet] */
+    /** 某队员参与累计(时长/活动次数/记录数；生涯贡献：只取 committed 账本 credited 净额；不叠加、不再封顶；闸关返回 20153/503，无 cutoff；member ref 点判) [rbac: attendance.read.sheet] */
     AdminMemberAttendanceControllerParticipationSummary(memberId: string): Promise<ApiEnvelope<MemberParticipationSummaryDto>> {
       return fetcher<MemberParticipationSummaryDto>({ method: "GET", path: `/api/admin/v1/members/${memberId}/participation-summary` });
     },

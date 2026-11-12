@@ -47,7 +47,7 @@ import type {
 
 // 招新三期(入队)T2(2026-06-19):入队申请 admin surface 逻辑(评审稿 §3.2 / §4)。
 // 标 gate(幂等;末次全过 + 贡献值≥5 自动推进 pending_evaluation)/ 综合评估(单一人工闸)/
-// list+detail / 贡献值只读汇总(off: approved 考勤封顶；on: committed credited；均按入队 cutoff)。
+// list+detail / 贡献值只读 committed credited，按入队 cutoff；工作流关闭时拒绝。
 // 一键入队(joined)在 T4。
 // 行查询 include + admin presenter(buildAdminDto)抽至 team-join-progress.ts,admin/enrollment 共用。
 

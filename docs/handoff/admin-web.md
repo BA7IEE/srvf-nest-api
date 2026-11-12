@@ -1,5 +1,7 @@
 # 交接:后端 ↔ admin 前端(srvf-admin-web)
 
+> **本地候选（未合入、未部署）**：本次仅退役队员参与汇总与入队贡献的旧考勤回退，并关闭旧考勤终审通过入口。工作流开启时这些汇总只读 committed 账本；关闭时返回 `20153`／HTTP 503，前端应显示不可用，不能展示为零。只读维护态下启用的账本读面仍可读。旧终审 `final-approve` 在工作流开启时返回 `20154`／HTTP 410，在关闭且通过原有授权后返回 `20153`／503，只读维护态返回 `20158`／503。新结算尚未接入入队贡献达标通知；活动核对、meta 和其他旧考勤入口仍待迁移。下方旧阶段描述有冲突时以本候选说明为准。
+
 ## E4 原生贡献证明（Draft PR1380，未合并、未部署）
 
 2026-10-17受限首发候选：新active原生结算统一按完整活动准入，身份／current段各≤500、物理slice≤2500、evaluation units≤2000，并限制冻结政策复杂度、JSON字节、历史输入及完整服务段拆日成本。详细边界及实际结果见[当前实施记录](../plans/activity-os-r5-e4-assert-source-reuse-review.md#2026-10-17-统一夹具真实全链与500边界实际结果)。超界返回既有20225／HTTP409，业务事务回滚；前端应显示失败，不拆页／分批、截断人口或自动换key重试。旧回执重放及已有prepared／恢复沿原证明，不代表旧活动已取得新准入认证。测试提交9c5c60d6已通过极小先行及500受限真实全链，容量prepare4／4、最终账本COMMIT与清理完成；新独立小窗口已实测首个policy反例HTTP409／20225，但196表指纹因调度回执持久写失败；当前已将新active准入前移到首次回执写前，保留重放／legacy及生成器复核，当前增量以必需DI防止准入服务缺失时静默退化，26项定向回归通过；普通CI首轮在发布配置处失败，第二轮修复后发布已过但封场因测试v1.1开关缺失503／20153失败、尚未到generate；当前仅补同一测试app初始化期间的开关并精确恢复，第三轮已实测shape／bytes各409／20225及196表零变化通过；正例prepare因测试请求混入allocation字段400／40000失败，当前仅改显式prepare DTO并补离线契约测试，后续edf5c9aa普通CI已实测500整例／三个数量边界／shape和bytes零写／base账本通过；unchanged-time新测试oracle遗漏复制分支而失败，当前只复用已有前驱／根字段／文档全等／冻结oracle合同修正测试，后续resumable／V3／长来源仍待最终CI。该修复不证明两事务间的后续失败都零写。bytes负例已通过；纠错后续／完整长段反例仍NOT_RUN，required CI与人工门仍开放。默认off，前端和生产均不得据此启用。
@@ -242,8 +244,7 @@ D4 八个新增入口全部在 Human App managed activity 面，详见 [小程�
 > **考勤退回修改（v0.62.0 PR-8；production 未部署）**：一审 `POST .../:id/return`、终审 `POST .../:id/final-return`，body 均为 `{ "returnNote": "必填原因" }`；成功后状态为 `returned`，records 原样保留。普通修正先 `PATCH .../:id`（returned 可编辑），再 `POST .../:id/resubmit` 发送空对象；重提清空一审/终审/退回责任字段、`version+1`、回 `pending`，必须重新走一审。无原因返 `22082`，非 returned 重提返 `22083`。原 `reject/final-reject` 仍表示作废并软删 records，不能拿来做普通整改。终审退回同样执行 22074/22075；一级退回执行最近提交人自审限制 22081。
 
 > ⚠️ **活动取消后的考勤单(2026-07-31,A-R2 方案乙「放行存量、掐断增量」)**:活动 `cancelled` 后 ——
-> **已存在的考勤单照旧可以走完审批**(`approve` / `final-approve` / `return` / `resubmit` / `reopen` 全部不变),
-> 服务时长与贡献值正常结算,因为工是真做了的;
+> **历史口径**：原来允许存量单据走完审批；本候选已关闭 `final-approve`，不得再使用旧终审结算时长或贡献值。
 > 但**不得再产生新的考勤事实** —— `POST .../attendance-sheets` 仍返 **20122**(既有),
 > 且 `PATCH /api/admin/v1/attendance-sheets/:id` **带 `records` 时新增返回 20122**
 > (App 责任人面 `PATCH /api/app/v1/my/managed-activities/:activityId/attendance-sheets/:sheetId` 同);
@@ -272,9 +273,9 @@ D4 八个新增入口全部在 Human App managed activity 面，详见 [小程�
 >
 > 权限侧:`certificate.read.sensitive` 默认**只绑 biz-admin**;org-admin / 只读投影角色 / group-manager 均**不**继承(敏感明文不随组织业务下放)。SUPER_ADMIN 短路照常可见。**列表接口恒不返编号的任何形态**(连掩码字段都不在 list select 里),编号只在详情出现。
 
-> 队员 360 跨轴查询备注:`registrations`/`attendance-records` 分页(`page`/`pageSize`)+ item 自带 activity 上下文(`activityId`/`activityTitle`);`attendance-records` **仅返 approved sheet 内 records**(已生效记录,镜像 app `/me` 口径);`contribution-summary` 返**生涯累计 capped 总分**(`{ memberId, contributionPoints }`,后端已按北京日封顶 3,**前端直接展示别再加**)。v0.48.0 起历史记录也按新上限读时实时重算,生涯累计数字可能变大;不存在/软删队员 → `MEMBER_NOT_FOUND`(15001)。
+> 队员 360 跨轴查询备注:`registrations`/`attendance-records` 分页(`page`/`pageSize`)+ item 自带 activity 上下文(`activityId`/`activityTitle`);`attendance-records` **仅返 approved sheet 内 records**(已生效记录,镜像 app `/me` 口径);`contribution-summary` 在工作流开启时返回生涯累计 committed credited 净额（`{ memberId, contributionPoints }`，入账时已封顶，前端不可再封顶或叠加旧数据）；工作流关闭返回 `20153`／503，不表示零;不存在/软删队员 → `MEMBER_NOT_FOUND`(15001)。
 
-> **`participation-summary` 计数口径**：旧流程下从 approved 考勤记录计算。v1.1 闸开启后，`activityCount` 是当前正式版本有已入账日行的不同活动数，`recordCount` 是这些日行按参与身份×北京日去重的条数。合法零值日行仍计数；当前版本没有日行时，历史冲回分录不再计入。更正准备中继续显示先前正式版本，生效后以新版本计算。计数不是“出勤人数”，且计数与时长分开读取，并发更正时不保证来自同一数据库快照。`totalServiceHours` 沿既有正式时长证明优先规则，`contributionPoints` 由后端计算：闸关时按旧考勤北京日封顶，闸开时按已入账 credited 正负净额，不回退旧数据或二次封顶。前端直接展示，不自行求和；此个人端点不返回 no-show。本说明是此分支的合同，合入或部署须另行核实。
+> **`participation-summary` 计数口径**：v1.1 闸开启时，`activityCount` 是当前正式版本有已入账日行的不同活动数，`recordCount` 是这些日行按参与身份×北京日去重的条数。合法零值日行仍计数；当前版本没有日行时，历史冲回分录不再计入。更正准备中继续显示先前正式版本，生效后以新版本计算。计数不是“出勤人数”，且计数与时长分开读取，并发更正时不保证来自同一数据库快照。`totalServiceHours` 沿既有正式时长证明优先规则，`contributionPoints` 按已入账 credited 正负净额计算，不回退旧数据或二次封顶。闸关时该汇总返回 `20153`／503。前端直接展示，不自行求和；此个人端点不返回 no-show。本说明是此分支的合同，合入或部署须另行核实。
 
 > **队员 360 统一保险概览**：保险 tab 的显示主数据源为 `GET /api/admin/v1/members/:memberId/insurances/overview`。`selfPurchased` 展示个人自购保险及审核动作；`teamProvided` 只读展示团队保险安全投影，不展示“核验通过 / 驳回”，也不返回保单号、备注、其他成员或 reviewer。UI 必须直接使用后端的 `dateStatus` 与 `summary.hasConfirmedCoverage`，不再仅以 `coverageEnd >= 当前时间` 自行推导日期状态。`summary` 只是按北京当前日的概览，不得替代某次活动审批或入队资格判定。旧 `GET /api/admin/v1/members/:memberId/insurances` 保留兼容，但队员 360 应迁移到 overview。
 >
@@ -1058,8 +1059,8 @@ E4/E5 测试尾链状态（2026-10-17）：4f4db745普通CI39048441257仍FAIL，
 
 ## R5受限500贡献口径交接（后端，前端实施后置）
 
-管理端的贡献字段结构不变：闸关按approved考勤北京日全局封顶3，闸开只取committed账本credited净额（含真实冲回/重记），不混入在途/recognized，不二次封顶，不叠加旧分或空账回退。入队进度仍截至入队年3月31日，门槛5；成员生涯汇总没有该cutoff。readonly保留当前读源，直接关闭v1.1会读回旧考勤，不能当作无损回退。
+管理端贡献字段结构不变：工作流开启时只取 committed 账本 credited 净额（含冲回/重记），不混入在途/recognized、不二次封顶、不叠加旧分或空账回退。入队进度仍截至入队年3月31日，门槛5；成员生涯汇总没有该 cutoff。工作流关闭时这些读面返回 `20153`／503，已启用时只读维护态仍可读。
 
-已有ledgerTotals的committed/inFlight两轴字段保持；在途不计入入队资格。真实两活动同日封顶、跨日到5及最终入队、并发刷新、更正重放和旧分转换样本已补PG验证。现有8通用门槛标记、人工综合评估及final join流程保留，不新增账本提交达标通知触发。snapshot/OpenAPI同步8项来源文本，客户端同时刷新13摘要及3个方法注释，路由/tag/权限/类型/required/nullable均不改；这不是tag-only变更。
+已有ledgerTotals的committed/inFlight两轴字段保持；在途不计入入队资格。历史 R5 候选曾对两活动同日封顶、跨日到5及最终入队、并发刷新、更正重放和旧分转换样本做 PG 验证；该证据不覆盖本次本地候选。现有8通用门槛标记、人工综合评估及final join流程保留，不新增账本提交达标通知触发。snapshot/OpenAPI同步8项来源文本，客户端同时刷新13摘要及3个方法注释，路由/tag/权限/类型/required/nullable均不改；这不是tag-only变更。
 
 AC-013/020/025沿原决定上线后按诉求立项，AC-017仍搁置，四项保持TODO；显式r5-limited500只单列首发机器口径，默认全合同9a仍严格。保留500及全部native维度，原最大规模NOT_VALIDATED。前端页面/联调、真实服务器数据/转换/shadow/fleet/worker排空/稳定窗与10a10b均未完成，生产NO_GO。本段不是部署或开关授权。

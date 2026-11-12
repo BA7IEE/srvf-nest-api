@@ -9,6 +9,9 @@ import { AttendanceNotificationProducer } from './attendance-notification-produc
 const legacyGate = new ActivityWorkflowGate({
   activityV11Workflow: { enabled: false, readonlyMaintenance: false },
 } as AppConfig);
+const ledgerGate = new ActivityWorkflowGate({
+  activityV11Workflow: { enabled: true, readonlyMaintenance: false },
+} as AppConfig);
 
 function makeOutboxMock() {
   return {
@@ -53,18 +56,18 @@ function makeTxMock() {
       findMany: jest.fn().mockResolvedValue([]),
     },
     attendanceRecord: {
-      findMany: jest.fn().mockResolvedValue([]),
+      findMany: jest.fn().mockRejectedValue(new Error('retired attendance must not be read')),
+    },
+    participationLedgerEntry: {
+      groupBy: jest.fn(),
     },
   };
 }
 
-function contributionRecord(day: string, points: string | number, memberId = 'member-1') {
-  return {
-    // 批量版按 memberId 分组,所以合成记录必须带上它(逐人查询时不需要)。
-    memberId,
-    checkInAt: new Date(`${day}T01:00:00.000Z`),
-    contributionPoints: new Prisma.Decimal(points),
-  };
+function setCommittedPoints(tx: ReturnType<typeof makeTxMock>, points: string | number) {
+  tx.participationLedgerEntry.groupBy.mockResolvedValue([
+    { memberId: 'member-1', _sum: { creditedPointsDelta: new Prisma.Decimal(points) } },
+  ]);
 }
 
 describe('AttendanceNotificationProducer', () => {
@@ -174,19 +177,16 @@ describe('AttendanceNotificationProducer', () => {
     for (const [, client] of enqueued) expect(client).toBe(tx);
   });
 
-  it('终审前按 member 去重并快照最新 joining application 的真实 capped before', async () => {
+  it('按 member 去重并快照最新 joining application 的 committed ledger before', async () => {
     const outbox = makeOutboxMock();
     const tx = makeTxMock();
     tx.teamJoinApplication.findMany.mockResolvedValue([
       { id: 'application-1', memberId: 'member-1', cycle: { year: 2027 } },
     ]);
-    tx.attendanceRecord.findMany.mockResolvedValue([
-      contributionRecord('2026-08-01', 3),
-      contributionRecord('2026-08-02', 1),
-    ]);
+    setCommittedPoints(tx, 4);
     const producer = new AttendanceNotificationProducer(
       outbox as unknown as NotificationOutboxService,
-      legacyGate,
+      ledgerGate,
     );
 
     const snapshots = await producer.prepareContributionThresholdSnapshots(
@@ -202,7 +202,8 @@ describe('AttendanceNotificationProducer', () => {
       select: { id: true, memberId: true, cycle: { select: { year: true } } },
     });
     // 贡献值也是一次(同 cycleYear 一次),不随人数增长。
-    expect(tx.attendanceRecord.findMany).toHaveBeenCalledTimes(1);
+    expect(tx.participationLedgerEntry.groupBy).toHaveBeenCalledTimes(1);
+    expect(tx.attendanceRecord.findMany).not.toHaveBeenCalled();
     expect(snapshots).toHaveLength(1);
     expect(snapshots[0]).toMatchObject({
       applicationId: 'application-1',
@@ -228,16 +229,13 @@ describe('AttendanceNotificationProducer', () => {
     expect(tx.attendanceRecord.findMany).not.toHaveBeenCalled();
   });
 
-  it('真实 capped 4→5 时发送稳定 application+threshold milestone', async () => {
+  it('committed ledger 4→5 时发送稳定 application+threshold milestone', async () => {
     const outbox = makeOutboxMock();
     const tx = makeTxMock();
-    tx.attendanceRecord.findMany.mockResolvedValue([
-      contributionRecord('2026-08-01', 3),
-      contributionRecord('2026-08-02', 2),
-    ]);
+    setCommittedPoints(tx, 5);
     const producer = new AttendanceNotificationProducer(
       outbox as unknown as NotificationOutboxService,
-      legacyGate,
+      ledgerGate,
     );
 
     await producer.enqueueFinalApproved(tx as unknown as Prisma.TransactionClient, {
@@ -278,16 +276,13 @@ describe('AttendanceNotificationProducer', () => {
   it.each([
     { before: 5, after: 5 },
     { before: 6, after: 6 },
-  ])('真实 capped $before→$after 时不重复发送 milestone', async ({ before, after }) => {
+  ])('committed ledger $before→$after 时不重复发送 milestone', async ({ before, after }) => {
     const outbox = makeOutboxMock();
     const tx = makeTxMock();
-    tx.attendanceRecord.findMany.mockResolvedValue([
-      contributionRecord('2026-08-01', 3),
-      contributionRecord('2026-08-02', after - 3),
-    ]);
+    setCommittedPoints(tx, after);
     const producer = new AttendanceNotificationProducer(
       outbox as unknown as NotificationOutboxService,
-      legacyGate,
+      ledgerGate,
     );
 
     await producer.enqueueFinalApproved(tx as unknown as Prisma.TransactionClient, {
@@ -312,18 +307,13 @@ describe('AttendanceNotificationProducer', () => {
     });
   });
 
-  it('同一 member 多 records 原始 +3 但 capped 仅 +1 时保留两条结果并只发一次 milestone', async () => {
+  it('同一 member 多 records 且 committed ledger 由 4 到 5 时保留两条结果并只发一次 milestone', async () => {
     const outbox = makeOutboxMock();
     const tx = makeTxMock();
-    tx.attendanceRecord.findMany.mockResolvedValue([
-      contributionRecord('2026-08-01', 2),
-      contributionRecord('2026-08-01', 1.5),
-      contributionRecord('2026-08-01', 1.5),
-      contributionRecord('2026-08-02', 2),
-    ]);
+    setCommittedPoints(tx, 5);
     const producer = new AttendanceNotificationProducer(
       outbox as unknown as NotificationOutboxService,
-      legacyGate,
+      ledgerGate,
     );
     const input = {
       sheetId: 'sheet-2',

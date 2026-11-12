@@ -3,7 +3,7 @@
 // surface: shared —— 被两个及以上 surface 共用的类型(唯一定义处)
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:cafe03b012f3eceb544738caaf818dd89f3e4640f35d9d863b4c88c4175c40ef
+// inputDigest: sha256:2a2049ce4d55e5ed61056dad7e186eb17f2a4e0975dbcf90c177970070d5ea56
 
 /** 统一响应 envelope —— 全仓契约恒为 { code, message, data }。 */
 export interface ApiEnvelope<T> {
