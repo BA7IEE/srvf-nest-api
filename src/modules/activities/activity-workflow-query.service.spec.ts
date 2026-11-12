@@ -37,7 +37,7 @@ describe('ActivityWorkflowQueryService', () => {
     expect(managedActivitySelect._count.select).not.toHaveProperty('attendanceSheets');
   });
 
-  it('aggregates one page with two bulk groupBy queries instead of per-row reads', async () => {
+  it('aggregates one page of registrations without old sheets or per-row settlement reads', async () => {
     const rows = Array.from({ length: 25 }, (_, index) => ({
       id: `activity-${index}`,
       title: `Activity ${index}`,
@@ -82,25 +82,26 @@ describe('ActivityWorkflowQueryService', () => {
         _count: { _all: 2 },
       },
     ]);
-    const attendanceGroupBy = jest.fn().mockResolvedValue([
-      {
-        activityId: 'activity-0',
-        statusCode: 'returned',
-        _count: { _all: 1 },
-      },
-    ]);
+    const attendanceGroupBy = jest.fn(() => {
+      throw new Error('legacy attendance sheets must not be queried');
+    });
+    const settlementRead = jest.fn(() => {
+      throw new Error('list visibility must not read settlement facts');
+    });
     const prisma = {
       activity: { findMany: activityFindMany, count: activityCount },
       activityRegistration: { groupBy: registrationGroupBy },
       attendanceSheet: { groupBy: attendanceGroupBy },
+      attendanceSettlementRun: { findUnique: settlementRead },
       $transaction: jest.fn((queries: Promise<unknown>[]) => Promise.all(queries)),
     } as unknown as PrismaService;
     const authz = {} as AuthzService;
     const service = new ActivityWorkflowQueryService(
       prisma,
       authz,
-      new ActivityClosurePolicy(),
+      undefined as never,
       imagesStub,
+      undefined as never,
     );
 
     const result = await service.list('member-1', { page: 1, pageSize: 25 });
@@ -109,12 +110,13 @@ describe('ActivityWorkflowQueryService', () => {
     expect(result.items[0]).toEqual(
       expect.objectContaining({
         pendingRegistrations: 2,
-        unresolvedAttendanceSheets: 1,
-        nextAction: '修改并重提退回考勤单',
+        nextAction: null,
       }),
     );
+    expect(result.items[0]).not.toHaveProperty('unresolvedAttendanceSheets');
     expect(registrationGroupBy).toHaveBeenCalledTimes(1);
-    expect(attendanceGroupBy).toHaveBeenCalledTimes(1);
+    expect(attendanceGroupBy).not.toHaveBeenCalled();
+    expect(settlementRead).not.toHaveBeenCalled();
     expect(activityFindMany).toHaveBeenCalledTimes(1);
     expect(activityCount).toHaveBeenCalledTimes(1);
   });
@@ -138,8 +140,9 @@ describe('ActivityWorkflowQueryService', () => {
       const service = new ActivityWorkflowQueryService(
         prisma,
         {} as AuthzService,
-        new ActivityClosurePolicy(),
+        undefined as never,
         imagesStub,
+        undefined as never,
       );
       return { service, activityFindMany, activityCount };
     }
@@ -207,8 +210,9 @@ describe('ActivityWorkflowQueryService', () => {
       return new ActivityWorkflowQueryService(
         prisma,
         {} as AuthzService,
-        new ActivityClosurePolicy(),
+        undefined as never,
         imagesStub,
+        undefined as never,
       ).list('member-1', { page: 1, pageSize: 20 });
     }
 
@@ -270,15 +274,27 @@ describe('ActivityWorkflowQueryService', () => {
   it('returns allocation mode in the managed activity detail projection', async () => {
     const registrationGroupBy = jest.fn().mockResolvedValue([]);
     const attendanceGroupBy = jest.fn().mockResolvedValue([]);
-    const prisma = {
+    const tx = {
       activityRegistration: { groupBy: registrationGroupBy },
       attendanceSheet: { groupBy: attendanceGroupBy },
+      user: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: 'user-1', memberId: 'member-1', role: Role.USER }),
+      },
+    };
+    const prisma = {
+      ...tx,
+      $transaction: jest.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaService;
     const service = new ActivityWorkflowQueryService(
       prisma,
-      {} as AuthzService,
-      new ActivityClosurePolicy(),
+      { can: jest.fn().mockResolvedValue(false) } as unknown as AuthzService,
+      undefined as never,
       imagesStub,
+      {
+        resolve: jest.fn().mockResolvedValue({ canUseApp: true, member: { id: 'member-1' } }),
+      } as never,
     );
     jest.spyOn(service, 'loadManaged').mockResolvedValue({
       id: 'activity-1',
@@ -311,8 +327,15 @@ describe('ActivityWorkflowQueryService', () => {
       publishReviews: [],
     } as never);
 
-    const result = await service.detail('activity-1', 'member-1', { role: Role.USER } as never);
+    const result = await service.detail('activity-1', 'member-1', {
+      id: 'user-1',
+      memberId: 'member-1',
+      role: Role.USER,
+    } as never);
 
     expect(result.activity).toEqual(expect.objectContaining({ allocationModeCode: 'lottery' }));
+    expect(tx.user.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'user-1', status: 'ACTIVE', deletedAt: null } }),
+    );
   });
 });

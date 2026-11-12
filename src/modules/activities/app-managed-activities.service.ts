@@ -152,8 +152,9 @@ export class AppManagedActivitiesService {
     activityId: string,
     memberId: string,
     user: CurrentUserPayload,
+    includeSettlement = true,
   ): Promise<AppManagedActivityDetailDto> {
-    return this.workflowQuery.detail(activityId, memberId, user);
+    return this.workflowQuery.detail(activityId, memberId, user, includeSettlement);
   }
 
   async create(
@@ -177,7 +178,7 @@ export class AppManagedActivitiesService {
     };
     this.assertManagedDraftConfiguration(normalizedDto);
     const created = await this.activities.create(normalizedDto, user, auditMeta, 'managed');
-    return this.detail(created.id, user.memberId, user);
+    return this.detail(created.id, user.memberId, user, false);
   }
 
   async update(
@@ -188,7 +189,7 @@ export class AppManagedActivitiesService {
   ): Promise<AppManagedActivityDetailDto> {
     if (!user.memberId) throw new BizException(BizCode.FORBIDDEN);
     await this.activities.update(activityId, dto, user, auditMeta, 'managed');
-    return this.detail(activityId, user.memberId, user);
+    return this.detail(activityId, user.memberId, user, false);
   }
 
   async softDelete(
@@ -350,7 +351,7 @@ export class AppManagedActivitiesService {
       user,
       auditMeta,
     );
-    return this.detail(activityId, user.memberId, user);
+    return this.detail(activityId, user.memberId, user, false);
   }
 
   async withdraw(activityId: string, user: CurrentUserPayload, auditMeta: AuditMeta) {

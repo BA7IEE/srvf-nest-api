@@ -19,6 +19,7 @@ describe('retired managed attendance declaration', () => {
       undefined as never,
       undefined as never,
       undefined as never,
+      undefined as never,
     );
     const gate = new ActivityWorkflowGate({
       activityV11Workflow: { enabled, readonlyMaintenance },

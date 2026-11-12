@@ -6,7 +6,9 @@
 
 第六轮额外停止一条仍注册的旧写入口：`POST /api/app/v1/my/managed-activities/{activityId}/declare-attendance-complete`。它先保留 App 成员和活动主负责人检查；无成员为 `FORBIDDEN`，非主负责人或活动不可见为 `ACTIVITY_NOT_FOUND`。通过检查后，开闸返回 `20154`／410，关闸返回 `20153`／503，只读维护返回 `20158`／503，任何闸态都不再写旧声明或审计成功。此路径暂时保留以明确告知调用方，**不是**下表已注销的第 31 个路由；新版相关能力是 `.../{activityId}/settlement` 下的结算与关账，权限、请求和效果不同。OpenAPI 不声明此方法的成功响应；当前生成器仍生成 `Promise<ApiEnvelope<void>>` 的方法签名，该签名不表示此方法可成功。旧 HTTP E2E 原有成功断言尚需按流程获准审查，未在本轮修改。
 
-负责人列表／详情的旧 Sheet 统计和旧 `nextAction` 仍待替换，因此它们仍可能提示调用此已退休入口；此候选未完成负责人工作流迁移，不得部署或将该提示视为可执行动作。独立 Admin 前端需另行适配并回执，后端生成客户端更新不能证明前端实际采用。
+第七轮负责人列表／详情已停止读取旧 Sheet、旧声明及其待办。列表保留原活动可见范围和待审报名数，不推断结算权限，也不按旧单数造新版数字。详情保留 pending／waitlisted 报名数；原 `closure` 改为生命周期 `workflow`，旧 Sheet 计数字段移除，另增 `settlement`。独立详情在同一只读快照中重读 ACTIVE 用户和成员绑定、复核 App 成员准入，以当前角色检查活动可见性，再按活动资源检查 `activity.settlement-generate.record`：无权为 `forbidden`；有权但新版闸关为 `workflow-disabled`；有权且闸开为 `available`，才返回 run 流程状态、当前提交版本指针、只读态及工作台相对路径；存在 active 关账修订才返回 `activeClosure`。`available` 时 run 状态 null 表示无 run，省略 `activeClosure` 表示无 active 关账；不读取旧表兜底。`activeClosure` 是该活动最新的 active 关账记录，未核验与正式账本指针的一致性；它可与进行中更正并存，不代表最终完成。提交版本指针不等于当前正式生效版本，run 状态也不是关账凭证。`workflow.nextAction` 的 null 表示不推断下一步，不代表结算完成或没有待办；工作台路径是普通导航，不是操作许可。只读维护在闸开时保留读取。此详情摘要在关闸时不读取新版事实；既有独立 `GET .../settlement` 工作台目前有自己的读语义，关闸也可按其授权读取，不要把二者的 gate 行为混为一谈。缺少结算权限或关闸不会让基础活动详情失败。创建、更新、直接发布、封面和图集写入后的响应返回 `not-requested`，不新增结算授权或交互事务依赖；需要摘要时再请求独立详情。独立详情的授权或事务错误会按错误返回，不伪装为无权或零。App 首次准入在事务前进行，独立详情在事务内再次复核；身份失效时整个 GET 返回认证／准入错误；该快照不锁身份，快照建立后的撤权不保证对当前请求即时生效。写后基础响应保留原有准入与读取边界。
+
+负责人列表和详情字段变化是有意的破坏性合同变更：小程序须适配 `workflow`／`settlement`，旧 E2E 和受保护快照仍待审查，真实 PG／HTTP 未验证。独立前端需另行适配并回执，后端生成客户端更新不能证明前端实际采用；候选仍不得部署。
 
 旧控制器类缩写：C=`AttendanceSheetsCollectionController`，R=`AttendanceSheetsResourceController`（均在 `src/modules/attendances/attendances.controller.ts`）；A=`AdminActivityCheckInsController`，M=`AdminMemberAttendanceController`，P=`AppActivityCheckInsController`，U=`AppMyAttendanceRecordsController`，W=`AppManagedActivityAttendancesController`（各自在 `src/modules/attendances/controllers/` 下）。旧生成客户端方法是完整控制器类名加下表方法名首字母大写，例如 `R.finalApprove` 对应 `AttendanceSheetsResourceControllerFinalApprove`。C/R/A/P/U/W 已注销，M 类保留但 `attendanceRecords` 方法移除。
 
@@ -50,4 +52,4 @@ App 的“责任范围”是旧控制器的 `app-member` + `responsibility`，se
 | `DELETE /api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}` | W.softDelete | 责任范围、`attendance.delete.sheet` | 未发现等价软删接口 |
 | `POST /api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}/resubmit` | W.resubmit | 责任范围、`attendance.update.sheet` | `POST .../settlement/versions/{versionId}/resubmit`，使用新结算提交权限 |
 
-本候选的活动对账、参与汇总和月度总览在新版关闭时可返回 `20153`／503；月度无可见组织时先返回空数组。三个读面、列表统计及工作台的新语义见[参与投影](v11-participation-projection.md)；负责人工作流和遗留资源解析仍有旧依赖，新版达标通知未接线，真实 PG／HTTP 未验证。不得据此部署。
+本候选的活动对账、参与汇总和月度总览在新版关闭时可返回 `20153`／503；月度无可见组织时先返回空数组。三个读面、列表统计及工作台的新语义见[参与投影](v11-participation-projection.md)；成员退出保护和遗留资源解析仍有旧依赖，新版达标通知未接线，真实 PG／HTTP 未验证。不得据此部署。

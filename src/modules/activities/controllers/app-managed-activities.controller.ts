@@ -528,7 +528,7 @@ export class AppManagedActivitiesController {
       user,
       this.auditMeta(req),
     );
-    return this.service.detail(params.activityId, memberId, user);
+    return this.service.detail(params.activityId, memberId, user, false);
   }
 
   @Put(':activityId/gallery')
@@ -562,7 +562,7 @@ export class AppManagedActivitiesController {
       user,
       this.auditMeta(req),
     );
-    return this.service.detail(params.activityId, memberId, user);
+    return this.service.detail(params.activityId, memberId, user, false);
   }
 
   @Get(':activityId/qualification-rules')

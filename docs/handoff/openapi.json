@@ -157818,12 +157818,10 @@
           "pendingRegistrations": {
             "type": "number"
           },
-          "unresolvedAttendanceSheets": {
-            "type": "number"
-          },
           "nextAction": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "null 表示未推断下一步，不代表结算已完成或没有待办。"
           },
           "staleDraft": {
             "type": "boolean",
@@ -157838,7 +157836,6 @@
           "endAt",
           "relationship",
           "pendingRegistrations",
-          "unresolvedAttendanceSheets",
           "staleDraft"
         ]
       },
@@ -158071,51 +158068,97 @@
           },
           "waitlistedRegistrations": {
             "type": "number"
-          },
-          "attendanceSheets": {
-            "type": "number"
-          },
-          "unresolvedAttendanceSheets": {
-            "type": "number"
           }
         },
         "required": [
           "pendingRegistrations",
-          "waitlistedRegistrations",
-          "attendanceSheets",
-          "unresolvedAttendanceSheets"
+          "waitlistedRegistrations"
         ]
       },
-      "AppManagedActivityClosureDto": {
+      "AppManagedActivityWorkflowDto": {
         "type": "object",
         "properties": {
-          "attendanceDeclaredCompleteAt": {
-            "type": "string",
-            "nullable": true,
-            "format": "date-time"
-          },
           "status": {
             "type": "string",
             "enum": [
               "draft",
               "publish-review-pending",
               "published",
+              "completed",
+              "terminated",
               "cancelled",
-              "waiting-attendance-declaration",
-              "attendance-first-review",
-              "attendance-returned",
-              "attendance-final-review",
-              "closed",
-              "archived"
+              "archived",
+              "unknown"
             ]
           },
           "nextAction": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "null 表示未推断下一步，不代表结算已完成或没有待办。"
           }
         },
         "required": [
           "status"
+        ]
+      },
+      "AppManagedActiveClosureDto": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "number"
+          },
+          "closedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "revision",
+          "closedAt"
+        ]
+      },
+      "AppManagedSettlementSummaryDto": {
+        "type": "object",
+        "properties": {
+          "availability": {
+            "type": "string",
+            "enum": [
+              "available",
+              "workflow-disabled",
+              "forbidden",
+              "not-requested"
+            ],
+            "description": "仅活动结算读权通过后判断工作流开关；写后响应不附加结算查询，标记 not-requested。"
+          },
+          "runStatus": {
+            "type": "string",
+            "nullable": true,
+            "description": "结算 run 流程状态；null 表示当前无 run，不代表已关账或无参与。"
+          },
+          "currentSubmittedVersion": {
+            "type": "number",
+            "nullable": true,
+            "description": "run 当前提交版本指针，不代表当前正式生效版本。"
+          },
+          "activeClosure": {
+            "description": "该活动最新 active 关账记录，未校验其与账本指针的一致性；available 时省略表示没有 active 记录。更正可能仍在进行。",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AppManagedActiveClosureDto"
+              }
+            ]
+          },
+          "readOnly": {
+            "type": "boolean",
+            "description": "结算写入是否处于只读维护态；读面仍可查看。"
+          },
+          "workbenchPath": {
+            "type": "string",
+            "description": "具备结算工作台读取权限时的相对 API 路径；不代表具备写权限。"
+          }
+        },
+        "required": [
+          "availability"
         ]
       },
       "AppManagedActivityDetailDto": {
@@ -158157,15 +158200,19 @@
           "counts": {
             "$ref": "#/components/schemas/AppManagedActivityCountsDto"
           },
-          "closure": {
-            "$ref": "#/components/schemas/AppManagedActivityClosureDto"
+          "workflow": {
+            "$ref": "#/components/schemas/AppManagedActivityWorkflowDto"
+          },
+          "settlement": {
+            "$ref": "#/components/schemas/AppManagedSettlementSummaryDto"
           }
         },
         "required": [
           "activity",
           "publishReview",
           "counts",
-          "closure"
+          "workflow",
+          "settlement"
         ]
       },
       "CreateAppManagedActivityDto": {

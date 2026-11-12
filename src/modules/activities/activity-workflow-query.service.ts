@@ -1,21 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { toMemberLabelFields } from '../../common/identity/member-label.util';
-import { Role, type Prisma } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import type { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { AuthzService } from '../authz/authz.service';
-import {
-  ActivityClosurePolicy,
-  type ActivityAttendanceWorkflowCounts,
-} from './activity-closure-policy';
+import { AppIdentityResolver } from '../users/app-identity.resolver';
+import { loadActiveUserIdentityInTx } from '../users/user-active-identity.query';
 import type {
   AppManagedActivitiesQueryDto,
   AppManagedActivityDetailDto,
   AppManagedActivityListItemDto,
   AppManagedActivityProjectionDto,
+  AppManagedActivityWorkflowDto,
+  AppManagedSettlementSummaryDto,
 } from './dto/app/app-managed-activity.dto';
 import { ActivityImageSigningService } from './activity-image-signing.service';
 import { ACTIVITY_STATUS_ARCHIVED } from './activity-state-machine';
@@ -44,7 +45,6 @@ export const managedActivitySelect = {
   // P2-14 刀 A:封面 / 图集按 key 现签(不读裸 URL 遗留列)。
   coverImageKey: true,
   galleryImageKeys: true,
-  attendanceDeclaredCompleteAt: true,
   createdAt: true,
   updatedAt: true,
   initiator: {
@@ -83,28 +83,37 @@ export type ManagedActivityRow = Prisma.ActivityGetPayload<{
   select: typeof managedActivitySelect;
 }>;
 
-type AttendanceStatusGroup = {
-  activityId: string;
-  statusCode: string;
-  _count: { _all: number };
-};
+const SETTLEMENT_WORKBENCH_ACTION = 'activity.settlement-generate.record';
 
-const EMPTY_ATTENDANCE_COUNTS: ActivityAttendanceWorkflowCounts = {
-  total: 0,
-  pending: 0,
-  returned: 0,
-  pendingFinalReview: 0,
-  unresolved: 0,
-};
+function workflowFor(row: ManagedActivityRow, memberId: string): AppManagedActivityWorkflowDto {
+  if (row.statusCode === 'draft') {
+    return row.publishReviews[0]?.status === 'pending'
+      ? { status: 'publish-review-pending', nextAction: '等待发布审核' }
+      : {
+          status: 'draft',
+          nextAction: row.initiator?.id === memberId ? '提交发布审核' : null,
+        };
+  }
+  if (row.statusCode === 'cancelled') return { status: 'cancelled', nextAction: null };
+  if (row.statusCode === 'archived') return { status: 'archived', nextAction: null };
+  if (row.statusCode === 'completed' || row.statusCode === 'terminated') {
+    return { status: row.statusCode, nextAction: null };
+  }
+  if (row.statusCode === 'published') {
+    return { status: 'published', nextAction: null };
+  }
+  return { status: 'unknown', nextAction: null };
+}
 
 @Injectable()
 export class ActivityWorkflowQueryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authz: AuthzService,
-    private readonly closurePolicy: ActivityClosurePolicy,
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
     // P2-14 刀 A:封面 / 图集现签。
     private readonly images: ActivityImageSigningService,
+    private readonly identities: AppIdentityResolver,
   ) {}
 
   async list(
@@ -137,32 +146,24 @@ export class ActivityWorkflowQueryService {
       this.prisma.activity.count({ where }),
     ]);
     const activityIds = rows.map((row) => row.id);
-    const [registrationGroups, attendanceGroups] =
+    const registrationGroups =
       activityIds.length === 0
-        ? [[], []]
-        : await Promise.all([
-            this.prisma.activityRegistration.groupBy({
-              by: ['activityId', 'statusCode'],
-              where: {
-                activityId: { in: activityIds },
-                deletedAt: null,
-                statusCode: { in: ['pending', 'waitlisted'] },
-              },
-              _count: { _all: true },
-            }),
-            this.prisma.attendanceSheet.groupBy({
-              by: ['activityId', 'statusCode'],
-              where: { activityId: { in: activityIds }, deletedAt: null },
-              _count: { _all: true },
-            }),
-          ]);
+        ? []
+        : await this.prisma.activityRegistration.groupBy({
+            by: ['activityId', 'statusCode'],
+            where: {
+              activityId: { in: activityIds },
+              deletedAt: null,
+              statusCode: { in: ['pending', 'waitlisted'] },
+            },
+            _count: { _all: true },
+          });
     const pendingByActivity = new Map<string, number>();
     for (const group of registrationGroups) {
       if (group.statusCode === 'pending') {
         pendingByActivity.set(group.activityId, group._count._all);
       }
     }
-    const attendanceByActivity = this.indexAttendanceCounts(attendanceGroups);
     const now = new Date();
 
     return {
@@ -174,8 +175,9 @@ export class ActivityWorkflowQueryService {
             : assignment?.responsibilityType === 'collaborator'
               ? 'collaborator'
               : 'initiator';
-        const attendance = attendanceByActivity.get(row.id) ?? EMPTY_ATTENDANCE_COUNTS;
-        const closure = this.closurePolicy.decide(this.toClosureInput(row, attendance), now);
+        // List visibility does not imply settlement permission. Do not invent
+        // a settlement task or expose settlement state from this list.
+        const workflow = workflowFor(row, memberId);
         return {
           activityId: row.id,
           title: row.title,
@@ -184,8 +186,7 @@ export class ActivityWorkflowQueryService {
           endAt: row.endAt,
           relationship,
           pendingRegistrations: pendingByActivity.get(row.id) ?? 0,
-          unresolvedAttendanceSheets: attendance.unresolved,
-          nextAction: closure.nextAction,
+          nextAction: workflow.nextAction,
           // AC-004「长期未处理草稿在工作台**提示**」的后端半格。
           // 判据与归档闸共用 `isStaleDraft` —— 两处各写一遍必然漂移,而漂移的形态是
           // 「亮着可归档、点下去被 20155 拒」或「能归档却不提示」,两种都没人会发现。
@@ -202,28 +203,29 @@ export class ActivityWorkflowQueryService {
     activityId: string,
     memberId: string,
     user: CurrentUserPayload,
+    includeSettlement = true,
   ): Promise<AppManagedActivityDetailDto> {
-    const row = await this.loadManaged(activityId, memberId, user.role);
-    const [registrationGroups, attendanceGroups] = await Promise.all([
-      this.prisma.activityRegistration.groupBy({
-        by: ['statusCode'],
-        where: {
-          activityId,
-          deletedAt: null,
-          statusCode: { in: ['pending', 'waitlisted'] },
-        },
-        _count: { _all: true },
-      }),
-      this.prisma.attendanceSheet.groupBy({
-        by: ['activityId', 'statusCode'],
-        where: { activityId, deletedAt: null },
-        _count: { _all: true },
-      }),
-    ]);
+    const { row, registrationGroups, settlement } = includeSettlement
+      ? await this.prisma.$transaction(
+          async (tx) => {
+            // Revalidate admission before activity visibility and scoped authz
+            // using the same snapshot as the facts returned by this GET.
+            const actor = await this.readCurrentActor(tx, memberId, user);
+            return {
+              ...(await this.readManagedBase(tx, activityId, memberId, actor.role)),
+              settlement: await this.readSettlementSummary(tx, activityId, actor),
+            };
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+        )
+      : {
+          ...(await this.readManagedBase(this.prisma, activityId, memberId, user.role)),
+          // A successful write must not acquire a new authorization/settlement
+          // dependency merely to format its response. A subsequent GET can read it.
+          settlement: { availability: 'not-requested' as const },
+        };
     const registrationCount = (statusCode: string) =>
       registrationGroups.find((group) => group.statusCode === statusCode)?._count._all ?? 0;
-    const attendance =
-      this.indexAttendanceCounts(attendanceGroups).get(activityId) ?? EMPTY_ATTENDANCE_COUNTS;
     const owner = row.responsibilityAssignments.find(
       (assignment) => assignment.responsibilityType === 'owner',
     );
@@ -231,7 +233,9 @@ export class ActivityWorkflowQueryService {
       (assignment) => assignment.memberId === memberId,
     );
     const latest = row.publishReviews[0] ?? null;
-    const closure = this.closurePolicy.decide(this.toClosureInput(row, attendance));
+    // The workbench is neutral navigation, exposed separately as workbenchPath;
+    // neither a run status nor an active closure proves an actionable task.
+    const workflow = workflowFor(row, memberId);
 
     return {
       activity: await this.toProjection(row),
@@ -280,13 +284,9 @@ export class ActivityWorkflowQueryService {
       counts: {
         pendingRegistrations: registrationCount('pending'),
         waitlistedRegistrations: registrationCount('waitlisted'),
-        attendanceSheets: attendance.total,
-        unresolvedAttendanceSheets: attendance.unresolved,
       },
-      closure: {
-        attendanceDeclaredCompleteAt: row.attendanceDeclaredCompleteAt,
-        ...closure,
-      },
+      workflow,
+      settlement,
     };
   }
 
@@ -309,8 +309,9 @@ export class ActivityWorkflowQueryService {
     activityId: string,
     memberId: string,
     role: Role = Role.USER,
+    tx?: Prisma.TransactionClient,
   ): Promise<ManagedActivityRow> {
-    const activity = await this.prisma.activity.findFirst({
+    const activity = await (tx ?? this.prisma).activity.findFirst({
       where: {
         id: activityId,
         deletedAt: null,
@@ -329,32 +330,83 @@ export class ActivityWorkflowQueryService {
     return activity;
   }
 
-  private indexAttendanceCounts(
-    groups: AttendanceStatusGroup[],
-  ): Map<string, ActivityAttendanceWorkflowCounts> {
-    const result = new Map<string, ActivityAttendanceWorkflowCounts>();
-    for (const group of groups) {
-      const current = result.get(group.activityId) ?? { ...EMPTY_ATTENDANCE_COUNTS };
-      const count = group._count._all;
-      current.total += count;
-      if (group.statusCode === 'pending') current.pending += count;
-      if (group.statusCode === 'returned') current.returned += count;
-      if (group.statusCode === 'pending_final_review') current.pendingFinalReview += count;
-      if (!['approved', 'rejected', 'final_rejected'].includes(group.statusCode)) {
-        current.unresolved += count;
-      }
-      result.set(group.activityId, current);
-    }
-    return result;
+  private async readManagedBase(
+    client: Prisma.TransactionClient,
+    activityId: string,
+    memberId: string,
+    role: Role,
+  ) {
+    const row = await this.loadManaged(activityId, memberId, role, client);
+    const registrationGroups = await client.activityRegistration.groupBy({
+      by: ['statusCode'],
+      where: {
+        activityId,
+        deletedAt: null,
+        statusCode: { in: ['pending', 'waitlisted'] },
+      },
+      _count: { _all: true },
+    });
+    return { row, registrationGroups };
   }
 
-  private toClosureInput(row: ManagedActivityRow, attendance: ActivityAttendanceWorkflowCounts) {
+  private async readCurrentActor(
+    tx: Prisma.TransactionClient,
+    memberId: string,
+    user: CurrentUserPayload,
+  ): Promise<CurrentUserPayload> {
+    // App admission and the request payload were resolved before this snapshot.
+    // Re-read the live user/member link before using scoped grants or a role.
+    const actor = await loadActiveUserIdentityInTx(tx, user.id);
+    if (!actor) throw new BizException(BizCode.UNAUTHORIZED);
+    if (actor.memberId !== memberId) throw new BizException(BizCode.FORBIDDEN);
+    const identity = await this.identities.resolve(actor, tx);
+    if (!identity.canUseApp || identity.member?.id !== memberId) {
+      throw new BizException(BizCode.FORBIDDEN);
+    }
+    return actor;
+  }
+
+  private async readSettlementSummary(
+    tx: Prisma.TransactionClient,
+    activityId: string,
+    actor: CurrentUserPayload,
+  ): Promise<AppManagedSettlementSummaryDto> {
+    // The real workbench uses scoped authz for this action; a GLOBAL-only check
+    // would incorrectly deny owner and attendance-collaborator bindings.
+    if (
+      !(await this.authz.can(
+        actor,
+        SETTLEMENT_WORKBENCH_ACTION,
+        {
+          type: 'activity',
+          id: activityId,
+        },
+        tx,
+      ))
+    ) {
+      return { availability: 'forbidden' };
+    }
+    if (this.activityWorkflowGate.participationReadSource() !== 'committed-ledger') {
+      return { availability: 'workflow-disabled' };
+    }
+    const [run, activeClosure] = await Promise.all([
+      tx.attendanceSettlementRun.findUnique({
+        where: { activityId },
+        select: { statusCode: true, currentSubmittedVersion: true },
+      }),
+      tx.activitySettlementClosureRevision.findFirst({
+        where: { activityId, statusCode: 'active' },
+        orderBy: { revision: 'desc' },
+        select: { revision: true, closedAt: true },
+      }),
+    ]);
     return {
-      statusCode: row.statusCode,
-      endAt: row.endAt,
-      attendanceDeclaredCompleteAt: row.attendanceDeclaredCompleteAt,
-      latestPublishReviewStatus: row.publishReviews[0]?.status ?? null,
-      attendance,
+      availability: 'available',
+      runStatus: run?.statusCode ?? null,
+      currentSubmittedVersion: run?.currentSubmittedVersion ?? null,
+      ...(activeClosure ? { activeClosure } : {}),
+      readOnly: this.activityWorkflowGate.isReadonlyMaintenance(),
+      workbenchPath: `/api/app/v1/my/managed-activities/${encodeURIComponent(activityId)}/settlement`,
     };
   }
 

@@ -3,7 +3,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:f25fee6d0aac01fbff47fd5ea1927e200db4ffbbf8212066fefcf3d00766c0d9
+// inputDigest: sha256:e5429666362ea9052485892945b37e53968579b9f0ef87c32a8895d39980139c
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -1116,6 +1116,11 @@ export interface AppInlineCreationPlaceDto {
   "radiusMeters"?: number;
 }
 
+export interface AppManagedActiveClosureDto {
+  "revision": number;
+  "closedAt": string;
+}
+
 export interface AppManagedActivityArchiveCommandDto {
   "reason"?: string;
   "operationKey": string;
@@ -1136,17 +1141,9 @@ export interface AppManagedActivityCloneResultDto {
   "activityId": string;
 }
 
-export interface AppManagedActivityClosureDto {
-  "attendanceDeclaredCompleteAt"?: string | null;
-  "status": "draft" | "publish-review-pending" | "published" | "cancelled" | "waiting-attendance-declaration" | "attendance-first-review" | "attendance-returned" | "attendance-final-review" | "closed" | "archived";
-  "nextAction"?: string | null;
-}
-
 export interface AppManagedActivityCountsDto {
   "pendingRegistrations": number;
   "waitlistedRegistrations": number;
-  "attendanceSheets": number;
-  "unresolvedAttendanceSheets": number;
 }
 
 export interface AppManagedActivityDetailDto {
@@ -1156,7 +1153,8 @@ export interface AppManagedActivityDetailDto {
   "myResponsibility"?: AppManagedMyResponsibilityDto;
   "publishReview": AppManagedPublishReviewSummaryDto;
   "counts": AppManagedActivityCountsDto;
-  "closure": AppManagedActivityClosureDto;
+  "workflow": AppManagedActivityWorkflowDto;
+  "settlement": AppManagedSettlementSummaryDto;
 }
 
 export interface AppManagedActivityListItemDto {
@@ -1167,7 +1165,6 @@ export interface AppManagedActivityListItemDto {
   "endAt": string;
   "relationship": "initiator" | "owner" | "collaborator";
   "pendingRegistrations": number;
-  "unresolvedAttendanceSheets": number;
   "nextAction"?: string | null;
   "staleDraft": boolean;
 }
@@ -1283,6 +1280,11 @@ export interface AppManagedActivityTerminateCommandDto {
 export interface AppManagedActivityUnarchiveCommandDto {
   "reason"?: string;
   "operationKey": string;
+}
+
+export interface AppManagedActivityWorkflowDto {
+  "status": "draft" | "publish-review-pending" | "published" | "completed" | "terminated" | "cancelled" | "archived" | "unknown";
+  "nextAction"?: string | null;
 }
 
 export interface AppManagedAttendanceQrCredentialDto {
@@ -1563,6 +1565,15 @@ export interface AppManagedResponsibilityAssignmentDto {
   "source": string;
   "reason"?: string | null;
   "member": AppManagedMemberSummaryDto;
+}
+
+export interface AppManagedSettlementSummaryDto {
+  "availability": "available" | "workflow-disabled" | "forbidden" | "not-requested";
+  "runStatus"?: string | null;
+  "currentSubmittedVersion"?: number | null;
+  "activeClosure"?: AppManagedActiveClosureDto;
+  "readOnly"?: boolean;
+  "workbenchPath"?: string;
 }
 
 export interface AppManagedStaffScanDto {
