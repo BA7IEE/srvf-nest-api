@@ -1,0 +1,42 @@
+{
+  "recorded_at": "2026-11-13T05:05:20+08:00",
+  "scope": "target API container only",
+  "window_utc": [
+    "2026-11-12T21:03:00Z",
+    "2026-11-12T21:05:00Z"
+  ],
+  "exit_code": 0,
+  "results": [
+    {
+      "case": "precheck",
+      "request_id": "cmwe1c2en82a36606496e98d8a7869177",
+      "matching_lines": 2,
+      "server_status": 200
+    },
+    {
+      "case": "duplicate_post",
+      "request_id": "cmwe1cju1366a81c5a3f780619726cb70",
+      "matching_lines": 1,
+      "server_status": 409,
+      "method": "POST",
+      "route": "/api/admin/v1/members",
+      "route_matches": true
+    },
+    {
+      "case": "list_readback",
+      "request_id": "cmwe1d07dddff9c54c7bfcb43bed45711",
+      "matching_lines": 2,
+      "server_status": 200
+    },
+    {
+      "case": "detail_readback",
+      "request_id": "cmwe1d5043bb236397f2a8c4ef1178592",
+      "matching_lines": 2,
+      "server_status": 200
+    }
+  ],
+  "limitations": [
+    "Bounded target container log only; response body checks are recorded separately.",
+    "Deployment Git SHA UNKNOWN."
+  ]
+}

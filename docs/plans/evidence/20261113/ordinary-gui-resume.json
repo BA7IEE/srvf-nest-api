@@ -1,0 +1,76 @@
+{
+  "recorded_at": "2026-11-13T04:58:34+08:00",
+  "classification": "GUI",
+  "deployed_sha": "UNKNOWN",
+  "sessions": [
+    {
+      "alias": "A",
+      "context": "Chrome Incognito",
+      "login_action_time": "2026-11-13T04:33:26.442+08:00",
+      "login_result": "home shown and own synthetic username present",
+      "http_status": "UNKNOWN",
+      "request_id": "UNKNOWN",
+      "save_password_prompt_observed": false
+    },
+    {
+      "alias": "B",
+      "context": "Chrome Guest",
+      "login_action_time": "2026-11-13T04:40:08.006+08:00",
+      "login_result": "home shown and own synthetic username present",
+      "http_status": "UNKNOWN",
+      "request_id": "UNKNOWN",
+      "save_password_prompt_observed": false
+    }
+  ],
+  "administrator_post_login_checks": [
+    {
+      "time": "2026-11-13T04:33:48.402+08:00",
+      "request_id": "cmwe09t0v1d829099ac1f56dd76616de8",
+      "status": 200
+    },
+    {
+      "time": "2026-11-13T04:40:53.710+08:00",
+      "request_id": "cmwe0ix9bf03006dcf9a81a65333c3aa3",
+      "status": 200
+    }
+  ],
+  "observations": [
+    {
+      "alias": "A",
+      "action": "open activity list from home and refresh my device drafts",
+      "action_time": "2026-11-13T04:35:40.818+08:00",
+      "observed": "no create permission; device draft list empty; browser find of synthetic title found no match in displayed page only"
+    },
+    {
+      "alias": "B",
+      "action": "open member list from home",
+      "action_time": "2026-11-13T04:41:23.124+08:00",
+      "observed": "member.read.record missing; no access"
+    },
+    {
+      "alias": "B",
+      "action": "open synthetic member A detail URL",
+      "action_time": "2026-11-13T04:41:39.805+08:00",
+      "observed": "member not found or no permission; A member name and number not shown; not conclusive cross-organization RBAC proof"
+    },
+    {
+      "alias": "B",
+      "action": "scroll on denied page",
+      "action_time": "2026-11-13T04:57:03.564+08:00",
+      "observed": "AX contains denied text and footer after scroll; visual reachability not independently confirmed"
+    },
+    {
+      "alias": "B",
+      "action": "Tab four times; zoom page to 110 percent and repeat scroll and Tab",
+      "action_time": "2026-11-13T04:57:26.887+08:00",
+      "observed": "AX focus reported; 110 percent Chrome indicator; denied text and footer remain in AX; Cmd+0 made 110 percent indicator disappear"
+    }
+  ],
+  "screenshots": "NOT_CAPTURED: native app screenshot is not documented with clipping, and visible window contains identifiers and other synthetic records",
+  "limitations": [
+    "No HTTP status or request ID available in Incognito or Guest native windows.",
+    "The scoped cross-organization test does not isolate org scope from general member-read denial.",
+    "Exact requested viewport dimensions and visual focus/scroll reachability NOT_RUN.",
+    "Browsers list lacked iab; createBrowserTab returned Browser is not available: iab."
+  ]
+}
