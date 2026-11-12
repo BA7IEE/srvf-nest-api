@@ -95,8 +95,8 @@ describe('activity participation gate after legacy retirement', () => {
       expect(f.authz).toHaveBeenCalledTimes(4);
       expect(f.records).not.toHaveBeenCalled();
       expect(f.registrations).not.toHaveBeenCalled();
-      // Summary now starts a repeatable-read transaction before authorization and gate checks.
-      expect(f.transaction).toHaveBeenCalledTimes(1);
+      // Both reads now start a repeatable-read transaction before authorization and gate checks.
+      expect(f.transaction).toHaveBeenCalledTimes(2);
       expect(f.queryRaw).not.toHaveBeenCalled();
       expect(f.identities).not.toHaveBeenCalled();
       expect(f.official).not.toHaveBeenCalled();
@@ -157,14 +157,46 @@ describe('activity participation gate after legacy retirement', () => {
         member,
       },
     ]);
+    f.identities.mockResolvedValue([
+      {
+        id: 'i1',
+        activityId: 'activity-1',
+        sessionId: 's1',
+        memberId: 'm1',
+        registrationId: 'r1',
+        currentRevision: 1,
+        currentStatusCode: 'pass',
+        populationIncluded: true,
+        revisions: [{ revision: 1, statusCode: 'pass', sourceCode: 'self' }],
+        member,
+        registration: { deletedAt: null },
+      },
+    ]);
+    f.queryRaw
+      .mockResolvedValueOnce([
+        {
+          activityId: 'activity-1',
+          currentPostedVersion: 1,
+          versionId: 'v1',
+          expectedCount: 1,
+          batchId: 'b1',
+          resultId: 'rr1',
+          identityId: 'i1',
+          resultCode: 'present',
+          identityActivityId: 'activity-1',
+        },
+      ])
+      .mockResolvedValueOnce([{ identityId: 'i1', dayCount: 1 }]);
     f.official.mockResolvedValue({
       receipt: {},
       totals: [{ activityId: 'activity-1', memberId: 'm1', eligibleSeconds: 7200 }],
     });
+    f.ledger.mockResolvedValue([]);
     const result = await f.service.reconciliation('activity-1', user);
     expect(result.registeredParticipants[0].totalServiceHours).toBe('2');
     expect(result.registeredParticipants[0].recordCount).toBe(1);
-    expect(f.ledger).not.toHaveBeenCalled();
+    expect(f.ledger).toHaveBeenCalledTimes(1);
+    expect(f.records).not.toHaveBeenCalled();
   });
 
   it.each([

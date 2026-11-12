@@ -44,4 +44,4 @@ App 的“责任范围”是旧控制器的 `app-member` + `responsibility`，se
 | `DELETE /api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}` | W.softDelete | 责任范围、`attendance.delete.sheet` | 未发现等价软删接口 |
 | `POST /api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}/resubmit` | W.resubmit | 责任范围、`attendance.update.sheet` | `POST .../settlement/versions/{versionId}/resubmit`，使用新结算提交权限 |
 
-本候选的活动对账、参与汇总和月度总览在新版关闭时可返回 `20153`／503；月度无可见组织时先返回空数组。活动参与汇总和月度总览的新语义见[参与投影](v11-participation-projection.md)；活动对账仍读旧考勤，新版达标通知未接线，真实 PG／HTTP 未验证。不得据此部署。
+本候选的活动对账、参与汇总和月度总览在新版关闭时可返回 `20153`／503；月度无可见组织时先返回空数组。三个读面的新语义见[参与投影](v11-participation-projection.md)；报名保护和仪表盘仍有旧依赖，新版达标通知未接线，真实 PG／HTTP 未验证。不得据此部署。

@@ -1,4 +1,7 @@
-import { readPostedParticipationFactsInTx } from './activity-participation-projection-query';
+import {
+  readPostedParticipationDayCountsInTx,
+  readPostedParticipationFactsInTx,
+} from './activity-participation-projection-query';
 
 const anchor = (overrides: Record<string, unknown> = {}) => ({
   activityId: 'a1',
@@ -11,6 +14,38 @@ const anchor = (overrides: Record<string, unknown> = {}) => ({
   resultCode: 'present',
   identityActivityId: 'a1',
   ...overrides,
+});
+
+describe('current posted participation day counts', () => {
+  it('counts distinct Beijing day rows of the current committed result including zero-valued entries', async () => {
+    const queryRaw = jest.fn().mockResolvedValue([{ identityId: 'i1', dayCount: 2 }]);
+    const counts = await readPostedParticipationDayCountsInTx({ $queryRaw: queryRaw } as never, [
+      'a1',
+    ]);
+    expect(counts.get('i1')).toBe(2);
+    const [query] = queryRaw.mock.calls[0] as [{ sql: string; values: unknown[] }];
+    expect(query.sql).toContain('COUNT(DISTINCT e."ledgerDate")');
+    expect(query.sql).toContain('r."currentPostedVersion" = v.version');
+    expect(query.sql).toContain('b."statusCode" = \'committed\'');
+    expect(query.sql).toContain('rr."statusCode" = \'committed\'');
+    expect(query.sql).not.toMatch(/(?:serviceHoursDelta|creditedPointsDelta).*?>\s*0/u);
+    expect(query.values).toEqual(['a1']);
+  });
+
+  it('rejects duplicate or invalid counts and skips an empty activity set', async () => {
+    const queryRaw = jest
+      .fn()
+      .mockResolvedValueOnce([
+        { identityId: 'i1', dayCount: 1 },
+        { identityId: 'i1', dayCount: 1 },
+      ])
+      .mockResolvedValueOnce([{ identityId: 'i1', dayCount: -1 }]);
+    const tx = { $queryRaw: queryRaw };
+    await expect(readPostedParticipationDayCountsInTx(tx as never, ['a1'])).rejects.toThrow();
+    await expect(readPostedParticipationDayCountsInTx(tx as never, ['a1'])).rejects.toThrow();
+    await expect(readPostedParticipationDayCountsInTx(tx as never, [])).resolves.toEqual(new Map());
+    expect(queryRaw).toHaveBeenCalledTimes(2);
+  });
 });
 const identity = (overrides: Record<string, unknown> = {}) => ({
   id: 'i1',

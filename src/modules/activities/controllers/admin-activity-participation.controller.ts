@@ -59,7 +59,7 @@ export class AdminActivityParticipationController {
   })
   @ApiOperation({
     summary:
-      '活动报名×实到核对(completed only；pass 逐人 attended/no-show + 临时参加名单；需同时持 attendance.read.sheet 与 activity-registration.read.record，按活动资源范围判定) [auth]',
+      '活动参与核对（仅 completed；正式到场、缺席、待定及现场来源；需同时持两项读取权限并按活动资源范围判定） [auth]',
   })
   @ApiWrappedOkResponse(ActivityReconciliationDto)
   @ApiBizErrorResponse(

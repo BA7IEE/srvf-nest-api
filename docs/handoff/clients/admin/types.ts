@@ -3,7 +3,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:d1e7d25db5589f786d3c80e754cd12c86e5051112a8b380f64ed2fb1d4edc12b
+// inputDigest: sha256:4f4292899d7d6c6b3b6bec58699a5b5970e886a2e7287cebb30f14cdab993c73
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContributionPolicyCategoryRuleDto, ContributionPolicyDefinitionDto, ContributionPolicyDurationBandDto, ContributionPolicyResultDto, ContributionPolicyRoleRuleDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -154,8 +154,26 @@ export interface ActivityReconciliationDto {
   "passRegistrationCount": number;
   "attendedCount": number;
   "noShowCount": number;
+  "pendingCount": number;
+  "otherResultCount": number;
   "registeredParticipants": ActivityReconciliationRegisteredParticipantDto[];
   "temporaryParticipants": ActivityReconciliationTemporaryParticipantDto[];
+  "unclassifiedParticipants": ActivityReconciliationParticipantDto[];
+}
+
+export interface ActivityReconciliationParticipantDto {
+  "registrationId": string;
+  "memberId": string;
+  "memberNo": string;
+  "realName": string;
+  "nickname": string | null;
+  "label": string;
+  "outcome": "attended" | "no-show" | "pending" | "other";
+  "origin": "registered" | "onsite" | "mixed" | "unknown";
+  "recordCount": number;
+  "postedResultCount": number;
+  "totalServiceHours": string | null;
+  "sessions": ActivityReconciliationSessionResultDto[];
 }
 
 export interface ActivityReconciliationRegisteredParticipantDto {
@@ -165,22 +183,36 @@ export interface ActivityReconciliationRegisteredParticipantDto {
   "realName": string;
   "nickname": string | null;
   "label": string;
-  "outcome": "attended" | "no-show";
+  "outcome": "attended" | "no-show" | "pending" | "other";
+  "origin": "registered" | "onsite" | "mixed" | "unknown";
   "recordCount": number;
-  "approvedRecordCount": number;
-  "totalServiceHours": string;
+  "postedResultCount": number;
+  "totalServiceHours": string | null;
+  "sessions": ActivityReconciliationSessionResultDto[];
+}
+
+export interface ActivityReconciliationSessionResultDto {
+  "identityId": string;
+  "sessionId": string;
+  "currentStatusCode": string;
+  "populationIncluded": boolean;
+  "resultCode": string | null;
+  "ledgerDayCount": number;
 }
 
 export interface ActivityReconciliationTemporaryParticipantDto {
+  "registrationId": string;
   "memberId": string;
   "memberNo": string;
   "realName": string;
   "nickname": string | null;
   "label": string;
-  "outcome": "temporary";
+  "outcome": "attended" | "no-show" | "pending" | "other";
+  "origin": "registered" | "onsite" | "mixed" | "unknown";
   "recordCount": number;
-  "approvedRecordCount": number;
-  "totalServiceHours": string;
+  "postedResultCount": number;
+  "totalServiceHours": string | null;
+  "sessions": ActivityReconciliationSessionResultDto[];
 }
 
 export interface ActivityRegistrationActivityPositionDto {

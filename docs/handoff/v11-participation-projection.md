@@ -1,8 +1,8 @@
-# 新版活动参与汇总和月度总览（本地候选）
+# 新版活动对账、参与汇总和月度总览（本地候选）
 
-本候选未合入、未部署；真实 PostgreSQL 和 HTTP 测试均未运行。`GET /api/admin/v1/activities/{activityId}/participation-summary` 与 `GET /api/admin/v1/meta/participation-overview` 不再读取旧 Sheet 考勤记录。`GET .../reconciliation` 尚未迁移，不得把以下新口径套用到该接口。
+本候选未合入、未部署；真实 PostgreSQL 和 HTTP 测试均未运行。`GET /api/admin/v1/activities/{activityId}/reconciliation`、`GET .../participation-summary` 与 `GET /api/admin/v1/meta/participation-overview` 不再读取旧 Sheet 考勤记录。
 
-两个汇总先保留既有两项读取权限及资源/组织范围；在同一个 `REPEATABLE READ` 快照中读取授权、活动、报名、身份、当前正式结算、已入账账本和正式时长。月度请求的组织后代展开也使用该事务。无可见组织的月度请求仍为空数组；其余新版关闭的请求返回 20153／503。只读维护态开启且新版工作流已启用时仍可读。
+三个读面先保留既有两项读取权限及资源/组织范围；在同一个 `REPEATABLE READ` 快照中读取授权、活动、报名、身份、当前正式结算、已入账账本和正式时长。月度请求的组织后代展开也使用该事务。无可见组织的月度请求仍为空数组；其余新版关闭的请求返回 20153／503。只读维护态开启且新版工作流已启用时仍可读。
 
 ## 事实与人数
 
@@ -18,4 +18,10 @@
 - 正式时间 receipt 存在时，工时使用统一 selector 的 eligible 秒；否则使用已入账工时净额。直方图的单位是活动×正式到场成员，已知零秒计入 `[0,2)`；缺少可验证时长的成员计入 `durationUnknownCount`，不进桶，并使总工时为 `null`。负数或无效秒数不会被夹为零。
 - 月份仍按 `Activity.startAt` 的 UTC 月份，保留现有活动日期筛选边界；账本北京自然日不重新切分活动月份。正式秒先在月内累加再转小时，避免逐活动四舍五入误差。
 
-开放、无打卡或未入账不推成缺席；结算阶段性服务段和 punch 仍以各自新版接口查看。活动对账、入队达标通知、真实隔离 PG/HTTP、受保护合同和守卫审查仍未完成。
+## 对账响应变化
+
+对账仍只允许 completed 活动。`passRegistrationCount` 是未软删 pass 报名头数；`attendedCount`、`noShowCount`、`pendingCount` 和 `otherResultCount` 是活动×成员级结果。`registeredParticipants`、`temporaryParticipants` 与新增 `unclassifiedParticipants` 分别按普通、现场、混合/未知通过修订来源分组；无身份的 pass 报名列入未知来源和待定。
+
+每人 `sessions` 显示身份、当前状态、是否属于应结算人口、当前正式 `resultCode` 或 null、以及该身份当前正式版本的 `ledgerDayCount`。`recordCount` 现在是这些日行数之和（身份×北京日，包含合法零值），不是旧 Sheet 记录数；新增 `postedResultCount` 是有正式结果的身份数。旧 `approvedRecordCount` 对新版没有等价语义，已移除。`totalServiceHours` 缺少来源时为 null，正式时间优先。前端须按新响应调整，不能把旧 Sheet ID 或旧字段直接映射。
+
+开放、无打卡或未入账不推成缺席；结算阶段性服务段和 punch 仍以各自新版接口查看。报名保护、仪表盘旧依赖、入队达标通知、真实隔离 PG/HTTP、受保护合同和守卫审查仍未完成。

@@ -122,8 +122,28 @@ export class ActivityParticipationSummaryDto {
   feedback!: ActivityFeedbackAggregateDto;
 }
 
-export class ActivityReconciliationRegisteredParticipantDto {
-  @ApiProperty({ description: '报名 id' })
+export class ActivityReconciliationSessionResultDto {
+  @ApiProperty({ description: '参与身份 id' })
+  identityId!: string;
+
+  @ApiProperty({ description: '场次 id' })
+  sessionId!: string;
+
+  @ApiProperty({ description: '当前参与身份状态' })
+  currentStatusCode!: string;
+
+  @ApiProperty({ description: '是否属于当前应结算人口' })
+  populationIncluded!: boolean;
+
+  @ApiProperty({ description: '当前正式结算结果；尚未入账时为 null', type: String, nullable: true })
+  resultCode!: string | null;
+
+  @ApiProperty({ description: '当前正式版本的参与身份×北京日记账日行数，合法零值仍计入' })
+  ledgerDayCount!: number;
+}
+
+export class ActivityReconciliationParticipantDto {
+  @ApiProperty({ description: '永久报名头 id' })
   registrationId!: string;
 
   @ApiProperty({ description: '队员 id' })
@@ -138,56 +158,44 @@ export class ActivityReconciliationRegisteredParticipantDto {
   @ApiProperty({ description: '队员外号(队内称呼)', nullable: true, type: String })
   nickname!: string | null;
 
-  @ApiProperty({
-    description: '统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号',
-    example: 'M-0001 · 张三(老张)',
-  })
+  @ApiProperty({ description: '统一展示标签 `编号 · 姓名(外号)`', example: 'M-0001 · 张三(老张)' })
   label!: string;
 
-  @ApiProperty({ description: '核对结果', enum: ['attended', 'no-show'] })
-  outcome!: 'attended' | 'no-show';
-
-  @ApiProperty({ description: '该活动全部未软删考勤记录数（不论 Sheet 状态）' })
-  recordCount!: number;
-
-  @ApiProperty({ description: '其中 approved Sheet 记录数' })
-  approvedRecordCount!: number;
-
-  @ApiProperty({ description: 'approved Sheet 内 serviceHours 小计', type: String })
-  totalServiceHours!: string;
-}
-
-export class ActivityReconciliationTemporaryParticipantDto {
-  @ApiProperty({ description: '队员 id' })
-  memberId!: string;
-
-  @ApiProperty({ description: '队员编号' })
-  memberNo!: string;
-
-  @ApiProperty({ description: '队员真实姓名', example: '张三' })
-  realName!: string;
-
-  @ApiProperty({ description: '队员外号(队内称呼)', nullable: true, type: String })
-  nickname!: string | null;
+  @ApiProperty({
+    description: '成员级正式结果；未决和其他结果不伪装成缺席',
+    enum: ['attended', 'no-show', 'pending', 'other'],
+  })
+  outcome!: 'attended' | 'no-show' | 'pending' | 'other';
 
   @ApiProperty({
-    description: '统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号',
-    example: 'M-0001 · 张三(老张)',
+    description: '通过修订中的来源证据',
+    enum: ['registered', 'onsite', 'mixed', 'unknown'],
   })
-  label!: string;
+  origin!: 'registered' | 'onsite' | 'mixed' | 'unknown';
 
-  @ApiProperty({ description: '核对结果', enum: ['temporary'] })
-  outcome!: 'temporary';
-
-  @ApiProperty({ description: '该活动全部未软删考勤记录数（不论 Sheet 状态）' })
+  @ApiProperty({ description: '当前正式版本的身份×北京日账本日行数，不是旧 Sheet 记录数' })
   recordCount!: number;
 
-  @ApiProperty({ description: '其中 approved Sheet 记录数' })
-  approvedRecordCount!: number;
+  @ApiProperty({ description: '当前正式版本中有 committed 结果的场次身份数' })
+  postedResultCount!: number;
 
-  @ApiProperty({ description: 'approved Sheet 内 serviceHours 小计', type: String })
-  totalServiceHours!: string;
+  @ApiProperty({
+    description: '正式 eligible 时长或已入账工时净额；缺少来源时为 null',
+    type: String,
+    nullable: true,
+  })
+  totalServiceHours!: string | null;
+
+  @ApiProperty({
+    description: '逐场次身份和正式结果',
+    type: [ActivityReconciliationSessionResultDto],
+  })
+  sessions!: ActivityReconciliationSessionResultDto[];
 }
+
+/** Kept as distinct schema names for existing generated-client discovery. */
+export class ActivityReconciliationRegisteredParticipantDto extends ActivityReconciliationParticipantDto {}
+export class ActivityReconciliationTemporaryParticipantDto extends ActivityReconciliationParticipantDto {}
 
 export class ActivityReconciliationDto {
   @ApiProperty({ description: '活动 id' })
@@ -196,24 +204,36 @@ export class ActivityReconciliationDto {
   @ApiProperty({ description: '活动状态 code；本端点仅 completed 可调用', example: 'completed' })
   activityStatusCode!: string;
 
-  @ApiProperty({ description: 'pass 报名人数' })
+  @ApiProperty({ description: '未软删且状态为 pass 的报名头数，不等同场次身份人数' })
   passRegistrationCount!: number;
 
-  @ApiProperty({ description: 'pass 报名且有任意状态 Sheet 考勤记录的人数' })
+  @ApiProperty({ description: '当前正式结果为到场的去重成员数' })
   attendedCount!: number;
 
-  @ApiProperty({ description: 'pass 报名且零未软删考勤记录的人数' })
+  @ApiProperty({ description: '当前正式结果全部缺席且无待定场次的成员数' })
   noShowCount!: number;
 
+  @ApiProperty({ description: '成员级待定人数，含通过报名尚无身份' })
+  pendingCount!: number;
+
+  @ApiProperty({ description: '仅有请假、早退零值等其他正式结果的人数' })
+  otherResultCount!: number;
+
   @ApiProperty({
-    description: 'pass 报名逐人核对结果',
+    description: '普通通过修订来源的参与成员',
     type: [ActivityReconciliationRegisteredParticipantDto],
   })
   registeredParticipants!: ActivityReconciliationRegisteredParticipantDto[];
 
   @ApiProperty({
-    description: '无任何未软删报名但有考勤记录的临时参加名单',
+    description: '现场通过修订来源的参与成员，不推断此前没有报名',
     type: [ActivityReconciliationTemporaryParticipantDto],
   })
   temporaryParticipants!: ActivityReconciliationTemporaryParticipantDto[];
+
+  @ApiProperty({
+    description: '来源混合或未知的参与成员',
+    type: [ActivityReconciliationParticipantDto],
+  })
+  unclassifiedParticipants!: ActivityReconciliationParticipantDto[];
 }

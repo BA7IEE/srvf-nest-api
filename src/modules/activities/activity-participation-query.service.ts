@@ -8,15 +8,19 @@ import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
 import { ACTIVITY_REGISTRATION_STATUS } from '../activity-registrations/activity-registration-state-machine';
 import { ActivityFeedbacksQueryService } from '../activity-feedbacks/activity-feedbacks-query.service';
-import { ATTENDANCE_SHEET_STATUS } from '../attendances/attendances.dto';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { LedgerQueryService } from './ledger-query.service';
 import { RbacService } from '../permissions/rbac.service';
 import {
   ActivityParticipationSummaryDto,
   ActivityReconciliationDto,
+  type ActivityReconciliationParticipantDto,
 } from './activity-participation.dto';
-import { readPostedParticipationFactsInTx } from './activity-participation-projection-query';
+import {
+  readPostedParticipationDayCountsInTx,
+  readPostedParticipationFactsInTx,
+} from './activity-participation-projection-query';
+import { projectParticipation } from './activity-participation-projection';
 import { buildV11ParticipationMetrics } from './activity-participation-v11-metrics';
 import { toMemberLabelFields } from '../../common/identity/member-label.util';
 import {
@@ -41,13 +45,6 @@ export class ActivityParticipationQueryService {
     // 活动 v1.1 cutover gate —— 统计读面取数源的判闸依据(合同 §16.2 单轨第三项)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
   ) {}
-
-  private async readOfficialTime(activityId: string) {
-    return this.prisma.$transaction(
-      (tx) => this.participationTimeTruth.readOfficialTotalsInTx(tx, { activityIds: [activityId] }),
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
-    );
-  }
 
   private async assertCanReadActivity(
     currentUser: CurrentUserPayload,
@@ -91,138 +88,163 @@ export class ActivityParticipationQueryService {
     }
   }
 
-  /**
-   * 闸开后的取数:工时 / 贡献值来自**已 committed 的账本分录**(按队员折)。
-   *
-   * 🔴 **D8 receipt 之前，本闸只切「结算量」这一轴** —— 逐队员的服务时长与贡献值。
-   *    名册与计数(谁到场 / recordCount / durationHistogram)在当时刻意不随闸切换:
-   *    合同拍板的闸控范围是「结算真相链」,**不含 Session / Participation / Registration**
-   *    (`docs/ai-harness/NEXT_TASKS.md` 第 7 批第 ③ 刀);而「参与活动数 / 记录条数在账本
-   *    口径下如何定义」是**已登记的悬案 D1**,维护者明文「不在无数据时凭空发明语义」。
-   *    D8-2 只在不可变 cutover receipt 存在后，把工时和直方图改接 exact-seconds
-   *    truth selector；报名、到场、计数和贡献仍保留上述既有来源。
-   */
-  private async loadCommittedTotalsByMember(
-    activityId: string,
-  ): Promise<Map<string, { serviceHours: string; creditedPoints: string }>> {
-    const rows = await this.ledgerQuery.sumCommittedByMemberForActivities([activityId]);
-    return new Map(
-      rows.map((row) => [
-        row.memberId,
-        { serviceHours: row.serviceHours, creditedPoints: row.creditedPoints },
-      ]),
-    );
-  }
-
   async reconciliation(
     activityId: string,
     currentUser: CurrentUserPayload,
   ): Promise<ActivityReconciliationDto> {
-    await this.assertCanReadActivity(currentUser, activityId);
-    const activity = await this.findActivityOrThrow(activityId);
-    if (activity.statusCode !== 'completed') {
-      throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
-    }
-    this.assertV11ReadAvailable();
-
-    // 名册与 records 仍一次取全后内存 diff；D8-2 另走统一真相选择器判定 receipt。
-    const [allRegistrations, records, officialTime] = await Promise.all([
-      this.prisma.activityRegistration.findMany({
-        where: {
-          activityId,
-          deletedAt: null,
-        },
-        select: {
-          id: true,
-          memberId: true,
-          statusCode: true,
-          member: { select: { memberNo: true, realName: true, nickname: true } },
-        },
-        orderBy: [{ registeredAt: 'asc' }, { id: 'asc' }],
-      }),
-      this.prisma.attendanceRecord.findMany({
-        where: { deletedAt: null, sheet: { activityId, deletedAt: null } },
-        select: {
-          memberId: true,
-          serviceHours: true,
-          sheet: { select: { statusCode: true } },
-          member: { select: { memberNo: true, realName: true, nickname: true } },
-        },
-        orderBy: [{ memberId: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
-      }),
-      this.readOfficialTime(activityId),
-    ]);
-    const registrations = allRegistrations.filter(
-      (registration) => registration.statusCode === ACTIVITY_REGISTRATION_STATUS.PASS,
-    );
-
-    const recordsByMember = new Map<string, typeof records>();
-    for (const record of records) {
-      const rows = recordsByMember.get(record.memberId) ?? [];
-      rows.push(record);
-      recordsByMember.set(record.memberId, rows);
-    }
-    const registeredMemberIds = new Set(
-      allRegistrations.map((registration) => registration.memberId),
-    );
-
-    // 本读面仍有旧考勤人数口径，待迁移；关闸时不再回退旧的结算工时。
-    const committedByMember =
-      officialTime === null ? await this.loadCommittedTotalsByMember(activityId) : null;
-    const officialByMember =
-      officialTime === null
-        ? null
-        : new Map(
-            officialTime.totals.map((row) => [
-              row.memberId,
-              eligibleSecondsToServiceHours(row.eligibleSeconds).toString(),
-            ]),
+    return this.prisma.$transaction(
+      async (tx) => {
+        await this.assertCanReadActivity(currentUser, activityId, tx);
+        const activity = await this.findActivityOrThrow(activityId, tx);
+        if (activity.statusCode !== 'completed') {
+          throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+        }
+        this.assertV11ReadAvailable();
+        const [registrations, facts, dayCounts, officialTime, ledgerRows] = await Promise.all([
+          tx.activityRegistration.findMany({
+            where: { activityId, deletedAt: null },
+            select: {
+              id: true,
+              memberId: true,
+              statusCode: true,
+              member: { select: { memberNo: true, realName: true, nickname: true } },
+            },
+            orderBy: [{ registeredAt: 'asc' }, { id: 'asc' }],
+          }),
+          readPostedParticipationFactsInTx(tx, [activityId]),
+          readPostedParticipationDayCountsInTx(tx, [activityId]),
+          this.participationTimeTruth.readOfficialTotalsInTx(tx, { activityIds: [activityId] }),
+          this.ledgerQuery.sumCommittedByMemberForActivities([activityId], tx),
+        ]);
+        const factsByIdentity = new Map(facts.map((fact) => [fact.identityId, fact]));
+        for (const identityId of dayCounts.keys()) {
+          const fact = factsByIdentity.get(identityId);
+          if (fact === undefined || fact.resultCode === null)
+            throw new Error('invalid current participation day count');
+        }
+        const factsByMember = new Map<string, typeof facts>();
+        for (const fact of facts) {
+          const group = factsByMember.get(fact.memberId) ?? [];
+          group.push(fact);
+          factsByMember.set(fact.memberId, group);
+        }
+        const officialByMember = new Map<string, number>();
+        for (const row of officialTime?.totals ?? []) {
+          if (officialByMember.has(row.memberId))
+            throw new Error('duplicate official participation time');
+          officialByMember.set(row.memberId, row.eligibleSeconds);
+        }
+        const ledgerByMember = new Map<string, string>();
+        for (const row of ledgerRows) {
+          if (ledgerByMember.has(row.memberId))
+            throw new Error('duplicate committed participation total');
+          ledgerByMember.set(row.memberId, row.serviceHours);
+        }
+        const serviceHours = (memberId: string): string | null => {
+          if (officialTime !== null) {
+            const seconds = officialByMember.get(memberId);
+            return seconds === undefined ? null : eligibleSecondsToServiceHours(seconds).toString();
+          }
+          const hours = ledgerByMember.get(memberId);
+          if (hours === undefined) return null;
+          const value = new Prisma.Decimal(hours);
+          if (!value.isFinite() || value.isNegative())
+            throw new RangeError('invalid committed service hours');
+          return value.toString();
+        };
+        const buildSessions = (group: typeof facts) =>
+          group.map((fact) => ({
+            identityId: fact.identityId,
+            sessionId: fact.sessionId,
+            currentStatusCode: fact.currentStatusCode,
+            populationIncluded: fact.populationIncluded,
+            resultCode: fact.resultCode,
+            ledgerDayCount: dayCounts.get(fact.identityId) ?? 0,
+          }));
+        const participants: ActivityReconciliationParticipantDto[] = [];
+        const knownMembers = new Set<string>();
+        for (const projected of projectParticipation(facts)) {
+          if (projected.outcome === 'excluded') continue;
+          const group = factsByMember.get(projected.memberId);
+          if (
+            group === undefined ||
+            group.length === 0 ||
+            new Set(group.map((fact) => fact.registrationId)).size !== 1
+          ) {
+            throw new Error('invalid participation member registration');
+          }
+          const sessions = buildSessions(group);
+          const recordCount = sessions.reduce(
+            (total, session) => total + session.ledgerDayCount,
+            0,
           );
-
-    const summarizeRecords = (memberId: string, memberRecords: typeof records) => {
-      const approved = memberRecords.filter(
-        (record) => record.sheet.statusCode === ATTENDANCE_SHEET_STATUS.APPROVED,
-      );
-      return {
-        // 计数两项留在 approved 口径 —— 见 loadCommittedTotalsByMember 的注释(悬案 D1)。
-        recordCount: memberRecords.length,
-        approvedRecordCount: approved.length,
-        totalServiceHours:
-          officialByMember !== null
-            ? (officialByMember.get(memberId) ?? '0')
-            : (committedByMember?.get(memberId)?.serviceHours ?? '0'),
-      };
-    };
-
-    const registeredParticipants = registrations.map((registration) => {
-      const memberRecords = recordsByMember.get(registration.memberId) ?? [];
-      return {
-        registrationId: registration.id,
-        memberId: registration.memberId,
-        ...toMemberLabelFields(registration.member),
-        outcome: memberRecords.length > 0 ? ('attended' as const) : ('no-show' as const),
-        ...summarizeRecords(registration.memberId, memberRecords),
-      };
-    });
-
-    const temporaryParticipants = [...recordsByMember.entries()]
-      .filter(([memberId]) => !registeredMemberIds.has(memberId))
-      .map(([memberId, memberRecords]) => ({
-        memberId,
-        ...toMemberLabelFields(memberRecords[0].member),
-        outcome: 'temporary' as const,
-        ...summarizeRecords(memberId, memberRecords),
-      }));
-
-    return {
-      activityId,
-      activityStatusCode: activity.statusCode,
-      passRegistrationCount: registrations.length,
-      attendedCount: registeredParticipants.filter((item) => item.outcome === 'attended').length,
-      noShowCount: registeredParticipants.filter((item) => item.outcome === 'no-show').length,
-      registeredParticipants,
-      temporaryParticipants,
-    };
+          if (!Number.isSafeInteger(recordCount))
+            throw new RangeError('participation day count overflow');
+          participants.push({
+            registrationId: group[0].registrationId,
+            memberId: projected.memberId,
+            ...toMemberLabelFields(group[0].member),
+            outcome: projected.outcome,
+            origin: projected.origin,
+            recordCount,
+            postedResultCount: sessions.filter((session) => session.resultCode !== null).length,
+            totalServiceHours: serviceHours(projected.memberId),
+            sessions,
+          });
+          knownMembers.add(projected.memberId);
+        }
+        for (const registration of registrations) {
+          if (
+            registration.statusCode !== ACTIVITY_REGISTRATION_STATUS.PASS ||
+            knownMembers.has(registration.memberId)
+          )
+            continue;
+          const group = factsByMember.get(registration.memberId) ?? [];
+          if (group.some((fact) => fact.registrationId !== registration.id))
+            throw new Error('invalid participation registration');
+          const sessions = buildSessions(group);
+          participants.push({
+            registrationId: registration.id,
+            memberId: registration.memberId,
+            ...toMemberLabelFields(registration.member),
+            outcome: 'pending',
+            origin: 'unknown',
+            recordCount: 0,
+            postedResultCount: 0,
+            totalServiceHours: serviceHours(registration.memberId),
+            sessions,
+          });
+          knownMembers.add(registration.memberId);
+        }
+        const metrics = buildV11ParticipationMetrics({
+          registrations,
+          facts,
+          ledgerRows,
+          officialRows: officialTime?.totals ?? null,
+        });
+        return {
+          activityId,
+          activityStatusCode: activity.statusCode,
+          passRegistrationCount: registrations.filter(
+            (registration) => registration.statusCode === ACTIVITY_REGISTRATION_STATUS.PASS,
+          ).length,
+          attendedCount: metrics.attendeeCount,
+          noShowCount: metrics.noShowCount,
+          pendingCount: metrics.pendingCount,
+          otherResultCount: metrics.otherResultCount,
+          registeredParticipants: participants.filter(
+            (participant) => participant.origin === 'registered',
+          ),
+          temporaryParticipants: participants.filter(
+            (participant) => participant.origin === 'onsite',
+          ),
+          unclassifiedParticipants: participants.filter(
+            (participant) => participant.origin === 'mixed' || participant.origin === 'unknown',
+          ),
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
   }
 
   async participationSummary(

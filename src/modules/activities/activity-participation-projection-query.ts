@@ -33,6 +33,40 @@ export async function listParticipationOverviewActivitiesInTx(
   });
 }
 
+/** Current posted credit identity-days, not old Sheet records or all historical ledger rows. */
+export async function readPostedParticipationDayCountsInTx(
+  tx: Prisma.TransactionClient,
+  activityIds: readonly string[],
+): Promise<Map<string, number>> {
+  const ids = [...new Set(activityIds)];
+  if (ids.length === 0) return new Map();
+  const rows = await tx.$queryRaw<Array<{ identityId: string; dayCount: number }>>(Prisma.sql`
+    SELECT e."participationIdentityId" AS "identityId",
+           COUNT(DISTINCT e."ledgerDate")::int AS "dayCount"
+    FROM "ParticipationLedgerEntry" e
+    JOIN "LedgerPostingBatch" b ON b.id = e."postingBatchId"
+    JOIN "ParticipantSettlementResultRevision" rr
+      ON rr.id = e."resultRevisionId" AND rr."participationIdentityId" = e."participationIdentityId"
+    JOIN "AttendanceSettlementVersion" v ON v.id = rr."settlementVersionId"
+    JOIN "AttendanceSettlementRun" r ON r.id = v."settlementRunId"
+    WHERE r."activityId" IN (${Prisma.join(ids)})
+      AND e."activityId" = r."activityId"
+      AND r."currentPostedVersion" = v.version
+      AND b."settlementVersionId" = v.id AND b."settlementRunId" = r.id
+      AND b."statusCode" = 'committed' AND rr."statusCode" = 'committed'
+      AND e."entryTypeCode" IN ('service_credit', 'contribution_credit')
+    GROUP BY e."participationIdentityId"
+  `);
+  const result = new Map<string, number>();
+  for (const row of rows) {
+    if (result.has(row.identityId) || !Number.isSafeInteger(row.dayCount) || row.dayCount < 0) {
+      throw new Error('invalid posted participation day count');
+    }
+    result.set(row.identityId, row.dayCount);
+  }
+  return result;
+}
+
 /** Caller authorizes the activity IDs and supplies the same REPEATABLE READ transaction. */
 export async function readPostedParticipationFactsInTx(
   tx: Prisma.TransactionClient,
