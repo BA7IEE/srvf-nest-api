@@ -3,7 +3,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:256c4e6ddf3172b94dc11bb59e8d5e60ba337460c645fb225f848f1ebf9c177f
+// inputDigest: sha256:ccfbd2cba1848206916548e550ba8f9fcc7728ea79b50262f77b31ad9c018cba
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -13,12 +13,6 @@ export interface AccountAvatarDto {
   "attachmentId": string;
   "accessUrl": string | null;
   "expiresAt": string | null;
-}
-
-export interface ActivityCheckInLocationDto {
-  "longitude": number;
-  "latitude": number;
-  "accuracy"?: number;
 }
 
 export interface ActivityTemplateResolutionResponseDto {
@@ -79,20 +73,6 @@ export interface AppActivityChangePositionDto {
   "sortOrder"?: number;
   "activityPositionId"?: string;
   "clientRef"?: string;
-}
-
-export interface AppActivityCheckInDto {
-  "id": string;
-  "activityId": string;
-  "registrationId": string;
-  "checkInAt": string;
-  "checkOutAt": string | null;
-  "checkInDistance": string | null;
-  "checkOutDistance": string | null;
-  "geoVerified": boolean;
-  "outOfRange": boolean;
-  "createdAt": string;
-  "updatedAt": string;
 }
 
 export interface AppActivityContributionPolicyOptionDto {
@@ -1147,21 +1127,6 @@ export interface AppManagedActivityCancelCommandDto {
   "operationKey": string;
 }
 
-export interface AppManagedActivityCheckInDto {
-  "id": string;
-  "activityId": string;
-  "registrationId": string;
-  "member": AppManagedAttendanceMemberDto;
-  "checkInAt": string;
-  "checkOutAt": string | null;
-  "checkInDistance": string | null;
-  "checkOutDistance": string | null;
-  "geoVerified": boolean;
-  "outOfRange": boolean;
-  "createdAt": string;
-  "updatedAt": string;
-}
-
 export interface AppManagedActivityCloneCommandDto {
   "title"?: string;
   "organizationId"?: string;
@@ -1320,41 +1285,6 @@ export interface AppManagedActivityUnarchiveCommandDto {
   "operationKey": string;
 }
 
-export interface AppManagedAttendanceDraftAbsentDto {
-  "registrationId": string;
-  "memberId": string;
-  "memberNo": string;
-  "realName": string;
-  "nickname": string | null;
-  "label": string;
-}
-
-export interface AppManagedAttendanceDraftFlagDto {
-  "registrationId": string;
-  "memberId": string;
-  "noCheckOut": boolean;
-  "outOfRange": boolean;
-  "unverified": boolean;
-}
-
-export interface AppManagedAttendanceDraftRecordDto {
-  "memberId": string;
-  "roleCode": string;
-  "checkInAt": string;
-  "checkOutAt": string;
-  "serviceHours": number;
-  "attendanceStatusCode": string;
-  "registrationId": string;
-}
-
-export interface AppManagedAttendanceMemberDto {
-  "id": string;
-  "memberNo": string;
-  "realName": string;
-  "nickname": string | null;
-  "label": string;
-}
-
 export interface AppManagedAttendanceQrCredentialDto {
   "credentialId": string;
   "activityId": string;
@@ -1366,80 +1296,6 @@ export interface AppManagedAttendanceQrCredentialDto {
   "validUntil": string;
   "issuedAt": string;
   "revokedAt"?: string | null;
-}
-
-export interface AppManagedAttendanceRecordDto {
-  "id": string;
-  "sheetId": string;
-  "memberId": string;
-  "member": AppManagedAttendanceMemberDto;
-  "roleCode": string;
-  "checkInAt": string;
-  "checkOutAt": string;
-  "serviceHours": string;
-  "attendanceStatusCode": string;
-  "note": string | null;
-  "registrationId": string | null;
-  "contributionPoints": string | null;
-  "createdAt": string;
-  "updatedAt": string;
-}
-
-export interface AppManagedAttendanceRecordInputDto {
-  "memberId": string;
-  "roleCode": string;
-  "checkInAt": string;
-  "checkOutAt": string;
-  "serviceHours"?: number;
-  "attendanceStatusCode": string;
-  "note"?: string;
-  "registrationId"?: string;
-}
-
-export interface AppManagedAttendanceSheetDetailDto {
-  "sheet": AppManagedAttendanceSheetDto;
-  "records": AppManagedAttendanceRecordDto[];
-}
-
-export interface AppManagedAttendanceSheetDraftDto {
-  "activityId": string;
-  "records": AppManagedAttendanceDraftRecordDto[];
-  "flags": AppManagedAttendanceDraftFlagDto[];
-  "absentRegistrations": AppManagedAttendanceDraftAbsentDto[];
-}
-
-export interface AppManagedAttendanceSheetDto {
-  "id": string;
-  "activityId": string;
-  "submitterUserId": string;
-  "submittedAt": string;
-  "statusCode": "pending" | "pending_final_review" | "returned" | "approved" | "rejected" | "final_rejected";
-  "reviewerUserId": string | null;
-  "reviewedAt": string | null;
-  "reviewNote": string | null;
-  "finalReviewerUserId": string | null;
-  "finalReviewedAt": string | null;
-  "finalReviewNote": string | null;
-  "lastSubmittedByUserId": string | null;
-  "lastSubmittedAt": string | null;
-  "returnedByUserId": string | null;
-  "returnedAt": string | null;
-  "returnNote": string | null;
-  "returnedFromStageCode": "first" | "final" | null;
-  "version": number;
-  "createdAt": string;
-  "updatedAt": string;
-}
-
-export interface AppManagedAttendanceSheetListItemDto {
-  "id": string;
-  "activityId": string;
-  "submitterUserId": string;
-  "submittedAt": string;
-  "statusCode": "pending" | "pending_final_review" | "returned" | "approved" | "rejected" | "final_rejected";
-  "reviewedAt": string | null;
-  "version": number;
-  "createdAt": string;
 }
 
 export interface AppManagedBulkPunchJobDto {
@@ -1837,23 +1693,6 @@ export interface AppMyActivityListItemDto {
   "myRegistrationId": string;
   "myRegistrationStatusCode": string;
   "myRegisteredAt": string;
-}
-
-export interface AppMyAttendanceRecordDto {
-  "id": string;
-  "activityId": string;
-  "activityTitle": string;
-  "activityStartAt": string;
-  "activityEndAt": string;
-  "activityCoverImageUrl"?: Record<string, unknown> | null;
-  "roleCode": string;
-  "checkInAt": string;
-  "checkOutAt": string;
-  "serviceHours": string;
-  "attendanceStatusCode": string;
-  "note"?: Record<string, unknown> | null;
-  "contributionPoints"?: Record<string, unknown> | null;
-  "createdAt": string;
 }
 
 export interface AppMyCertificateDto {
@@ -3114,10 +2953,6 @@ export interface CreateAppManagedActivityVisitorDto {
   "note"?: Record<string, unknown> | null;
 }
 
-export interface CreateAppManagedAttendanceSheetDto {
-  "records": AppManagedAttendanceRecordInputDto[];
-}
-
 export interface CreateAppManagedCollaboratorDto {
   "memberId": string;
   "canManageRegistrations": boolean;
@@ -3240,8 +3075,6 @@ export interface RejectAppManagedRegistrationDto {
   "reviewNote": string;
 }
 
-export type ResubmitAppManagedAttendanceSheetDto = Record<string, unknown>;
-
 export interface RevokeAppManagedActivityInvitationDto {
   "reason": string;
 }
@@ -3356,10 +3189,6 @@ export interface UpdateAppManagedActivitySessionPositionDto {
   "description"?: string | null;
   "equipmentNotes"?: string | null;
   "sortOrder"?: number;
-}
-
-export interface UpdateAppManagedAttendanceSheetDto {
-  "records"?: AppManagedAttendanceRecordInputDto[];
 }
 
 export interface UpdateAppMeInsuranceDto {

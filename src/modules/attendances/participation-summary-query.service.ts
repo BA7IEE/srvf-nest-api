@@ -16,8 +16,10 @@ import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-wo
 import { RbacService } from '../permissions/rbac.service';
 import { computeCappedContribution } from '../team-join/team-join-progress';
 import { AppIdentityResolver } from '../users/app-identity.resolver';
+import { nonDeletedMemberExists } from '../members/member-existence-query';
 import { AppMyParticipationSummaryDto } from './dto/app/app-my-participation-summary.dto';
 import { MemberParticipationSummaryDto } from './participation-summary.dto';
+import type { MemberContributionSummaryDto } from './attendances.dto';
 
 interface PositiveParticipationSummary {
   totalServiceHours: string;
@@ -113,18 +115,43 @@ export class ParticipationSummaryQueryService {
     };
   }
 
+  private async assertReadableMember(
+    memberId: string,
+    currentUser: CurrentUserPayload,
+  ): Promise<void> {
+    await this.assertCanReadMember(memberId, currentUser);
+    if (!(await nonDeletedMemberExists(this.prisma, memberId))) {
+      throw new BizException(BizCode.MEMBER_NOT_FOUND);
+    }
+  }
+
   async forMemberAdmin(
     memberId: string,
     currentUser: CurrentUserPayload,
   ): Promise<MemberParticipationSummaryDto> {
-    await this.assertCanReadMember(memberId, currentUser);
-    const member = await this.prisma.member.findFirst({
-      where: { id: memberId, deletedAt: null },
-      select: { id: true },
-    });
-    if (!member) throw new BizException(BizCode.MEMBER_NOT_FOUND);
-
+    await this.assertReadableMember(memberId, currentUser);
     return { memberId, ...(await this.loadPositiveSummary(memberId)) };
+  }
+
+  async contributionForMemberAdmin(
+    memberId: string,
+    currentUser: CurrentUserPayload,
+  ): Promise<MemberContributionSummaryDto> {
+    await this.assertReadableMember(memberId, currentUser);
+    if (this.activityWorkflowGate.participationReadSource() !== 'committed-ledger') {
+      throw new BizException(BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED);
+    }
+    const [points, ledgerTotals] = await Promise.all([
+      computeCappedContribution(
+        this.prisma,
+        memberId,
+        null,
+        this.activityWorkflowGate,
+        LedgerQueryService,
+      ),
+      this.ledgerQuery.loadMemberLedgerTotals(memberId),
+    ]);
+    return { memberId, contributionPoints: points.toString(), ledgerTotals };
   }
 
   async forCurrentMember(currentUser: CurrentUserPayload): Promise<AppMyParticipationSummaryDto> {

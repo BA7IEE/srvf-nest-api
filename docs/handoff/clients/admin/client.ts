@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:256c4e6ddf3172b94dc11bb59e8d5e60ba337460c645fb225f848f1ebf9c177f
+// inputDigest: sha256:ccfbd2cba1848206916548e550ba8f9fcc7728ea79b50262f77b31ad9c018cba
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -42,8 +42,6 @@ import type {
   AddAllActiveCoverageResultDto,
   AddTeamInsuranceCoverageDto,
   AdminActivateTimePolicyVersionDto,
-  AdminActivityCheckInListItemDto,
-  AdminActivityCheckInMemberDto,
   AdminActivityContributionPolicyPointerDto,
   AdminActivityContributionPolicySelectionChangeDto,
   AdminActivityContributionPolicySelectionItemDto,
@@ -80,8 +78,6 @@ import type {
   AdminActivityTimePolicySelectionScopeDto,
   AdminActivityTimePolicySelectionValueDto,
   AdminAttendanceSettlementListItemDto,
-  AdminAttendanceSheetExpandedActivityDto,
-  AdminAttendanceSheetListItemDto,
   AdminContributionProofDto,
   AdminContributionProofEvaluationDto,
   AdminCreateActivityMetricDefinitionDto,
@@ -92,7 +88,6 @@ import type {
   AdminCreateTimePolicyDto,
   AdminCreateTimePolicyVersionDto,
   AdminMeResponseDto,
-  AdminMemberAttendanceRecordDto,
   AdminMetricBooleanConfigurationDto,
   AdminMetricChoiceConfigurationDto,
   AdminMetricChoiceOptionDto,
@@ -159,20 +154,9 @@ import type {
   AnnouncementImportRequestDto,
   AnnouncementImportResultDto,
   ApproveActivityPublishReviewDto,
-  ApproveAttendanceSheetDto,
   ApproveRegistrationDto,
   AssignLegacyActivityInitiatorDto,
   AttachmentResponseDto,
-  AttendanceRecordInputDto,
-  AttendanceRecordResponseDto,
-  AttendanceSheetActivitySummaryDto,
-  AttendanceSheetDraftAbsentRegistrationDto,
-  AttendanceSheetDraftDto,
-  AttendanceSheetDraftFlagDto,
-  AttendanceSheetDraftRecordDto,
-  AttendanceSheetListItemDto,
-  AttendanceSheetResponseDto,
-  AttendanceSheetReviewDetailDto,
   AuthzDecisionDto,
   BatchCreateRoleBindingsDto,
   BatchCreateRoleBindingsResponseDto,
@@ -223,7 +207,6 @@ import type {
   CreateActivityDto,
   CreateActivityPositionDto,
   CreateAttachmentDto,
-  CreateAttendanceSheetDto,
   CreateCertificateDto,
   CreateCertificateRecognitionPolicyDto,
   CreateCertificateStandardDto,
@@ -263,8 +246,6 @@ import type {
   ExplainResourceRefDto,
   ExplainTargetUserDto,
   ExportRecruitmentApplicationsDto,
-  FinalApproveAttendanceSheetDto,
-  FinalRejectAttendanceSheetDto,
   GateStatusDto,
   GenerateUploadUrlDto,
   GrantMemberAccountDto,
@@ -361,10 +342,8 @@ import type {
   RecruitmentStatsThresholdDto,
   RecruitmentStatsThresholdItemDto,
   RecruitmentStatsTodayDto,
-  RejectAttendanceSheetDto,
   RejectCertificateDto,
   RejectRegistrationDto,
-  ReopenAttendanceSheetDto,
   ReplaceMemberAudienceTagsDto,
   ReplayNotificationWecomDto,
   ResetUserPasswordDto,
@@ -373,9 +352,7 @@ import type {
   ResolveLabelsResponseDto,
   ResolveRecruitmentApplicationDto,
   ResolvedResourceDto,
-  ResubmitAttendanceSheetDto,
   ReturnActivityPublishReviewDto,
-  ReturnAttendanceSheetDto,
   ReviewCertificateClaimDto,
   ReviewMemberInsuranceDto,
   RevokeCertificateClaimReviewDto,
@@ -414,7 +391,6 @@ import type {
   UpdateActivityDto,
   UpdateActivityPositionDto,
   UpdateAttachmentDto,
-  UpdateAttendanceSheetDto,
   UpdateCertificateDto,
   UpdateCertificateRecognitionPolicyDto,
   UpdateCertificateRecognitionPolicyStatusDto,
@@ -481,22 +457,6 @@ export function createAdminClient(fetcher: Fetcher) {
     /** 本人可发起组织的安全模板版本摘要，与 App 同源 [auth] */
     AdminSimpleActivitiesControllerTemplateOptions(query: { "page"?: number; "pageSize"?: number; "organizationId": string }): Promise<ApiEnvelope<PageResultDto & { "items": AdminSimpleTemplateVersionOptionDto[] }>> {
       return fetcher<PageResultDto & { "items": AdminSimpleTemplateVersionOptionDto[] }>({ method: "GET", path: "/api/admin/v1/activities/template-version-options", query });
-    },
-    /** 生成活动考勤提交草稿（只读不落库） [rbac: attendance.read.sheet] */
-    AdminActivityCheckInsControllerAttendanceSheetDraft(activityId: string): Promise<ApiEnvelope<AttendanceSheetDraftDto>> {
-      return fetcher<AttendanceSheetDraftDto>({ method: "GET", path: `/api/admin/v1/activities/${activityId}/attendance-sheet-draft` });
-    },
-    /** 列出该活动所有考勤单据(分页 + 可选 statusCode 过滤) [rbac: attendance.read.sheet] */
-    AttendanceSheetsCollectionControllerList(activityId: string, query?: { "page"?: number; "pageSize"?: number; "statusCode"?: string; "q"?: string; "activityQ"?: string; "organizationId"?: string; "includeDescendants"?: boolean; "dateFrom"?: string; "dateTo"?: string; "expand"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": AttendanceSheetListItemDto[] }>> {
-      return fetcher<PageResultDto & { "items": AttendanceSheetListItemDto[] }>({ method: "GET", path: `/api/admin/v1/activities/${activityId}/attendance-sheets`, query });
-    },
-    /** 提交考勤单据(事务内一次性 create Sheet + N records;初始 statusCode=pending,version=1;Activity cancelled 拒绝) [rbac: attendance.create.sheet] */
-    AttendanceSheetsCollectionControllerSubmit(activityId: string, body: CreateAttendanceSheetDto): Promise<ApiEnvelope<AttendanceSheetResponseDto>> {
-      return fetcher<AttendanceSheetResponseDto>({ method: "POST", path: `/api/admin/v1/activities/${activityId}/attendance-sheets`, body });
-    },
-    /** 分页查看活动 GPS 打卡证据 [rbac: attendance.read.sheet] */
-    AdminActivityCheckInsControllerList(activityId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<PageResultDto & { "items": AdminActivityCheckInListItemDto[] }>> {
-      return fetcher<PageResultDto & { "items": AdminActivityCheckInListItemDto[] }>({ method: "GET", path: `/api/admin/v1/activities/${activityId}/check-ins`, query });
     },
     /** 查看活动评价均分、直方图与评价率 [rbac: attendance.read.sheet] */
     AdminActivityFeedbacksControllerSummary(activityId: string): Promise<ApiEnvelope<AdminActivityFeedbackSummaryDto>> {
@@ -870,58 +830,6 @@ export function createAdminClient(fetcher: Fetcher) {
     AdminAttendanceSettlementsControllerReviewDetail(settlementVersionId: string): Promise<ApiEnvelope<AdminSettlementReviewDetailDto>> {
       return fetcher<AdminSettlementReviewDetailDto>({ method: "GET", path: `/api/admin/v1/attendance-settlements/${settlementVersionId}/review-detail` });
     },
-    /** 跨活动考勤单据横扫(审批工作台;分页 + 可选 statusCode/q/activityQ/organizationId/includeDescendants/dateFrom/dateTo/expand=activity;脱离 :activityId 路径段;item 带 activity 上下文) [rbac: attendance.read.sheet] */
-    AttendanceSheetsResourceControllerListAll(query?: { "page"?: number; "pageSize"?: number; "statusCode"?: string; "q"?: string; "activityQ"?: string; "organizationId"?: string; "includeDescendants"?: boolean; "dateFrom"?: string; "dateTo"?: string; "expand"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": AdminAttendanceSheetListItemDto[] }>> {
-      return fetcher<PageResultDto & { "items": AdminAttendanceSheetListItemDto[] }>({ method: "GET", path: "/api/admin/v1/attendance-sheets", query });
-    },
-    /** Sheet 简化详情(不含 records 数组;不返 previousSnapshot) [rbac: attendance.read.sheet] */
-    AttendanceSheetsResourceControllerFindOne(id: string): Promise<ApiEnvelope<AttendanceSheetResponseDto>> {
-      return fetcher<AttendanceSheetResponseDto>({ method: "GET", path: `/api/admin/v1/attendance-sheets/${id}` });
-    },
-    /** 编辑 pending/returned Sheet(D38:后端生成 previousSnapshot + version+1;旧 records 软删 + 新 records 创建;其余状态拒绝;Activity cancelled 拒绝改 records) [rbac: attendance.update.sheet] */
-    AttendanceSheetsResourceControllerEdit(id: string, body: UpdateAttendanceSheetDto): Promise<ApiEnvelope<AttendanceSheetResponseDto>> {
-      return fetcher<AttendanceSheetResponseDto>({ method: "PATCH", path: `/api/admin/v1/attendance-sheets/${id}`, body });
-    },
-    /** 软删 pending Sheet(事务内级联软删 records;approved/rejected/pending_final_review/final_rejected 拒绝) [rbac: attendance.delete.sheet] */
-    AttendanceSheetsResourceControllerSoftDelete(id: string): Promise<ApiEnvelope<AttendanceSheetResponseDto>> {
-      return fetcher<AttendanceSheetResponseDto>({ method: "DELETE", path: `/api/admin/v1/attendance-sheets/${id}` });
-    },
-    /** APD 一级通过(pending → pending_final_review;批次 4-B 升级,沿 D-S6;R31 所有 records.contributionPoints 必填;**不再触发** attendance.recorded — 触发位置移到 final-approve;待终审) [rbac: attendance.approve.sheet] */
-    AttendanceSheetsResourceControllerApprove(id: string, body: ApproveAttendanceSheetDto): Promise<ApiEnvelope<AttendanceSheetResponseDto>> {
-      return fetcher<AttendanceSheetResponseDto>({ method: "PATCH", path: `/api/admin/v1/attendance-sheets/${id}/approve`, body });
-    },
-    /** 旧考勤终审通过入口已停用：闸关经原授权后返回 20153，闸开返回 20154，只读维护返回 20158 [rbac: attendance.final-approve.sheet] */
-    AttendanceSheetsResourceControllerFinalApprove(id: string, body: FinalApproveAttendanceSheetDto): Promise<ApiEnvelope<void>> {
-      return fetcher<void>({ method: "PATCH", path: `/api/admin/v1/attendance-sheets/${id}/final-approve`, body });
-    },
-    /** 终审驳回(ADMIN 级终审沿 P1-5 方案 A,部门级细分挂 Slow-3;pending_final_review → final_rejected;finalReviewNote 必填;records 跟随软删;**不触发** attendance.recorded) [rbac: attendance.final-reject.sheet] */
-    AttendanceSheetsResourceControllerFinalReject(id: string, body: FinalRejectAttendanceSheetDto): Promise<ApiEnvelope<AttendanceSheetResponseDto>> {
-      return fetcher<AttendanceSheetResponseDto>({ method: "PATCH", path: `/api/admin/v1/attendance-sheets/${id}/final-reject`, body });
-    },
-    /** 终审退回修改(pending_final_review → returned;保留 records;执行自审与同人约束) [rbac: attendance.final-return.sheet] */
-    AttendanceSheetsResourceControllerFinalReturn(id: string, body: ReturnAttendanceSheetDto): Promise<ApiEnvelope<AttendanceSheetResponseDto>> {
-      return fetcher<AttendanceSheetResponseDto>({ method: "POST", path: `/api/admin/v1/attendance-sheets/${id}/final-return`, body });
-    },
-    /** APD 一级驳回(pending → rejected;reviewNote 必填) [rbac: attendance.reject.sheet] */
-    AttendanceSheetsResourceControllerReject(id: string, body: RejectAttendanceSheetDto): Promise<ApiEnvelope<AttendanceSheetResponseDto>> {
-      return fetcher<AttendanceSheetResponseDto>({ method: "PATCH", path: `/api/admin/v1/attendance-sheets/${id}/reject`, body });
-    },
-    /** 撤回已终审通过的考勤单(approved → pending;保留 records,清空一审/终审责任字段;不发通知) [rbac: attendance.reopen.sheet] */
-    AttendanceSheetsResourceControllerReopen(id: string, body: ReopenAttendanceSheetDto): Promise<ApiEnvelope<AttendanceSheetResponseDto>> {
-      return fetcher<AttendanceSheetResponseDto>({ method: "POST", path: `/api/admin/v1/attendance-sheets/${id}/reopen`, body });
-    },
-    /** 退回考勤单重提(returned → pending;保留 records;清空审核/退回字段;version+1;限活动考勤责任人或 SUPER_ADMIN) [rbac: attendance.update.sheet] */
-    AttendanceSheetsResourceControllerResubmit(id: string, body: ResubmitAttendanceSheetDto): Promise<ApiEnvelope<AttendanceSheetResponseDto>> {
-      return fetcher<AttendanceSheetResponseDto>({ method: "POST", path: `/api/admin/v1/attendance-sheets/${id}/resubmit`, body });
-    },
-    /** 一级审核退回修改(pending → returned;保留 records;记录退回人、阶段与原因) [rbac: attendance.return.sheet] */
-    AttendanceSheetsResourceControllerFirstReturn(id: string, body: ReturnAttendanceSheetDto): Promise<ApiEnvelope<AttendanceSheetResponseDto>> {
-      return fetcher<AttendanceSheetResponseDto>({ method: "POST", path: `/api/admin/v1/attendance-sheets/${id}/return`, body });
-    },
-    /** APD 审核完整视图(R25):Activity 摘要 + Sheet 详情 + Records[含 Member 嵌套] [rbac: attendance.read.sheet] */
-    AttendanceSheetsResourceControllerReviewDetail(id: string): Promise<ApiEnvelope<AttendanceSheetReviewDetailDto>> {
-      return fetcher<AttendanceSheetReviewDetailDto>({ method: "GET", path: `/api/admin/v1/attendance-sheets/${id}/review-detail` });
-    },
     /** 批量业务态闸(诊断读):调用者对一组 action×资源 的 allowed + reason(authz 11 值 ∪ state_forbidden);items 回显 action/resourceType/resourceId 且顺序 = 请求顺序;可选 key 逐 item 透传回显(仅请求携带时出现,不参与判定);deny 是 200 数据非错误 [rbac: authz.action-state.decision] */
     ActionStateControllerBatch(body: ActionStateBatchDto): Promise<ApiEnvelope<ActionStateBatchResponseDto>> {
       return fetcher<ActionStateBatchResponseDto>({ method: "POST", path: "/api/admin/v1/authz/action-state/batch", body });
@@ -1137,10 +1045,6 @@ export function createAdminClient(fetcher: Fetcher) {
     /** 切换队员 status；置 INACTIVE 时同步结束全部当前授权来源 [rbac: member.update.status] */
     MembersControllerUpdateStatus(id: string, body: UpdateMemberStatusDto): Promise<ApiEnvelope<MemberResponseDto>> {
       return fetcher<MemberResponseDto>({ method: "PATCH", path: `/api/admin/v1/members/${id}/status`, body });
-    },
-    /** 某队员考勤记录(队员 360;分页;仅 approved Sheet 内 records;item 带 activity 上下文;不存在/软删 → MEMBER_NOT_FOUND) [rbac: attendance.read.sheet] */
-    AdminMemberAttendanceControllerAttendanceRecords(memberId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<PageResultDto & { "items": AdminMemberAttendanceRecordDto[] }>> {
-      return fetcher<PageResultDto & { "items": AdminMemberAttendanceRecordDto[] }>({ method: "GET", path: `/api/admin/v1/members/${memberId}/attendance-records`, query });
     },
     /** 列出队员证书(无分页;按 certStatusCode ASC, createdAt DESC 排序;软删过滤;精简字段) [rbac: certificate.read.record] */
     CertificatesControllerList(memberId: string): Promise<ApiEnvelope<CertificateListItemDto[]>> {

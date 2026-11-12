@@ -4,7 +4,7 @@
 
 ## 本地事实
 
-- **本地候选，未部署**：旧 `finalApprove` 不再执行状态写、事件、审计或通知。已有工作流写闸先执行：readonly 返回 20158，启用时返回 20154；未启用时继续原授权检查后返回 20153。其他旧入口尚未全部退役。旧终审结果与入队达标通知没有迁移到新结算，须单独补齐并验证；以下历史 `finalApprove` 性能、通知和锁序描述不再是可达行为。
+- **本地候选，未部署**：旧 Sheet、GPS 和旧记录控制器及其旧写 provider 已从模块注销；成员参与和贡献汇总独立保留并先判权。旧源文件与历史说明仍待清理，不代表可达入口；活动对账、meta 和新版入队达标通知仍待迁移，PG/HTTP 未验证。
 
 - E3-2 D3：五个System复核GET由独立EvidenceService／QueryService／Presenter／AuditRecorder承接；显式GLOBAL Human查看权限、Service判权及锁后复核、同事务最小读审计。受控窗口／签字仅CLI，操作各自独立权限，不开放写HTTP；未部署或启用shadow／Gate。批准只追加、不删除业务资产，confirmed_gap不清零，旧unsigned证据不升格。
 

@@ -1,6 +1,6 @@
 # 交接:后端 ↔ admin 前端(srvf-admin-web)
 
-> **本地候选（未合入、未部署）**：本次仅退役队员参与汇总与入队贡献的旧考勤回退，并关闭旧考勤终审通过入口。工作流开启时这些汇总只读 committed 账本；关闭时返回 `20153`／HTTP 503，前端应显示不可用，不能展示为零。只读维护态下启用的账本读面仍可读。旧终审 `final-approve` 在工作流开启时返回 `20154`／HTTP 410，在关闭且通过原有授权后返回 `20153`／503，只读维护态返回 `20158`／503。新结算尚未接入入队贡献达标通知；活动核对、meta 和其他旧考勤入口仍待迁移。下方旧阶段描述有冲突时以本候选说明为准。
+> **本地候选（未合入、未部署）**：旧考勤 Sheet、旧 GPS 签到、旧记录列表及相关管理入口已从运行时注销；新版场次打卡、参与账本、时长证明和成员汇总仍保留。新版工作流关闭时相关写入与汇总明确不可用；启用后的只读维护态仍可读取汇总。新版账本是分录而非旧考勤记录的一比一替代。活动对账、meta 尚未迁离旧记录，新结算尚未接入入队贡献达标通知；真实 PG／HTTP 均未验证。下方旧考勤接口描述仅为历史，不适用于本候选。
 
 ## E4 原生贡献证明（Draft PR1380，未合并、未部署）
 
@@ -262,7 +262,7 @@ D4 八个新增入口全部在 Human App managed activity 面，详见 [小程�
 | **组织归属(memberships)** — 主/兼/临时/支援多归属 + 任期                 | `GET/POST .../members/:id/memberships` · `PATCH/DELETE .../members/:id/memberships/:id`(**终态 scoped-authz PR2**,已发 main)                                                          | ✅(旧 `/department` 单部门面 deprecated,见下备注)  |
 | **任职(position-assignments)** — 该队员在组织体系内担任的职务,含撤销历史 | `GET .../members/:id/position-assignments`(**终态 scoped-authz PR4**,已发 main;含 ACTIVE/REVOKED 全量,任命/撤销动作在组织架构侧发起,见 §2.6)                                          | ✅                                                 |
 | **受众标签(B7)** — 标签历史归队员，标签字典归系统                        | `GET/PUT .../members/:id/audience-tags`；PUT body=`{tagCodes:string[]}`，空数组撤销全部；字典用 `system/v1/dict-types` / `dict-items` 维护 `member_audience_tag`                      | 受 `ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED` gate 控制 |
-| 活动履历 / 考勤记录 / 参与汇总 / 贡献值                                  | `GET .../members/:id/registrations?statusCode=` · `GET .../members/:id/attendance-records` · `GET .../members/:id/participation-summary` · `GET .../members/:id/contribution-summary` | ✅                                                 |
+| 活动履历 / 参与汇总 / 贡献值 / 参与账本 | `GET .../members/:id/registrations?statusCode=` · `GET .../members/:id/participation-summary` · `GET .../members/:id/contribution-summary` · `GET .../members/:id/participation-ledger` | 候选保留；账本分录与旧考勤记录不可直接等同 |
 
 > 🔴 **证书面待适配(证书标准库 PR-1,2026-07-30;契约破坏 + 行为变更)**。字段真相仍以 live `/api/docs-json` 为准,以下是本刀必须改的四处:
 >
@@ -273,7 +273,7 @@ D4 八个新增入口全部在 Human App managed activity 面，详见 [小程�
 >
 > 权限侧:`certificate.read.sensitive` 默认**只绑 biz-admin**;org-admin / 只读投影角色 / group-manager 均**不**继承(敏感明文不随组织业务下放)。SUPER_ADMIN 短路照常可见。**列表接口恒不返编号的任何形态**(连掩码字段都不在 list select 里),编号只在详情出现。
 
-> 队员 360 跨轴查询备注:`registrations`/`attendance-records` 分页(`page`/`pageSize`)+ item 自带 activity 上下文(`activityId`/`activityTitle`);`attendance-records` **仅返 approved sheet 内 records**(已生效记录,镜像 app `/me` 口径);`contribution-summary` 在工作流开启时返回生涯累计 committed credited 净额（`{ memberId, contributionPoints }`，入账时已封顶，前端不可再封顶或叠加旧数据）；工作流关闭返回 `20153`／503，不表示零;不存在/软删队员 → `MEMBER_NOT_FOUND`(15001)。
+> 队员 360：`registrations` 分页；`contribution-summary` 在工作流开启时返回 committed credited 生涯净额，关闸返回 `20153`／503；不存在/软删队员返回 `MEMBER_NOT_FOUND`（15001）。`participation-ledger` 是分录，不应当作旧考勤记录或正式时长证明。
 
 > **`participation-summary` 计数口径**：v1.1 闸开启时，`activityCount` 是当前正式版本有已入账日行的不同活动数，`recordCount` 是这些日行按参与身份×北京日去重的条数。合法零值日行仍计数；当前版本没有日行时，历史冲回分录不再计入。更正准备中继续显示先前正式版本，生效后以新版本计算。计数不是“出勤人数”，且计数与时长分开读取，并发更正时不保证来自同一数据库快照。`totalServiceHours` 沿既有正式时长证明优先规则，`contributionPoints` 按已入账 credited 正负净额计算，不回退旧数据或二次封顶。闸关时该汇总返回 `20153`／503。前端直接展示，不自行求和；此个人端点不返回 no-show。本说明是此分支的合同，合入或部署须另行核实。
 
