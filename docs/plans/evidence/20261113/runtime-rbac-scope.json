@@ -1,0 +1,24 @@
+{
+  "recorded_at": "2026-11-13T05:35:25+08:00",
+  "inspection_time_exact": "UNKNOWN",
+  "scope": "target API container compiled code only",
+  "artifacts": [
+    "/app/dist/modules/activities/activities.controller.js",
+    "/app/dist/modules/attendances/attendances.controller.js",
+    "/app/dist/modules/activities/controllers/admin-attendance-settlements.controller.js",
+    "/app/dist/modules/permissions/rbac.service.js"
+  ],
+  "checks": {
+    "activity.create.record": "rbac-global declaration found",
+    "activity.update.record": "rbac-global declaration found",
+    "attendance.approve.sheet": "rbac-global declaration found",
+    "attendance.final-approve.sheet": "rbac-global declaration found",
+    "activity.settlement-first-review.record": "rbac-global declaration found",
+    "getUserPermissionCodes": "effectiveGlobalUserRoleBindingWhere found within method"
+  },
+  "limits": [
+    "String inspection of compiled declarations; individual route requests not tested after any scoped grant.",
+    "Other app-scoped routes and their authorization were not established here.",
+    "Deployment Git SHA UNKNOWN."
+  ]
+}
