@@ -46,15 +46,19 @@ describe('ActivityParticipationQueryService feedback aggregate integration', () 
     const feedbacks = {
       aggregateForActivity: feedbackAggregate,
     } as unknown as ActivityFeedbacksQueryService;
-    // 闸关(默认)下取数逐字不变 —— 故 ledgerQuery 给一个「被调用即失败」的替身:
-    // 本用例若哪天走进了账本分支,会当场炸,而不是悄悄换了口径还全绿。
+    // 闸关不再回退旧结算；闸开时工时与贡献取 committed 账本。
     const ledgerQuery = {
-      sumCommittedByMemberForActivities: jest.fn(() => {
-        throw new Error('闸关时不应触碰账本读面');
-      }),
+      sumCommittedByMemberForActivities: jest.fn().mockResolvedValue([
+        {
+          activityId: 'activity-1',
+          memberId: 'member-1',
+          serviceHours: '3',
+          creditedPoints: '2',
+        },
+      ]),
     } as unknown as LedgerQueryService;
     const gate = {
-      participationReadSource: jest.fn().mockReturnValue('approved-attendance'),
+      participationReadSource: jest.fn().mockReturnValue('committed-ledger'),
     } as unknown as ActivityWorkflowGate;
     const participationTimeTruth = {
       readOfficialTotalsInTx: jest.fn().mockResolvedValue(null),
@@ -74,6 +78,8 @@ describe('ActivityParticipationQueryService feedback aggregate integration', () 
     expect(result.feedback).toEqual({ count: 2, avgRating: 4.5 });
     expect(result.registrationCounts.pass).toBe(1);
     expect(result.attendeeCount).toBe(1);
+    expect(result.totalServiceHours).toBe('3');
+    expect(result.totalContributionPoints).toBe('2');
     expect(activityFindFirst).toHaveBeenCalledTimes(1);
     expect(registrationFindMany).toHaveBeenCalledTimes(1);
     expect(attendanceFindMany).toHaveBeenCalledTimes(1);

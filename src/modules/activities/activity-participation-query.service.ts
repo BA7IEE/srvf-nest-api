@@ -98,6 +98,12 @@ export class ActivityParticipationQueryService {
     return activity;
   }
 
+  private assertV11ReadAvailable(): void {
+    if (this.activityWorkflowGate.participationReadSource() !== 'committed-ledger') {
+      throw new BizException(BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED);
+    }
+  }
+
   /**
    * 闸开后的取数:工时 / 贡献值来自**已 committed 的账本分录**(按队员折)。
    *
@@ -130,6 +136,7 @@ export class ActivityParticipationQueryService {
     if (activity.statusCode !== 'completed') {
       throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
     }
+    this.assertV11ReadAvailable();
 
     // 名册与 records 仍一次取全后内存 diff；D8-2 另走统一真相选择器判定 receipt。
     const [allRegistrations, records, officialTime] = await Promise.all([
@@ -172,12 +179,9 @@ export class ActivityParticipationQueryService {
       allRegistrations.map((registration) => registration.memberId),
     );
 
-    // 取数源由闸决定,不是两套并存(合同 §16.2 第三项)。闸关(默认)= 今天的行为。
+    // 本读面仍有旧考勤人数口径，待迁移；关闸时不再回退旧的结算工时。
     const committedByMember =
-      officialTime === null &&
-      this.activityWorkflowGate.participationReadSource() === 'committed-ledger'
-        ? await this.loadCommittedTotalsByMember(activityId)
-        : null;
+      officialTime === null ? await this.loadCommittedTotalsByMember(activityId) : null;
     const officialByMember =
       officialTime === null
         ? null
@@ -192,10 +196,6 @@ export class ActivityParticipationQueryService {
       const approved = memberRecords.filter(
         (record) => record.sheet.statusCode === ATTENDANCE_SHEET_STATUS.APPROVED,
       );
-      const hours = approved.reduce(
-        (sum, record) => sum.add(record.serviceHours),
-        new Prisma.Decimal(0),
-      );
       return {
         // 计数两项留在 approved 口径 —— 见 loadCommittedTotalsByMember 的注释(悬案 D1)。
         recordCount: memberRecords.length,
@@ -203,9 +203,7 @@ export class ActivityParticipationQueryService {
         totalServiceHours:
           officialByMember !== null
             ? (officialByMember.get(memberId) ?? '0')
-            : committedByMember === null
-              ? hours.toString()
-              : (committedByMember.get(memberId)?.serviceHours ?? '0'),
+            : (committedByMember?.get(memberId)?.serviceHours ?? '0'),
       };
     };
 
@@ -246,6 +244,7 @@ export class ActivityParticipationQueryService {
   ): Promise<ActivityParticipationSummaryDto> {
     await this.assertCanReadActivity(currentUser, activityId);
     const activity = await this.findActivityOrThrow(activityId);
+    this.assertV11ReadAvailable();
 
     // 原有四路读取保持批量；D8-2 统一选择器另以固定查询数读取 official time，无 N+1。
     const [registrations, records, feedback, officialTime] = await Promise.all([
@@ -267,14 +266,10 @@ export class ActivityParticipationQueryService {
     ]);
     const metrics = buildActivityParticipationMetrics(activity.statusCode, registrations, records);
 
-    // 取数源由闸决定(合同 §16.2 第三项);范式与 participation-summary-query 同构。
-    const preCutoverSettlement =
-      this.activityWorkflowGate.participationReadSource() === 'committed-ledger'
-        ? foldActivityTotals(await this.loadCommittedTotalsByMember(activityId))
-        : {
-            totalServiceHours: metrics.totalServiceHours.toString(),
-            totalContributionPoints: metrics.totalContributionPoints.toString(),
-          };
+    // 工时与贡献只来自 committed 账本；参与事实的旧来源仍待迁移。
+    const preCutoverSettlement = foldActivityTotals(
+      await this.loadCommittedTotalsByMember(activityId),
+    );
     const settlement =
       officialTime === null
         ? preCutoverSettlement

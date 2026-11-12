@@ -121,6 +121,10 @@ export class ParticipationOverviewQueryService {
     const organizationIds = await this.resolveVisibleOrganizationIds(currentUser, query);
     if (organizationIds?.length === 0) return { months: [] };
 
+    if (this.activityWorkflowGate.participationReadSource() !== 'committed-ledger') {
+      throw new BizException(BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED);
+    }
+
     const activities = await this.prisma.activity.findMany({
       where: {
         deletedAt: null,
@@ -175,12 +179,9 @@ export class ParticipationOverviewQueryService {
       recordsByActivity.set(record.sheet.activityId, rows);
     }
 
-    // 取数源由闸决定,不是两套并存(合同 §16.2 第三项)。闸关(默认)= 今天的行为。
+    // 参与人数等仍依赖旧考勤，待迁移；关闸时不再回退旧的结算工时。
     const committedByActivity =
-      officialTime === null &&
-      this.activityWorkflowGate.participationReadSource() === 'committed-ledger'
-        ? await this.loadCommittedServiceHoursByActivity(activityIds)
-        : null;
+      officialTime === null ? await this.loadCommittedServiceHoursByActivity(activityIds) : null;
     const officialByActivity = new Map<string, OfficialParticipationTimeTotal[]>();
     for (const row of officialTime?.totals ?? []) {
       const rows = officialByActivity.get(row.activityId) ?? [];
@@ -217,9 +218,7 @@ export class ParticipationOverviewQueryService {
       const officialRows = officialByActivity.get(activity.id) ?? [];
       if (officialTime === null) {
         accumulator.totalServiceHours = accumulator.totalServiceHours.add(
-          committedByActivity === null
-            ? metrics.totalServiceHours
-            : (committedByActivity.get(activity.id) ?? new Prisma.Decimal(0)),
+          committedByActivity?.get(activity.id) ?? new Prisma.Decimal(0),
         );
       } else {
         accumulator.officialEligibleSeconds = sumOfficialEligibleSeconds([
