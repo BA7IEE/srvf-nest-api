@@ -75,7 +75,6 @@ export const managedActivitySelect = {
   _count: {
     select: {
       registrations: { where: { deletedAt: null } },
-      attendanceSheets: { where: { deletedAt: null } },
     },
   },
 } as const satisfies Prisma.ActivitySelect;

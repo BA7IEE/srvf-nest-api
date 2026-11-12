@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:4f4292899d7d6c6b3b6bec58699a5b5970e886a2e7287cebb30f14cdab993c73
+// inputDigest: sha256:dbf989a995b515f98a1dd560b833aab21a4089f4c77c31460cb36f8b9546ac28
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -20,6 +20,7 @@ import type {
   ActivityFeedbackAggregateDto,
   ActivityFeedbackRatingBucketDto,
   ActivityListItemDto,
+  ActivityListSettlementStatsDto,
   ActivityOptionItemDto,
   ActivityOptionsResponseDto,
   ActivityParticipationSummaryDto,
@@ -231,8 +232,8 @@ import type {
   CreateUserDto,
   DashboardActivitiesSummaryDto,
   DashboardActivityPublishReviewsSummaryDto,
-  DashboardAttendanceSheetsSummaryDto,
   DashboardRegistrationsSummaryDto,
+  DashboardSettlementReviewsSummaryDto,
   DashboardSummaryResponseDto,
   DurationHistogramDto,
   EmergencyContactInputDto,
@@ -1196,7 +1197,7 @@ export function createAdminClient(fetcher: Fetcher) {
     MembershipsAdminControllerFindOne(id: string): Promise<ApiEnvelope<MembershipResponseDto>> {
       return fetcher<MembershipResponseDto>({ method: "GET", path: `/api/admin/v1/memberships/${id}` });
     },
-    /** 工作台/首页待办汇总(报名/考勤/发布审核按对应 action 的授权组织范围统计;activities 无码;无权块或字段静默省略) [auth] */
+    /** 工作台汇总(报名/新版结算流程/发布审核按权限和组织范围裁剪；结算数非个人待办) [auth] */
     MetaControllerDashboardSummary(): Promise<ApiEnvelope<DashboardSummaryResponseDto>> {
       return fetcher<DashboardSummaryResponseDto>({ method: "GET", path: "/api/admin/v1/meta/dashboard-summary" });
     },

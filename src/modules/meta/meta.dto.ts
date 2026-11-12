@@ -64,7 +64,7 @@ export class ResolveLabelsDto {
 // "静默省略"语义:某 type 全部 id 都被过滤后,该 type key 本身也不出现)。
 export class ResolveLabelsResponseDto {}
 
-// GAP-003(handoff/admin-web.md §4;goal「GAP-003 收口」):工作台/首页待办汇总。三个
+// GAP-003(handoff/admin-web.md §4;goal「GAP-003 收口」):工作台/首页汇总。四个
 // 可省略块,与 resolve-labels 同源的静默省略哲学——block 级权限裁剪,无权限省略整块,
 // 不报错(响应恒 200)。字段形状固定(不像 resolve-labels 那样按 type 动态出现),故
 // 可正常声明具体属性。
@@ -81,19 +81,19 @@ export class DashboardRegistrationsSummaryDto {
   waitlisted!: number;
 }
 
-export class DashboardAttendanceSheetsSummaryDto {
-  @ApiProperty({ description: '待一级(APD)审核数(attendance_sheet_status=pending,未软删)' })
-  pending!: number;
+export class DashboardSettlementReviewsSummaryDto {
+  @ApiProperty({ description: '新版结算流程是否可读取；关闸时不提供状态计数' })
+  available!: boolean;
 
   @ApiPropertyOptional({
-    description: '当前一级审核授权组织范围内待审数(attendance.approve.sheet;无该动作权限时省略)',
+    description: '授权组织内 pending_first_review 的结算 run 数；不代表本人可审核',
   })
   pendingFirstReview?: number;
 
-  @ApiProperty({
-    description: '待终审数(attendance_sheet_status=pending_final_review,未软删)',
+  @ApiPropertyOptional({
+    description: '授权组织内 pending_final_review 的结算 run 数；不代表本人可审核',
   })
-  pendingFinalReview!: number;
+  pendingFinalReview?: number;
 }
 
 export class DashboardActivityPublishReviewsSummaryDto {
@@ -120,10 +120,10 @@ export class DashboardSummaryResponseDto {
   registrations?: DashboardRegistrationsSummaryDto;
 
   @ApiPropertyOptional({
-    type: DashboardAttendanceSheetsSummaryDto,
-    description: '考勤待办(需 attendance.read.sheet;按三源授权组织范围统计;无权省略本块,非报错)',
+    type: DashboardSettlementReviewsSummaryDto,
+    description: '新版结算流程状态（按审核台全局读码及对应审核 action 的组织范围裁剪）',
   })
-  attendanceSheets?: DashboardAttendanceSheetsSummaryDto;
+  settlementReviews?: DashboardSettlementReviewsSummaryDto;
 
   @ApiPropertyOptional({
     type: DashboardActivityPublishReviewsSummaryDto,

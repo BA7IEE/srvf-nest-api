@@ -59,8 +59,7 @@ export class MetaController {
   @Get('dashboard-summary')
   @LoginScoped({ require: 'all', scopes: ['org-scope'], engine: 'authz-scoped' })
   @ApiOperation({
-    summary:
-      '工作台/首页待办汇总(报名/考勤/发布审核按对应 action 的授权组织范围统计;activities 无码;无权块或字段静默省略) [auth]',
+    summary: '工作台汇总(报名/新版结算流程/发布审核按权限和组织范围裁剪；结算数非个人待办) [auth]',
   })
   @ApiWrappedOkResponse(DashboardSummaryResponseDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED)

@@ -3,7 +3,10 @@ import { Role } from '@prisma/client';
 import type { AuthzService } from '../authz/authz.service';
 import { ActivityClosurePolicy } from './activity-closure-policy';
 import { ActivityImageSigningService } from './activity-image-signing.service';
-import { ActivityWorkflowQueryService } from './activity-workflow-query.service';
+import {
+  ActivityWorkflowQueryService,
+  managedActivitySelect,
+} from './activity-workflow-query.service';
 import { memberIdentityData } from '../../../test/helpers/member-identity.fixture';
 
 // P2-14 刀 A:签名层 stub。返回 key 派生值而不是定值 —— 定值会让「读出侧到底走没走签名」
@@ -30,6 +33,10 @@ const imagesStub = {
 } as unknown as ActivityImageSigningService;
 
 describe('ActivityWorkflowQueryService', () => {
+  it('does not fetch an unused legacy sheet count while loading managed activities', () => {
+    expect(managedActivitySelect._count.select).not.toHaveProperty('attendanceSheets');
+  });
+
   it('aggregates one page with two bulk groupBy queries instead of per-row reads', async () => {
     const rows = Array.from({ length: 25 }, (_, index) => ({
       id: `activity-${index}`,

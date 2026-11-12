@@ -2,6 +2,8 @@
 
 本表比较 `7c377227` 与 `2515d617`：OpenAPI method/path 从 673 个变为 643 个，删除下列 30 个、新增 0；643 个保留操作的生成对象当时逐个相等。旧合同白名单与权限清单仍含这 30 项，待授权并审查后更新。除操作外另移除 41 个旧 DTO schema：Admin 类型少 24、App 少 17。生成客户端方法 Admin 323→305，App 208→196，其余四个 surface 方法集合不变。此对比是离线源码和生成物检查，不是 HTTP 测试。
 
+第五轮相对 `ffb70913` 仍为 643 项、无新增或删除操作；另外两个保留操作 `GET /api/admin/v1/activities` 和 `GET /api/admin/v1/meta/dashboard-summary` 的文案／响应结构有意改变，分别用 `settlementStats` 和 `settlementReviews` 替代旧字段，详见[参与投影](v11-participation-projection.md)。该字段变更独立于下表 30 条退役操作，旧 E2E 与受保护快照尚待审查。
+
 旧控制器类缩写：C=`AttendanceSheetsCollectionController`，R=`AttendanceSheetsResourceController`（均在 `src/modules/attendances/attendances.controller.ts`）；A=`AdminActivityCheckInsController`，M=`AdminMemberAttendanceController`，P=`AppActivityCheckInsController`，U=`AppMyAttendanceRecordsController`，W=`AppManagedActivityAttendancesController`（各自在 `src/modules/attendances/controllers/` 下）。旧生成客户端方法是完整控制器类名加下表方法名首字母大写，例如 `R.finalApprove` 对应 `AttendanceSheetsResourceControllerFinalApprove`。C/R/A/P/U/W 已注销，M 类保留但 `attendanceRecords` 方法移除。
 
 下表“相关能力”仅供前端重新设计流程，不代表旧 Sheet ID、请求方法、DTO、权限或数据可一比一替换。新版结算读可使用 `GET /api/admin/v1/attendance-settlements`、`GET /api/admin/v1/attendance-settlements/{settlementVersionId}/review-detail`；新版 App 负责人结算入口位于 `/api/app/v1/my/managed-activities/{activityId}/settlement`。新版审核为 `POST /api/admin/v1/attendance-settlements/{id}/{first-approve,first-return,final-approve,final-return}`，分别使用 `activity.settlement-first-review.record` 和 `activity.settlement-final-review.record`，不自动继承旧审核权限。新版本人打卡为 `POST /api/app/v1/activities/{activityId}/sessions/{sessionId}/punches/check-in`、`check-out` 及 `GET .../my-punch-state`。个人参与账本和时长证明不是旧考勤记录列表。
@@ -44,4 +46,4 @@ App 的“责任范围”是旧控制器的 `app-member` + `responsibility`，se
 | `DELETE /api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}` | W.softDelete | 责任范围、`attendance.delete.sheet` | 未发现等价软删接口 |
 | `POST /api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}/resubmit` | W.resubmit | 责任范围、`attendance.update.sheet` | `POST .../settlement/versions/{versionId}/resubmit`，使用新结算提交权限 |
 
-本候选的活动对账、参与汇总和月度总览在新版关闭时可返回 `20153`／503；月度无可见组织时先返回空数组。三个读面的新语义见[参与投影](v11-participation-projection.md)；仪表盘和遗留资源解析仍有旧依赖，新版达标通知未接线，真实 PG／HTTP 未验证。不得据此部署。
+本候选的活动对账、参与汇总和月度总览在新版关闭时可返回 `20153`／503；月度无可见组织时先返回空数组。三个读面、列表统计及工作台的新语义见[参与投影](v11-participation-projection.md)；负责人工作流和遗留资源解析仍有旧依赖，新版达标通知未接线，真实 PG／HTTP 未验证。不得据此部署。

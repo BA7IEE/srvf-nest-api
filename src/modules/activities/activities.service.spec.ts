@@ -2,6 +2,7 @@ import { Prisma, Role, UserStatus } from '@prisma/client';
 import { validate } from 'class-validator';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import type { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { PrismaService } from '../../database/prisma.service';
@@ -510,6 +511,7 @@ function makeService(
     initiationPolicy as unknown as ActivityInitiationPolicy,
     publishReviewMock,
     allocationModesMock,
+    { participationReadSource: () => 'committed-ledger' } as ActivityWorkflowGate,
     configMock,
   );
 }

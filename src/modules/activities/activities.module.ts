@@ -18,6 +18,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { ActivitiesController } from './activities.controller';
 import { ActivitiesService } from './activities.service';
+import { ActivityDashboardQueryService } from './activity-dashboard-query.service';
+import { ACTIVITY_DASHBOARD_QUERY } from '../../common/dashboard/activity-dashboard-query.port';
 import { ActivityAccessService } from './activity-access.service';
 import { ActivityStatusCommandService } from './activity-status-command.service';
 import { ActivityWriteService } from './activity-write.service';
@@ -328,6 +330,8 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityCreationProfessional,
     ActivityCreationEmergency,
     ActivitiesService,
+    ActivityDashboardQueryService,
+    { provide: ACTIVITY_DASHBOARD_QUERY, useExisting: ActivityDashboardQueryService },
     AppMyActivityBatchJobsService,
     ActivityAccessService,
     ActivityCoverService,
@@ -497,6 +501,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
   ],
   exports: [
     ActivitiesService,
+    ACTIVITY_DASHBOARD_QUERY,
     // E3-2 callers use activity-owned mapping reads, never cross-domain table access.
     ActivityContributionShadowMappingProofQuery,
     ActivityContributionShadowMappingRegistrationService,

@@ -50089,7 +50089,7 @@
             "name": "includeStats",
             "required": false,
             "in": "query",
-            "description": "是否附带每行统计(registrationCount/attendanceSheetCount;默认 false)",
+            "description": "是否附带报名头数及授权范围内的新版结算版本统计(默认 false)",
             "schema": {
               "default": false,
               "type": "boolean"
@@ -119238,7 +119238,7 @@
             "bearer": []
           }
         ],
-        "summary": "工作台/首页待办汇总(报名/考勤/发布审核按对应 action 的授权组织范围统计;activities 无码;无权块或字段静默省略) [auth]",
+        "summary": "工作台汇总(报名/新版结算流程/发布审核按权限和组织范围裁剪；结算数非个人待办) [auth]",
         "tags": [
           "Admin - Meta"
         ]
@@ -152820,6 +152820,22 @@
           "confirmation"
         ]
       },
+      "ActivityListSettlementStatsDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "新版结算读面是否可用；关闭时不提供版本数量"
+          },
+          "submittedVersionCount": {
+            "type": "number",
+            "description": "曾提交且当前非 draft 的结算版本行数（含已退回、作废等历史；不是人数或待办数）"
+          }
+        },
+        "required": [
+          "available"
+        ]
+      },
       "ActivityListItemDto": {
         "type": "object",
         "properties": {
@@ -152923,9 +152939,13 @@
             "type": "number",
             "description": "报名人数(仅 includeStats=true 时返回)"
           },
-          "attendanceSheetCount": {
-            "type": "number",
-            "description": "考勤单数(仅 includeStats=true 时返回)"
+          "settlementStats": {
+            "description": "新版结算版本统计（仅 includeStats=true 且具备审核台读取权限及组织范围时提供）",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActivityListSettlementStatsDto"
+              }
+            ]
           }
         },
         "required": [
@@ -171331,25 +171351,24 @@
           "waitlisted"
         ]
       },
-      "DashboardAttendanceSheetsSummaryDto": {
+      "DashboardSettlementReviewsSummaryDto": {
         "type": "object",
         "properties": {
-          "pending": {
-            "type": "number",
-            "description": "待一级(APD)审核数(attendance_sheet_status=pending,未软删)"
+          "available": {
+            "type": "boolean",
+            "description": "新版结算流程是否可读取；关闸时不提供状态计数"
           },
           "pendingFirstReview": {
             "type": "number",
-            "description": "当前一级审核授权组织范围内待审数(attendance.approve.sheet;无该动作权限时省略)"
+            "description": "授权组织内 pending_first_review 的结算 run 数；不代表本人可审核"
           },
           "pendingFinalReview": {
             "type": "number",
-            "description": "待终审数(attendance_sheet_status=pending_final_review,未软删)"
+            "description": "授权组织内 pending_final_review 的结算 run 数；不代表本人可审核"
           }
         },
         "required": [
-          "pending",
-          "pendingFinalReview"
+          "available"
         ]
       },
       "DashboardActivityPublishReviewsSummaryDto": {
@@ -171392,11 +171411,11 @@
               }
             ]
           },
-          "attendanceSheets": {
-            "description": "考勤待办(需 attendance.read.sheet;按三源授权组织范围统计;无权省略本块,非报错)",
+          "settlementReviews": {
+            "description": "新版结算流程状态（按审核台全局读码及对应审核 action 的组织范围裁剪）",
             "allOf": [
               {
-                "$ref": "#/components/schemas/DashboardAttendanceSheetsSummaryDto"
+                "$ref": "#/components/schemas/DashboardSettlementReviewsSummaryDto"
               }
             ]
           },

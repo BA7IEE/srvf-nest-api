@@ -2,6 +2,10 @@
 
 本候选未合入、未部署；真实 PostgreSQL 和 HTTP 测试均未运行。`GET /api/admin/v1/activities/{activityId}/reconciliation`、`GET .../participation-summary` 与 `GET /api/admin/v1/meta/participation-overview` 不再读取旧 Sheet 考勤记录。
 
+活动列表 `includeStats=true` 保留 `registrationCount`（未软删报名头的全部状态）；旧 `attendanceSheetCount` 已移除。具有审核台 GLOBAL 读取码及组织范围时才返回 `settlementStats`：开闸为 `available: true` 和曾提交、当前非 draft 的 `submittedVersionCount`（含退回和作废的历史提交，排除未提交即作废的草稿），关闸为 `available: false`，无权限则省略。该数字不是人数、到场或待办，前端须改字段；旧 E2E 断言待按合同审查。
+
+工作台移除 `attendanceSheets`，改为按审核台 GLOBAL 读码及一审/终审 GLOBAL action 裁剪的 `settlementReviews`。开闸时相应字段计数授权组织内处于一审/终审状态的 run；数字不是本人可审核数。关闸时仅有权者得到 `available: false`，其他工作台块照常；无权块或阶段省略。
+
 三个读面先保留既有两项读取权限及资源/组织范围；在同一个 `REPEATABLE READ` 快照中读取授权、活动、报名、身份、当前正式结算、已入账账本和正式时长。月度请求的组织后代展开也使用该事务。无可见组织的月度请求仍为空数组；其余新版关闭的请求返回 20153／503。只读维护态开启且新版工作流已启用时仍可读。
 
 ## 事实与人数
@@ -28,4 +32,4 @@
 
 活动软删在原 Activity 根锁内检查新版永久身份及结算 run；存在任一项即拒绝。它不再检查旧 Sheet 或 GPS，故仅有未转换旧 Sheet 的历史活动与旧版拒绝集合不同；不物理删除历史数据。
 
-开放、无打卡或未入账不推成缺席；结算阶段性服务段和 punch 仍以各自新版接口查看。仪表盘与遗留资源解析的旧依赖、入队达标通知、真实隔离 PG/HTTP、受保护合同和守卫审查仍未完成。
+开放、无打卡或未入账不推成缺席；结算阶段性服务段和 punch 仍以各自新版接口查看。负责人工作流与遗留资源解析的旧依赖、入队达标通知、真实隔离 PG/HTTP、受保护合同和守卫审查仍未完成。
