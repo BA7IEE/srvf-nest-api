@@ -478,7 +478,7 @@ export class ActivityRegistrationReviewService {
         invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
       });
       const lockedReg = await this.access.findRegistrationOrThrow(activityId, reg.id, tx);
-      // 参与域生命周期收口⑦:已有 live 考勤记录或签到证据的报名禁取消。
+      // Activity 根锁内已有新版打卡或已入账结果的报名禁取消。
       await this.access.assertNoParticipationEvidence(lockedReg.id, tx);
 
       const cancelledAt = new Date();

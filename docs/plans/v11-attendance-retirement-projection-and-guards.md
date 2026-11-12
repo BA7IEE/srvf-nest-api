@@ -1,6 +1,14 @@
 # 新版参与投影与守卫迁移草案
 
-本稿描述本地候选和下一步，不代表通知已迁移，不代表维护者签署。旧 Sheet/GPS 控制器及旧写 provider 已从运行时移除；旧服务源码、历史迁移和旧数据仍在，报名保护及仪表盘仍有旧依赖。活动对账、参与汇总及月度总览已接当前 posted 结果的共享投影，具体字段和待定语义见[前端交接](../handoff/v11-participation-projection.md)；真实 PG／HTTP 尚未验证。关闭新版时相关读取拒绝，月度无可见组织仍先返回空结果。不得据此部署。
+本稿描述本地候选和下一步，不代表通知已迁移，不代表维护者签署。旧 Sheet/GPS 控制器及旧写 provider 已从运行时移除；旧服务源码、历史迁移和旧数据仍在，仪表盘及遗留资源解析仍有旧依赖。活动对账、参与汇总及月度总览已接当前 posted 结果的共享投影，具体字段和待定语义见[前端交接](../handoff/v11-participation-projection.md)；报名取消、重提及活动软删保护改查新版参与证据。真实 PG／HTTP 尚未验证。关闭新版时相关读取拒绝，月度无可见组织仍先返回空结果。不得据此部署。
+
+## 尚未退休的运行时读面
+
+- `MetaService.dashboardSummary` 仍按旧 Sheet 状态与旧读/审核权限计算工作台；新版应分别按结算一审、终审的实际 action 和组织范围统计，并区分组织内待审数量与本人可操作数量。`ActivitySettlementRun` 不可直接套用旧 Sheet 数量字段。需处理活动软删、权限缺失和关闭新版的明确语义，再配套合同与客户端变更。
+- `ActivitiesService.attachStats` 的 `includeStats` 仍返回旧 Sheet 数；`ActivityWorkflowQueryService` 的负责活动列表、详情及 `ActivityClosurePolicy` 仍用旧 Sheet 状态和旧完成声明计算待办。新版的身份、结算版本、活跃 closure 与活动完成状态各自不同，须先定义新字段和状态映射，不可把 run 数伪装成 Sheet 数或以零代替。
+- `ActivityMemberOffboardImpactService` 仍用旧打卡、记录和 Sheet 计算报名证据及负责人关闭状态；其结果被成员退出检查和写事务使用，迁移时须与新版报名证据、活动根锁和实际 closure 一致，不能放宽退出保护。`AuthzService` 的旧资源解析和旧 Sheet 状态机仍可从模块引用，须先确认所有 action／资源消费者，再清理或明确不支持。
+
+以上读面本轮未完成迁移，不代表旧版真正退休。历史迁移与原始数据不应删除；对用户所述零真实数据不能以未连接的数据库检查冒充确认。相关旧 E2E 断言仍待维护者按新合同审查，不能直接删除以消除失败。
 
 ## 投影事实和拟定口径
 

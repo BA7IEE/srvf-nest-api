@@ -373,7 +373,7 @@ export class ActivityRegistrationsService {
         invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
       });
       const lockedReg = await this.access.findRegistrationOrThrow(reg.activityId, reg.id, tx);
-      // 参与域生命周期收口⑦:队员自助路径共用 live 考勤记录 / 签到证据守卫。
+      // 队员自助路径在 Activity 根锁内共用新版打卡 / 已入账结果证据守卫。
       await this.access.assertNoParticipationEvidence(lockedReg.id, tx);
       // K4(B-F3):活动标题 / 发布人必须在**锁后**读。放在锁前时,并发改名先提交,
       // 本事务仍会用旧标题落 durable intent —— intent 一旦落库,worker 无法自行恢复正确快照,

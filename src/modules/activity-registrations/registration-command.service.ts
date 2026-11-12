@@ -30,6 +30,7 @@ import {
   decideParticipationRevision,
 } from './participation-revision-state-machine';
 import { hashRegistrationAnswers, hashRegistrationCommand } from './registration-command-hash';
+import { hasV11ParticipationEvidenceInTx } from './registration-participation-evidence';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -271,23 +272,7 @@ export class RegistrationCommandService {
       ) {
         throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
       }
-      const [legacyAttendance, legacyCheckIn, punchedIdentity] = await Promise.all([
-        input.tx.attendanceRecord.findFirst({
-          where: { registrationId: lockedHeader.id, deletedAt: null },
-          select: { id: true },
-        }),
-        input.tx.activityCheckIn.findFirst({
-          where: { registrationId: lockedHeader.id, deletedAt: null },
-          select: { id: true },
-        }),
-        identities.length > 0
-          ? input.tx.attendancePunchEvent.findFirst({
-              where: { participationIdentityId: { in: identities.map((identity) => identity.id) } },
-              select: { id: true },
-            })
-          : null,
-      ]);
-      if (legacyAttendance || legacyCheckIn || punchedIdentity) {
+      if (await hasV11ParticipationEvidenceInTx(input.tx, lockedHeader.id)) {
         throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
       }
     }

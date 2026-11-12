@@ -251,8 +251,10 @@ function makePrismaMock() {
     count: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0),
   };
   const attendanceSheet = {
-    count: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0),
+    count: jest.fn<Promise<number>, [unknown]>().mockRejectedValue(new Error('legacy sheet read')),
   };
+  const activityParticipationIdentity = { count: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0) };
+  const attendanceSettlementRun = { count: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0) };
   // 第 5 批整单取消会在已持有 Activity 根锁后读取有效 PunchEvent 链；默认空链保持
   // 既有取消 characterization 的无现场事实前提，不改写它们原有的状态机/audit 断言。
   const attendancePunchEvent = {
@@ -277,6 +279,8 @@ function makePrismaMock() {
     organization,
     activityRegistration,
     attendanceSheet,
+    activityParticipationIdentity,
+    attendanceSettlementRun,
     attendancePunchEvent,
     activityPublishReview,
     notificationOutboxIntent,
