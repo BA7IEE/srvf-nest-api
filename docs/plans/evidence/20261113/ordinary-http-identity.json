@@ -1,0 +1,61 @@
+{
+  "classification": "DEPLOYED_HTTP",
+  "target": "https://dp.srvf.team",
+  "deployment_commit": "UNKNOWN",
+  "client": "Mac loopback intake and fixed-target Python HTTPS process",
+  "helper_sha256": "ff5a3e27d85600699c50a57cc7c0a5cfa80b9b63a50a84880d9645070255171b",
+  "listener": "127.0.0.1 only; matching PID checked before intake; stopped with no remaining listener",
+  "results": [
+    {
+      "time": "2026-11-13T05:14:49.023389+08:00",
+      "role": "A",
+      "method": "POST",
+      "path": "/api/auth/v1/login",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe1qjmk4baff11bea146878aaada1c2"
+    },
+    {
+      "time": "2026-11-13T05:14:53.466577+08:00",
+      "role": "A",
+      "method": "GET",
+      "path": "/api/app/v1/me",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe1qn0kdf145e19f5e763ecc3a057fc",
+      "member_id_matches": true,
+      "role_is_user": true,
+      "account_is_active": true,
+      "member_is_active": true,
+      "can_use_app": true
+    },
+    {
+      "time": "2026-11-13T05:14:58.347408+08:00",
+      "role": "B",
+      "method": "POST",
+      "path": "/api/auth/v1/login",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe1qqsv77bc8bb6dd53477fe93c3a57"
+    },
+    {
+      "time": "2026-11-13T05:15:02.047959+08:00",
+      "role": "B",
+      "method": "GET",
+      "path": "/api/app/v1/me",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe1qtmtbcec1bb5e903d638f75c2a15",
+      "member_id_matches": true,
+      "role_is_user": true,
+      "account_is_active": true,
+      "member_is_active": true,
+      "can_use_app": true
+    }
+  ],
+  "limits": [
+    "No password or token was included in this evidence.",
+    "Login creates server sessions; no logout was attempted and server-side session state is UNKNOWN.",
+    "Native browser session results are separately classified GUI."
+  ]
+}

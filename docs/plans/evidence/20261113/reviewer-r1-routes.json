@@ -1,0 +1,106 @@
+{
+  "recorded_at": "2026-11-13T05:15:56+08:00",
+  "scope": "target API container only",
+  "window_utc": [
+    "2026-11-12T21:08:00Z",
+    "2026-11-12T21:12:00Z"
+  ],
+  "exit_code": 0,
+  "results": [
+    {
+      "case": "R1_member_create",
+      "request_id": "cmwe1ilx5be3c5a6f64f3c05880d776d2",
+      "server_status": 201,
+      "matching_lines": 2,
+      "method": "POST",
+      "route": "/api/admin/v1/members",
+      "route_matches": true
+    },
+    {
+      "case": "R1_membership_create",
+      "request_id": "cmwe1j6v42cc749732cc61ae02e0e1dd9",
+      "server_status": 201,
+      "matching_lines": 2,
+      "method": "POST",
+      "route": "/api/admin/v1/members/{id}/memberships",
+      "route_matches": true
+    },
+    {
+      "case": "R1_user_create",
+      "request_id": "cmwe1ju1y22712d5a3dfaff435f0ecce4",
+      "server_status": 201,
+      "matching_lines": 2,
+      "method": "POST",
+      "route": "/api/admin/v1/users",
+      "route_matches": true
+    },
+    {
+      "case": "R1_account_bind",
+      "request_id": "cmwe1ks7n5acb49597a8a41ce8f229b79",
+      "server_status": 200,
+      "matching_lines": 2,
+      "method": "POST",
+      "route": "/api/admin/v1/members/{id}/account/bind",
+      "route_matches": true
+    },
+    {
+      "case": "R1_member_list",
+      "request_id": "cmwe1irnj9dd4fd088e7c4a00d12e6ebe",
+      "server_status": 200,
+      "matching_lines": 2
+    },
+    {
+      "case": "R1_membership_list",
+      "request_id": "cmwe1jblsbbb0dc8bf43e0107d15f5865",
+      "server_status": 200,
+      "matching_lines": 2
+    },
+    {
+      "case": "R1_user_detail",
+      "request_id": "cmwe1k4gpde81fa3fdcf1ad3d01ddc183",
+      "server_status": 200,
+      "matching_lines": 2
+    },
+    {
+      "case": "R1_user_roles",
+      "request_id": "cmwe1kb0pb675ded0bb374b7201759ca3",
+      "server_status": 200,
+      "matching_lines": 2
+    },
+    {
+      "case": "R1_role_bindings",
+      "request_id": "cmwe1kg6ba7fd7b431278abd71437033e",
+      "server_status": 200,
+      "matching_lines": 2
+    },
+    {
+      "case": "R1_member_after_bind",
+      "request_id": "cmwe1kyf126ead19ae6f2c30b8f7049d1",
+      "server_status": 200,
+      "matching_lines": 2
+    },
+    {
+      "case": "R1_user_after_bind",
+      "request_id": "cmwe1l2jp846a4a563119ca9a75498727",
+      "server_status": 200,
+      "matching_lines": 2
+    },
+    {
+      "case": "R2_member_create",
+      "request_id": "cmwe1lmg0588827ed59b5dc9723fef5c8",
+      "server_status": 201,
+      "matching_lines": 2
+    },
+    {
+      "case": "R2_member_list",
+      "request_id": "cmwe1lsktcec0cf93729fb6a5b8e927fb",
+      "server_status": 200,
+      "matching_lines": 2
+    }
+  ],
+  "limits": [
+    "Only R1 POST routes were matched in this audit.",
+    "Response body assertions are recorded separately.",
+    "Deployment Git SHA UNKNOWN."
+  ]
+}

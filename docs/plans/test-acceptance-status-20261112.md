@@ -1021,6 +1021,43 @@
 | 05:03:56.088 | `POST https://dp.srvf.team/api/admin/v1/members` | 现有测试管理员；与成员 A 相同合成编号 | 409 / 15002，重复或占用反馈；实际服务端路由已核对 | `cmwe1cju1366a81c5a3f780619726cb70` |
 | 05:04:17.309 | `GET https://dp.srvf.team/api/admin/v1/members?memberNo=<合成成员A编号>&page=1&pageSize=10`（编号脱敏） | 现有测试管理员；禁用测试标签缓存 | 200 / total 1；服务端状态已核对 | `cmwe1d07dddff9c54c7bfcb43bed45711` |
 | 05:04:23.523 | `GET https://dp.srvf.team/api/admin/v1/members/<合成成员A-ID>`（ID 脱敏） | 现有测试管理员；禁用测试标签缓存 | 200；原 ID、合成字段、ACTIVE 和绑定账号一致；服务端状态已核对 | `cmwe1d5043bb236397f2a8c4ef1178592` |
+| 05:08:28.922 | `GET https://dp.srvf.team/api/admin/v1/members?memberNo=<合成审核人R1编号>&page=1&pageSize=10`（编号脱敏） | 现有测试管理员 | 200 / total 0；创建前查重 | `cmwe1ie9j943272ad85a7bb03d0d2bf27` |
+| 05:08:38.845 | `POST https://dp.srvf.team/api/admin/v1/members` | 现有测试管理员；合成审核人 R1 成员 | 201；实际服务端路由已核对 | `cmwe1ilx5be3c5a6f64f3c05880d776d2` |
+| 05:08:46.276 | `GET https://dp.srvf.team/api/admin/v1/members?memberNo=<合成审核人R1编号>&page=1&pageSize=10`（编号脱敏） | 现有测试管理员 | 200 / total 1；合同字段匹配、ACTIVE、无账号；服务端状态已核对 | `cmwe1irnj9dd4fd088e7c4a00d12e6ebe` |
+| 05:08:51.151 | `GET https://dp.srvf.team/api/admin/v1/members/<合成审核人R1成员ID>/memberships`（ID 脱敏） | 现有测试管理员 | 200 / code 0；写前为空数组 | `cmwe1ivf0c2957321a346c089f66f8482` |
+| 05:08:56.510 | `GET https://dp.srvf.team/api/admin/v1/organizations/<合成组织A-ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；ACTIVE | `cmwe1izkmc6987e2bfa85974410b892b8` |
+| 05:09:05.982 | `POST https://dp.srvf.team/api/admin/v1/members/<合成审核人R1成员ID>/memberships`（ID 脱敏） | 现有测试管理员；合成组织 A | 201；实际服务端路由已核对 | `cmwe1j6v42cc749732cc61ae02e0e1dd9` |
+| 05:09:12.132 | `GET https://dp.srvf.team/api/admin/v1/members/<合成审核人R1成员ID>/memberships`（ID 脱敏） | 现有测试管理员 | 200；一条组织 A 的 PRIMARY / ACTIVE 归属；服务端状态已核对 | `cmwe1jblsbbb0dc8bf43e0107d15f5865` |
+| 05:09:28.097 | `GET https://dp.srvf.team/api/admin/v1/users?page=1&pageSize=100&q=<合成审核人R1用户名>`（用户名脱敏） | 现有测试管理员 | 200 / total 0；创建前查重 | `cmwe1jnx58c213c701367098131a459e1` |
+| 05:09:36.040 | `POST https://dp.srvf.team/api/admin/v1/users` | 现有测试管理员；合成审核人 R1 | 201；实际服务端路由已核对 | `cmwe1ju1y22712d5a3dfaff435f0ecce4` |
+| 05:09:49.516 | `GET https://dp.srvf.team/api/admin/v1/users/<合成审核人R1用户ID>`（ID 脱敏） | 现有测试管理员 | 200；USER / ACTIVE，未绑定成员，无邮箱和手机号 | `cmwe1k4gpde81fa3fdcf1ad3d01ddc183` |
+| 05:09:58.027 | `GET https://dp.srvf.team/api/system/v1/users/<合成审核人R1用户ID>/roles`（ID 脱敏） | 现有测试管理员 | 200；空数组 | `cmwe1kb0pb675ded0bb374b7201759ca3` |
+| 05:10:04.714 | `GET https://dp.srvf.team/api/admin/v1/role-bindings?principalType=USER&principalId=<合成审核人R1用户ID>`（ID 脱敏） | 现有测试管理员 | 200；空数组 | `cmwe1kg6ba7fd7b431278abd71437033e` |
+| 05:10:10.595 | `GET https://dp.srvf.team/api/admin/v1/members/<合成审核人R1成员ID>`（ID 脱敏） | 现有测试管理员 | 200；绑定前 `hasAccount=false` | `cmwe1kkq41bdd84dd65065114af8b243c` |
+| 05:10:20.307 | `POST https://dp.srvf.team/api/admin/v1/members/<合成审核人R1成员ID>/account/bind`（ID 脱敏） | 现有测试管理员；合成审核人 R1 | 200；实际服务端路由已核对 | `cmwe1ks7n5acb49597a8a41ce8f229b79` |
+| 05:10:28.358 | `GET https://dp.srvf.team/api/admin/v1/members/<合成审核人R1成员ID>`（ID 脱敏） | 现有测试管理员 | 200；绑定账号 ACTIVE，成员与账号对应 | `cmwe1kyf126ead19ae6f2c30b8f7049d1` |
+| 05:10:33.711 | `GET https://dp.srvf.team/api/admin/v1/users/<合成审核人R1用户ID>`（ID 脱敏） | 现有测试管理员 | 200；memberId 匹配，USER / ACTIVE | `cmwe1l2jp846a4a563119ca9a75498727` |
+| 05:10:49.293 | `GET https://dp.srvf.team/api/admin/v1/members?memberNo=<合成审核人R2编号>&page=1&pageSize=10`（编号脱敏） | 现有测试管理员 | 200 / total 0；创建前查重 | `cmwe1leklc389ef881712f0400d56af27` |
+| 05:10:59.490 | `POST https://dp.srvf.team/api/admin/v1/members` | 现有测试管理员；合成审核人 R2 成员 | 201；服务端状态和实际路径已核对 | `cmwe1lmg0588827ed59b5dc9723fef5c8` |
+| 05:11:07.445 | `GET https://dp.srvf.team/api/admin/v1/members?memberNo=<合成审核人R2编号>&page=1&pageSize=10`（编号脱敏） | 现有测试管理员 | 200 / total 1；合同字段匹配、ACTIVE、无账号；服务端状态已核对 | `cmwe1lsktcec0cf93729fb6a5b8e927fb` |
+| 05:14:49.023 | `POST https://dp.srvf.team/api/auth/v1/login` | 普通合成账号 A；Mac 本机独立 HTTPS 进程 | 200 / code 0；令牌仅在进程内处理 | `cmwe1qjmk4baff11bea146878aaada1c2` |
+| 05:14:53.466 | `GET https://dp.srvf.team/api/app/v1/me` | 普通合成账号 A | 200 / code 0；memberId 匹配，USER、账号及成员 ACTIVE，`canUseApp=true` | `cmwe1qn0kdf145e19f5e763ecc3a057fc` |
+| 05:14:58.347 | `POST https://dp.srvf.team/api/auth/v1/login` | 普通合成账号 B；Mac 本机独立 HTTPS 进程 | 200 / code 0；令牌仅在进程内处理 | `cmwe1qqsv77bc8bb6dd53477fe93c3a57` |
+| 05:15:02.047 | `GET https://dp.srvf.team/api/app/v1/me` | 普通合成账号 B | 200 / code 0；memberId 匹配，USER、账号及成员 ACTIVE，`canUseApp=true` | `cmwe1qtmtbcec1bb5e903d638f75c2a15` |
+| 05:16:32.195 | `GET https://dp.srvf.team/api/admin/v1/members/<合成审核人R2成员ID>/memberships`（ID 脱敏） | 现有测试管理员 | 200；写前为空数组 | `cmwe1sr7f785bbe7e5ff2964e2479756f` |
+| 05:16:37.664 | `GET https://dp.srvf.team/api/admin/v1/organizations/<合成组织A-ID>`（ID 脱敏） | 现有测试管理员 | 200；ACTIVE | `cmwe1svdje1291bd55693f01963413664` |
+| 05:16:47.376 | `POST https://dp.srvf.team/api/admin/v1/members/<合成审核人R2成员ID>/memberships`（ID 脱敏） | 现有测试管理员；合成组织 A | 201；实际服务端路由已核对 | `cmwe1t2vk9eeb6843a505f43e42551f68` |
+| 05:16:53.501 | `GET https://dp.srvf.team/api/admin/v1/members/<合成审核人R2成员ID>/memberships`（ID 脱敏） | 现有测试管理员 | 200；一条组织 A 的 PRIMARY / ACTIVE 归属；服务端状态已核对 | `cmwe1t7lg4e6bf97623a092ed2ed57d88` |
+| 05:17:09.706 | `GET https://dp.srvf.team/api/admin/v1/users?page=1&pageSize=100&q=<合成审核人R2用户名>`（用户名脱敏） | 现有测试管理员 | 200 / total 0；创建前查重 | `cmwe1tk3jb5abd2755f42a2d3411050f9` |
+| 05:17:17.119 | `POST https://dp.srvf.team/api/admin/v1/users` | 现有测试管理员；合成审核人 R2 | 初次事件读取未取得回执，回查后在未截断事件中找到迟到的 201 / code 0；实际服务端路由已核对，未重试 | `cmwe1tptp691b67a850f3c85641e83224` |
+| 05:17:37.541 | `GET https://dp.srvf.team/api/admin/v1/users?page=1&pageSize=100&q=<合成审核人R2用户名>`（用户名脱敏） | 现有测试管理员 | 200 / code 0，total 1，精确匹配一条 USER / ACTIVE，成员暂空；服务端状态已核对 | `cmwe1u5kr3254b4ccb925acbdab8c70b1` |
+| 05:19:09.354 | `GET https://dp.srvf.team/api/admin/v1/users/<合成审核人R2用户ID>`（ID 脱敏） | 现有测试管理员 | 200；USER / ACTIVE，未绑定成员，无邮箱和手机号 | `cmwe1w4h344b09d5bc1236a5aa2e9b6e6` |
+| 05:19:14.471 | `GET https://dp.srvf.team/api/system/v1/users/<合成审核人R2用户ID>/roles`（ID 脱敏） | 现有测试管理员 | 200；空数组 | `cmwe1w8dp477c607c9a88602b480e9eb6` |
+| 05:19:19.370 | `GET https://dp.srvf.team/api/admin/v1/role-bindings?principalType=USER&principalId=<合成审核人R2用户ID>`（ID 脱敏） | 现有测试管理员 | 200；空数组 | `cmwe1wc6edb39c893e450e8fe831834cc` |
+| 05:19:24.882 | `GET https://dp.srvf.team/api/admin/v1/members/<合成审核人R2成员ID>`（ID 脱敏） | 现有测试管理员 | 200；绑定前 `hasAccount=false` | `cmwe1wgfbd3408cc7d62028581ff5d37b` |
+| 05:19:33.593 | 适配请求的预定目标 `POST https://dp.srvf.team/api/admin/v1/members/<合成审核人R2成员ID>/account/bind`（ID 脱敏） | 现有测试管理员；合成审核人 R2 | 200；实际服务端路由待核对 | `cmwe1wn4kb8e0ad6e3f3e03d29a50dcdb` |
+| 05:19:39.112 | `GET https://dp.srvf.team/api/admin/v1/members/<合成审核人R2成员ID>`（ID 脱敏） | 现有测试管理员 | 200；绑定账号 ACTIVE，成员与账号对应 | `cmwe1wrdmac65febb5829e015e86f5c40` |
+| 05:19:44.802 | `GET https://dp.srvf.team/api/admin/v1/users/<合成审核人R2用户ID>`（ID 脱敏） | 现有测试管理员 | 200；memberId 匹配，USER / ACTIVE | `cmwe1wvrobf880311bd3768010bf587e6` |
 
 - 历史 HTML 404 的 38 个方法中，累计 16 个已有对齐方法、路径及相应查询或无效请求体的匿名有限样本；其中企业微信绑定授权样本只恢复 HTTP 状态，响应类型未知。其余 22 项涉及有状态 POST、身份、短信或外部服务，未确认隔离条件前不盲目重放。企业微信登录授权负例未发起 OAuth 跳转，两个 step-up 负例均被匿名守卫拒绝。令牌负例[脱敏回执](evidence/20261113/history-integration-token-invalid.json)不含凭据，也未签发 token；[两条招新空 multipart](evidence/20261113/history-recruitment-empty-multipart.json)及[证书申报空 multipart](evidence/20261113/history-claim-empty-multipart.json)均无文件或字段。源码中的限流器可能写入限流桶，本轮未证明其实际写入状态。所有样本均不等于已认证流程或完整业务验收。
 - **LOCAL**：已核对并行前端分支 `codex/retire-legacy-attendance-consumer-20261112` 的候选 `e0ec0425302b746ee51048a8f6183516f9a71f7e`：其写集包括 `src/api/srvf-member.ts` 和 `members/cockpit.vue`，该会话仍在运行。新建队员的完整合同修复与共享文件重叠，未通过重复 API 或类型断言绕开，也未改动对方工作树；等待安全的串行集成条件。
@@ -1040,6 +1077,8 @@
 - 合成组织 A、B 在用户明确说明目标测试库及数据均为合成后，分别于唯一 ACTIVE 根节点下创建，未修改根或既有组织。由于单标签适配前的浏览器事件仍显示原路径，额外按各自创建 request ID 查目标容器限定时间日志，确认实际均为 `POST /api/admin/v1/organizations`；各自独立详情回读一致，两个 ID 不同。该记录为 **DEPLOYED_HTTP** 数据准备，不能冒充原组织表单 GUI 验收。
 - 合成成员 A→组织 A 与成员 B→组织 B 的 PRIMARY 归属分别单次写入，均通过成员归属列表、归属详情和有界容器日志独立核对：两条均为 ACTIVE、startedAt 有效、endedAt=null，且成员/组织/归属 ID 与各自回执一致。该时点两人尚未绑定登录账号；后续绑定见逐请求记录，不等于普通角色业务或跨组织权限通过。
 - 两个合成 USER 的创建和各自成员绑定使用受控浏览器请求体适配，创建前均查重，创建后均回读 ACTIVE / USER，无邮箱、手机号，普通角色列表与 role bindings 为空；绑定后分别从成员与账号两端回读一致。4 次写入的实际目标与状态均用目标容器[有界日志统计](evidence/20261113/account-ab-route-summary.json)按请求 ID 独立核对。口令未写入本台账、截图或仓库；这不证明其他代理、浏览器扩展或自定义日志的行为。账号 A、B 均有上述 GUI 登录样本；这不代表原 GUI 创建表单已修复。
+- **DEPLOYED_HTTP 普通身份通过样本**：A/B 分别通过 Mac 本机受控短时进程登录并读取 `/me`，4 次均为 200 / code 0；各自 memberId、USER、ACTIVE 与 App 可用状态均经布尔断言匹配。该进程仅监听回环、核对 PID 后接收合成账号信息，未输出或持久化口令/令牌；完成后已正常退出且端口无监听。[脱敏结果](evidence/20261113/ordinary-http-identity.json)不证明其他代理或扩展的日志行为。此次登录会建立服务端会话，未执行退出，服务端退出状态 UNKNOWN；不代表活动、考勤或结算业务通过。
+- 合成审核人 R1 已创建成员及默认 USER、绑定组织 A 的 PRIMARY 归属并双向核对，角色和 role bindings 为空；4 条写请求的路径及 7 条关键写后读取的状态经[有界日志](evidence/20261113/reviewer-r1-routes.json)核对。R1 尚未被授予审核权限，未登录，不代表审批流程通过。
 - 合成组织 A 的活动草稿采用唯一测试标题及合成地点，限定邀请可见且关闭公开报名；创建前查重，创建后详情读回 draft、字段及组织一致，`publishedAt=null`；服务端实际路径按 ID 经[有界日志](evidence/20261113/activity-draft-route-summary.json)核对。此次是 **DEPLOYED_HTTP** 草稿创建的有限样本，未发布或邀请，不代表真实 GUI 表单及活动业务闭环通过。
 - 合成组织 A 的内容草稿创建前查重，创建后读回合成标题与正文、announcement、draft、仅该组织可见且未发布，附件数为 0；服务端实际路径按 ID 经[有界日志](evidence/20261113/content-draft-route-summary.json)核对。该 **DEPLOYED_HTTP** 样本不能替代缺原始请求的历史“公告创建 500”同条件回归，也不是发布或 GUI 验收通过。
 - 内容创建正文空值负例单次返回 400 / 40000，指出 body 长度校验；第一次写后列表浏览器显示 total 0，但服务端为 304；禁用缓存后再次查询为服务端 200 / total 0。实际服务端路由经[有界日志](evidence/20261113/content-negative-routes.json)核对；不能因此推广为所有空值或重复提交场景通过。
