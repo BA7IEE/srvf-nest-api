@@ -197,7 +197,7 @@ D4 八个新增入口全部在 Human App managed activity 面，详见 [小程�
 | 考勤审核详情                                    | `GET /api/admin/v1/attendance-sheets/:id/review-detail`(**活动摘要+单据+records含队员嵌套**,为审核页量身做的)· `PATCH .../:id/{approve,reject,final-approve,final-reject}` · `POST .../:id/{return,final-return,resubmit,reopen}` · `DELETE`                                                                                                                                                                                                                                                              |
 | 参与核对 / 汇总                                 | `GET /api/admin/v1/activities/:id/reconciliation`(**仅 completed**) · `GET .../:id/participation-summary`；两者均需 `attendance.read.sheet` + `activity-registration.read.record`                                                                                                                                                                                                                                                                                                                         |
 
-> **评价率（此分支候选，未部署）**：v1.1 闸开启时，分母是当前正式关账中具备评价资格的成员与已提交有效评价成员的去重并集；更正撤销资格后历史评价仍计入分母。旧流程继续使用原 approved 考勤口径。新版分子、分母和关账在同一数据库快照内读取；前端展示后端结果，不用报名人数或旧考勤数自行计算。
+> **评价率（此分支候选，未部署）**：v1.1 闸开启时，分母是当前正式关账中具备评价资格的成员与已提交有效评价成员的去重并集；更正撤销资格后历史评价仍计入分母。工作流关闭时返回 `20153`／503，不再读取旧考勤。新版分子、分母和关账在同一数据库快照内读取；前端展示后端结果，不用报名人数或旧考勤数自行计算。
 
 > **整单取消（第 4 批第三刀）**：既有 `PATCH /api/admin/v1/activities/:id/cancel` wire 不变。成功后刷新活动和报名 tab：canonical pending/waitlisted 会关闭为 cancelled，已 pass 的历史审批与其 active capacity 仍保留，混合头仍展示 pass。后端遇到 revision/status/pointer/population/reservation 漂移返回既有 `20147` 且无部分可见结果；前端不要用另一个 legacy 候补动作补偿或静默换 key 重试。
 
