@@ -1,0 +1,30 @@
+{
+  "evidence": "DEPLOYED_HTTP via same-origin controlled GET adaptation; not GUI acceptance",
+  "deploymentSha": "UNKNOWN",
+  "scope": "single synthetic organization A activity; identifiers redacted",
+  "request": {
+    "time": "2026-11-13T06:03:18.539+08:00",
+    "role": "existing test administrator",
+    "method": "GET",
+    "path": "/api/admin/v1/activities/{activityId}/responsibilities",
+    "query": "none",
+    "sentOnce": true,
+    "httpStatus": 409,
+    "businessCode": 20030,
+    "message": "活动当前状态不允许此操作",
+    "requestId": "cmwe3gwp68fb761391c36a8cf063daab9",
+    "data": "null or absent",
+    "serverRouteIndependentlyVerified": false
+  },
+  "result": {
+    "responsibilityCount": "UNKNOWN",
+    "responsibilityOrganization": "UNKNOWN",
+    "memberIdentities": "not output"
+  },
+  "context": {
+    "runtimeResponsibilityWorkflowFlag": false,
+    "sourceBehavior": "local source throws code 20030 when disabled",
+    "interpretation": "consistent with disabled workflow, not conclusive proof of actual assignment state"
+  },
+  "writesOrRoleChanges": false
+}
