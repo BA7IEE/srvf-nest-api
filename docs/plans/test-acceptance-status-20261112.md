@@ -1055,9 +1055,25 @@
 | 05:19:14.471 | `GET https://dp.srvf.team/api/system/v1/users/<合成审核人R2用户ID>/roles`（ID 脱敏） | 现有测试管理员 | 200；空数组 | `cmwe1w8dp477c607c9a88602b480e9eb6` |
 | 05:19:19.370 | `GET https://dp.srvf.team/api/admin/v1/role-bindings?principalType=USER&principalId=<合成审核人R2用户ID>`（ID 脱敏） | 现有测试管理员 | 200；空数组 | `cmwe1wc6edb39c893e450e8fe831834cc` |
 | 05:19:24.882 | `GET https://dp.srvf.team/api/admin/v1/members/<合成审核人R2成员ID>`（ID 脱敏） | 现有测试管理员 | 200；绑定前 `hasAccount=false` | `cmwe1wgfbd3408cc7d62028581ff5d37b` |
-| 05:19:33.593 | 适配请求的预定目标 `POST https://dp.srvf.team/api/admin/v1/members/<合成审核人R2成员ID>/account/bind`（ID 脱敏） | 现有测试管理员；合成审核人 R2 | 200；实际服务端路由待核对 | `cmwe1wn4kb8e0ad6e3f3e03d29a50dcdb` |
+| 05:19:33.593 | `POST https://dp.srvf.team/api/admin/v1/members/<合成审核人R2成员ID>/account/bind`（ID 脱敏） | 现有测试管理员；合成审核人 R2 | 200；实际服务端路由已核对 | `cmwe1wn4kb8e0ad6e3f3e03d29a50dcdb` |
 | 05:19:39.112 | `GET https://dp.srvf.team/api/admin/v1/members/<合成审核人R2成员ID>`（ID 脱敏） | 现有测试管理员 | 200；绑定账号 ACTIVE，成员与账号对应 | `cmwe1wrdmac65febb5829e015e86f5c40` |
 | 05:19:44.802 | `GET https://dp.srvf.team/api/admin/v1/users/<合成审核人R2用户ID>`（ID 脱敏） | 现有测试管理员 | 200；memberId 匹配，USER / ACTIVE | `cmwe1wvrobf880311bd3768010bf587e6` |
+| 05:20:35.998 | `GET https://dp.srvf.team/api/system/v1/roles/<发布审核角色ID>/permissions`（ID 脱敏） | 现有测试管理员 | 200；`activity-publish-reviewer` 有 3 项权限 | `cmwe1xz9xe630061867e448af03617d90` |
+| 05:20:42.164 | `GET https://dp.srvf.team/api/system/v1/roles/<考勤初审角色ID>/permissions`（ID 脱敏） | 现有测试管理员 | 200；`attendance-first-reviewer` 有 5 项权限，含结算初审 | `cmwe1y43affc97fa85f78792054470a6d` |
+| 05:20:47.043 | `GET https://dp.srvf.team/api/system/v1/roles/<考勤终审角色ID>/permissions`（ID 脱敏） | 现有测试管理员 | 200；`attendance-final-reviewer` 有 6 项权限，含结算终审 | `cmwe1y7t7b88477676c9ba861c0411944` |
+| 05:21:01.135 | `GET https://dp.srvf.team/api/admin/v1/role-bindings/preview?principalType=USER&principalId=<R1>&roleId=<发布审核角色>&scopeType=ORGANIZATION&scopeOrgId=<组织A>`（ID 脱敏） | 现有测试管理员 | 200 / code 0，valid=true、冲突 0；仅预览 | `cmwe1yippa509f9025758f5de39ae46ad` |
+| 05:21:15.518 | `GET https://dp.srvf.team/api/admin/v1/role-bindings/preview?principalType=USER&principalId=<R1>&roleId=<考勤初审角色>&scopeType=ORGANIZATION&scopeOrgId=<组织A>`（ID 脱敏） | 现有测试管理员 | 200 / code 0，valid=true、冲突 0；仅预览 | `cmwe1ytueb132914e4c68b39d11ff4c4f` |
+| 05:21:47.464 | `GET https://dp.srvf.team/api/admin/v1/role-bindings/preview?principalType=USER&principalId=<R2>&roleId=<考勤终审角色>&scopeType=ORGANIZATION&scopeOrgId=<组织A>`（ID 脱敏） | 现有测试管理员 | 200 / code 0，valid=true、冲突 0；仅预览 | `cmwe1zigp7064e2499a72f2b4832b6767` |
+| 05:22:28.657 | `GET https://dp.srvf.team/api/system/v1/roles/<既有测试组织者角色ID>/permissions`（ID 脱敏） | 现有测试管理员 | 200；`qa1405-organizer-20261107` 有 4 项活动创建、更新及规则选择权限 | `cmwe20e8wc07bf058fccc4bea221adac1` |
+| 05:22:37.135 | `GET https://dp.srvf.team/api/admin/v1/role-bindings/preview?principalType=USER&principalId=<A>&roleId=<测试组织者角色>&scopeType=ORGANIZATION&scopeOrgId=<组织A>`（ID 脱敏） | 现有测试管理员 | 200 / code 0，valid=true、冲突 0；仅预览 | `cmwe20kscb7ccf56d0732decea243bd1b` |
+| 05:25:30.833 | `GET https://dp.srvf.team/api/admin/v1/role-bindings/preview`（A、组织者角色、组织 A、指定到期时间；ID 脱敏） | 现有测试管理员 | 200 / code 0，valid=true、冲突 0；响应未回显结束时间 | `cmwe24atpa5818b1f9988d302978a99b9` |
+| 05:25:37.641 | 同一预览路径（R1、发布审核角色、组织 A、指定到期时间；ID 脱敏） | 现有测试管理员 | 200 / code 0，valid=true、冲突 0 | `cmwe24g2o99feccfe9c46e06580162cbc` |
+| 05:25:44.789 | 同一预览路径（R1、考勤初审角色、组织 A、指定到期时间；ID 脱敏） | 现有测试管理员 | 200 / code 0，valid=true、冲突 0 | `cmwe24lkzd29c0a29f0ed1ada25b26466` |
+| 05:25:51.897 | 同一预览路径（R2、考勤终审角色、组织 A、指定到期时间；ID 脱敏） | 现有测试管理员 | 200 / code 0，valid=true、冲突 0 | `cmwe24r2fd67ab23c6c61ddca10f6bd4b` |
+| 05:26:01.533 | `GET https://dp.srvf.team/api/admin/v1/role-bindings?principalType=USER&principalId=<A>&roleId=<组织者角色>`（ID 脱敏） | 现有测试管理员 | 200；空数组 | `cmwe24yi31435cd107c4f7a6cbf4af7e6` |
+| 05:26:07.861 | 同一绑定列表路径（R1、发布审核角色；ID 脱敏） | 现有测试管理员 | 200；空数组 | `cmwe253dx32450028002addd83204d024` |
+| 05:26:13.772 | 同一绑定列表路径（R1、考勤初审角色；ID 脱敏） | 现有测试管理员 | 200；空数组 | `cmwe257y1f7dddc410574851fdab09ea0` |
+| 05:26:19.671 | 同一绑定列表路径（R2、考勤终审角色；ID 脱敏） | 现有测试管理员 | 200；空数组 | `cmwe25cmsd0d2d9363062d929f22436dd` |
 
 - 历史 HTML 404 的 38 个方法中，累计 16 个已有对齐方法、路径及相应查询或无效请求体的匿名有限样本；其中企业微信绑定授权样本只恢复 HTTP 状态，响应类型未知。其余 22 项涉及有状态 POST、身份、短信或外部服务，未确认隔离条件前不盲目重放。企业微信登录授权负例未发起 OAuth 跳转，两个 step-up 负例均被匿名守卫拒绝。令牌负例[脱敏回执](evidence/20261113/history-integration-token-invalid.json)不含凭据，也未签发 token；[两条招新空 multipart](evidence/20261113/history-recruitment-empty-multipart.json)及[证书申报空 multipart](evidence/20261113/history-claim-empty-multipart.json)均无文件或字段。源码中的限流器可能写入限流桶，本轮未证明其实际写入状态。所有样本均不等于已认证流程或完整业务验收。
 - **LOCAL**：已核对并行前端分支 `codex/retire-legacy-attendance-consumer-20261112` 的候选 `e0ec0425302b746ee51048a8f6183516f9a71f7e`：其写集包括 `src/api/srvf-member.ts` 和 `members/cockpit.vue`，该会话仍在运行。新建队员的完整合同修复与共享文件重叠，未通过重复 API 或类型断言绕开，也未改动对方工作树；等待安全的串行集成条件。
@@ -1079,6 +1095,8 @@
 - 两个合成 USER 的创建和各自成员绑定使用受控浏览器请求体适配，创建前均查重，创建后均回读 ACTIVE / USER，无邮箱、手机号，普通角色列表与 role bindings 为空；绑定后分别从成员与账号两端回读一致。4 次写入的实际目标与状态均用目标容器[有界日志统计](evidence/20261113/account-ab-route-summary.json)按请求 ID 独立核对。口令未写入本台账、截图或仓库；这不证明其他代理、浏览器扩展或自定义日志的行为。账号 A、B 均有上述 GUI 登录样本；这不代表原 GUI 创建表单已修复。
 - **DEPLOYED_HTTP 普通身份通过样本**：A/B 分别通过 Mac 本机受控短时进程登录并读取 `/me`，4 次均为 200 / code 0；各自 memberId、USER、ACTIVE 与 App 可用状态均经布尔断言匹配。该进程仅监听回环、核对 PID 后接收合成账号信息，未输出或持久化口令/令牌；完成后已正常退出且端口无监听。[脱敏结果](evidence/20261113/ordinary-http-identity.json)不证明其他代理或扩展的日志行为。此次登录会建立服务端会话，未执行退出，服务端退出状态 UNKNOWN；不代表活动、考勤或结算业务通过。
 - 合成审核人 R1 已创建成员及默认 USER、绑定组织 A 的 PRIMARY 归属并双向核对，角色和 role bindings 为空；4 条写请求的路径及 7 条关键写后读取的状态经[有界日志](evidence/20261113/reviewer-r1-routes.json)核对。R1 尚未被授予审核权限，未登录，不代表审批流程通过。
+- 合成审核人 R2 已创建成员及默认 USER、绑定组织 A 的 PRIMARY 归属并双向核对，角色和 role bindings 为空；创建账号时先出现回执读取不明，先按用户名回查，再找到原请求的迟到 201，未重试。4 条写请求路径及最终绑定双向读取经[有界日志](evidence/20261113/reviewer-r2-routes.json)核对。R2 尚未被授予审核权限，未登录。
+- **DEPLOYED_HTTP 角色只读预览**：线上审核角色 `activity-publish-reviewer`、`attendance-first-reviewer`、`attendance-final-reviewer` 的权限 revision 均为 0，分别包含 3、5、6 个权限码；现有测试角色 `qa1405-organizer-20261107` 的 revision 为 0，含活动创建、更新以及时长/贡献政策选择 4 码。对 A、R1、R2 及组织 A 的多个组合均只读预览，4 个拟用组合传入到期时间 `2026-11-15T06:00:00+08:00`，均 valid / 无冲突，但预览不回显该时间；对应现有绑定均为空。尚未创建绑定；[完整请求与权限码](evidence/20261113/role-preview.json)。角色权限是可变引用；活动更新及政策选择可能影响活动和结算口径，后续具体动作仍需限定合成数据及通知边界。
 - 合成组织 A 的活动草稿采用唯一测试标题及合成地点，限定邀请可见且关闭公开报名；创建前查重，创建后详情读回 draft、字段及组织一致，`publishedAt=null`；服务端实际路径按 ID 经[有界日志](evidence/20261113/activity-draft-route-summary.json)核对。此次是 **DEPLOYED_HTTP** 草稿创建的有限样本，未发布或邀请，不代表真实 GUI 表单及活动业务闭环通过。
 - 合成组织 A 的内容草稿创建前查重，创建后读回合成标题与正文、announcement、draft、仅该组织可见且未发布，附件数为 0；服务端实际路径按 ID 经[有界日志](evidence/20261113/content-draft-route-summary.json)核对。该 **DEPLOYED_HTTP** 样本不能替代缺原始请求的历史“公告创建 500”同条件回归，也不是发布或 GUI 验收通过。
 - 内容创建正文空值负例单次返回 400 / 40000，指出 body 长度校验；第一次写后列表浏览器显示 total 0，但服务端为 304；禁用缓存后再次查询为服务端 200 / total 0。实际服务端路由经[有界日志](evidence/20261113/content-negative-routes.json)核对；不能因此推广为所有空值或重复提交场景通过。
