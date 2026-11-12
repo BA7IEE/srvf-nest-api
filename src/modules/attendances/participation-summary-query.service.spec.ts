@@ -2,6 +2,7 @@ import { Prisma, Role, UserStatus } from '@prisma/client';
 
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AppConfig } from '../../config/app.config';
 import type { PrismaService } from '../../database/prisma.service';
 import type { LedgerQueryService } from '../activities/ledger-query.service';
@@ -28,14 +29,14 @@ const ledgerTotals = {
 
 function setup(readonlyMaintenance: boolean, withOfficialTime: boolean) {
   const legacyRead = jest.fn().mockRejectedValue(new Error('legacy attendance must not be read'));
+  const aggregate = jest.fn().mockResolvedValue({
+    _sum: { creditedPointsDelta: new Prisma.Decimal('5.25') },
+  });
+  const findMember = jest.fn().mockResolvedValue({ id: 'member-1' });
   const prisma = {
     attendanceRecord: { findMany: legacyRead },
-    participationLedgerEntry: {
-      aggregate: jest.fn().mockResolvedValue({
-        _sum: { creditedPointsDelta: new Prisma.Decimal('5.25') },
-      }),
-    },
-    member: { findFirst: jest.fn().mockResolvedValue({ id: 'member-1' }) },
+    participationLedgerEntry: { aggregate },
+    member: { findFirst: findMember },
     $transaction: jest.fn(async (fn: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
       fn({} as Prisma.TransactionClient),
     ),
@@ -43,8 +44,9 @@ function setup(readonlyMaintenance: boolean, withOfficialTime: boolean) {
   const countCommittedParticipationForMember = jest
     .fn()
     .mockResolvedValue({ activityCount: 2, recordCount: 3 });
+  const loadMemberLedgerTotals = jest.fn().mockResolvedValue(ledgerTotals);
   const ledger = {
-    loadMemberLedgerTotals: jest.fn().mockResolvedValue(ledgerTotals),
+    loadMemberLedgerTotals,
     countCommittedParticipationForMember,
   } as unknown as LedgerQueryService;
   const officialTime = {
@@ -52,11 +54,13 @@ function setup(readonlyMaintenance: boolean, withOfficialTime: boolean) {
       .fn()
       .mockResolvedValue(withOfficialTime ? { totals: [{ eligibleSeconds: 4500 }] } : null),
   } as unknown as ParticipationTimeTruthQueryService;
-  const authz = {
-    explain: jest.fn().mockResolvedValue({ allow: true }),
-  } as unknown as AuthzService;
+  const explain = jest.fn().mockResolvedValue({ allow: true });
+  const authz = { explain } as unknown as AuthzService;
+  const resolveIdentity = jest
+    .fn()
+    .mockResolvedValue({ canUseApp: true, member: { id: 'member-1' } });
   const identity = {
-    resolve: jest.fn().mockResolvedValue({ canUseApp: true, member: { id: 'member-1' } }),
+    resolve: resolveIdentity,
   } as unknown as AppIdentityResolver;
   const gate = new ActivityWorkflowGate({
     activityV11Workflow: { enabled: true, readonlyMaintenance },
@@ -70,7 +74,16 @@ function setup(readonlyMaintenance: boolean, withOfficialTime: boolean) {
     officialTime,
     gate,
   );
-  return { service, legacyRead, countCommittedParticipationForMember };
+  return {
+    service,
+    legacyRead,
+    aggregate,
+    findMember,
+    explain,
+    resolveIdentity,
+    loadMemberLedgerTotals,
+    countCommittedParticipationForMember,
+  };
 }
 
 describe('participation summary in the ledger workflow', () => {
@@ -104,5 +117,78 @@ describe('participation summary in the ledger workflow', () => {
       ledgerTotals,
     });
     expect(legacyRead).not.toHaveBeenCalled();
+  });
+
+  it.each([null, '0', '-1.25'])(
+    'keeps a committed net contribution of %s without falling back to legacy attendance',
+    async (net) => {
+      const {
+        service,
+        legacyRead,
+        aggregate,
+        loadMemberLedgerTotals,
+        countCommittedParticipationForMember,
+      } = setup(false, false);
+      const value = net === null ? '0' : net;
+      aggregate.mockResolvedValue({
+        _sum: { creditedPointsDelta: net === null ? null : new Prisma.Decimal(net) },
+      });
+      loadMemberLedgerTotals.mockResolvedValue({
+        committedServiceHours: '0',
+        committedContributionPoints: value,
+        inFlightServiceHours: '0',
+        inFlightContributionPoints: '0',
+      });
+      countCommittedParticipationForMember.mockResolvedValue({ activityCount: 0, recordCount: 0 });
+
+      await expect(service.forCurrentMember(user)).resolves.toMatchObject({
+        totalServiceHours: '0',
+        activityCount: 0,
+        recordCount: 0,
+        contributionPoints: value,
+      });
+      expect(legacyRead).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects an absent member before any participation read', async () => {
+    const { service, findMember, legacyRead, aggregate, loadMemberLedgerTotals } = setup(
+      false,
+      false,
+    );
+    findMember.mockResolvedValue(null);
+    await expect(service.forMemberAdmin('missing-member', user)).rejects.toMatchObject({
+      biz: BizCode.MEMBER_NOT_FOUND,
+    });
+    expect(legacyRead).not.toHaveBeenCalled();
+    expect(aggregate).not.toHaveBeenCalled();
+    expect(loadMemberLedgerTotals).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unauthorized admin before looking up the member or participation data', async () => {
+    const { service, explain, findMember, legacyRead, aggregate, loadMemberLedgerTotals } = setup(
+      false,
+      false,
+    );
+    explain.mockResolvedValue({ allow: false, reason: 'scope_denied' });
+    await expect(service.forMemberAdmin('member-1', user)).rejects.toMatchObject({
+      biz: BizCode.RBAC_FORBIDDEN,
+    });
+    expect(findMember).not.toHaveBeenCalled();
+    expect(legacyRead).not.toHaveBeenCalled();
+    expect(aggregate).not.toHaveBeenCalled();
+    expect(loadMemberLedgerTotals).not.toHaveBeenCalled();
+  });
+
+  it('rejects an ineligible app identity before any participation read', async () => {
+    const { service, resolveIdentity, legacyRead, aggregate, loadMemberLedgerTotals } = setup(
+      false,
+      false,
+    );
+    resolveIdentity.mockResolvedValue({ canUseApp: false, member: null });
+    await expect(service.forCurrentMember(user)).rejects.toMatchObject({ biz: BizCode.FORBIDDEN });
+    expect(legacyRead).not.toHaveBeenCalled();
+    expect(aggregate).not.toHaveBeenCalled();
+    expect(loadMemberLedgerTotals).not.toHaveBeenCalled();
   });
 });
