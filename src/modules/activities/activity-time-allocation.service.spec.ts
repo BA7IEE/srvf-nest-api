@@ -4,7 +4,6 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { PrismaService } from '../../database/prisma.service';
 import type { AttachmentsService } from '../attachments/attachments.service';
-import type { ParticipationSegmentFacade } from '../attendances/participation-segment.facade';
 import type { ActivityTimeAllocationAccessService } from './activity-time-allocation-access.service';
 import type { ActivityTimeAllocationAuditRecorder } from './activity-time-allocation-audit-recorder';
 import {
@@ -53,7 +52,7 @@ describe('D3 time-allocation service transaction boundary', () => {
     const service = new ActivityTimeAllocationService(
       prisma as unknown as PrismaService,
       access as unknown as ActivityTimeAllocationAccessService,
-      segments as unknown as ParticipationSegmentFacade,
+      segments,
       attachments as AttachmentsService,
       audit as unknown as ActivityTimeAllocationAuditRecorder,
     );
