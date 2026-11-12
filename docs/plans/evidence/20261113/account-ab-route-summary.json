@@ -1,0 +1,60 @@
+{
+  "recorded_at": "2026-11-13T04:22:48+08:00",
+  "scope": "target API container only",
+  "window_utc": [
+    "2026-11-12T20:17:00Z",
+    "2026-11-12T20:22:30Z"
+  ],
+  "exit_code": 0,
+  "results": [
+    {
+      "case": "create_A",
+      "request_id": "cmwdzpm25c26450e9a39986f4f74f4cff",
+      "matching_lines": 2,
+      "method": "POST",
+      "route": "/api/admin/v1/users",
+      "route_matches": true,
+      "statuses": [
+        201
+      ]
+    },
+    {
+      "case": "create_B",
+      "request_id": "cmwdzsha17a88d6c75d683b89c93c9eab",
+      "matching_lines": 2,
+      "method": "POST",
+      "route": "/api/admin/v1/users",
+      "route_matches": true,
+      "statuses": [
+        201
+      ]
+    },
+    {
+      "case": "bind_A",
+      "request_id": "cmwdzrda6849eb7f08d913404585960bc",
+      "matching_lines": 2,
+      "method": "POST",
+      "route": "/api/admin/v1/members/{id}/account/bind",
+      "route_matches": true,
+      "statuses": [
+        200
+      ]
+    },
+    {
+      "case": "bind_B",
+      "request_id": "cmwdztvnh64fc905228fdd953ed466f9b",
+      "matching_lines": 2,
+      "method": "POST",
+      "route": "/api/admin/v1/members/{id}/account/bind",
+      "route_matches": true,
+      "statuses": [
+        200
+      ]
+    }
+  ],
+  "limitations": [
+    "Only bounded target-container log matches and status are confirmed.",
+    "Other proxy, browser or custom logging cannot be established by this evidence.",
+    "Deployment Git SHA UNKNOWN."
+  ]
+}
