@@ -68,18 +68,24 @@ export class ParticipationSummaryQueryService {
     //
     // R5贡献字段与入队资格共用单闸：on仅committed credited；off保留旧考勤日封顶。
     // 账本的冲回/重记按净额计，不与旧考勤叠加，不二次封顶。
+    const useCommittedLedger =
+      this.activityWorkflowGate.participationReadSource() === 'committed-ledger';
+    const noLegacyRecords: Array<{ serviceHours: Prisma.Decimal; sheet: { activityId: string } }> =
+      [];
     const [records, contribution, ledgerTotals, officialTime] = await Promise.all([
-      this.prisma.attendanceRecord.findMany({
-        where: {
-          memberId,
-          deletedAt: null,
-          sheet: { statusCode: ATTENDANCE_SHEET_STATUS.APPROVED, deletedAt: null },
-        },
-        select: {
-          serviceHours: true,
-          sheet: { select: { activityId: true } },
-        },
-      }),
+      useCommittedLedger
+        ? Promise.resolve(noLegacyRecords)
+        : this.prisma.attendanceRecord.findMany({
+            where: {
+              memberId,
+              deletedAt: null,
+              sheet: { statusCode: ATTENDANCE_SHEET_STATUS.APPROVED, deletedAt: null },
+            },
+            select: {
+              serviceHours: true,
+              sheet: { select: { activityId: true } },
+            },
+          }),
       computeCappedContribution(
         this.prisma,
         memberId,
@@ -98,14 +104,13 @@ export class ParticipationSummaryQueryService {
       new Prisma.Decimal(0),
     );
 
-    const preCutoverPositive =
-      this.activityWorkflowGate.participationReadSource() === 'committed-ledger'
-        ? await this.loadCommittedPositive(memberId, ledgerTotals)
-        : {
-            totalServiceHours: approvedServiceHours.toString(),
-            activityCount: new Set(records.map((record) => record.sheet.activityId)).size,
-            recordCount: records.length,
-          };
+    const preCutoverPositive = useCommittedLedger
+      ? await this.loadCommittedPositive(memberId, ledgerTotals)
+      : {
+          totalServiceHours: approvedServiceHours.toString(),
+          activityCount: new Set(records.map((record) => record.sheet.activityId)).size,
+          recordCount: records.length,
+        };
     const positive =
       officialTime === null
         ? preCutoverPositive
