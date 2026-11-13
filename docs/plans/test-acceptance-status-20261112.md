@@ -4,6 +4,15 @@
 
 **阶段结论：完整业务与普通账号 UX 验收尚未完成，没有上线通过结论。** 本次是材料整合，不是新一轮 HTTP、数据库或 GUI 执行。以下保留各自记录日期，不把历史结果当当前部署结果。
 
+## 最新续测快照（2026-11-13 11:42，北京时间）
+
+- **上线 NO-GO**：部署提交 UNKNOWN；活动报名、审批、签到签退、考勤及结算入账尚无完整业务闭环，普通账号三个指定视口和附件完整流程仍未验收。
+- **DEPLOYED_HTTP**：合成组织 A/B 及 A、B、R1、R2 已准备；四项经确认的组织 A 角色绑定已创建并回读，到期时刻均为 11 月 15 日 06:00。R1/R2 的组织内考勤列表有有限读取样本，跨组织授权诊断按资源有允许和拒绝样本，均不等于考勤审批或完整隔离通过；详见 §9 后续证据。
+- **DEPLOYED_HTTP + GUI**：新公告草稿由管理员表单创建并回读，单次发布返回 503 / 13034，写后仍为草稿；根因 UNKNOWN。一次管理员代报名的目标请求是否到达 UNKNOWN，写后两次名册均为空，未盲目重试。具体请求和限制见 §9。
+- **LOCAL/CI**：[前端 PR #170](https://github.com/BA7IEE/srvf-admin-web/pull/170) 为 draft，head `2ab02a346799bbed2cbe89b2e80e7fb516bc9aea` 的 `verify` 已通过；其[成员创建 gate](https://github.com/BA7IEE/srvf-admin-web/blob/2ab02a346799bbed2cbe89b2e80e7fb516bc9aea/src/views/srvf/members-domain/members/member-form-state.ts#L143-L160) 及[提交调用](https://github.com/BA7IEE/srvf-admin-web/blob/2ab02a346799bbed2cbe89b2e80e7fb516bc9aea/src/views/srvf/members-domain/members/utils/hook.ts#L181-L231)已包含异步校验前加锁、防重及失败释放，本轮独立补丁不应重复叠加。该候选未证明合并或部署，也未完成真实 GUI 回归。角色到期时间与诊断资源选项的另两项修复仅有隔离本地候选。
+- **CI，非线上验收**：本台账 PR #1414 的先前 head `c42f87f309ea10b089ebb268f1dfbf2a602967a2` 的 [Authenticated Human V3](https://github.com/BA7IEE/srvf-nest-api/actions/runs/43360559180/job/131672943570) 失败，受限日志检查确认包含 `create-pg_EXIT_125`；具体 Docker 原因 UNKNOWN，其余当时仍运行中的检查须以该提交最终结果为准。本条台账更新后的新提交须重新查看各自检查，不能沿用旧提交状态。
+- **历史异常**：17 个 500 原回执已逐项核验，同条件复测均 NOT_RUN；38 个 HTML 404 中 16 个有按原方法、路径及部分条件对齐的匿名有限样本，另 22 个未安全复测。历史公告创建 500 的原始请求仍缺证。
+
 ## 1. 统计口径和版本
 
 - `LOCAL/CI`、`DEPLOYED_HTTP`、`GUI` 分开；一次 HTTP 200、空列表、拒绝响应或单元测试通过均不等于完整业务验收。
@@ -1190,6 +1199,7 @@
 - **LOCAL / 文档参考，非线上断言**：本机台账工作树安装的 Prisma Client 为 6.19.3；[Prisma v6 官方文档](https://www.prisma.io/docs/orm/v6/prisma-client/special-fields-and-types/null-and-undefined)说明零条件的 OR 返回空列表。11:22:57 对[目标容器安装包](evidence/20261113/prisma-runtime-version.json)只读核对同为 6.19.3，镜像与先前证据匹配；该新内容实际候选是否为空、数据库行为和运行进程配置仍未知，不能把文档直接当作该内容的线上回执。
 - **GUI + DEPLOYED_HTTP 新公告草稿有限样本**：11:12 禁缓存查到合成组织 A 有 3 条有效归属，恰为 ACTIVE 的合成 A/R1/R2；B 无当前有效 A 归属。唯一合成标题跨状态查重为 0 后，管理员通过真实后台表单选 announcement、department、仅 A，输入合成正文且未上传；11:18:13.680 单次保存 `POST https://dp.srvf.team/api/admin/v1/contents` 返回 201 / code 0，request ID `cmweepw42c192e566e6a4e7af882bce6e`。11:18:32–11:18:33 独立详情和两种内容附件列表均 200 / code 0，确认同一 draft、类型及唯一组织范围、无封面/附件；11:19:26.538 标题查询唯一，匹配该草稿。正文相对输入多 1 个末尾空白字符（UTF-16 长度 31 对 30），trim 后一致、无外链或附件占位，是否构成缺陷待产品确认；未为隐藏差异而重写或再提交。[脱敏记录](evidence/20261113/new-content-draft-gui.json)含全部请求 ID；截图 NOT_CAPTURED。草稿未发布、未申请上传，创建样本不替代历史公告创建 500 的同条件回归。
 - **GUI + DEPLOYED_HTTP 新公告发布失败**：11:24:11–11:24:16 发布前九条禁缓存回读均 200 / code 0，确认新内容仍为合成 draft、announcement、department 仅 A、无封面/附件/外链，A 当前有效受众恰为三名已知合成成员且 B 无有效 A 归属。管理员在真实后台定位唯一新草稿并单次确认发布；11:27:11.409 `POST https://dp.srvf.team/api/admin/v1/contents/{id}/publish` 返回 **503 / 13034**，request ID `cmwef1f118e48f3e2f11ca47c045818b7`。11:27:26.222–11:27:27.457 的内容详情与两类附件列表均 200 / code 0，request ID 分别为 `cmwef1qf15c51ec1fcd6814eedf93c1c1`、`cmwef1qxk2c3c4c3fe08b7731caa2f2e6`、`cmwef1rdf4b0b04eae3436cc5b2505d63`；同一内容仍 draft、publishedAt=null、字段一致且无附件/封面。未重试或操作旧草稿。[脱敏逐请求证据](evidence/20261113/content-publish-failed.json)记录客户端业务码；[目标容器日志](evidence/20261113/content-publish-server-log.json)按 request ID 确认同一 POST / 503，仅有通用错误，未验证业务码及数据库内部原因；间接副作用与 worker 状态 UNKNOWN，截图 NOT_CAPTURED。该样本不是历史公告创建 500 的原请求同条件回归。
+- **LOCAL 公告 503 排查边界**：本地发布路径先检查草稿和附件边界，再执行状态及审计事务；附件边界将历史全局 ownerless 记录、当前内容引用或存储账目不一致，以及数据库查询异常等不同情况统一映射到 13034。没有针对实际发布时刻的数据库证据，不能根据该码选定根因。历史 [#706](https://github.com/BA7IEE/srvf-nest-api/pull/706)、[#726](https://github.com/BA7IEE/srvf-nest-api/pull/726)、[#778](https://github.com/BA7IEE/srvf-nest-api/pull/778) 和 [#1049](https://github.com/BA7IEE/srvf-nest-api/pull/1049) 均已合并，但其范围及合并状态不证明本次 503 已修复或实际部署版本；本轮未找到可证明修复本次故障的候选。尚未确认不暴露凭据的只读连接对应同一逻辑库，因此未执行数据库探针；后续先核实连接范围，才可在只读事务中检查布尔结果，该结果也不能反证 11:27 的历史状态。
 - **DEPLOYED_HTTP 跨组织范围诊断**：诊断前回查 A、B 是不同的 ACTIVE 合成同级组织，R1、R2 均为 ACTIVE USER，分别与合成成员双向关联并在 A 有 ACTIVE PRIMARY，既有活动属于 A。以下均由现有管理员对 `POST https://dp.srvf.team/api/admin/v1/authz/explain` 单次查询 action `attendance.read.sheet`；响应为 200 / code 0，但 allow/deny 是响应中的诊断结论，不能以 HTTP 200 视为允许。资源和用户在原始响应中仅作内存断言，不保留原始 ID：
 
 | 北京时间 | 合成目标 | 资源 | 诊断结果 | 请求 ID |
