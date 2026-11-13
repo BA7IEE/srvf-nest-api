@@ -1,0 +1,41 @@
+{
+  "evidence_type": "LOCAL",
+  "recorded_at": "2026-11-13T12:30:04+08:00",
+  "target_for_intended_probe": "https://dp.srvf.team",
+  "intended_test_identity": "synthetic R1; USER with organization A reviewer roles",
+  "target_probe_status": "NOT_RUN",
+  "r1_probe_started": false,
+  "credential_intake_started": false,
+  "r1_login_sent_by_this_prepared_probe": false,
+  "gate_business_requests_sent_by_this_prepared_probe": false,
+  "probe_sha256": "016579f4d0f6ed2c231c749b2b691799d259fb97695966e8d637ddd959cc5350",
+  "offline_test_sha256": "fc15eec67765e26e0b5874dd7f8a0edef008187e041b3957ab5d4638119a17dc",
+  "imported_base_sha256": "e3e57b2b6401b3091847811b8b37f689db0f842e274e55e19067300a856a3689",
+  "offline_fixture": {
+    "independent_rerun": "27/27 passed",
+    "main_process_https": "replaced by a failing fake",
+    "subprocess_network_sandbox": "NOT_APPLIED",
+    "subprocess_tested_commands": "stop, EOF, SIGTERM, TTL or failure before business calls",
+    "production_http_result": "NOT_RUN"
+  },
+  "one_shot_markers": {
+    "login": {
+      "path": "/private/tmp/srvf-qa-attendance-gate-login-20261113.once",
+      "observed_exists": true,
+      "size_bytes": 0,
+      "mode": "0600",
+      "modified_at": "2026-11-13T12:06:22.158133+08:00",
+      "origin": "UNKNOWN",
+      "retained_unchanged": true
+    },
+    "legacy_checkin": "NOT_FOUND_AT_CHECK",
+    "v11_checkin": "NOT_FOUND_AT_CHECK"
+  },
+  "limitations": [
+    "Earlier fake transport could create the default login marker, but no evidence proves this marker came from that test.",
+    "An absent marker alone does not prove that no other client or earlier process sent a request.",
+    "The requested probe never started; no HTTP status, business response or request ID is asserted for it.",
+    "Subagents holding the private reference could not be resumed because the configured model was unavailable; no credential was copied into this evidence.",
+    "The scripts remain in a temporary directory and are identified by hash; this file is not a substitute for their source or deployment evidence."
+  ]
+}
