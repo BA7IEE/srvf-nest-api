@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { CapacityReservationService } from './capacity-reservation.service';
+import { hasV11ParticipationEvidenceForIdentitiesInTx } from './registration-participation-evidence';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -113,6 +114,17 @@ export class ActivityRegistrationLifecycleService {
         continue;
       }
       this.failClosed();
+    }
+
+    // An on-site identity can already have participation history while its registration header
+    // is still pending. Reject only after checking the identities this operation would change.
+    if (
+      await hasV11ParticipationEvidenceForIdentitiesInTx(
+        tx,
+        rejectedIdentities.map((identity) => identity.id),
+      )
+    ) {
+      throw new BizException(BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE);
     }
 
     if (occupiedIdentities.length > 0) {

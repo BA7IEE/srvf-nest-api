@@ -985,6 +985,9 @@ describe('ActivityRegistrationsService (characterization)', () => {
         META,
       );
       expect(result.statusCode).toBe('reject');
+      expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+      });
       expect(prisma.activityRegistration.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ statusSummaryCode: 'not_selected' }) as unknown,
@@ -1055,7 +1058,10 @@ describe('ActivityRegistrationsService (characterization)', () => {
         select: { id: true },
       });
       expect(prisma.participantSettlementResultRevision.findFirst).toHaveBeenCalledWith({
-        where: { identity: { registrationId: 'reg-1' }, statusCode: 'committed' },
+        where: {
+          identity: { registrationId: 'reg-1' },
+          statusCode: { in: ['committed', 'superseded'] },
+        },
         select: { id: true },
       });
       expect(prisma.attendanceRecord.count).not.toHaveBeenCalled();

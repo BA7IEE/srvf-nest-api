@@ -16,6 +16,8 @@ describe('ActivityRegistrationLifecycleService', () => {
     reservationScopeTypeCode?: string;
     revisionPresent?: boolean;
     revisionStatusCode?: string;
+    terminalIdentity?: boolean;
+    noIdentities?: boolean;
   }) {
     const pointer = options?.pointer === undefined ? 'session-reservation-1' : options.pointer;
     const populationIncluded = options?.populationIncluded ?? true;
@@ -95,21 +97,41 @@ describe('ActivityRegistrationLifecycleService', () => {
             currentFormVersionId: null,
           },
         ])
-        .mockResolvedValueOnce([
-          {
-            id: 'identity-1',
-            activityId: 'activity-1',
-            memberId: 'member-1',
-            sessionId: 'session-1',
-            currentRevision: 1,
-            currentStatusCode: statusCode,
-            currentPositionId,
-            capacityReservationId: pointer,
-            populationIncluded,
-            version: 4,
-          },
-        ])
-        .mockResolvedValueOnce(activeReservations)
+        .mockResolvedValueOnce(
+          options?.noIdentities
+            ? []
+            : [
+                {
+                  id: 'identity-1',
+                  activityId: 'activity-1',
+                  memberId: 'member-1',
+                  sessionId: 'session-1',
+                  currentRevision: 1,
+                  currentStatusCode: statusCode,
+                  currentPositionId,
+                  capacityReservationId: pointer,
+                  populationIncluded,
+                  version: 4,
+                },
+                ...(options?.terminalIdentity
+                  ? [
+                      {
+                        id: 'identity-historical',
+                        activityId: 'activity-1',
+                        memberId: 'member-1',
+                        sessionId: 'session-historical',
+                        currentRevision: 1,
+                        currentStatusCode: 'cancelled',
+                        currentPositionId: null,
+                        capacityReservationId: null,
+                        populationIncluded: false,
+                        version: 1,
+                      },
+                    ]
+                  : []),
+              ],
+        )
+        .mockResolvedValueOnce(options?.noIdentities ? [] : activeReservations)
         .mockResolvedValueOnce([{ id: 'population-state-1', version: 8 }]),
       activityParticipationIdentity: {
         findFirst: jest.fn().mockResolvedValue(null),
@@ -121,7 +143,7 @@ describe('ActivityRegistrationLifecycleService', () => {
       },
       activityParticipationRevision: {
         findMany: jest.fn().mockResolvedValue(
-          options?.revisionPresent === false
+          options?.revisionPresent === false || options?.noIdentities
             ? []
             : [
                 {
@@ -130,6 +152,16 @@ describe('ActivityRegistrationLifecycleService', () => {
                   statusCode: revisionStatusCode,
                   positionId: currentPositionId,
                 },
+                ...(options?.terminalIdentity
+                  ? [
+                      {
+                        identityId: 'identity-historical',
+                        revision: 1,
+                        statusCode: 'cancelled',
+                        positionId: null,
+                      },
+                    ]
+                  : []),
               ],
         ),
         create: jest.fn().mockResolvedValue({ id: 'participation-revision-2' }),
@@ -141,6 +173,8 @@ describe('ActivityRegistrationLifecycleService', () => {
         create: jest.fn(),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      attendancePunchEvent: { findFirst: jest.fn().mockResolvedValue(null) },
+      participantSettlementResultRevision: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     const capacity = {
       releaseInTransactionTrusted: jest.fn().mockResolvedValue({
@@ -251,6 +285,106 @@ describe('ActivityRegistrationLifecycleService', () => {
     expect(tx.activityEvidenceState.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.activityRegistrationRevision.create).not.toHaveBeenCalled();
     expect(tx.activityRegistration.updateMany).not.toHaveBeenCalled();
+  });
+
+  it.each(['punch', 'result'])(
+    'refuses to reject an affected identity with %s evidence before releasing or writing',
+    async (kind) => {
+      const { service, tx, capacity } = setup();
+      if (kind === 'punch') tx.attendancePunchEvent.findFirst.mockResolvedValue({ id: 'void-1' });
+      else tx.participantSettlementResultRevision.findFirst.mockResolvedValue({ id: 'zero-1' });
+
+      await expect(
+        service.rejectInTransactionTrusted(tx as never, {
+          activityId: 'activity-1',
+          registrationId: 'registration-1',
+          memberId: 'member-1',
+          actorUserId: 'reviewer-1',
+          reviewNote: 'not eligible',
+          reviewedAt: cancelledAt,
+        }),
+      ).rejects.toEqual(new BizException(BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE));
+
+      expect(tx.attendancePunchEvent.findFirst).toHaveBeenCalledWith({
+        where: { participationIdentityId: { in: ['identity-1'] } },
+        select: { id: true },
+      });
+      if (kind === 'result') {
+        expect(tx.participantSettlementResultRevision.findFirst).toHaveBeenCalledWith({
+          where: {
+            participationIdentityId: { in: ['identity-1'] },
+            statusCode: { in: ['committed', 'superseded'] },
+          },
+          select: { id: true },
+        });
+      }
+      expect(capacity.releaseInTransactionTrusted).not.toHaveBeenCalled();
+      expect(tx.activityParticipationRevision.create).not.toHaveBeenCalled();
+      expect(tx.activityParticipationIdentity.updateMany).not.toHaveBeenCalled();
+      expect(tx.activityEvidenceState.updateMany).not.toHaveBeenCalled();
+    },
+  );
+
+  it('propagates evidence query failures before changing the affected identity', async () => {
+    const { service, tx, capacity } = setup();
+    tx.attendancePunchEvent.findFirst.mockRejectedValueOnce(new Error('evidence unavailable'));
+    await expect(
+      service.rejectInTransactionTrusted(tx as never, {
+        activityId: 'activity-1',
+        registrationId: 'registration-1',
+        memberId: 'member-1',
+        actorUserId: 'reviewer-1',
+        reviewNote: 'not eligible',
+        reviewedAt: cancelledAt,
+      }),
+    ).rejects.toThrow('evidence unavailable');
+    expect(capacity.releaseInTransactionTrusted).not.toHaveBeenCalled();
+    expect(tx.activityParticipationRevision.create).not.toHaveBeenCalled();
+  });
+
+  it('does not block an unaffected terminal identity when rejecting a different session', async () => {
+    const { service, tx } = setup({ terminalIdentity: true });
+    tx.attendancePunchEvent.findFirst.mockImplementation(
+      (query: { where: { participationIdentityId: { in: string[] } } }) =>
+        Promise.resolve(
+          query.where.participationIdentityId.in.includes('identity-historical')
+            ? { id: 'historical-punch' }
+            : null,
+        ),
+    );
+    await service.rejectInTransactionTrusted(tx as never, {
+      activityId: 'activity-1',
+      registrationId: 'registration-1',
+      memberId: 'member-1',
+      actorUserId: 'reviewer-1',
+      reviewNote: 'not eligible',
+      reviewedAt: cancelledAt,
+    });
+    expect(tx.attendancePunchEvent.findFirst).toHaveBeenCalledWith({
+      where: { participationIdentityId: { in: ['identity-1'] } },
+      select: { id: true },
+    });
+    expect(tx.activityParticipationIdentity.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.activityParticipationIdentity.updateMany).toHaveBeenCalledWith({
+      where: { id: 'identity-1', currentRevision: 1, version: 4 },
+      data: expect.objectContaining({ currentStatusCode: 'rejected' }) as unknown,
+    });
+  });
+
+  it('keeps the identity-free legacy rejection path without querying v11 evidence', async () => {
+    const { service, tx, capacity } = setup({ noIdentities: true });
+    await service.rejectInTransactionTrusted(tx as never, {
+      activityId: 'activity-1',
+      registrationId: 'registration-1',
+      memberId: 'member-1',
+      actorUserId: 'reviewer-1',
+      reviewNote: 'not eligible',
+      reviewedAt: cancelledAt,
+    });
+    expect(tx.attendancePunchEvent.findFirst).not.toHaveBeenCalled();
+    expect(tx.participantSettlementResultRevision.findFirst).not.toHaveBeenCalled();
+    expect(capacity.releaseInTransactionTrusted).not.toHaveBeenCalled();
+    expect(tx.activityParticipationIdentity.updateMany).not.toHaveBeenCalled();
   });
 
   it('rejects a coherent pending identity without capacity release or population change', async () => {

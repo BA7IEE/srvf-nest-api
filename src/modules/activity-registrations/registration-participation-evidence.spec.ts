@@ -1,5 +1,6 @@
 import { ActivityRegistrationAccessService } from './activity-registration-access.service';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import { hasV11ParticipationEvidenceForIdentitiesInTx } from './registration-participation-evidence';
 
 function fixture() {
   const punch = jest.fn().mockResolvedValue(null);
@@ -47,9 +48,21 @@ describe('registration cancellation v1.1 participation evidence', () => {
       biz: BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE,
     });
     expect(f.result).toHaveBeenCalledWith({
-      where: { identity: { registrationId: 'registration-1' }, statusCode: 'committed' },
+      where: {
+        identity: { registrationId: 'registration-1' },
+        statusCode: { in: ['committed', 'superseded'] },
+      },
       select: { id: true },
     });
+  });
+
+  it('does not query for an empty set of affected identities', async () => {
+    const f = fixture();
+    await expect(hasV11ParticipationEvidenceForIdentitiesInTx(f.tx as never, [])).resolves.toBe(
+      false,
+    );
+    expect(f.punch).not.toHaveBeenCalled();
+    expect(f.result).not.toHaveBeenCalled();
   });
 
   it('allows no evidence and propagates a failed query, without consulting legacy tables', async () => {
