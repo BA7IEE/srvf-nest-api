@@ -1,0 +1,114 @@
+{
+  "classification": "DEPLOYED_HTTP",
+  "origin": "https://dp.srvf.team",
+  "deployment_sha": "UNKNOWN",
+  "role": "existing test administrator",
+  "cache_disabled": true,
+  "requests": [
+    {
+      "time_utc": "2026-11-13T02:34:07.563Z",
+      "method": "GET",
+      "path_template": "/api/admin/v1/activities/<ACTIVITY_A>",
+      "query_keys": [],
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwed56d289688b405d858243cc6af974"
+    },
+    {
+      "time_utc": "2026-11-13T02:34:08.179Z",
+      "method": "GET",
+      "path_template": "/api/admin/v1/organizations/<ORG_A>",
+      "query_keys": [],
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwed56t7dcc57529860da7ddb5070806"
+    },
+    {
+      "time_utc": "2026-11-13T02:34:08.805Z",
+      "method": "GET",
+      "path_template": "/api/admin/v1/members/<MEMBER_A>",
+      "query_keys": [],
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwed57al46f77bd950bda4eba0553dac"
+    },
+    {
+      "time_utc": "2026-11-13T02:34:09.409Z",
+      "method": "GET",
+      "path_template": "/api/admin/v1/members/<MEMBER_A>/memberships",
+      "query_keys": [
+        "page",
+        "pageSize"
+      ],
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwed57rab54c54fefcd1244eb04a1190"
+    },
+    {
+      "time_utc": "2026-11-13T02:34:44.013Z",
+      "method": "GET",
+      "path_template": "/api/admin/v1/activities/<ACTIVITY_A>/positions",
+      "query_keys": [],
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwed5ygq6a48cdc4e2ead301aaf2300f"
+    },
+    {
+      "time_utc": "2026-11-13T02:34:44.639Z",
+      "method": "GET",
+      "path_template": "/api/admin/v1/activities/<ACTIVITY_A>/registrations",
+      "query_keys": [
+        "page",
+        "pageSize"
+      ],
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwed5yxvdcc7d9c63b97dcee8506fe5e"
+    },
+    {
+      "time_utc": "2026-11-13T02:34:45.314Z",
+      "method": "GET",
+      "path_template": "/api/admin/v1/registrations",
+      "query_keys": [
+        "page",
+        "pageSize",
+        "activityId",
+        "memberId"
+      ],
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwed5zhp4b4e779fc80febd017ba17d6"
+    }
+  ],
+  "assertions": {
+    "activity_id_matches": true,
+    "activity_org_a": true,
+    "activity_status": "published",
+    "visibility": "invitation",
+    "public_registration": false,
+    "requires_insurance": false,
+    "activity_start_utc": "2026-11-20T01:00:00.000Z",
+    "activity_end_utc": "2026-11-20T03:00:00.000Z",
+    "deadline": null,
+    "synthetic_title_and_location": true,
+    "has_images": false,
+    "organization_active": true,
+    "member_active": true,
+    "member_user_matches": true,
+    "account_active": true,
+    "primary_membership_count": 1,
+    "primary_membership_active_org_a": true,
+    "positions_count": 0,
+    "activity_registration_total": 0,
+    "activity_registration_items": 0,
+    "member_activity_registration_total": 0,
+    "member_activity_registration_items": 0,
+    "page": 1,
+    "pageSize": 100
+  },
+  "limitations": [
+    "Activity registration lists exclude soft-deleted rows in local source; deployment SHA unknown.",
+    "The read is a point-in-time observation, not an atomic lock against other writers.",
+    "No independent server-log status or final write in this evidence."
+  ]
+}
