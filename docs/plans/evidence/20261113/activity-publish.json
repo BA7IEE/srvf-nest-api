@@ -1,0 +1,112 @@
+{
+  "evidence": "DEPLOYED_HTTP via same-origin controlled request adaptation, plus bounded container log verification; not GUI-form acceptance or review workflow",
+  "deploymentSha": "UNKNOWN",
+  "testScope": "synthetic organization A invitation-only activity; IDs redacted",
+  "pre": [
+    {
+      "time": "2026-11-13T05:45:54.305+08:00",
+      "method": "GET",
+      "path": "/api/admin/v1/activities/{id}",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwe2uiy200d75796997d263d36d76617",
+      "state": "draft",
+      "visibilityCode": "invitation",
+      "registrationModeCode": "invitation_only",
+      "isPublicRegistration": false,
+      "requiresInsurance": false,
+      "startAt": "2026-11-20T09:00:00+08:00",
+      "endAt": "2026-11-20T11:00:00+08:00",
+      "registrationDeadline": null,
+      "organizationIsSyntheticA": true,
+      "publishedAt": null,
+      "coverPresent": false,
+      "galleryCount": 0
+    },
+    {
+      "time": "2026-11-13T05:46:36.774+08:00",
+      "method": "GET",
+      "path": "/api/admin/v1/activities/{activityId}/registrations?page=1&pageSize=100",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwe2vfojd76040e23303762b969191fb",
+      "total": 0
+    },
+    {
+      "time": "2026-11-13T05:47:08.587+08:00",
+      "method": "GET",
+      "path": "/api/app/v1/my/managed-activities/{activityId}/invitations?page=1&pageSize=100",
+      "status": 403,
+      "code": 40300,
+      "requestId": "cmwe2w4959be2a59c6b61e2fe479b55e1",
+      "invitationTotal": "UNKNOWN"
+    }
+  ],
+  "write": {
+    "time": "2026-11-13T05:49:23.189+08:00",
+    "method": "PATCH",
+    "path": "/api/admin/v1/activities/{id}/publish",
+    "body": {
+      "requiresInsuranceConfirmed": true
+    },
+    "status": 200,
+    "code": 0,
+    "requestId": "cmwe2z04b36c1c844b464922264cda166",
+    "sentOnce": true,
+    "serverRouteAndMethodMatched": true,
+    "serverStatus": 200,
+    "browserTrigger": "controlled same-origin request adaptation",
+    "fetchDisable": "Error",
+    "fetchEmptyPatternsReset": "success"
+  },
+  "post": [
+    {
+      "time": "2026-11-13T05:49:40.264+08:00",
+      "method": "GET",
+      "path": "/api/admin/v1/activities/{id}",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwe2zd9fb1119ad40c882fb29eb57525",
+      "state": "published",
+      "publishedAt": "2026-11-13T05:49:23.700+08:00",
+      "organizationIsSyntheticA": true,
+      "visibilityCode": "invitation",
+      "registrationModeCode": "invitation_only",
+      "isPublicRegistration": false,
+      "requiresInsurance": false
+    },
+    {
+      "time": "2026-11-13T05:49:55.119+08:00",
+      "method": "GET",
+      "path": "/api/admin/v1/activities/{activityId}/registrations?page=1&pageSize=100",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwe2zoqac14729a63a506638e2a4a0d5",
+      "total": 0
+    }
+  ],
+  "serverLog": {
+    "container": "target API container (redacted)",
+    "windowUtc": [
+      "2026-11-12T21:45:00Z",
+      "2026-11-12T21:51:00Z"
+    ],
+    "exitCode": 0,
+    "lineCount": 49,
+    "matchedServerStatuses": [
+      200,
+      200,
+      403,
+      200,
+      200,
+      200
+    ]
+  },
+  "limits": [
+    "invitation count UNKNOWN due to 403",
+    "no invitation or registration was created by this action",
+    "notification outbox count UNKNOWN; targeted read-only check returned no count",
+    "direct publish does not establish approval, registration, or attendance acceptance",
+    "indirect effects or later scheduled notifications not proven absent"
+  ]
+}

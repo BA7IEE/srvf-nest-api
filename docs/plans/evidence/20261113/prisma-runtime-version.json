@@ -1,0 +1,11 @@
+{
+  "evidence_type": "DEPLOYED_RUNTIME",
+  "checked_at": "2026-11-13T11:22:57+08:00",
+  "package": "@prisma/client",
+  "version": "6.19.3",
+  "image_matches_prior_evidence": true,
+  "deployment_git_sha": "UNKNOWN",
+  "limitations": [
+    "仅验证目标容器安装包的版本和镜像匹配，未验证实际数据、数据库行为或运行配置。"
+  ]
+}

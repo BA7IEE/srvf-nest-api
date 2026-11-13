@@ -1,0 +1,30 @@
+{
+  "classification": "DEPLOYED_HTTP",
+  "target": "https://dp.srvf.team/api/auth/v1/wecom-bind/authorize",
+  "method": "POST",
+  "server_logged_time": "2026-11-13T04:10:15.229+08:00",
+  "role": "anonymous",
+  "original_body_keys": [
+    "__srvf_audit_invalid_field"
+  ],
+  "original_body_values_redacted": true,
+  "status": 401,
+  "request_id": "srvf-qa-resume-f577c180847c416cad177c7e2ded53c7",
+  "request_count": 1,
+  "response_code": "UNKNOWN",
+  "response_content_type": "UNKNOWN",
+  "response_cookie": "UNKNOWN",
+  "response_location": "UNKNOWN",
+  "automatic_redirect_followed": false,
+  "server_log_query_window_utc": [
+    "2026-11-12T20:08:00Z",
+    "2026-11-12T20:11:00Z"
+  ],
+  "server_log_exit": 0,
+  "deployment_commit": "UNKNOWN",
+  "limitations": [
+    "The local response-recording script raised NameError while handling HTTPError.",
+    "Response fields were not retained; result was recovered from the target container log.",
+    "Original headers and version unknown; rate-limit bucket may have changed."
+  ]
+}

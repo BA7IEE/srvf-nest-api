@@ -1,0 +1,65 @@
+{
+  "evidence_type": "DEPLOYED_RUNTIME",
+  "deployment_git_sha": "UNKNOWN",
+  "log_window": {
+    "from_inclusive": "2026-11-13T09:24:00+08:00",
+    "until_exclusive": "2026-11-13T09:30:00+08:00"
+  },
+  "role_binding_request_logs": [
+    {
+      "time": "2026-11-13T09:24:47.913+08:00",
+      "method": "POST",
+      "path": "/api/admin/v1/role-bindings",
+      "http_status": 201,
+      "request_id": "cmweao0ia0f5e4224b897e001d4d6f467",
+      "unique_exact_match": true
+    },
+    {
+      "time": "2026-11-13T09:27:13.709+08:00",
+      "method": "POST",
+      "path": "/api/admin/v1/role-bindings",
+      "http_status": 201,
+      "request_id": "cmwear4zke72811ed97b457628622564c",
+      "unique_exact_match": true
+    },
+    {
+      "time": "2026-11-13T09:28:08.800+08:00",
+      "method": "POST",
+      "path": "/api/admin/v1/role-bindings",
+      "http_status": 201,
+      "request_id": "cmweasbiie695d837050942f329f3ad51",
+      "unique_exact_match": true
+    },
+    {
+      "time": "2026-11-13T09:28:51.742+08:00",
+      "method": "POST",
+      "path": "/api/admin/v1/role-bindings",
+      "http_status": 201,
+      "request_id": "cmweat8mba8aecaec9cea5043cbb8927e",
+      "unique_exact_match": true
+    }
+  ],
+  "v11_workflow": {
+    "environment_key": "ACTIVITY_V11_WORKFLOW_ENABLED",
+    "container_exec_child_environment_value": "false",
+    "compiled_parser_default_when_unset": {
+      "development": false,
+      "test": false,
+      "production": "ERROR",
+      "smoke": "ERROR"
+    },
+    "compiled_parser_for_child_environment_value": {
+      "development": false,
+      "production": false
+    },
+    "running_api_nest_config": "UNKNOWN",
+    "check_time": "UNKNOWN"
+  },
+  "limitations": [
+    "日志关联仅证明指定请求的服务端方法、路径和状态，不能证明请求体、授权范围、到期时间或后续读回结果。",
+    "容器新启动子进程的单键环境值不证明运行中 API 进程的 Nest 配置；未读取其他环境键。",
+    "解析器 ERROR 代表对合成未设置输入抛出异常，并非对运行中进程启动状态的判定。",
+    "容器身份与既有证据匹配不等于可核实部署 Git SHA。",
+    "单键检查在上述日志核查之后、证据文件生成之前完成；未单独捕获可证明的检查时刻，不以文件时间代替。"
+  ]
+}

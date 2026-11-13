@@ -1,0 +1,105 @@
+{
+  "evidence_type": "DEPLOYED_RUNTIME",
+  "deployment_git_sha": "UNKNOWN",
+  "log_window": {
+    "from_inclusive": "2026-11-13T10:03:45+08:00",
+    "until_exclusive": "2026-11-13T10:04:30+08:00",
+    "checked_at": "2026-11-13T10:09:33+08:00"
+  },
+  "requests": [
+    {
+      "role": "R1",
+      "kind": "me",
+      "server_time": "2026-11-13T10:03:53.033+08:00",
+      "request_id": "cmwec2a0w200c879047d4c5c92958de7b",
+      "method": "GET",
+      "path": "/api/app/v1/me",
+      "status": 200,
+      "unique_exact_match": true
+    },
+    {
+      "role": "R1",
+      "kind": "attendance",
+      "server_time": "2026-11-13T10:03:56.353+08:00",
+      "request_id": "cmwec2ckm24c056305e67b142bbd6c4d5",
+      "method": "GET",
+      "path": "/api/admin/v1/activities/{activityId}/attendance-sheets",
+      "status": 200,
+      "unique_exact_match": true
+    },
+    {
+      "role": "R2",
+      "kind": "me",
+      "server_time": "2026-11-13T10:04:17.233+08:00",
+      "request_id": "cmwec2sp685c846a4152cf5a7615ebcff",
+      "method": "GET",
+      "path": "/api/app/v1/me",
+      "status": 200,
+      "unique_exact_match": true
+    },
+    {
+      "role": "R2",
+      "kind": "attendance",
+      "server_time": "2026-11-13T10:04:20.581+08:00",
+      "request_id": "cmwec2v9ned56e73338c16c673b1dbc4a",
+      "method": "GET",
+      "path": "/api/admin/v1/activities/{activityId}/attendance-sheets",
+      "status": 200,
+      "unique_exact_match": true
+    }
+  ],
+  "identity_and_target_comparisons": {
+    "R1_principal_matches_own_me": true,
+    "R2_principal_matches_own_me": true,
+    "me_principals_different": true,
+    "attendance_activity_paths_same": true
+  },
+  "compiled_authorization_checks": [
+    {
+      "checked_at": "2026-11-13T10:12:32+08:00",
+      "route": true,
+      "read_global_declaration": true,
+      "decorator_metadata": true,
+      "guard_success_observation": true,
+      "activity_scoped_read_assertion": true,
+      "access_calls_explain": true
+    },
+    {
+      "checked_at": "2026-11-13T10:13:07+08:00",
+      "explain_resolves_resource_and_grants": true,
+      "organization_scope": true,
+      "global_view_uses_global_bindings": true,
+      "observation_pattern_literals_present": true
+    }
+  ],
+  "responsibility_workflow": {
+    "checked_at": "2026-11-13T10:13:52+08:00",
+    "environment_key": "ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED",
+    "container_exec_child_environment_value": "false",
+    "compiled_parser_default_when_unset": {
+      "development": false,
+      "test": false,
+      "production": "ERROR",
+      "smoke": "ERROR"
+    },
+    "compiled_parser_for_child_environment_value": {
+      "development": false,
+      "production": false
+    },
+    "running_api_nest_config": "UNKNOWN"
+  },
+  "unknowns": {
+    "matched_grant": "UNKNOWN",
+    "actual_observation_warning": "UNKNOWN",
+    "cross_organization_denial": "UNKNOWN",
+    "deployment_git_sha": "UNKNOWN"
+  },
+  "limitations": [
+    "日志认证主体与活动路径仅在内存比较，未保留实际主体或活动标识；结果只证明列明请求的日志关联。",
+    "编译代码检查支持全局权限视图与资源级组织范围判权采用不同读法；没有取得具体请求的判权 decision，不证明哪条授权最终命中。",
+    "静态检查只识别不同观察标识的存在，未验证具体请求是否产生告警。",
+    "容器新启动子进程的单键环境值不证明运行中 API 进程的 Nest 配置；未读取其他环境键。",
+    "解析器 ERROR 代表对合成未设置输入抛出异常，并非对运行中进程启动状态的判定。",
+    "目标容器镜像与既有证据匹配不等于可核实部署 Git SHA。"
+  ]
+}

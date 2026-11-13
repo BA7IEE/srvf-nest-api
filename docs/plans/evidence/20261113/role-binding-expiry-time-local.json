@@ -1,0 +1,53 @@
+{
+  "capturedAtUtc": "2026-11-13T01:26:37.577304+00:00",
+  "evidenceType": "LOCAL",
+  "repository": "BA7IEE/srvf-admin-web",
+  "base": "6375148a61445972e792ce37cb401fd8e5162538",
+  "branch": "codex/role-binding-expiry-datetime-20261113",
+  "patchSha256": "3ae76d237ca77a675e0941f78c18994d9520d66b5f398736fee1273de60a0219",
+  "checks": [
+    {
+      "command": "node --test tests/role_binding_expiry.behavior.test.mjs",
+      "exit": 0,
+      "passed": 6,
+      "failed": 0,
+      "fixture": "loopback 127.0.0.1, ephemeral port closed and rebound"
+    },
+    {
+      "command": "pnpm exec eslint --max-warnings 0 [four changed files]",
+      "exit": 0
+    },
+    {
+      "command": "pnpm exec prettier --check [four changed files]",
+      "exit": 0
+    },
+    {
+      "command": "NODE_OPTIONS=--max-old-space-size=2048 pnpm typecheck",
+      "exit": 0
+    },
+    {
+      "command": "git diff --check",
+      "exit": 0
+    },
+    {
+      "command": "git apply --check --cached [patch]",
+      "exit": 0
+    },
+    {
+      "command": "git apply --check --reverse [patch]",
+      "exit": 0
+    }
+  ],
+  "notRun": [
+    "GUI interactions",
+    "full lint",
+    "production build",
+    "deployment"
+  ],
+  "notes": [
+    "Baseline prior to source change: same initial five tests, two passed and three failed.",
+    "Synthetic local fixture only; no online requests.",
+    "Dates displayed and interpreted in UTC+08:00; start and note edit behavior preserved.",
+    "Blank context lines were normalized only to avoid trailing whitespace in the evidence repository; git apply forward and reverse checks passed."
+  ]
+}

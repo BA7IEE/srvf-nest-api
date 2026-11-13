@@ -1,0 +1,481 @@
+diff --git a/src/views/srvf/org-hr/role-bindings/form.vue b/src/views/srvf/org-hr/role-bindings/form.vue
+index 28f81e6..eeda84a 100644
+--- a/src/views/srvf/org-hr/role-bindings/form.vue
++++ b/src/views/srvf/org-hr/role-bindings/form.vue
+@@ -25,7 +25,7 @@ export type RoleBindingFormModel = {
+   scopeResourceType: string;
+   scopeResourceId: string;
+   startedAt: string;
+-  endedAt: string;
++  endedAt: string | null;
+   note: string;
+ };
+
+@@ -380,11 +380,13 @@ defineExpose({ getRef });
+         <el-form-item label="任期止">
+           <el-date-picker
+             v-model="form.endedAt"
+-            type="date"
+-            value-format="YYYY-MM-DD"
++            type="datetime"
++            value-format="YYYY-MM-DDTHH:mm:ss.SSS"
++            format="YYYY-MM-DD HH:mm:ss"
+             placeholder="可空"
+             class="w-full!"
+           />
++          <span class="text-xs text-gray-500">北京时间（UTC+08:00）</span>
+         </el-form-item>
+       </el-col>
+       <el-col :span="24">
+diff --git a/src/views/srvf/org-hr/role-bindings/utils/hook.ts b/src/views/srvf/org-hr/role-bindings/utils/hook.ts
+index f57a70d..a06d0d3 100644
+--- a/src/views/srvf/org-hr/role-bindings/utils/hook.ts
++++ b/src/views/srvf/org-hr/role-bindings/utils/hook.ts
+@@ -40,6 +40,7 @@ import {
+   type RoleBindingListQuery
+ } from "@/api/srvf-role-binding";
+ import RoleBindingForm, { type RoleBindingFormModel } from "../form.vue";
++import { expiryInputToIso, formatExpiryInBeijing } from "./expiry-time";
+
+ /** 任职选择器候选项形状（principalType=POSITION_ASSIGNMENT 时的下拉,标签自拼"队员-职务@组织"）。 */
+ type PositionAssignmentOption = { id: string; label: string };
+@@ -243,11 +244,10 @@ export function useRoleBindings() {
+         startedAt ? dayjs(startedAt).format("YYYY-MM-DD") : "—"
+     },
+     {
+-      label: "结束",
++      label: "结束（北京时间）",
+       prop: "endedAt",
+-      minWidth: 110,
+-      formatter: ({ endedAt }) =>
+-        endedAt ? dayjs(endedAt).format("YYYY-MM-DD") : "—"
++      minWidth: 200,
++      formatter: ({ endedAt }) => formatExpiryInBeijing(endedAt)
+     },
+     { label: "操作", fixed: "right" as const, width: 160, slot: "operation" }
+   ];
+@@ -331,6 +331,14 @@ export function useRoleBindings() {
+             closeLoading();
+             return;
+           }
++          const endedAt = curData.endedAt
++            ? expiryInputToIso(curData.endedAt)
++            : undefined;
++          if (endedAt === null) {
++            message("请选择有效的任期止时间（北京时间）", { type: "error" });
++            closeLoading();
++            return;
++          }
+           const body = {
+             principalType: curData.principalType,
+             ...(curData.principalId
+@@ -349,7 +357,7 @@ export function useRoleBindings() {
+               ? { scopeResourceId: curData.scopeResourceId }
+               : {}),
+             ...(curData.startedAt ? { startedAt: curData.startedAt } : {}),
+-            ...(curData.endedAt ? { endedAt: curData.endedAt } : {}),
++            ...(endedAt ? { endedAt } : {}),
+             ...(curData.note ? { note: curData.note } : {})
+           };
+           try {
+diff --git a/src/views/srvf/org-hr/role-bindings/utils/expiry-time.ts b/src/views/srvf/org-hr/role-bindings/utils/expiry-time.ts
+new file mode 100644
+index 0000000..520b096
+--- /dev/null
++++ b/src/views/srvf/org-hr/role-bindings/utils/expiry-time.ts
+@@ -0,0 +1,29 @@
++const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
++const PICKER_VALUE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}$/;
++
++/** 日期选择器中的本地字面值始终视为北京时间，而非浏览器时区。 */
++export function expiryInputToIso(value: string): string | null {
++  if (!PICKER_VALUE.test(value)) return null;
++  const timestamp = Date.parse(`${value}+08:00`);
++  if (!Number.isFinite(timestamp)) return null;
++  // Date.parse 会把某些不存在的日期自动进位；回转后不一致则拒绝提交。
++  if (
++    new Date(timestamp + BEIJING_OFFSET_MS).toISOString().slice(0, 23) !== value
++  )
++    return null;
++  return new Date(timestamp).toISOString();
++}
++
++/** 后端返回的是时刻；以固定 UTC+08:00 展示，不受电脑时区影响。 */
++export function formatExpiryInBeijing(
++  value: string | null | undefined
++): string {
++  if (!value) return "—";
++  const timestamp = Date.parse(value);
++  if (!Number.isFinite(timestamp)) return value;
++  return new Date(timestamp + BEIJING_OFFSET_MS)
++    .toISOString()
++    .slice(0, 23)
++    .replace("T", " ")
++    .replace(/\.000$/, "");
++}
+diff --git a/tests/role_binding_expiry.behavior.test.mjs b/tests/role_binding_expiry.behavior.test.mjs
+new file mode 100644
+index 0000000..ad1c839
+--- /dev/null
++++ b/tests/role_binding_expiry.behavior.test.mjs
+@@ -0,0 +1,360 @@
++/**
++ * LOCAL only: render the real form, drive the real dialog and API wrapper,
++ * and verify serialized requests and returned rows against a loopback fixture.
++ * Run: node --test tests/role_binding_expiry.behavior.test.mjs
++ */
++import assert from "node:assert/strict";
++import { createServer as createHttpServer } from "node:http";
++import { once } from "node:events";
++import { after, before, test } from "node:test";
++import path from "node:path";
++import { fileURLToPath } from "node:url";
++import { createServer as createViteServer } from "vite";
++import vuePlugin from "@vitejs/plugin-vue";
++import { createSSRApp, h } from "vue";
++import { renderToString } from "@vue/server-renderer";
++
++const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
++const stateKey = "__srvfRoleExpiryFixture";
++const prefix = "\0srvf-role-expiry:";
++const optionResult = "async () => ({code: 0, data: {items: []}})";
++const stubs = {
++  "vue-router": `export const useRoute = () => ({query: {}});`,
++  "@pureadmin/utils": `export const deviceDetection = () => false;`,
++  "element-plus": `export const ElMessageBox = {prompt: async () => ({value: "本地备注"})};`,
++  "@/utils/message": `export const message = text => globalThis.${stateKey}.messages.push(text);`,
++  "@/utils/auth": `export const hasPerms = () => true;`,
++  "@/components/ReDialog": `export const addDialog = options => globalThis.${stateKey}.dialogs.push(options);`,
++  "@/views/srvf/components/form-label-tip.vue": `export default {render(){return null}};`,
++  "@/api/srvf-role": `export const getRoleOptions = ${optionResult};`,
++  "@/api/srvf-user": `export const getUserOptions = ${optionResult};`,
++  "@/api/srvf-position-assignment": `export const getMemberOptions = ${optionResult}; export const getPositionAssignments = ${optionResult};`,
++  "@/api/srvf-organization": `export const getOrgOptions = ${optionResult};`,
++  "@/api/srvf-activity": `export const getActivityOptions = ${optionResult};`,
++  "@/srvf-kit": `
++    import { ref, reactive } from "vue";
++    export const SrvfRemoteSelect = {render(){return null}};
++    export const useSrvfList = () => ({
++      dataList: ref([]), loading: ref(false), pagination: reactive({}),
++      onSearch(){}, onFilterChange(){}, handleSizeChange(){}, handleCurrentChange(){}
++    });
++  `,
++  "@/utils/http": `
++    import axios from "axios";
++    export const http = {async request(method, route, options = {}) {
++      const origin = globalThis.${stateKey}.origin;
++      const url = new URL(route, origin);
++      if (url.origin !== origin || url.hostname !== "127.0.0.1") throw new Error("non-loopback target");
++      return (await axios.request({method, url: url.href, params: options.params,
++        data: options.data, timeout: 3000, proxy: false})).data;
++    }};
++  `
++};
++
++function fixturePlugin() {
++  return {
++    name: "srvf-role-expiry-fixture",
++    enforce: "pre",
++    resolveId(id) {
++      const sourceRoot = `${path.join(root, "src")}${path.sep}`;
++      const key = id.startsWith(sourceRoot)
++        ? `@/${id.slice(sourceRoot.length).replaceAll(path.sep, "/").replace(/\.ts$/, "")}`
++        : id;
++      return Object.hasOwn(stubs, key) ? prefix + key : null;
++    },
++    load(id) {
++      return id.startsWith(prefix) ? stubs[id.slice(prefix.length)] : null;
++    }
++  };
++}
++
++let server;
++let vite;
++let port;
++const requests = [];
++let saved;
++
++before(async () => {
++  server = createHttpServer(async (request, response) => {
++    const url = new URL(request.url, "http://127.0.0.1");
++    const entry = { method: request.method, path: url.pathname };
++    if (request.method === "GET")
++      entry.query = Object.fromEntries(url.searchParams);
++    else {
++      const chunks = [];
++      for await (const chunk of request) chunks.push(chunk);
++      entry.body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
++    }
++    requests.push(entry);
++    let data;
++    if (
++      entry.method === "GET" &&
++      entry.path === "/api/admin/v1/role-bindings/preview"
++    ) {
++      data = { valid: true, conflicts: [] };
++    } else if (
++      entry.method === "POST" &&
++      entry.path === "/api/admin/v1/role-bindings"
++    ) {
++      saved = {
++        ...entry.body,
++        id: "fixture-binding",
++        endedAt: entry.body.endedAt
++          ? new Date(entry.body.endedAt).toISOString()
++          : null
++      };
++      data = saved;
++    } else if (
++      entry.method === "GET" &&
++      entry.path === "/api/admin/v1/role-bindings/page"
++    ) {
++      data = {
++        items: saved ? [saved] : [],
++        total: saved ? 1 : 0,
++        page: 1,
++        pageSize: 20
++      };
++    } else if (
++      entry.method === "PATCH" &&
++      entry.path === "/api/admin/v1/role-bindings/fixture-binding"
++    ) {
++      saved = { ...saved, ...entry.body };
++      data = saved;
++    } else {
++      response.writeHead(404);
++      response.end();
++      return;
++    }
++    response.writeHead(200, { "content-type": "application/json" });
++    response.end(JSON.stringify({ code: 0, message: "ok", data }));
++  });
++  server.listen(0, "127.0.0.1");
++  await once(server, "listening");
++  port = server.address().port;
++  globalThis[stateKey] = {
++    origin: `http://127.0.0.1:${port}`,
++    dialogs: [],
++    messages: []
++  };
++  vite = await createViteServer({
++    root,
++    configFile: false,
++    plugins: [fixturePlugin(), vuePlugin()],
++    resolve: { alias: { "@": path.join(root, "src") } },
++    ssr: { noExternal: ["vue-router", "@pureadmin/utils", "element-plus"] },
++    optimizeDeps: { noDiscovery: true, include: [] },
++    server: { middlewareMode: true, hmr: false },
++    logLevel: "error"
++  });
++});
++
++after(async () => {
++  if (vite) await vite.close();
++  delete globalThis[stateKey];
++  if (server?.listening) {
++    server.close();
++    await once(server, "close");
++    const probe = createHttpServer();
++    probe.listen(port, "127.0.0.1");
++    await once(probe, "listening");
++    probe.close();
++    await once(probe, "close");
++  }
++});
++
++async function dialogWith(values) {
++  const { useRoleBindings } = await vite.ssrLoadModule(
++    "/src/views/srvf/org-hr/role-bindings/utils/hook.ts"
++  );
++  const page = useRoleBindings();
++  await page.openCreateDialog();
++  const dialog = globalThis[stateKey].dialogs.pop();
++  const vnode = dialog.contentRenderer();
++  assert.ok(vnode.ref?.r && "value" in vnode.ref.r);
++  vnode.ref.r.value = {
++    getRef: () => ({ validate: callback => callback(true) })
++  };
++  Object.assign(dialog.props.formInline, {
++    principalType: "MEMBER",
++    principalId: "fixture-member",
++    roleId: "fixture-role",
++    scopeType: "GLOBAL",
++    startedAt: "2030-12-31",
++    note: "本地备注",
++    ...values
++  });
++  return { page, dialog };
++}
++
++async function submit(dialog) {
++  return await new Promise((resolve, reject) => {
++    const timer = setTimeout(
++      () => reject(new Error("dialog did not settle")),
++      5000
++    );
++    dialog.beforeSure(
++      () => {
++        clearTimeout(timer);
++        resolve("created");
++      },
++      {
++        options: dialog,
++        closeLoading: () => {
++          clearTimeout(timer);
++          resolve("stopped");
++        }
++      }
++    );
++  });
++}
++
++test("form renders a Beijing date-time picker for expiry", async () => {
++  const { default: Form } = await vite.ssrLoadModule(
++    "/src/views/srvf/org-hr/role-bindings/form.vue"
++  );
++  const pickers = [];
++  const wrap = {
++    render() {
++      return h("div", this.$slots.default?.());
++    }
++  };
++  const formItem = {
++    render() {
++      return h("div", [this.$attrs.label, this.$slots.default?.()]);
++    }
++  };
++  const picker = {
++    props: ["type", "valueFormat", "format"],
++    render() {
++      pickers.push({
++        type: this.type,
++        valueFormat: this.valueFormat,
++        format: this.format
++      });
++      return h("input");
++    }
++  };
++  const app = createSSRApp(Form);
++  for (const name of [
++    "el-form",
++    "el-row",
++    "el-col",
++    "el-select",
++    "el-option",
++    "el-input",
++    "el-alert"
++  ])
++    app.component(name, wrap);
++  app.component("el-form-item", formItem);
++  app.component("el-date-picker", picker);
++  const html = await renderToString(app);
++  assert.ok(html.includes("任期止"));
++  assert.ok(html.includes("北京时间（UTC+08:00）"));
++  assert.equal(pickers.length, 2);
++  assert.deepEqual(pickers[1], {
++    type: "datetime",
++    valueFormat: "YYYY-MM-DDTHH:mm:ss.SSS",
++    format: "YYYY-MM-DD HH:mm:ss"
++  });
++});
++
++test("preview, create and list readback preserve Beijing 06:00 across host time zones", async () => {
++  const priorTZ = process.env.TZ;
++  try {
++    for (const zone of ["UTC", "America/Los_Angeles", "Asia/Shanghai"]) {
++      process.env.TZ = zone;
++      assert.equal(Intl.DateTimeFormat().resolvedOptions().timeZone, zone);
++      requests.length = 0;
++      const { page, dialog } = await dialogWith({
++        endedAt: "2031-01-02T06:00:00.000"
++      });
++      assert.equal(await submit(dialog), "created");
++      assert.equal(requests.length, 2);
++      assert.equal(requests[0].method, "GET");
++      assert.equal(requests[0].path, "/api/admin/v1/role-bindings/preview");
++      assert.equal(requests[1].method, "POST");
++      assert.equal(requests[1].path, "/api/admin/v1/role-bindings");
++      assert.equal(requests[0].query.endedAt, "2031-01-01T22:00:00.000Z");
++      assert.equal(requests[1].body.endedAt, requests[0].query.endedAt);
++      assert.equal(requests[1].body.startedAt, "2030-12-31");
++      assert.equal(requests[1].body.note, "本地备注");
++      const { getRoleBindingsPage } = await vite.ssrLoadModule(
++        "/src/api/srvf-role-binding.ts"
++      );
++      const returned = (await getRoleBindingsPage()).data.items[0];
++      assert.equal(returned.endedAt, "2031-01-01T22:00:00.000Z");
++      const endColumn = page.columns.find(column => column.prop === "endedAt");
++      assert.match(endColumn.label, /北京时间/);
++      assert.equal(endColumn.formatter(returned), "2031-01-02 06:00:00");
++    }
++  } finally {
++    if (priorTZ === undefined) delete process.env.TZ;
++    else process.env.TZ = priorTZ;
++  }
++});
++
++test("cleared and empty expiry stay absent, and null readback remains empty", async () => {
++  for (const endedAt of ["", null]) {
++    requests.length = 0;
++    const { page, dialog } = await dialogWith({ endedAt });
++    assert.equal(await submit(dialog), "created");
++    assert.equal(Object.hasOwn(requests[0].query, "endedAt"), false);
++    assert.equal(Object.hasOwn(requests[1].body, "endedAt"), false);
++    assert.equal(
++      page.columns
++        .find(column => column.prop === "endedAt")
++        .formatter({ endedAt: null }),
++      "—"
++    );
++  }
++});
++
++test("legacy and fractional-second readbacks preserve the stored instant", async () => {
++  const { useRoleBindings } = await vite.ssrLoadModule(
++    "/src/views/srvf/org-hr/role-bindings/utils/hook.ts"
++  );
++  const endColumn = useRoleBindings().columns.find(
++    column => column.prop === "endedAt"
++  );
++  assert.equal(
++    endColumn.formatter({ endedAt: "2031-01-01" }),
++    "2031-01-01 08:00:00"
++  );
++  assert.equal(
++    endColumn.formatter({ endedAt: "2031-01-01T22:00:00.123Z" }),
++    "2031-01-02 06:00:00.123"
++  );
++});
++
++test("invalid calendar input stops before preview or create", async () => {
++  requests.length = 0;
++  const { dialog } = await dialogWith({ endedAt: "2031-02-30T06:00:00.000" });
++  assert.equal(await submit(dialog), "stopped");
++  assert.equal(requests.length, 0);
++});
++
++test("existing note-only edit leaves expiry and start untouched", async () => {
++  requests.length = 0;
++  saved = {
++    id: "fixture-binding",
++    startedAt: "2030-12-31T00:00:00.000Z",
++    endedAt: "2031-01-01T22:00:00.000Z"
++  };
++  const { useRoleBindings } = await vite.ssrLoadModule(
++    "/src/views/srvf/org-hr/role-bindings/utils/hook.ts"
++  );
++  useRoleBindings().openEditDialog(saved);
++  const limit = Date.now() + 3000;
++  while (!requests.length && Date.now() < limit)
++    await new Promise(resolve => setTimeout(resolve, 10));
++  assert.equal(requests.length, 1);
++  assert.equal(requests[0].method, "PATCH");
++  assert.deepEqual(requests[0].body, { note: "本地备注" });
++  const { getRoleBindingsPage } = await vite.ssrLoadModule(
++    "/src/api/srvf-role-binding.ts"
++  );
++  const returned = (await getRoleBindingsPage()).data.items[0];
++  assert.equal(returned.startedAt, "2030-12-31T00:00:00.000Z");
++  assert.equal(returned.endedAt, "2031-01-01T22:00:00.000Z");
++  assert.equal(returned.note, "本地备注");
++});

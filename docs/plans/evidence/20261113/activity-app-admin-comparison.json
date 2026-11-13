@@ -1,0 +1,61 @@
+{
+  "classification": "DEPLOYED_HTTP",
+  "target": "https://dp.srvf.team",
+  "deployment_commit": "UNKNOWN",
+  "helper_sha256": "52b5c785c8d6774af7d949d65197b03a848b23cdaca60ffa1cebf7b360803d19",
+  "scope": "same synthetic published organization A invitation activity, ordinary USER B in synthetic organization B; IDs redacted",
+  "results": [
+    {
+      "time": "2026-11-13T06:16:19.577553+08:00",
+      "role": "B",
+      "method": "POST",
+      "path": "/api/auth/v1/login",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe3xnik655a7a64768d135102fff515"
+    },
+    {
+      "time": "2026-11-13T06:16:24.227676+08:00",
+      "role": "B",
+      "method": "GET",
+      "path": "/api/app/v1/me",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe3xr3k3408cea3f2fe7f8c02cab344",
+      "user_and_member_ids_match": true,
+      "role_is_user": true,
+      "account_and_member_active": true,
+      "can_use_app": true
+    },
+    {
+      "time": "2026-11-13T06:16:29.003696+08:00",
+      "role": "B",
+      "method": "GET",
+      "path": "/api/app/v1/activities/{id}",
+      "status": 404,
+      "code": 20001,
+      "request_id": "cmwe3xus64a2624260d8e255bf109472e"
+    },
+    {
+      "time": "2026-11-13T06:16:37.436278+08:00",
+      "role": "B",
+      "method": "GET",
+      "path": "/api/admin/v1/activities/{id}",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe3y1a0d46ef2c4d8ea2904c584d689",
+      "activity_id_matches": true,
+      "organization_matches_A": true,
+      "is_published": true,
+      "visibility_is_invitation": true,
+      "registration_is_invitation_only": true,
+      "public_registration_closed": true
+    }
+  ],
+  "limits": [
+    "Invitation, participation and staff relationships were not independently established; these two requests alone do not settle the v1.1 contract.",
+    "Response messages and sensitive fields were not retained.",
+    "New independent B session was not logged out; server-side session state UNKNOWN.",
+    "Loopback client stopped; no listener remained."
+  ]
+}

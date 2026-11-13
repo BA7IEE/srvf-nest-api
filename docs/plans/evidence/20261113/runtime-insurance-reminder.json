@@ -1,0 +1,19 @@
+{
+  "recorded_at": "2026-11-13T04:56:01+08:00",
+  "exact_inspection_time": "UNKNOWN",
+  "scope": "target API container compiled code only",
+  "artifact": "/app/dist/modules/notifications/expiry-reminder.service.js",
+  "insurance_window": "coverageEnd <= Beijing date + 30 days; no lower bound found in either insurance query segment",
+  "claim_guard": "expireNotifiedAt is null",
+  "member_channels": [
+    "in-app",
+    "wechat"
+  ],
+  "team_path": "system broadcast with management visibility",
+  "cron": "0 0 9 * * *",
+  "timezone": "Asia/Shanghai",
+  "limits": [
+    "Does not prove scheduled job is enabled or that any recipient or external channel is configured.",
+    "Deployment Git SHA UNKNOWN."
+  ]
+}
