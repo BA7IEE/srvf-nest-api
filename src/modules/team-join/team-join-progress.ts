@@ -45,6 +45,12 @@ function contributionLedgerCutoff(cutoff: Date | null): Date | null {
   return cutoff ? new Date(beijingDayNumber(cutoff) * 86_400_000) : null;
 }
 
+function assertFiniteLedgerTotal(value: unknown): asserts value is Prisma.Decimal {
+  if (!Prisma.Decimal.isDecimal(value) || !value.isFinite()) {
+    throw new Error('Contribution ledger reader returned incomplete or non-finite totals');
+  }
+}
+
 export async function computeCappedContribution(
   client: PrismaService | Prisma.TransactionClient,
   memberId: string,
@@ -53,11 +59,13 @@ export async function computeCappedContribution(
   contributionLedgerReader: ContributionLedgerReader,
 ): Promise<Prisma.Decimal> {
   assertCommittedContributionSource(activityWorkflowGate);
-  return contributionLedgerReader.sumCommittedCreditedPointsForMemberInTx(
+  const total = await contributionLedgerReader.sumCommittedCreditedPointsForMemberInTx(
     client,
     memberId,
     contributionLedgerCutoff(cutoff),
   );
+  assertFiniteLedgerTotal(total);
+  return total;
 }
 
 /**
@@ -74,11 +82,16 @@ export async function computeCappedContributionBatch(
   assertCommittedContributionSource(activityWorkflowGate);
   const unique = [...new Set(memberIds)];
   if (unique.length === 0) return new Map();
-  return contributionLedgerReader.sumCommittedCreditedPointsForMembersInTx(
+  const totals = await contributionLedgerReader.sumCommittedCreditedPointsForMembersInTx(
     client,
     unique,
     contributionLedgerCutoff(cutoff),
   );
+  if (totals.size !== unique.length) {
+    throw new Error('Contribution ledger reader returned incomplete or non-finite totals');
+  }
+  for (const memberId of unique) assertFiniteLedgerTotal(totals.get(memberId));
+  return totals;
 }
 
 // 入队三期(招新)贡献值只读汇总:封顶核 + 入队年 3-31 cutoff + ≥5 gate 判定。
