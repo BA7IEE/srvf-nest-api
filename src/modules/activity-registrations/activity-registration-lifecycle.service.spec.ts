@@ -166,6 +166,7 @@ describe('ActivityRegistrationLifecycleService', () => {
         ),
         create: jest.fn().mockResolvedValue({ id: 'participation-revision-2' }),
       },
+      activitySessionPosition: { findMany: jest.fn().mockResolvedValue([]) },
       activityRegistration: {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
@@ -278,6 +279,134 @@ describe('ActivityRegistrationLifecycleService', () => {
       cancelledAt,
     });
     expect(cancellation.cancelledPassIdentityIds).toEqual([]);
+  });
+
+  it('cancels a valid position-waitlisted identity without erasing its prior revision or bumping population', async () => {
+    const { service, tx, capacity } = setup({
+      statusCode: 'waitlisted',
+      pointer: null,
+      populationIncluded: false,
+      activeSessionReservation: false,
+      currentPositionId: null,
+    });
+    tx.activityParticipationRevision.findMany.mockResolvedValue([
+      {
+        identityId: 'identity-1',
+        revision: 1,
+        statusCode: 'waitlisted',
+        positionId: 'position-1',
+        waitlistRank: 1,
+      },
+    ]);
+    tx.activitySessionPosition.findMany.mockResolvedValue([
+      { id: 'position-1', activityId: 'activity-1', sessionId: 'session-1' },
+    ]);
+
+    const result = await service.cancelInTransactionTrusted(tx as never, {
+      activityId: 'activity-1',
+      registrationId: 'registration-1',
+      memberId: 'member-1',
+      actorUserId: 'user-1',
+      sourceCode: 'self',
+      cancelReason: null,
+      cancelledAt,
+    });
+    expect(result.cancelledPassIdentityIds).toEqual([]);
+    expect(capacity.releaseInTransactionTrusted).toHaveBeenCalledTimes(1);
+    expect(tx.activityParticipationRevision.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        identityId: 'identity-1',
+        statusCode: 'cancelled',
+        positionId: null,
+      }) as unknown,
+    });
+    expect(tx.activityEvidenceState.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('leaves an earlier terminal identity untouched when cancelling a position-waitlisted identity', async () => {
+    const { service, tx, capacity } = setup({
+      statusCode: 'waitlisted',
+      pointer: null,
+      populationIncluded: false,
+      activeSessionReservation: false,
+      currentPositionId: null,
+      terminalIdentity: true,
+    });
+    tx.activityParticipationRevision.findMany.mockResolvedValue([
+      {
+        identityId: 'identity-1',
+        revision: 1,
+        statusCode: 'waitlisted',
+        positionId: 'position-1',
+        waitlistRank: 1,
+      },
+      {
+        identityId: 'identity-historical',
+        revision: 1,
+        statusCode: 'cancelled',
+        positionId: 'historical-position',
+        waitlistRank: null,
+      },
+    ]);
+    tx.activitySessionPosition.findMany.mockResolvedValue([
+      { id: 'position-1', activityId: 'activity-1', sessionId: 'session-1' },
+    ]);
+    await service.cancelInTransactionTrusted(tx as never, {
+      activityId: 'activity-1',
+      registrationId: 'registration-1',
+      memberId: 'member-1',
+      actorUserId: 'user-1',
+      sourceCode: 'self',
+      cancelReason: null,
+      cancelledAt,
+    });
+    expect(capacity.releaseInTransactionTrusted).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ identityIds: ['identity-1'] }) as unknown,
+    );
+    expect(tx.activityParticipationRevision.create).toHaveBeenCalledTimes(1);
+    expect(tx.activityParticipationIdentity.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.activityParticipationIdentity.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'identity-1' }) as unknown,
+      }) as unknown,
+    );
+  });
+
+  it('rejects a position-waitlisted identity from another session before any cancellation write', async () => {
+    const { service, tx, capacity } = setup({
+      statusCode: 'waitlisted',
+      pointer: null,
+      populationIncluded: false,
+      activeSessionReservation: false,
+      currentPositionId: null,
+    });
+    tx.activityParticipationRevision.findMany.mockResolvedValue([
+      {
+        identityId: 'identity-1',
+        revision: 1,
+        statusCode: 'waitlisted',
+        positionId: 'position-1',
+        waitlistRank: 1,
+      },
+    ]);
+    tx.activitySessionPosition.findMany.mockResolvedValue([
+      { id: 'position-1', activityId: 'activity-1', sessionId: 'other-session' },
+    ]);
+    await expect(
+      service.cancelInTransactionTrusted(tx as never, {
+        activityId: 'activity-1',
+        registrationId: 'registration-1',
+        memberId: 'member-1',
+        actorUserId: 'user-1',
+        sourceCode: 'self',
+        cancelReason: null,
+        cancelledAt,
+      }),
+    ).rejects.toEqual(new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED));
+    expect(capacity.releaseInTransactionTrusted).not.toHaveBeenCalled();
+    expect(tx.activityParticipationRevision.create).not.toHaveBeenCalled();
+    expect(tx.activityRegistrationRevision.create).not.toHaveBeenCalled();
   });
 
   it('rejects an occupied pass identity by releasing capacity and advancing only participation state', async () => {
