@@ -147,6 +147,8 @@ D1 解析器仍是唯一值域真源。D2b/D2c 当前进展以上节为准；成
 
 ## Local facts
 
+- **离队预检局部护栏**：未删且 `published`、活动结束时间尚未过去时，有效 `pass` 报名头即使已有旧参与证据，仍须检查同头未结束且未删的 scheduled 场次是否有 pending/waitlisted/pass 身份；存在时保留历史摘要并阻断离队。`hasParticipationEvidence` 仍只表示旧 GPS/考勤记录，不包含新版 punch。当前整单取消可能因其他场次已有新版打卡而返回 21033；旧签到但无新版证据时整单取消可能改历史身份投影。尚无个人逐场取消入口；软删报名头、并发写方和身份级历史分类也未闭合，不得把此护栏当成逐场清理完成。
+
 - **Activity OS R3 / C2 D1（已随 #1289 合入）**：Outcome／Value／Evidence 三表、第 113 条迁移、纯值校验及获批回归已交付，3b 已重签；值校验复用 C1 定义配置与 canonical/hash。#1290 仅补 B6 创建失败的脱敏诊断，最终 main CI 34092294387 通过，旧 500 根因未定位，不认定已修复。没有成果 Service writer、HTTP、权限或 Gate；C2 D2 仅起草人工草稿／修订评审，实施仍待授权，附件活动归属必须在 D2 事务内验证；C3 负责正式确认及证据完整性。下方“成果值仍未完成”指业务闭环，不表示 main 没有数据地基；整体跨模型复审与生产仍未完成。
 
 - **Activity OS R3 / C1 D1（内部数据地基）**：`ActivityMetricDefinition`、`ActivityMetricSetVersion` 与 `ActivityMetricSetItem` 提供精确 `(code,version)`、Restrict FK、draft→active→retired 与激活后冻结；集项写入同时更新 draft 父版本，使其与激活串行且旧快照事务不能绕过；定义退役不改历史集。纯函数解析五种受控类型、canonical/hash 和激活引用闭包，DB 不复算 hash。D2c 的 V7 审核在既有根事务内使用这些事实做锁后复验，不添加目录状态 writer、HTTP、权限、seed 或 Gate。D1–D2c 的仓内实现已完成，但整体复审、生产可用性、目录初始化与成果值仍未完成。

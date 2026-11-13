@@ -458,4 +458,213 @@ describe('member offboard activity responsibility and participation impact', () 
     expect(preview.body.data.canOffboard).toBe(true);
     expect((await offboard(member.memberId)).status).toBe(200);
   });
+
+  it('keeps a future identity visible when the registration also has historical punches', async () => {
+    const member = await createFormalMember('mixed-session');
+    const activity = await createActivity({ label: 'mixed-session' });
+    const base = Date.now();
+    const pastStart = new Date(base - 48 * 60 * 60 * 1000);
+    const pastEnd = new Date(base - 24 * 60 * 60 * 1000);
+    const futureStart = new Date(base + 24 * 60 * 60 * 1000);
+    const futureEnd = new Date(base + 48 * 60 * 60 * 1000);
+    await prisma.activity.update({
+      where: { id: activity.id },
+      data: { startAt: pastStart, endAt: futureEnd },
+    });
+    const makeSession = (code: string, startAt: Date, endAt: Date) =>
+      prisma.activitySession.create({
+        data: {
+          activityId: activity.id,
+          code,
+          name: code,
+          startAt,
+          endAt,
+          locationText: '深圳',
+          checkInOpenAt: startAt,
+          checkInCloseAt: endAt,
+          checkOutOpenAt: startAt,
+          checkOutCloseAt: endAt,
+          locationRequired: false,
+          locationPolicySourceCode: 'session',
+          statusCode: 'scheduled',
+        },
+        select: { id: true },
+      });
+    const pastSession = await makeSession('mixed-past', pastStart, pastEnd);
+    const futureSession = await makeSession('mixed-future', futureStart, futureEnd);
+    const registration = await prisma.activityRegistration.create({
+      data: {
+        activityId: activity.id,
+        memberId: member.memberId,
+        statusCode: 'pass',
+        statusSummaryCode: 'active',
+        sourceCode: 'admin',
+        currentRevision: 1,
+      },
+      select: { id: true },
+    });
+    await prisma.activityRegistrationRevision.create({
+      data: {
+        registrationId: registration.id,
+        revision: 1,
+        sourceCode: 'admin',
+        submittedByUserId: actor.id,
+        submittedAt: pastStart,
+      },
+    });
+    const pastIdentity = await prisma.activityParticipationIdentity.create({
+      data: {
+        activityId: activity.id,
+        sessionId: pastSession.id,
+        registrationId: registration.id,
+        memberId: member.memberId,
+        currentRevision: 1,
+        currentStatusCode: 'pass',
+        populationIncluded: true,
+      },
+      select: { id: true },
+    });
+    const futureIdentity = await prisma.activityParticipationIdentity.create({
+      data: {
+        activityId: activity.id,
+        sessionId: futureSession.id,
+        registrationId: registration.id,
+        memberId: member.memberId,
+        currentRevision: 1,
+        currentStatusCode: 'pending',
+      },
+      select: { id: true },
+    });
+    await prisma.activityParticipationRevision.createMany({
+      data: [
+        {
+          identityId: pastIdentity.id,
+          revision: 1,
+          statusCode: 'pass',
+          effectiveAt: pastStart,
+          createdByUserId: actor.id,
+          sourceCode: 'admin',
+        },
+        {
+          identityId: futureIdentity.id,
+          revision: 1,
+          statusCode: 'pending',
+          effectiveAt: pastStart,
+          createdByUserId: actor.id,
+          sourceCode: 'admin',
+        },
+      ],
+    });
+    const activityBucket = await prisma.activityCapacityBucket.create({
+      data: {
+        activityId: activity.id,
+        scopeTypeCode: 'activity_person',
+        scopeId: activity.id,
+        capacity: 10,
+        occupied: 1,
+        version: 1,
+      },
+      select: { id: true },
+    });
+    const pastSessionBucket = await prisma.activityCapacityBucket.create({
+      data: {
+        activityId: activity.id,
+        scopeTypeCode: 'session_participation',
+        scopeId: pastSession.id,
+        capacity: 10,
+        occupied: 1,
+        version: 1,
+      },
+      select: { id: true },
+    });
+    await prisma.capacityReservation.create({
+      data: {
+        identityId: pastIdentity.id,
+        bucketId: activityBucket.id,
+        reservationType: 'activity_person',
+        memberId: member.memberId,
+        activityId: activity.id,
+        status: 'active',
+      },
+    });
+    const pastReservation = await prisma.capacityReservation.create({
+      data: {
+        identityId: pastIdentity.id,
+        bucketId: pastSessionBucket.id,
+        reservationType: 'session_participation',
+        status: 'active',
+      },
+      select: { id: true },
+    });
+    await prisma.activityParticipationIdentity.update({
+      where: { id: pastIdentity.id },
+      data: { capacityReservationId: pastReservation.id },
+    });
+    await prisma.activityCheckIn.create({
+      data: {
+        activityId: activity.id,
+        memberId: member.memberId,
+        registrationId: registration.id,
+        checkInAt: pastStart,
+        geoVerified: true,
+      },
+    });
+    await prisma.attendancePunchEvent.create({
+      data: {
+        activityId: activity.id,
+        sessionId: pastSession.id,
+        participationIdentityId: pastIdentity.id,
+        memberId: member.memberId,
+        eventTypeCode: 'check_in',
+        sourceCode: 'staff_scan',
+        occurredAt: pastStart,
+        receivedAt: pastStart,
+        operatorUserId: actor.id,
+        eventKey: `offboard-mixed-${sequence}`,
+        requestHash: `offboard-mixed-${sequence}`,
+        evidenceRevision: 0,
+      },
+    });
+
+    const preview = await impact(member.memberId);
+    expect(preview.body.data).toMatchObject({
+      canOffboard: false,
+      blockingReasons: ['registration-cleanup-required'],
+      futureRegistrations: [{ registrationId: registration.id, hasParticipationEvidence: true }],
+      historicalRegistrationsWithEvidence: [
+        { registrationId: registration.id, hasParticipationEvidence: true },
+      ],
+    });
+    expectBizError(
+      await offboard(member.memberId),
+      BizCode.MEMBER_OFFBOARD_REGISTRATION_CLEANUP_REQUIRED,
+    );
+    // The existing whole-registration operation cannot yet perform the requested session-only
+    // cleanup. It must not erase the other session's v1.1 history to resolve the blocker.
+    expectBizError(
+      await request(httpServer(app))
+        .patch(`/api/admin/v1/activities/${activity.id}/registrations/${registration.id}/cancel`)
+        .set('Authorization', superAdminAuth)
+        .send({ cancelReason: '离队前清理未来场次' }),
+      BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE,
+    );
+    await expect(
+      prisma.activityParticipationIdentity.findMany({
+        where: { id: { in: [pastIdentity.id, futureIdentity.id] } },
+        orderBy: { id: 'asc' },
+        select: { id: true, currentStatusCode: true },
+      }),
+    ).resolves.toEqual(
+      [
+        { id: pastIdentity.id, currentStatusCode: 'pass' },
+        { id: futureIdentity.id, currentStatusCode: 'pending' },
+      ].sort((a, b) => a.id.localeCompare(b.id)),
+    );
+    await expect(
+      prisma.member.findUniqueOrThrow({
+        where: { id: member.memberId },
+        select: { status: true },
+      }),
+    ).resolves.toEqual({ status: MemberStatus.ACTIVE });
+  });
 });
