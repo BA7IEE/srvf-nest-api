@@ -1,0 +1,55 @@
+{
+  "capturedAtUtc": "2026-11-13T02:27:19.030524+00:00",
+  "evidenceType": "LOCAL",
+  "repository": "BA7IEE/srvf-admin-web",
+  "branch": "codex/authz-resource-options-20261113",
+  "base": "6375148a61445972e792ce37cb401fd8e5162538",
+  "patchSha256": "0c78d2ea86693d6eee965f2a7359812e49a64725b637602aea71a28c11202b9c",
+  "testSha256": "c9f2096c192f7885274dbe292e16509ecc635187ab0c024b825a441ab933eb75",
+  "regression": {
+    "command": "node --test tests/authz_resource_options.behavior.test.mjs",
+    "baselineExit": 1,
+    "baselineFail": 2,
+    "candidateExit": 0,
+    "candidatePass": 2,
+    "fixture": "real component and API wrapper, fake component renderer, synthetic loopback HTTP on an ephemeral port; port release verified"
+  },
+  "checks": [
+    {
+      "command": "pnpm exec eslint --max-warnings 0 src/api/srvf-authz.ts tests/authz_resource_options.behavior.test.mjs",
+      "exit": 0
+    },
+    {
+      "command": "pnpm exec prettier --check src/api/srvf-authz.ts tests/authz_resource_options.behavior.test.mjs",
+      "exit": 0
+    },
+    {
+      "command": "NODE_OPTIONS=--max-old-space-size=1536 pnpm typecheck",
+      "exit": 0
+    },
+    {
+      "command": "git diff --check",
+      "exit": 0
+    },
+    {
+      "command": "git apply --check --cached [patch]",
+      "exit": 0
+    },
+    {
+      "command": "git apply --check --reverse [patch]",
+      "exit": 0
+    }
+  ],
+  "notes": [
+    "Initial fixture attempted to mount an SSR-only render and failed; fixed in the fixture, not counted as a product result.",
+    "Typecheck preceded a test-only import path change; production source was unchanged thereafter.",
+    "Blank context lines normalized for the evidence repository; forward and reverse apply checks rerun."
+  ],
+  "notRun": [
+    "real browser interaction",
+    "full lint",
+    "production build",
+    "deployment"
+  ],
+  "deployedSha": "UNKNOWN"
+}
