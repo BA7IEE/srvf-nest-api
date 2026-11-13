@@ -11,6 +11,8 @@ import { assertTestDatabaseUrl, dropWorkerDatabase } from './test-db';
 export default async function globalTeardown(globalConfig: { maxWorkers: number }): Promise<void> {
   // SRVF_KEEP_TEST_DBS=1:保留 worker 库供失败后验尸(查数据落成什么样)。
   // 下次 globalSetup 会 DROP...WITH (FORCE) 重建,不会累积。
+  // The supervisor reclaims registered resources even when Jest teardown is skipped.
+  if (process.env.SRVF_RESOURCE_MANIFEST && process.env.SRVF_RESOURCE_DATABASES !== '0') return;
   if (process.env.SRVF_KEEP_TEST_DBS === '1') {
     console.log('[teardown] SRVF_KEEP_TEST_DBS=1:保留 worker 测试库供排查;下次 run 会自动重建');
     return;
@@ -20,7 +22,13 @@ export default async function globalTeardown(globalConfig: { maxWorkers: number 
   assertTestDatabaseUrl(process.env.DATABASE_URL);
 
   const workers = Math.max(1, globalConfig.maxWorkers);
+  const failures: number[] = [];
   for (let i = 1; i <= workers; i++) {
-    dropWorkerDatabase(i);
+    try {
+      dropWorkerDatabase(i);
+    } catch {
+      failures.push(i);
+    }
   }
+  if (failures.length) throw new Error('部分 worker 测试库回收失败；未跳过后续清理。');
 }

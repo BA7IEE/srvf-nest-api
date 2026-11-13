@@ -1,4 +1,5 @@
 import { execSync } from 'child_process';
+import { registerWorkerResources } from '../helpers/local-resource-lifecycle';
 import * as fs from 'fs';
 import * as path from 'path';
 import { loadTestEnv } from './load-env';
@@ -78,18 +79,17 @@ export default async function globalSetup(globalConfig: { maxWorkers: number }):
   assertTemplateHasNoConnections();
 
   for (let i = 1; i <= workers; i++) {
+    registerWorkerResources(i);
     recreateWorkerDatabase(i);
   }
 
-  // per-worker 本地存储目录(setup-files.ts 按 JEST_WORKER_ID 派生 STORAGE_LOCAL_ROOT):
-  // 开跑前一次性清空上一轮残留,避免「断言文件不存在」类反向断言被旧文件翻面。
-  // 放在 setup 而非 teardown:teardown 在 jest 崩溃/Ctrl-C 时不执行,setup 端清理更可靠。
-  const tmpRoot = path.resolve(__dirname, '../../tmp');
-  if (fs.existsSync(tmpRoot)) {
-    for (const entry of fs.readdirSync(tmpRoot)) {
-      if (/^storage-w[0-9]{1,2}$/.test(entry)) {
-        fs.rmSync(path.join(tmpRoot, entry), { recursive: true, force: true });
-      }
+  // Local resources belong to this run and are reclaimed by the outer supervisor.
+  // CI legacy cleanup is limited to workers actually requested in this run.
+  if (!process.env.SRVF_RESOURCE_MANIFEST || process.env.SRVF_RESOURCE_DATABASES === '0') {
+    const tmpRoot = path.resolve(__dirname, '../../tmp');
+    for (let i = 1; i <= workers; i++) {
+      const storage = path.join(tmpRoot, `storage-w${i}`);
+      if (fs.existsSync(storage)) fs.rmSync(storage, { recursive: true, force: true });
     }
   }
 }

@@ -1,3 +1,4 @@
+import { registerWorkerResources } from '../helpers/local-resource-lifecycle';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -71,6 +72,8 @@ async function acquireD3ScratchLease(): Promise<() => Promise<void>> {
     'docker',
     [
       'exec',
+      '-e',
+      `PGAPPNAME=srvf-test-${process.env.SRVF_RESOURCE_OWNER ?? process.pid}`,
       '-i',
       'u-nest-api-postgres',
       'psql',
@@ -130,6 +133,7 @@ describe('D3 nonempty 135→136 upgrade, additive checksums and default-closed D
   let originalFacts: string;
   beforeAll(async () => {
     if (deriveTemplateTestDbName() !== 'app_test') throw new Error('D3 requires primary checkout');
+    registerWorkerResources(98);
     releaseScratchLease = await acquireD3ScratchLease();
     process.env.JEST_WORKER_ID = '98';
     loadTestEnv();

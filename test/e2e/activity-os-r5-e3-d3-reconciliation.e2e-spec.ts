@@ -1,3 +1,4 @@
+import { registerWorkerResources } from '../helpers/local-resource-lifecycle';
 import { execFileSync, spawn } from 'node:child_process';
 import { cpSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -20,6 +21,8 @@ async function acquireD3ScratchLease(): Promise<() => Promise<void>> {
     'docker',
     [
       'exec',
+      '-e',
+      `PGAPPNAME=srvf-test-${process.env.SRVF_RESOURCE_OWNER ?? process.pid}`,
       '-i',
       'u-nest-api-postgres',
       'psql',
@@ -85,6 +88,7 @@ describe('D3 controlled cleanup and conservative reconciliation (w98 only)', () 
 
   beforeAll(async () => {
     if (deriveTemplateTestDbName() !== 'app_test') throw new Error('D3 requires primary checkout');
+    registerWorkerResources(98);
     releaseScratchLease = await acquireD3ScratchLease();
     process.env.JEST_WORKER_ID = '98';
     loadTestEnv();

@@ -550,3 +550,8 @@ README 负责回答“深圳公益救援队数字化平台是什么、怎么开�
 本项目当前 `package.json` 标记为 `UNLICENSED`。
 
 版权与知识产权说明见 [`COPYRIGHT.md`](./COPYRIGHT.md)。未经明确授权，不应将“代码仓库可访问”理解为获得复制、分发、商用或再许可权利。
+# 共享开发机运行约束
+
+本地测试使用受监督的 package 入口，默认串行；高 Swap 时拒绝启动。
+资源登记、退出回收、持久数据库保护及干净环境验收见
+[本地资源生命周期](docs/development/local-resource-lifecycle.md)。

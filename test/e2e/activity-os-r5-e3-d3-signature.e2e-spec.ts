@@ -1,3 +1,4 @@
+import { registerWorkerResources } from '../helpers/local-resource-lifecycle';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -95,6 +96,8 @@ async function acquireD3ScratchLease(): Promise<() => Promise<void>> {
     'docker',
     [
       'exec',
+      '-e',
+      `PGAPPNAME=srvf-test-${process.env.SRVF_RESOURCE_OWNER ?? process.pid}`,
       '-i',
       'u-nest-api-postgres',
       'psql',
@@ -186,6 +189,7 @@ describe('D3 actual LOGIN, collection guards and full-scale first probe (w98 onl
   beforeAll(async () => {
     if (deriveTemplateTestDbName() !== 'app_test')
       throw new Error('D3 fixture requires the primary checkout');
+    registerWorkerResources(98);
     releaseScratchLease = await acquireD3ScratchLease();
     process.env.JEST_WORKER_ID = '98';
     loadTestEnv();

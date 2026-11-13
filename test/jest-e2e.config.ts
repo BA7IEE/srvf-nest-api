@@ -1,11 +1,7 @@
-import * as os from 'os';
 import type { Config } from 'jest';
 
-// worker 数上限 8:docker-compose 的 max_connections=200 正是按「最坏 8 worker ×
-// 3 app/spec × connection_limit 5 + 余量」算出来的。用 '50%' 无上限会在高核数机器上
-// 越过该预算(global-setup 的 assertConnectionCapacity 会拦下并给修复指令,但不该靠它兜底)。
-// 空串按未设处理(|| 而非 ??):CI 里未展开的 env 表达式会传空串。
-const DEFAULT_MAX_WORKERS = Math.min(8, Math.max(1, Math.floor(os.availableParallelism() / 2)));
+// 共享开发机默认串行；CI 可显式提供受控 worker 数。
+const DEFAULT_MAX_WORKERS = 1;
 
 // E2E 专用 Jest 配置。rootDir 指向项目根,便于 ts-jest 解析 src/ 与 test/ 的相对路径。
 //
@@ -39,7 +35,7 @@ const config: Config = {
     ],
   },
   testEnvironment: 'node',
-  // JEST_MAX_WORKERS 供 CI / 排障显式指定;默认 = min(8, 核数/2)(10 核本机 → 5 worker)。
+  // 本地监督入口强制串行；CI 的显式并发设置保留。
   maxWorkers: process.env.JEST_MAX_WORKERS || DEFAULT_MAX_WORKERS,
   testTimeout: 30000,
   // 刻意不开启 forceExit:它会掩盖未关闭的连接 / timer / socket —— 该语义不变。

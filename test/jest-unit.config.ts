@@ -26,6 +26,7 @@ const config: Config = {
     ],
   },
   testEnvironment: 'node',
+  maxWorkers: 1,
 };
 
 export default config;
