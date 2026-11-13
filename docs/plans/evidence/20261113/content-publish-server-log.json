@@ -1,0 +1,16 @@
+{
+  "evidence_type": "DEPLOYED_RUNTIME",
+  "deployment_git_sha": "UNKNOWN",
+  "request_id": "cmwef1f118e48f3e2f11ca47c045818b7",
+  "server_time": "2026-11-13T11:27:11.718+08:00",
+  "method": "POST",
+  "path": "/api/admin/v1/contents/{id}/publish",
+  "http_status": 503,
+  "error_type": "GENERIC_HTTP_503",
+  "business_code_from_log": "UNKNOWN",
+  "root_cause": "UNKNOWN",
+  "limitations": [
+    "按唯一 request ID 核对目标容器有界日志；通用 503 不确定具体业务异常或存储根因。",
+    "日志未验证业务码；客户端业务码须以独立 HTTP 回执为准。"
+  ]
+}
