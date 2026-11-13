@@ -1180,3 +1180,15 @@
 - **DEPLOYED_RUNTIME 列表判权解释**：目标容器直接编译代码中，考勤列表路由声明有 `rbac-global`，装饰器写入元数据，实际列表服务对活动资源调用 `AuthzService.explain`；旧 `rbac/me/permissions` 仅汇总 GLOBAL 用户绑定，资源判权另检查组织范围。故全局视图缺码与组织内列表 200 可并存，不应仅由声明推断该列表一定拒绝组织级角色；实际命中授权及其他审核端点仍需分别验证。[运行产物及日志记录](evidence/20261113/attendance-scope-runtime.json)包含检查时刻；LOCAL 源码的考勤列表还写读审计，不能把上述 GET 称为数据库绝无写入。部署 Git SHA UNKNOWN。
 - **DEPLOYED_RUNTIME 责任制开关复核**：10:13:52 对同一目标容器新启动子进程只读 `ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED` 单键，值为 `false`；编译解析器对缺省输入在 development/test 返回 false、production/smoke 报错，对该子进程值在 development/production 返回 false。该值不能独立证明此前 05:39 普通活动创建返回 503 / 20036 的原因；运行中 API 的 Nest 配置和部署 SHA 仍 UNKNOWN。
 - **GUI 权限诊断资源选项缺口**：10:17:08.465 观察现有权限诊断表单，资源类型下拉显示 11 项，含 activity、attendance_sheet 等，但没有 organization；当前 OpenAPI 诊断合同允许 organization。未采集含身份/资源标识的截图，不能由此推断 API 不支持该类型；跨组织诊断使用受控的同源只读请求适配。
+- **DEPLOYED_HTTP 跨组织范围诊断**：诊断前回查 A、B 是不同的 ACTIVE 合成同级组织，R1、R2 均为 ACTIVE USER，分别与合成成员双向关联并在 A 有 ACTIVE PRIMARY，既有活动属于 A。以下均由现有管理员对 `POST https://dp.srvf.team/api/admin/v1/authz/explain` 单次查询 action `attendance.read.sheet`；响应为 200 / code 0，但 allow/deny 是响应中的诊断结论，不能以 HTTP 200 视为允许。资源和用户在原始响应中仅作内存断言，不保留原始 ID：
+
+| 北京时间 | 合成目标 | 资源 | 诊断结果 | 请求 ID |
+| --- | --- | --- | --- | --- |
+| 10:18:09.574 | R1 | 活动 A | allow=true，matched，role_binding / ORGANIZATION；角色和 scope ID 断言未保留 | `cmweckn525f6170805e89be8841e6b535` |
+| 10:18:58.941 | R1 | 组织 A | allow=true，matched，role_binding / ORGANIZATION；角色和 scope ID 断言未保留 | `cmweclp8144a013e992dc95004e1c2e97` |
+| 10:20:16.927 | R1 | 组织 B | allow=false，out_of_scope | `cmwecnddh95ccfffdc3157bea76bf515a` |
+| 10:20:44.472 | R2 | 活动 A | allow=true，matched，role_binding / ORGANIZATION；角色及 scope A 匹配 | `cmwecnymfbcfaa846c445dfbecaeea9fa` |
+| 10:21:08.085 | R2 | 组织 A | allow=true，matched，role_binding / ORGANIZATION；角色及 scope A 匹配 | `cmwecogur8c837cb8ad454a358c6ed18f` |
+| 10:21:25.944 | R2 | 组织 B | allow=false，out_of_scope | `cmwecoumrcfc474350a42c7e7bbc7cf82` |
+
+上述组织 A/B 同码对照是指定资源的诊断样本；R1、R2 对活动 A 的 allow 与此前该活动考勤列表 200 一致，但并不证明组织 B 的真实活动接口被拒、所有跨组织权限隔离通过或考勤审批成功。组织类型因为原表单缺选项而使用受控同源请求体适配；活动 A 通过原诊断表单执行。九条前置回读和六项结果见[脱敏逐请求证据](evidence/20261113/authz-explain-matrix.json)；部署 SHA UNKNOWN。
