@@ -94,9 +94,9 @@ export class ActivityInvitationService {
     auditMeta: AuditMeta,
   ): Promise<AppActivityInvitationDto> {
     await this.assertAction(currentUser, 'activity-registration.create.record', activityId);
-    const now = new Date();
+    const requestedAt = new Date();
     const expiresAt = new Date(dto.expiresAt);
-    if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= now.getTime()) {
+    if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= requestedAt.getTime()) {
       throw new BizException(BizCode.BAD_REQUEST);
     }
 
@@ -117,6 +117,12 @@ export class ActivityInvitationService {
           await this.assertInvitationScope(tx, activityId, sessionId, positionId);
 
           const pending = await this.lockPendingForScope(tx, activityId, dto.memberId, sessionId);
+          // Lock waits can cross either deadline. Re-evaluate both the request and the old
+          // pending invitations at the same post-lock instant before making any changes.
+          const now = new Date();
+          if (expiresAt.getTime() <= now.getTime()) {
+            throw new BizException(BizCode.BAD_REQUEST);
+          }
           const expired = pending.filter(
             (invitation) => invitation.expiresAt.getTime() <= now.getTime(),
           );

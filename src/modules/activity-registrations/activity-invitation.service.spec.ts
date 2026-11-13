@@ -57,7 +57,14 @@ function makeService(args: {
 }
 
 describe('ActivityInvitationService', () => {
-  function createFixture(status: MemberStatus) {
+  function createFixture(
+    status: MemberStatus,
+    options: {
+      onMemberLock?: () => void;
+      onInvitationLock?: () => void;
+      pendingExpiresAt?: Date;
+    } = {},
+  ) {
     const calls: string[] = [];
     const invitation = {
       id: 'invitation-1',
@@ -75,7 +82,12 @@ describe('ActivityInvitationService', () => {
       $queryRaw: jest.fn().mockImplementation((sql: Prisma.Sql) => {
         if (sql.sql.includes('FROM "ActivityInvitation"')) {
           calls.push('invitations');
-          return Promise.resolve([]);
+          options.onInvitationLock?.();
+          return Promise.resolve(
+            options.pendingExpiresAt
+              ? [{ ...invitation, id: 'old-invitation', expiresAt: options.pendingExpiresAt }]
+              : [],
+          );
         }
         if (sql.sql.includes('FROM "Activity"')) {
           calls.push('activity-lock');
@@ -83,6 +95,7 @@ describe('ActivityInvitationService', () => {
         }
         if (sql.sql.includes('FROM "Member"')) {
           calls.push('member-lock');
+          options.onMemberLock?.();
           return Promise.resolve([{ id: 'member-target' }]);
         }
         throw new Error('unexpected query');
@@ -99,7 +112,7 @@ describe('ActivityInvitationService', () => {
           calls.push('create');
           return Promise.resolve(invitation);
         }),
-        updateMany: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
     const transaction = jest
@@ -142,6 +155,51 @@ describe('ActivityInvitationService', () => {
     expect(f.calls).toEqual(['activity-lock', 'member-lock', 'member-read']);
     expect(f.tx.activityInvitation.create).not.toHaveBeenCalled();
     expect(f.tx.activityInvitation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('does not create an invitation that expires while waiting for the target lock', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-11-13T01:00:00.000Z'));
+    try {
+      const f = createFixture(MemberStatus.ACTIVE, {
+        onMemberLock: () => jest.setSystemTime(new Date('2026-11-13T01:01:00.000Z')),
+      });
+      await expect(
+        f.service.create(
+          'activity-1',
+          { memberId: 'member-target', expiresAt: '2026-11-13T01:01:00.000Z' },
+          USER,
+          META,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.BAD_REQUEST));
+      expect(f.calls).toEqual(['activity-lock', 'member-lock', 'member-read', 'invitations']);
+      expect(f.tx.activityInvitation.create).not.toHaveBeenCalled();
+      expect(f.tx.activityInvitation.updateMany).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('expires an old invitation based on the time after waiting for its lock', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-11-13T01:00:00.000Z'));
+    try {
+      const f = createFixture(MemberStatus.ACTIVE, {
+        pendingExpiresAt: new Date('2026-11-13T01:00:30.000Z'),
+        onInvitationLock: () => jest.setSystemTime(new Date('2026-11-13T01:01:00.000Z')),
+      });
+      await f.service.create(
+        'activity-1',
+        { memberId: 'member-target', expiresAt: '2026-11-13T02:00:00.000Z' },
+        USER,
+        META,
+      );
+      expect(f.tx.activityInvitation.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['old-invitation'] } },
+        data: { statusCode: 'expired' },
+      });
+      expect(f.tx.activityInvitation.create).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('rejects a managed create before opening a transaction when the registration permission is absent', async () => {
