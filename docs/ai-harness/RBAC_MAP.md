@@ -143,12 +143,12 @@
 | `wechat-setting.reset.credentials` |
 | `wecom-setting.reset.credentials` |
 
-### controller × surface 对照(130 个 @Controller)
+### controller × surface 对照(124 个 @Controller)
 
 > 权威源:`src/**/*.controller.ts` 的 `@Controller(...)` 装饰器。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 鉴权模式(R / A / P)与业务语义属人类知识,见本文件标记之外的章节。
 
-#### admin/v1(58 个 controller)
+#### admin/v1(55 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
@@ -168,8 +168,6 @@
 | `admin/v1/activities` | `src/modules/activities/controllers/admin-simple-activities.controller.ts` |
 | `admin/v1/activities/:activityId` | `src/modules/activities/controllers/admin-activity-participation.controller.ts` |
 | `admin/v1/activities/:activityId` | `src/modules/activity-feedbacks/controllers/admin-activity-feedbacks.controller.ts` |
-| `admin/v1/activities/:activityId` | `src/modules/attendances/controllers/admin-activity-check-ins.controller.ts` |
-| `admin/v1/activities/:activityId/attendance-sheets` | `src/modules/attendances/attendances.controller.ts` |
 | `admin/v1/activities/:activityId/registrations` | `src/modules/activity-registrations/activity-registrations.controller.ts` |
 | `admin/v1/activities/:activityId/responsibilities` | `src/modules/activities/controllers/admin-activity-responsibilities.controller.ts` |
 | `admin/v1/activity-metric-definitions` | `src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts` |
@@ -180,7 +178,6 @@
 | `admin/v1/activity-time-policies` | `src/modules/activities/controllers/admin-activity-time-policies.controller.ts` |
 | `admin/v1/attachments` | `src/modules/attachments/attachments.controller.ts` |
 | `admin/v1/attendance-settlements` | `src/modules/activities/controllers/admin-attendance-settlements.controller.ts` |
-| `admin/v1/attendance-sheets` | `src/modules/attendances/attendances.controller.ts` |
 | `admin/v1/certificate-standards` | `src/modules/certificates/certificate-standards.controller.ts` |
 | `admin/v1/certificates` | `src/modules/certificates/certificates-workbench.controller.ts` |
 | `admin/v1/contents` | `src/modules/content/content-admin.controller.ts` |
@@ -211,7 +208,7 @@
 | `admin/v1/team-join/cycles` | `src/modules/team-join/team-join-cycles.controller.ts` |
 | `admin/v1/users` | `src/modules/users/users.controller.ts` |
 
-#### app/v1(41 个 controller)
+#### app/v1(38 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
@@ -226,10 +223,8 @@
 | `app/v1/my` | `src/modules/activities/controllers/app-my-participation-ledger.controller.ts` |
 | `app/v1/my` | `src/modules/activity-registrations/controllers/app-my-registrations.controller.ts` |
 | `app/v1/my` | `src/modules/attendances/controllers/app-my-attendance-member-credential.controller.ts` |
-| `app/v1/my` | `src/modules/attendances/controllers/app-my-attendance-records.controller.ts` |
 | `app/v1/my` | `src/modules/attendances/controllers/app-my-participation-summary.controller.ts` |
 | `app/v1/my` | `src/modules/certificates/controllers/app-my-certificates.controller.ts` |
-| `app/v1/my/activities/:activityId` | `src/modules/attendances/controllers/app-activity-check-ins.controller.ts` |
 | `app/v1/my/activities/:activityId/feedback` | `src/modules/activity-feedbacks/controllers/app-activity-feedbacks.controller.ts` |
 | `app/v1/my/activity-batch-jobs` | `src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts` |
 | `app/v1/my/activity-invitations` | `src/modules/activity-registrations/controllers/app-my-activity-invitations.controller.ts` |
@@ -245,7 +240,6 @@
 | `app/v1/my/managed-activities/:activityId` | `src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts` |
 | `app/v1/my/managed-activities/:activityId` | `src/modules/activity-registrations/controllers/app-managed-activity-onsite-participations.controller.ts` |
 | `app/v1/my/managed-activities/:activityId` | `src/modules/attendances/controllers/app-managed-activity-attendance-qr.controller.ts` |
-| `app/v1/my/managed-activities/:activityId` | `src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts` |
 | `app/v1/my/managed-activities/:activityId/allocation-batches` | `src/modules/activity-registrations/controllers/app-managed-activity-allocation-batches.controller.ts` |
 | `app/v1/my/managed-activities/:activityId/onsite` | `src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts` |
 | `app/v1/my/managed-activities/:activityId/onsite` | `src/modules/attendances/controllers/app-managed-activity-onsite-punches.controller.ts` |

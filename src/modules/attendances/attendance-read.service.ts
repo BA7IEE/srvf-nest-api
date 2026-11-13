@@ -262,7 +262,7 @@ export class AttendanceReadService {
 
   // 2026-06-23 跨轴只读(GET admin/v1/members/:memberId/contribution-summary):某队员贡献值
   // 生涯累计贡献总分(队员 360「贡献值」tab)。实时算不落库,复用 team-join 单闸取数核
-  // computeCappedContribution(单闸选源,生涯无 cutoff)：off旧考勤封顶，on仅committed credited
+  // 生涯无 cutoff：只读 committed credited；工作流关闭时明确拒绝，不回退旧考勤。
   // off 禁绕过日封顶，on 禁二次封顶或叠加旧分。MEMBER_NOT_FOUND 守卫;判权复用 attendance.read.sheet。
   async getMemberContributionSummary(
     memberId: string,

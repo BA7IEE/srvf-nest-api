@@ -2,12 +2,16 @@ import type { AppConfig } from '../../config/app.config';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Prisma } from '@prisma/client';
 
+import { LedgerQueryService } from '../activities/ledger-query.service';
 import type { NotificationOutboxService } from '../notifications/notification-outbox.service';
 import type { NotificationOutboxEnqueueInput } from '../notifications/notification-outbox.types';
 import { AttendanceNotificationProducer } from './attendance-notification-producer';
 
 const legacyGate = new ActivityWorkflowGate({
   activityV11Workflow: { enabled: false, readonlyMaintenance: false },
+} as AppConfig);
+const ledgerGate = new ActivityWorkflowGate({
+  activityV11Workflow: { enabled: true, readonlyMaintenance: false },
 } as AppConfig);
 
 function makeOutboxMock() {
@@ -53,18 +57,18 @@ function makeTxMock() {
       findMany: jest.fn().mockResolvedValue([]),
     },
     attendanceRecord: {
-      findMany: jest.fn().mockResolvedValue([]),
+      findMany: jest.fn().mockRejectedValue(new Error('retired attendance must not be read')),
+    },
+    participationLedgerEntry: {
+      groupBy: jest.fn(),
     },
   };
 }
 
-function contributionRecord(day: string, points: string | number, memberId = 'member-1') {
-  return {
-    // 批量版按 memberId 分组,所以合成记录必须带上它(逐人查询时不需要)。
-    memberId,
-    checkInAt: new Date(`${day}T01:00:00.000Z`),
-    contributionPoints: new Prisma.Decimal(points),
-  };
+function setCommittedPoints(tx: ReturnType<typeof makeTxMock>, points: string | number) {
+  tx.participationLedgerEntry.groupBy.mockResolvedValue([
+    { memberId: 'member-1', _sum: { creditedPointsDelta: new Prisma.Decimal(points) } },
+  ]);
 }
 
 describe('AttendanceNotificationProducer', () => {
@@ -174,19 +178,16 @@ describe('AttendanceNotificationProducer', () => {
     for (const [, client] of enqueued) expect(client).toBe(tx);
   });
 
-  it('终审前按 member 去重并快照最新 joining application 的真实 capped before', async () => {
+  it('按 member 去重并快照最新 joining application 的 committed ledger before', async () => {
     const outbox = makeOutboxMock();
     const tx = makeTxMock();
     tx.teamJoinApplication.findMany.mockResolvedValue([
       { id: 'application-1', memberId: 'member-1', cycle: { year: 2027 } },
     ]);
-    tx.attendanceRecord.findMany.mockResolvedValue([
-      contributionRecord('2026-08-01', 3),
-      contributionRecord('2026-08-02', 1),
-    ]);
+    setCommittedPoints(tx, 4);
     const producer = new AttendanceNotificationProducer(
       outbox as unknown as NotificationOutboxService,
-      legacyGate,
+      ledgerGate,
     );
 
     const snapshots = await producer.prepareContributionThresholdSnapshots(
@@ -202,7 +203,8 @@ describe('AttendanceNotificationProducer', () => {
       select: { id: true, memberId: true, cycle: { select: { year: true } } },
     });
     // 贡献值也是一次(同 cycleYear 一次),不随人数增长。
-    expect(tx.attendanceRecord.findMany).toHaveBeenCalledTimes(1);
+    expect(tx.participationLedgerEntry.groupBy).toHaveBeenCalledTimes(1);
+    expect(tx.attendanceRecord.findMany).not.toHaveBeenCalled();
     expect(snapshots).toHaveLength(1);
     expect(snapshots[0]).toMatchObject({
       applicationId: 'application-1',
@@ -228,16 +230,92 @@ describe('AttendanceNotificationProducer', () => {
     expect(tx.attendanceRecord.findMany).not.toHaveBeenCalled();
   });
 
-  it('真实 capped 4→5 时发送稳定 application+threshold milestone', async () => {
+  it('keeps an empty ledger as a legitimate zero before snapshot', async () => {
     const outbox = makeOutboxMock();
     const tx = makeTxMock();
-    tx.attendanceRecord.findMany.mockResolvedValue([
-      contributionRecord('2026-08-01', 3),
-      contributionRecord('2026-08-02', 2),
+    tx.teamJoinApplication.findMany.mockResolvedValue([
+      { id: 'application-1', memberId: 'member-1', cycle: { year: 2027 } },
     ]);
+    tx.participationLedgerEntry.groupBy.mockResolvedValue([]);
     const producer = new AttendanceNotificationProducer(
       outbox as unknown as NotificationOutboxService,
-      legacyGate,
+      ledgerGate,
+    );
+
+    const snapshots = await producer.prepareContributionThresholdSnapshots(
+      tx as unknown as Prisma.TransactionClient,
+      [{ memberId: 'member-1' }],
+    );
+    expect(snapshots[0]?.beforePoints.toString()).toBe('0');
+  });
+
+  it('rejects an incomplete batch result instead of fabricating a zero before snapshot', async () => {
+    const outbox = makeOutboxMock();
+    const tx = makeTxMock();
+    tx.teamJoinApplication.findMany.mockResolvedValue([
+      { id: 'application-1', memberId: 'member-1', cycle: { year: 2027 } },
+    ]);
+    const reader = jest
+      .spyOn(LedgerQueryService, 'sumCommittedCreditedPointsForMembersInTx')
+      .mockResolvedValueOnce(new Map());
+    const producer = new AttendanceNotificationProducer(
+      outbox as unknown as NotificationOutboxService,
+      ledgerGate,
+    );
+    try {
+      await expect(
+        producer.prepareContributionThresholdSnapshots(tx as unknown as Prisma.TransactionClient, [
+          { memberId: 'member-1' },
+        ]),
+      ).rejects.toThrow('ledger snapshot is incomplete');
+      expect(outbox.enqueueMany).not.toHaveBeenCalled();
+    } finally {
+      reader.mockRestore();
+    }
+  });
+
+  it('rejects an incomplete after snapshot rather than silently dropping the milestone', async () => {
+    const outbox = makeOutboxMock();
+    const tx = makeTxMock();
+    const reader = jest
+      .spyOn(LedgerQueryService, 'sumCommittedCreditedPointsForMembersInTx')
+      .mockResolvedValueOnce(new Map());
+    const producer = new AttendanceNotificationProducer(
+      outbox as unknown as NotificationOutboxService,
+      ledgerGate,
+    );
+    try {
+      await expect(
+        producer.enqueueFinalApproved(tx as unknown as Prisma.TransactionClient, {
+          sheetId: 'sheet-2',
+          activityId: 'activity-2',
+          finalReviewedAt,
+          records: [{ id: 'record-1', memberId: 'member-1', contributionPoints: '1' }],
+          contributionThresholdSnapshots: [
+            {
+              applicationId: 'application-1',
+              memberId: 'member-1',
+              cycleYear: 2027,
+              beforePoints: new Prisma.Decimal(4),
+            },
+          ],
+        }),
+      ).rejects.toThrow('ledger snapshot is incomplete');
+      // The caller's transaction must roll back the earlier result intent. A mock cannot
+      // establish rollback; that remains an isolated PostgreSQL integration test.
+      expect(outbox.enqueueMany).toHaveBeenCalledTimes(1);
+    } finally {
+      reader.mockRestore();
+    }
+  });
+
+  it('committed ledger 4→5 时发送稳定 application+threshold milestone', async () => {
+    const outbox = makeOutboxMock();
+    const tx = makeTxMock();
+    setCommittedPoints(tx, 5);
+    const producer = new AttendanceNotificationProducer(
+      outbox as unknown as NotificationOutboxService,
+      ledgerGate,
     );
 
     await producer.enqueueFinalApproved(tx as unknown as Prisma.TransactionClient, {
@@ -278,16 +356,13 @@ describe('AttendanceNotificationProducer', () => {
   it.each([
     { before: 5, after: 5 },
     { before: 6, after: 6 },
-  ])('真实 capped $before→$after 时不重复发送 milestone', async ({ before, after }) => {
+  ])('committed ledger $before→$after 时不重复发送 milestone', async ({ before, after }) => {
     const outbox = makeOutboxMock();
     const tx = makeTxMock();
-    tx.attendanceRecord.findMany.mockResolvedValue([
-      contributionRecord('2026-08-01', 3),
-      contributionRecord('2026-08-02', after - 3),
-    ]);
+    setCommittedPoints(tx, after);
     const producer = new AttendanceNotificationProducer(
       outbox as unknown as NotificationOutboxService,
-      legacyGate,
+      ledgerGate,
     );
 
     await producer.enqueueFinalApproved(tx as unknown as Prisma.TransactionClient, {
@@ -312,18 +387,13 @@ describe('AttendanceNotificationProducer', () => {
     });
   });
 
-  it('同一 member 多 records 原始 +3 但 capped 仅 +1 时保留两条结果并只发一次 milestone', async () => {
+  it('同一 member 多 records 且 committed ledger 由 4 到 5 时保留两条结果并只发一次 milestone', async () => {
     const outbox = makeOutboxMock();
     const tx = makeTxMock();
-    tx.attendanceRecord.findMany.mockResolvedValue([
-      contributionRecord('2026-08-01', 2),
-      contributionRecord('2026-08-01', 1.5),
-      contributionRecord('2026-08-01', 1.5),
-      contributionRecord('2026-08-02', 2),
-    ]);
+    setCommittedPoints(tx, 5);
     const producer = new AttendanceNotificationProducer(
       outbox as unknown as NotificationOutboxService,
-      legacyGate,
+      ledgerGate,
     );
     const input = {
       sheetId: 'sheet-2',

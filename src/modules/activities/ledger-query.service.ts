@@ -1,6 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+// Public participation read surface for existing cross-module consumers.
+export {
+  listParticipationOverviewActivitiesInTx,
+  readPostedParticipationFactsInTx,
+} from './activity-participation-projection-query';
+export { buildV11ParticipationMetrics } from './activity-participation-v11-metrics';
+
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';

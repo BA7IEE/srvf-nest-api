@@ -9,6 +9,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
 import { RbacService } from '../permissions/rbac.service';
+import { lockActivityForAttendanceWrite } from './activity-attendance-lock';
 
 /*
  * 考勤路径的**共享准入层**(Phase 6-B 第三域第一刀,§3.2)。
@@ -110,12 +111,7 @@ export class AttendanceAccessService {
   // 会让另一条 surface 对 Activity 与 Registration 完全裸奔,单读该方法看不出来。
   // 名字里刻意不带 "Managed" —— 它不是 managed 面的专属物。
   async lockActivityForAttendanceWrite(activityId: string, tx: PrismaTx): Promise<void> {
-    const rows = await tx.$queryRaw<Array<{ id: string }>>`
-      SELECT id FROM "Activity"
-      WHERE id = ${activityId} AND "deletedAt" IS NULL
-      FOR UPDATE
-    `;
-    if (rows.length === 0) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+    await lockActivityForAttendanceWrite(activityId, tx);
   }
 
   async assertManagedAttendanceAccess(

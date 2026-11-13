@@ -104,6 +104,7 @@ describe('D4 write orchestration and replay safety', () => {
   let tx: PrismaService;
   let service: ActivityTimeSettlementService;
   let receiptLookup: jest.SpyInstance;
+  let queryRaw: jest.SpyInstance;
   const config = { activityV11Workflow: { enabled: true, readonlyMaintenance: false } };
   const access = {
     authorize: jest.fn<
@@ -138,7 +139,7 @@ describe('D4 write orchestration and replay safety', () => {
     // No connection is opened. All reachable delegates are mocked; the actual generated client
     // supplies the transaction type so incomplete object casts cannot conceal a schema drift.
     tx = new PrismaService();
-    jest.spyOn(tx, '$queryRaw').mockResolvedValue([{ id: 'run' }]);
+    queryRaw = jest.spyOn(tx, '$queryRaw').mockResolvedValue([{ id: 'run' }]);
     receiptLookup = jest
       .spyOn(tx.activitySettlementTimeCommandReceipt, 'findUnique')
       .mockResolvedValue(null);
@@ -266,6 +267,10 @@ describe('D4 write orchestration and replay safety', () => {
       });
       expect(segments.lockActivityForTimeAllocationWrite).toHaveBeenCalledWith(tx, activityId);
       expect(access.authorize).toHaveBeenCalledTimes(7);
+      const rootLockOrder = segments.lockActivityForTimeAllocationWrite.mock.invocationCallOrder[0];
+      expect(access.authorize.mock.invocationCallOrder[0]).toBeLessThan(rootLockOrder);
+      expect(access.authorize.mock.invocationCallOrder[1]).toBeLessThan(rootLockOrder);
+      expect(access.authorize.mock.invocationCallOrder[2]).toBeGreaterThan(rootLockOrder);
       expect(
         access.authorize.mock.calls.every((args) => args[0] === tx && args[3] === method),
       ).toBe(true);
@@ -297,6 +302,11 @@ describe('D4 write orchestration and replay safety', () => {
       );
       expect(access.authorize).toHaveBeenCalledTimes(point);
       expect(queries.evaluateInTx).not.toHaveBeenCalled();
+      if (point === 3) {
+        expect(segments.lockActivityForTimeAllocationWrite).toHaveBeenCalledWith(tx, activityId);
+        expect(queryRaw).toHaveBeenCalledTimes(1);
+        expect(receiptLookup).not.toHaveBeenCalled();
+      }
     },
   );
 

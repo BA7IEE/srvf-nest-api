@@ -16,9 +16,10 @@ import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-wo
 import { RbacService } from '../permissions/rbac.service';
 import { computeCappedContribution } from '../team-join/team-join-progress';
 import { AppIdentityResolver } from '../users/app-identity.resolver';
-import { ATTENDANCE_SHEET_STATUS } from './attendances.dto';
+import { nonDeletedMemberExists } from '../members/member-existence-query';
 import { AppMyParticipationSummaryDto } from './dto/app/app-my-participation-summary.dto';
 import { MemberParticipationSummaryDto } from './participation-summary.dto';
+import type { MemberContributionSummaryDto } from './attendances.dto';
 
 interface PositiveParticipationSummary {
   totalServiceHours: string;
@@ -59,27 +60,12 @@ export class ParticipationSummaryQueryService {
   }
 
   private async loadPositiveSummary(memberId: string): Promise<PositiveParticipationSummary> {
-    // approved-only 记录取数 + 封顶核并行；贡献值绝不从 records 裸 SUM。
-    //
-    // 🔴 第 7 批 v1.1 cutover gate(合同 §16.2 第三项):**取数源由闸决定,不是两套并存**。
-    //    闸关(默认)= 今天的行为,逐字保留 approved 考勤口径;闸开 = 已 committed 账本口径。
-    //    ②-b 曾单独尝试「换源」并**实测停工** —— 因为两条流水线人群零交集,
-    //    闸没开之前换源必然归零。故换源只能与新写路径同闸同轨,这正是本刀的形状。
-    //
-    // R5贡献字段与入队资格共用单闸：on仅committed credited；off保留旧考勤日封顶。
-    // 账本的冲回/重记按净额计，不与旧考勤叠加，不二次封顶。
-    const [records, contribution, ledgerTotals, officialTime] = await Promise.all([
-      this.prisma.attendanceRecord.findMany({
-        where: {
-          memberId,
-          deletedAt: null,
-          sheet: { statusCode: ATTENDANCE_SHEET_STATUS.APPROVED, deletedAt: null },
-        },
-        select: {
-          serviceHours: true,
-          sheet: { select: { activityId: true } },
-        },
-      }),
+    // A disabled workflow is unavailable; never substitute retired attendance data.
+    // Read-only maintenance preserves reads when the ledger workflow is enabled.
+    if (this.activityWorkflowGate.participationReadSource() !== 'committed-ledger') {
+      throw new BizException(BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED);
+    }
+    const [contribution, ledgerTotals, officialTime] = await Promise.all([
       computeCappedContribution(
         this.prisma,
         memberId,
@@ -93,24 +79,12 @@ export class ParticipationSummaryQueryService {
         { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
       ),
     ]);
-    const approvedServiceHours = records.reduce(
-      (sum, record) => sum.add(record.serviceHours),
-      new Prisma.Decimal(0),
-    );
-
-    const preCutoverPositive =
-      this.activityWorkflowGate.participationReadSource() === 'committed-ledger'
-        ? await this.loadCommittedPositive(memberId, ledgerTotals)
-        : {
-            totalServiceHours: approvedServiceHours.toString(),
-            activityCount: new Set(records.map((record) => record.sheet.activityId)).size,
-            recordCount: records.length,
-          };
+    const committedPositive = await this.loadCommittedPositive(memberId, ledgerTotals);
     const positive =
       officialTime === null
-        ? preCutoverPositive
+        ? committedPositive
         : {
-            ...preCutoverPositive,
+            ...committedPositive,
             totalServiceHours: eligibleSecondsToServiceHours(
               sumOfficialEligibleSeconds(officialTime.totals),
             ).toString(),
@@ -141,18 +115,43 @@ export class ParticipationSummaryQueryService {
     };
   }
 
+  private async assertReadableMember(
+    memberId: string,
+    currentUser: CurrentUserPayload,
+  ): Promise<void> {
+    await this.assertCanReadMember(memberId, currentUser);
+    if (!(await nonDeletedMemberExists(this.prisma, memberId))) {
+      throw new BizException(BizCode.MEMBER_NOT_FOUND);
+    }
+  }
+
   async forMemberAdmin(
     memberId: string,
     currentUser: CurrentUserPayload,
   ): Promise<MemberParticipationSummaryDto> {
-    await this.assertCanReadMember(memberId, currentUser);
-    const member = await this.prisma.member.findFirst({
-      where: { id: memberId, deletedAt: null },
-      select: { id: true },
-    });
-    if (!member) throw new BizException(BizCode.MEMBER_NOT_FOUND);
-
+    await this.assertReadableMember(memberId, currentUser);
     return { memberId, ...(await this.loadPositiveSummary(memberId)) };
+  }
+
+  async contributionForMemberAdmin(
+    memberId: string,
+    currentUser: CurrentUserPayload,
+  ): Promise<MemberContributionSummaryDto> {
+    await this.assertReadableMember(memberId, currentUser);
+    if (this.activityWorkflowGate.participationReadSource() !== 'committed-ledger') {
+      throw new BizException(BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED);
+    }
+    const [points, ledgerTotals] = await Promise.all([
+      computeCappedContribution(
+        this.prisma,
+        memberId,
+        null,
+        this.activityWorkflowGate,
+        LedgerQueryService,
+      ),
+      this.ledgerQuery.loadMemberLedgerTotals(memberId),
+    ]);
+    return { memberId, contributionPoints: points.toString(), ledgerTotals };
   }
 
   async forCurrentMember(currentUser: CurrentUserPayload): Promise<AppMyParticipationSummaryDto> {

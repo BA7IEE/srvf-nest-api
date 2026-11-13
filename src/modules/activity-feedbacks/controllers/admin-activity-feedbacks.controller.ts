@@ -57,6 +57,7 @@ export class AdminActivityFeedbacksController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
   )
   summary(
     @Param() { activityId }: ActivityFeedbackActivityIdParamDto,

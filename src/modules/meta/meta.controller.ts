@@ -59,8 +59,7 @@ export class MetaController {
   @Get('dashboard-summary')
   @LoginScoped({ require: 'all', scopes: ['org-scope'], engine: 'authz-scoped' })
   @ApiOperation({
-    summary:
-      '工作台/首页待办汇总(报名/考勤/发布审核按对应 action 的授权组织范围统计;activities 无码;无权块或字段静默省略) [auth]',
+    summary: '工作台汇总(报名/新版结算流程/发布审核按权限和组织范围裁剪；结算数非个人待办) [auth]',
   })
   @ApiWrappedOkResponse(DashboardSummaryResponseDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED)
@@ -78,7 +77,12 @@ export class MetaController {
       '参与度月度总览(活动日期/类型/组织筛选；两项读权限可见组织范围求交；无可见范围返空) [auth]',
   })
   @ApiWrappedOkResponse(ParticipationOverviewResponseDto)
-  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
+  )
   participationOverviewSummary(
     @Query() query: ParticipationOverviewQueryDto,
     @CurrentUser() user: CurrentUserPayload,

@@ -1012,6 +1012,7 @@ function makeService(
     shadowMode?: 'off' | 'shadow';
     // PR9:resource_not_found 回退路径读 rbac.can(行为锁「先判码后查单」);默认 true
     rbacCan?: boolean;
+    workflowGate?: ActivityWorkflowGate;
   } = {},
 ): AttendancesService {
   const recorder = opts.recorder ?? makeRecorderMock();
@@ -1049,7 +1050,7 @@ function makeService(
       new AttendancePresenter(),
       recorder as unknown as AttendanceAuditRecorder,
       notificationProducer as unknown as AttendanceNotificationProducer,
-      gateStub(false),
+      opts.workflowGate ?? gateStub(false),
     ),
     new AttendanceReadService(
       prisma as unknown as PrismaService,
@@ -1110,8 +1111,10 @@ function makeService(
  * 活动 v1.1 cutover gate 的测试替身。**显式传 false** = 本 spec 断言的是
  * 「闸关(默认 / 今天的行为)」下的行为;闸开时旧写路径改为拒绝,由专属用例覆盖。
  */
-function gateStub(enabled: boolean): ActivityWorkflowGate {
-  return new ActivityWorkflowGate({ activityV11Workflow: { enabled } } as never);
+function gateStub(enabled: boolean, readonlyMaintenance = false): ActivityWorkflowGate {
+  return new ActivityWorkflowGate({
+    activityV11Workflow: { enabled, readonlyMaintenance },
+  } as never);
 }
 
 describe('AttendancesService (characterization, scoped)', () => {
@@ -1348,22 +1351,17 @@ describe('AttendancesService (characterization, scoped)', () => {
       expect(recorder.logReview).not.toHaveBeenCalled();
     });
 
-    it('finalApprove deny → 抛 decision.biz;不 update / 不审计', async () => {
+    it('finalApprove is unavailable before state transition or audit, even for a denied prior state', async () => {
       const prisma = makePrismaMock();
       const recorder = makeRecorderMock();
       const stateMachine = makeStateMachineMock(DENY_DECISION);
-      prisma.attendanceSheet.findFirst.mockResolvedValue(
-        makeSheetRow({ statusCode: ATTENDANCE_SHEET_STATUS.PENDING }),
-      );
       const service = makeService(prisma, { recorder, stateMachine });
 
       await expect(
         service.finalApprove('sheet-1', makeFinalApproveDto(), makeCurrentUser(), META),
-      ).rejects.toEqual(new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID));
-      expect(stateMachine.decide).toHaveBeenCalledWith(
-        'finalApprove',
-        ATTENDANCE_SHEET_STATUS.PENDING,
-      );
+      ).rejects.toEqual(new BizException(BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED));
+      expect(stateMachine.decide).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
       expect(prisma.attendanceSheet.update).not.toHaveBeenCalled();
       expect(recorder.logFinalReview).not.toHaveBeenCalled();
     });
@@ -1410,7 +1408,7 @@ describe('AttendancesService (characterization, scoped)', () => {
 
       await expect(
         service.finalApprove('sheet-1', makeFinalApproveDto(), user, META),
-      ).rejects.toEqual(new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID));
+      ).rejects.toEqual(new BizException(BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED));
       expect(authz.explain).toHaveBeenCalledWith(user, 'attendance.final-approve.sheet', {
         type: 'attendance_sheet',
         id: 'sheet-1',
@@ -1508,15 +1506,16 @@ describe('AttendancesService (characterization, scoped)', () => {
       }
     });
 
-    it('resource_not_found + 持全局码 → 放行进事务,findSheetOrThrow 抛 22001(行为锁「先判码后查单」)', async () => {
+    it('resource_not_found with global permission reaches the explicit unavailable response without reading a sheet', async () => {
       const prisma = makePrismaMock();
       const authz = makeAuthzMock({ allow: false, reason: 'resource_not_found' });
-      prisma.attendanceSheet.findFirst.mockResolvedValue(null);
       const service = makeService(prisma, { authz, rbacCan: true });
 
       await expect(
         service.finalApprove('missing', makeFinalApproveDto(), makeCurrentUser(), META),
-      ).rejects.toEqual(new BizException(BizCode.ATTENDANCE_SHEET_NOT_FOUND));
+      ).rejects.toEqual(new BizException(BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED));
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.attendanceSheet.findFirst).not.toHaveBeenCalled();
     });
 
     it('resource_not_found + 无全局码 → 30100(防枚举;不进事务)', async () => {
@@ -1645,133 +1644,70 @@ describe('AttendancesService (characterization, scoped)', () => {
       expect(res.statusCode).toBe(ATTENDANCE_SHEET_STATUS.REJECTED);
     });
 
-    it('finalApprove allow → update approved + finalReviewer;logFinalReview(action=final-approve, tx)', async () => {
+    it('finalApprove cannot update or audit even when the old state machine would allow it', async () => {
       const prisma = makePrismaMock();
       const recorder = makeRecorderMock();
       const stateMachine = makeStateMachineMock({
         allowed: true,
         nextStatusCode: ATTENDANCE_SHEET_STATUS.APPROVED,
       });
-      prisma.attendanceSheet.findFirst.mockResolvedValue(
-        makeSheetRow({ statusCode: ATTENDANCE_SHEET_STATUS.PENDING_FINAL_REVIEW }),
-      );
-      // finalApprove 内 attendanceRecord.findMany 用于 event 触发(records 映射)
-      prisma.attendanceRecord.findMany.mockResolvedValue([makeRecordRow()]);
-      prisma.attendanceSheet.update.mockResolvedValue(
-        makeSheetRow({
-          statusCode: ATTENDANCE_SHEET_STATUS.APPROVED,
-          finalReviewerUserId: 'admin-1',
-        }),
-      );
       const service = makeService(prisma, { recorder, stateMachine });
-
-      const res = await service.finalApprove(
-        'sheet-1',
-        makeFinalApproveDto('final ok'),
-        makeCurrentUser({ id: 'admin-1' }),
-        META,
-      );
-
-      const updateArg = prisma.attendanceSheet.update.mock.calls[0][0] as {
-        data: { statusCode: string; finalReviewerUserId: string };
-      };
-      expect(updateArg.data.statusCode).toBe(ATTENDANCE_SHEET_STATUS.APPROVED);
-      expect(updateArg.data.finalReviewerUserId).toBe('admin-1');
-      expect(recorder.logFinalReview).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'final-approve', tx: prisma }),
-      );
-      expect(res.statusCode).toBe(ATTENDANCE_SHEET_STATUS.APPROVED);
+      await expect(
+        service.finalApprove(
+          'sheet-1',
+          makeFinalApproveDto('final ok'),
+          makeCurrentUser({ id: 'admin-1' }),
+          META,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED));
+      expect(stateMachine.decide).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.attendanceSheet.update).not.toHaveBeenCalled();
+      expect(recorder.logFinalReview).not.toHaveBeenCalled();
     });
 
-    // ===== PR-L4:终审通过 → 业务/audit/通知 intent 同事务 =====
-    it('PR-L4:finalApprove → 逐 record 通知 intent 与 audit 共用 tx', async () => {
+    it('retired final approval cannot write result or threshold notification intents', async () => {
       const prisma = makePrismaMock();
-      const stateMachine = makeStateMachineMock({
-        allowed: true,
-        nextStatusCode: ATTENDANCE_SHEET_STATUS.APPROVED,
-      });
       const notificationProducer = makeAttendanceNotificationProducerMock();
-      prisma.attendanceSheet.findFirst.mockResolvedValue(
-        makeSheetRow({ statusCode: ATTENDANCE_SHEET_STATUS.PENDING_FINAL_REVIEW }),
-      );
-      prisma.attendanceRecord.findMany.mockResolvedValue([
-        makeRecordRow({
-          id: 'rec-1',
-          memberId: 'mem-1',
-          contributionPoints: new Prisma.Decimal('1.50'),
-        }),
-        makeRecordRow({
-          id: 'rec-2',
-          memberId: 'mem-2',
-          contributionPoints: new Prisma.Decimal('2.00'),
-        }),
-      ]);
-      prisma.attendanceSheet.update.mockResolvedValue(
-        makeSheetRow({ statusCode: ATTENDANCE_SHEET_STATUS.APPROVED, activityId: 'act-9' }),
-      );
-      const service = makeService(prisma, { stateMachine, notificationProducer });
-
-      const res = await service.finalApprove(
-        'sheet-1',
-        makeFinalApproveDto('ok'),
-        makeCurrentUser(),
-        META,
-      );
-      expect(res.statusCode).toBe(ATTENDANCE_SHEET_STATUS.APPROVED);
-
-      expect(notificationProducer.prepareContributionThresholdSnapshots).toHaveBeenCalledWith(
-        prisma,
-        expect.arrayContaining([
-          expect.objectContaining({ id: 'rec-1', memberId: 'mem-1' }),
-          expect.objectContaining({ id: 'rec-2', memberId: 'mem-2' }),
-        ]),
-      );
-      expect(notificationProducer.enqueueFinalApproved).toHaveBeenCalledWith(
-        prisma,
-        expect.objectContaining({
-          sheetId: 'sheet-1',
-          activityId: 'act-9',
-          records: [
-            { id: 'rec-1', memberId: 'mem-1', contributionPoints: '1.5' },
-            { id: 'rec-2', memberId: 'mem-2', contributionPoints: '2' },
-          ],
-          contributionThresholdSnapshots: [],
-        }),
-      );
-      const prepareOrder =
-        notificationProducer.prepareContributionThresholdSnapshots.mock.invocationCallOrder[0];
-      const updateOrder = prisma.attendanceSheet.update.mock.invocationCallOrder[0];
-      const enqueueOrder = notificationProducer.enqueueFinalApproved.mock.invocationCallOrder[0];
-      expect(prepareOrder).toBeLessThan(updateOrder);
-      expect(enqueueOrder).toBeGreaterThan(updateOrder);
-    });
-
-    it('PR-L4:intent 写失败向外抛出，让真实事务回滚终审', async () => {
-      const prisma = makePrismaMock();
-      const stateMachine = makeStateMachineMock({
-        allowed: true,
-        nextStatusCode: ATTENDANCE_SHEET_STATUS.APPROVED,
-      });
-      const notificationProducer = makeAttendanceNotificationProducerMock();
-      notificationProducer.enqueueFinalApproved.mockRejectedValue(new Error('enqueue boom'));
-      prisma.attendanceSheet.findFirst.mockResolvedValue(
-        makeSheetRow({ statusCode: ATTENDANCE_SHEET_STATUS.PENDING_FINAL_REVIEW }),
-      );
-      prisma.attendanceRecord.findMany.mockResolvedValue([makeRecordRow()]);
-      prisma.attendanceSheet.update.mockResolvedValue(
-        makeSheetRow({ statusCode: ATTENDANCE_SHEET_STATUS.APPROVED }),
-      );
-      const service = makeService(prisma, { stateMachine, notificationProducer });
-
+      const service = makeService(prisma, { notificationProducer });
       await expect(
         service.finalApprove('sheet-1', makeFinalApproveDto('ok'), makeCurrentUser(), META),
-      ).rejects.toThrow('enqueue boom');
-      expect(prisma.attendanceSheet.update).toHaveBeenCalledTimes(1);
-      expect(notificationProducer.enqueueFinalApproved).toHaveBeenCalledWith(
-        prisma,
-        expect.objectContaining({ sheetId: 'sheet-1' }),
-      );
+      ).rejects.toEqual(new BizException(BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED));
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(notificationProducer.prepareContributionThresholdSnapshots).not.toHaveBeenCalled();
+      expect(notificationProducer.enqueueFinalApproved).not.toHaveBeenCalled();
     });
+
+    it('retired final approval stops before any potentially failing outbox call', async () => {
+      const prisma = makePrismaMock();
+      const notificationProducer = makeAttendanceNotificationProducerMock();
+      notificationProducer.enqueueFinalApproved.mockRejectedValue(new Error('enqueue boom'));
+      const service = makeService(prisma, { notificationProducer });
+      await expect(
+        service.finalApprove('sheet-1', makeFinalApproveDto('ok'), makeCurrentUser(), META),
+      ).rejects.toEqual(new BizException(BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED));
+      expect(prisma.attendanceSheet.update).not.toHaveBeenCalled();
+      expect(notificationProducer.enqueueFinalApproved).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { enabled: false, readonly: false, biz: BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED },
+      { enabled: true, readonly: false, biz: BizCode.ACTIVITY_LEGACY_ATTENDANCE_WRITE_CLOSED },
+      { enabled: false, readonly: true, biz: BizCode.ACTIVITY_WORKFLOW_READONLY_MAINTENANCE },
+      { enabled: true, readonly: true, biz: BizCode.ACTIVITY_WORKFLOW_READONLY_MAINTENANCE },
+    ])(
+      'final approval remains closed with enabled=$enabled readonly=$readonly',
+      async ({ enabled, readonly, biz }) => {
+        const prisma = makePrismaMock();
+        const service = makeService(prisma, { workflowGate: gateStub(enabled, readonly) });
+        await expect(
+          service.finalApprove('sheet-1', makeFinalApproveDto('ok'), makeCurrentUser(), META),
+        ).rejects.toEqual(new BizException(biz));
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+        expect(prisma.attendanceRecord.findMany).not.toHaveBeenCalled();
+        expect(prisma.attendanceSheet.update).not.toHaveBeenCalled();
+      },
+    );
 
     it('finalReject allow → records 软删(updateMany)+ update final_rejected;logFinalReview(action=final-reject, tx)', async () => {
       const prisma = makePrismaMock();

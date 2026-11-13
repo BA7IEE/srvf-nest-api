@@ -11,8 +11,8 @@ import { ParticipationOverviewQueryService } from './participation-overview-quer
 
 // F1/A7(路线图 §4 A7;net-new 模块):跨资源批量 id→label 解析(resolve-labels)。
 // imports PermissionsModule 供 MetaService 的 resolve-labels 继续走 GLOBAL RbacService；
-// AuthzModule 供 dashboard/participation-overview 汇合三源组织范围。**只读查询各资源自身的表,
-// 不注入其它业务模块 service**(镜像 authz 模块 ResourceResolverService 的自包含范式)；
+// AuthzModule 供 participation-overview 汇合三源组织范围；dashboard 经 activity-owned port
+// 在同一快照内判权和聚合，resolve-labels 仍查询各资源自身的轻量标签；
 // 无 AuditLogsModule(诊断读,无 audit)。
 // ⚠️ 上一段「不注入其它业务模块 service」的自包含约定,**在 2026-08-21 被本刀有意放宽**
 // (第六轮评审 B-01):participation-overview 是「对外产出工时」的统计读面,闸开后必须改读

@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { CapacityReservationService } from './capacity-reservation.service';
+import { hasV11ParticipationEvidenceForIdentitiesInTx } from './registration-participation-evidence';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -59,6 +60,7 @@ type ParticipationProjection = {
 };
 
 export type RegistrationCancellationSource = 'admin' | 'self';
+export type RegistrationCancellationResult = { cancelledPassIdentityIds: string[] };
 
 /**
  * Owns the cross-table projection for one registration cancellation. Callers must already hold
@@ -113,6 +115,17 @@ export class ActivityRegistrationLifecycleService {
         continue;
       }
       this.failClosed();
+    }
+
+    // An on-site identity can already have participation history while its registration header
+    // is still pending. Reject only after checking the identities this operation would change.
+    if (
+      await hasV11ParticipationEvidenceForIdentitiesInTx(
+        tx,
+        rejectedIdentities.map((identity) => identity.id),
+      )
+    ) {
+      throw new BizException(BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE);
     }
 
     if (occupiedIdentities.length > 0) {
@@ -247,14 +260,16 @@ export class ActivityRegistrationLifecycleService {
       cancelReason: string | null;
       cancelledAt: Date;
     },
-  ): Promise<void> {
+  ): Promise<RegistrationCancellationResult> {
     const registration = await this.lockRegistration(tx, input);
     const identities = await this.lockIdentities(tx, input);
     await this.assertCapacityPointersReconciledInTransactionTrusted(tx, identities, {
       activityId: input.activityId,
       memberId: input.memberId,
     });
-    await this.assertParticipationRevisionsReconciledInTransactionTrusted(tx, identities);
+    await this.assertParticipationRevisionsReconciledInTransactionTrusted(tx, identities, {
+      allowScopedWaitlistPosition: true,
+    });
     const cancellableIdentities: LockedParticipationLifecycle[] = [];
     for (const identity of identities) {
       if (
@@ -374,6 +389,11 @@ export class ActivityRegistrationLifecycleService {
         input.cancelledAt,
       );
     }
+    return {
+      cancelledPassIdentityIds: cancellableIdentities
+        .filter((identity) => identity.currentStatusCode === 'pass')
+        .map((identity) => identity.id),
+    };
   }
 
   async incrementPopulationRevisionInTransactionTrusted(
@@ -588,9 +608,15 @@ export class ActivityRegistrationLifecycleService {
     identities: ReadonlyArray<
       Pick<
         ParticipationProjection,
-        'id' | 'currentRevision' | 'currentStatusCode' | 'currentPositionId'
+        | 'id'
+        | 'activityId'
+        | 'sessionId'
+        | 'currentRevision'
+        | 'currentStatusCode'
+        | 'currentPositionId'
       >
     >,
+    options: { allowScopedWaitlistPosition?: boolean } = {},
   ): Promise<void> {
     if (identities.length === 0) return;
     if (identities.some((identity) => identity.currentRevision < 1)) this.failClosed();
@@ -601,23 +627,70 @@ export class ActivityRegistrationLifecycleService {
           revision: identity.currentRevision,
         })),
       },
-      select: { identityId: true, revision: true, statusCode: true, positionId: true },
+      select: {
+        identityId: true,
+        revision: true,
+        statusCode: true,
+        positionId: true,
+        waitlistRank: true,
+      },
     });
     if (revisions.length !== identities.length) this.failClosed();
     const revisionByIdentity = new Map(
       revisions.map((revision) => [revision.identityId, revision]),
     );
+    const waitingPositions: Array<{ activityId: string; sessionId: string; positionId: string }> =
+      [];
     for (const identity of identities) {
       const revision = revisionByIdentity.get(identity.id);
       if (
         !revision ||
         revision.revision !== identity.currentRevision ||
-        revision.statusCode !== identity.currentStatusCode ||
-        (identity.currentStatusCode !== 'cancelled' &&
-          identity.currentStatusCode !== 'rejected' &&
-          revision.positionId !== identity.currentPositionId)
+        revision.statusCode !== identity.currentStatusCode
       ) {
         this.failClosed();
+      }
+      if (
+        identity.currentStatusCode === 'cancelled' ||
+        identity.currentStatusCode === 'rejected' ||
+        revision.positionId === identity.currentPositionId
+      )
+        continue;
+      // A waitlisted revision can name the queued position while the current identity has no
+      // occupied position. Only cancellation opts into this shape; other callers remain strict.
+      // The revision's single-column FK does not prove activity/session ownership, so verify it
+      // below before releasing any capacity or appending cancellation revisions.
+      if (
+        !options.allowScopedWaitlistPosition ||
+        identity.currentStatusCode !== 'waitlisted' ||
+        identity.currentPositionId !== null ||
+        revision.positionId === null ||
+        typeof revision.waitlistRank !== 'number' ||
+        !Number.isInteger(revision.waitlistRank) ||
+        revision.waitlistRank < 1
+      )
+        this.failClosed();
+      waitingPositions.push({
+        activityId: identity.activityId,
+        sessionId: identity.sessionId,
+        positionId: revision.positionId,
+      });
+    }
+    if (waitingPositions.length > 0) {
+      const positions = await tx.activitySessionPosition.findMany({
+        where: { id: { in: [...new Set(waitingPositions.map((item) => item.positionId))] } },
+        select: { id: true, activityId: true, sessionId: true },
+      });
+      const byId = new Map(positions.map((position) => [position.id, position]));
+      for (const waiting of waitingPositions) {
+        const position = byId.get(waiting.positionId);
+        if (
+          !position ||
+          position.activityId !== waiting.activityId ||
+          position.sessionId !== waiting.sessionId
+        ) {
+          this.failClosed();
+        }
       }
     }
   }

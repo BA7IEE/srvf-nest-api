@@ -3,7 +3,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:cafe03b012f3eceb544738caaf818dd89f3e4640f35d9d863b4c88c4175c40ef
+// inputDigest: sha256:e5429666362ea9052485892945b37e53968579b9f0ef87c32a8895d39980139c
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContributionPolicyCategoryRuleDto, ContributionPolicyDefinitionDto, ContributionPolicyDurationBandDto, ContributionPolicyResultDto, ContributionPolicyRoleRuleDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -65,7 +65,12 @@ export interface ActivityListItemDto {
   "createdAt": string;
   "updatedAt": string;
   "registrationCount"?: number;
-  "attendanceSheetCount"?: number;
+  "settlementStats"?: ActivityListSettlementStatsDto;
+}
+
+export interface ActivityListSettlementStatsDto {
+  "available": boolean;
+  "submittedVersionCount"?: number;
 }
 
 export interface ActivityOptionItemDto {
@@ -87,10 +92,16 @@ export interface ActivityParticipationSummaryDto {
   "registeredAttendeeCount": number;
   "temporaryAttendeeCount": number;
   "noShowCount": number;
-  "attendanceRate": number;
-  "totalServiceHours": string;
+  "pendingCount": number;
+  "pendingSessionCount": number;
+  "otherResultCount": number;
+  "mixedOriginAttendeeCount": number;
+  "unknownOriginAttendeeCount": number;
+  "attendanceRate": number | null;
+  "totalServiceHours": string | null;
   "totalContributionPoints": string;
   "durationHistogram": DurationHistogramDto;
+  "durationUnknownCount": number;
   "feedback": ActivityFeedbackAggregateDto;
 }
 
@@ -148,8 +159,26 @@ export interface ActivityReconciliationDto {
   "passRegistrationCount": number;
   "attendedCount": number;
   "noShowCount": number;
+  "pendingCount": number;
+  "otherResultCount": number;
   "registeredParticipants": ActivityReconciliationRegisteredParticipantDto[];
   "temporaryParticipants": ActivityReconciliationTemporaryParticipantDto[];
+  "unclassifiedParticipants": ActivityReconciliationParticipantDto[];
+}
+
+export interface ActivityReconciliationParticipantDto {
+  "registrationId": string;
+  "memberId": string;
+  "memberNo": string;
+  "realName": string;
+  "nickname": string | null;
+  "label": string;
+  "outcome": "attended" | "no-show" | "pending" | "other";
+  "origin": "registered" | "onsite" | "mixed" | "unknown";
+  "recordCount": number;
+  "postedResultCount": number;
+  "totalServiceHours": string | null;
+  "sessions": ActivityReconciliationSessionResultDto[];
 }
 
 export interface ActivityReconciliationRegisteredParticipantDto {
@@ -159,22 +188,36 @@ export interface ActivityReconciliationRegisteredParticipantDto {
   "realName": string;
   "nickname": string | null;
   "label": string;
-  "outcome": "attended" | "no-show";
+  "outcome": "attended" | "no-show" | "pending" | "other";
+  "origin": "registered" | "onsite" | "mixed" | "unknown";
   "recordCount": number;
-  "approvedRecordCount": number;
-  "totalServiceHours": string;
+  "postedResultCount": number;
+  "totalServiceHours": string | null;
+  "sessions": ActivityReconciliationSessionResultDto[];
+}
+
+export interface ActivityReconciliationSessionResultDto {
+  "identityId": string;
+  "sessionId": string;
+  "currentStatusCode": string;
+  "populationIncluded": boolean;
+  "resultCode": string | null;
+  "ledgerDayCount": number;
 }
 
 export interface ActivityReconciliationTemporaryParticipantDto {
+  "registrationId": string;
   "memberId": string;
   "memberNo": string;
   "realName": string;
   "nickname": string | null;
   "label": string;
-  "outcome": "temporary";
+  "outcome": "attended" | "no-show" | "pending" | "other";
+  "origin": "registered" | "onsite" | "mixed" | "unknown";
   "recordCount": number;
-  "approvedRecordCount": number;
-  "totalServiceHours": string;
+  "postedResultCount": number;
+  "totalServiceHours": string | null;
+  "sessions": ActivityReconciliationSessionResultDto[];
 }
 
 export interface ActivityRegistrationActivityPositionDto {
@@ -310,29 +353,6 @@ export interface AdminActivateTimePolicyVersionDto {
   "operationKey": string;
   "expectedDefinitionHash": string;
   "expectedStatusCode": "draft";
-}
-
-export interface AdminActivityCheckInListItemDto {
-  "id": string;
-  "activityId": string;
-  "registrationId": string;
-  "member": AdminActivityCheckInMemberDto;
-  "checkInAt": string;
-  "checkOutAt": string | null;
-  "checkInDistance": string | null;
-  "checkOutDistance": string | null;
-  "geoVerified": boolean;
-  "outOfRange": boolean;
-  "createdAt": string;
-  "updatedAt": string;
-}
-
-export interface AdminActivityCheckInMemberDto {
-  "id": string;
-  "memberNo": string;
-  "realName": string;
-  "nickname": string | null;
-  "label": string;
 }
 
 export interface AdminActivityContributionPolicyPointerDto {
@@ -635,26 +655,6 @@ export interface AdminAttendanceSettlementListItemDto {
   "postingBatchStatusCode"?: string | null;
 }
 
-export interface AdminAttendanceSheetExpandedActivityDto {
-  "id": string;
-  "title": string;
-  "startAt": string;
-  "organizationId": string;
-}
-
-export interface AdminAttendanceSheetListItemDto {
-  "id": string;
-  "activityId": string;
-  "activityTitle"?: Record<string, unknown> | null;
-  "submitterUserId": string;
-  "submittedAt": string;
-  "statusCode": string;
-  "reviewedAt"?: Record<string, unknown> | null;
-  "version": number;
-  "createdAt": string;
-  "activity"?: AdminAttendanceSheetExpandedActivityDto;
-}
-
 export interface AdminContributionProofDto {
   "regimeCode": "policy_v1";
   "pending": boolean;
@@ -757,25 +757,6 @@ export interface AdminMeResponseDto {
   "status": "ACTIVE" | "DISABLED";
   "lastLoginAt": Record<string, unknown> | null;
   "memberId": Record<string, unknown> | null;
-}
-
-export interface AdminMemberAttendanceRecordDto {
-  "id": string;
-  "sheetId": string;
-  "activityId": string;
-  "activityTitle"?: Record<string, unknown> | null;
-  "memberId": string;
-  "member"?: Record<string, unknown>;
-  "roleCode": string;
-  "checkInAt": string;
-  "checkOutAt": string;
-  "serviceHours": string;
-  "attendanceStatusCode": string;
-  "note"?: Record<string, unknown> | null;
-  "registrationId"?: Record<string, unknown> | null;
-  "contributionPoints"?: string | null;
-  "createdAt": string;
-  "updatedAt": string;
 }
 
 export interface AdminMetricBooleanConfigurationDto {
@@ -1402,10 +1383,6 @@ export interface ApproveActivityPublishReviewDto {
   "operationKey"?: string;
 }
 
-export interface ApproveAttendanceSheetDto {
-  "reviewNote"?: string;
-}
-
 export interface ApproveRegistrationDto {
   "reviewNote"?: string;
 }
@@ -1433,119 +1410,6 @@ export interface AttachmentResponseDto {
   "createdAt": string;
   "updatedAt": string;
   "accessUrl"?: Record<string, unknown> | null;
-}
-
-export interface AttendanceRecordInputDto {
-  "memberId": string;
-  "roleCode": string;
-  "checkInAt": string;
-  "checkOutAt": string;
-  "serviceHours"?: number;
-  "attendanceStatusCode": string;
-  "note"?: string;
-  "registrationId"?: string;
-}
-
-export interface AttendanceRecordResponseDto {
-  "id": string;
-  "sheetId": string;
-  "memberId": string;
-  "member"?: Record<string, unknown>;
-  "roleCode": string;
-  "checkInAt": string;
-  "checkOutAt": string;
-  "serviceHours": string;
-  "attendanceStatusCode": string;
-  "note"?: Record<string, unknown> | null;
-  "registrationId"?: Record<string, unknown> | null;
-  "contributionPoints"?: string | null;
-  "createdAt": string;
-  "updatedAt": string;
-}
-
-export interface AttendanceSheetActivitySummaryDto {
-  "id": string;
-  "title": string;
-  "activityTypeCode": string;
-  "organizationId": string;
-  "startAt": string;
-  "endAt": string;
-  "location": string;
-  "statusCode": string;
-}
-
-export interface AttendanceSheetDraftAbsentRegistrationDto {
-  "registrationId": string;
-  "memberId": string;
-  "memberNo": string;
-  "realName": string;
-  "nickname": string | null;
-  "label": string;
-}
-
-export interface AttendanceSheetDraftDto {
-  "activityId": string;
-  "records": AttendanceSheetDraftRecordDto[];
-  "flags": AttendanceSheetDraftFlagDto[];
-  "absentRegistrations": AttendanceSheetDraftAbsentRegistrationDto[];
-}
-
-export interface AttendanceSheetDraftFlagDto {
-  "registrationId": string;
-  "memberId": string;
-  "noCheckOut": boolean;
-  "outOfRange": boolean;
-  "unverified": boolean;
-}
-
-export interface AttendanceSheetDraftRecordDto {
-  "memberId": string;
-  "roleCode": string;
-  "checkInAt": string;
-  "checkOutAt": string;
-  "serviceHours": number;
-  "attendanceStatusCode": string;
-  "registrationId": string;
-}
-
-export interface AttendanceSheetListItemDto {
-  "id": string;
-  "activityId": string;
-  "submitterUserId": string;
-  "submittedAt": string;
-  "statusCode": string;
-  "reviewedAt"?: Record<string, unknown> | null;
-  "version": number;
-  "createdAt": string;
-}
-
-export interface AttendanceSheetResponseDto {
-  "id": string;
-  "activityId": string;
-  "submitterUserId": string;
-  "submittedAt": string;
-  "statusCode": "pending" | "pending_final_review" | "returned" | "approved" | "rejected" | "final_rejected";
-  "reviewerUserId"?: Record<string, unknown> | null;
-  "reviewedAt"?: Record<string, unknown> | null;
-  "reviewNote"?: Record<string, unknown> | null;
-  "finalReviewerUserId"?: Record<string, unknown> | null;
-  "finalReviewedAt"?: Record<string, unknown> | null;
-  "finalReviewNote"?: Record<string, unknown> | null;
-  "lastSubmittedByUserId": string | null;
-  "lastSubmittedAt": string | null;
-  "returnedByUserId": string | null;
-  "returnedAt": string | null;
-  "returnNote": string | null;
-  "returnedFromStageCode": "first" | "final" | null;
-  "version": number;
-  "createdAt": string;
-  "updatedAt": string;
-}
-
-export interface AttendanceSheetReviewDetailDto {
-  "activity": AttendanceSheetActivitySummaryDto;
-  "sheet": AttendanceSheetResponseDto;
-  "records": AttendanceRecordResponseDto[];
 }
 
 export interface AuthzDecisionDto {
@@ -1931,10 +1795,6 @@ export interface CreateAttachmentDto {
   "expireAt"?: string;
 }
 
-export interface CreateAttendanceSheetDto {
-  "records": AttendanceRecordInputDto[];
-}
-
 export interface CreateCertificateDto {
   "standardId": string;
   "recognitionIssuerId"?: string;
@@ -2160,20 +2020,20 @@ export interface DashboardActivityPublishReviewsSummaryDto {
   "pending": number;
 }
 
-export interface DashboardAttendanceSheetsSummaryDto {
-  "pending": number;
-  "pendingFirstReview"?: number;
-  "pendingFinalReview": number;
-}
-
 export interface DashboardRegistrationsSummaryDto {
   "pending": number;
   "waitlisted": number;
 }
 
+export interface DashboardSettlementReviewsSummaryDto {
+  "available": boolean;
+  "pendingFirstReview"?: number;
+  "pendingFinalReview"?: number;
+}
+
 export interface DashboardSummaryResponseDto {
   "registrations"?: DashboardRegistrationsSummaryDto;
-  "attendanceSheets"?: DashboardAttendanceSheetsSummaryDto;
+  "settlementReviews"?: DashboardSettlementReviewsSummaryDto;
   "activityPublishReviews"?: DashboardActivityPublishReviewsSummaryDto;
   "activities"?: DashboardActivitiesSummaryDto;
 }
@@ -2263,14 +2123,6 @@ export interface ExplainTargetUserDto {
 export interface ExportRecruitmentApplicationsDto {
   "cycleId"?: string;
   "filter"?: "all" | "manual" | "verified" | "threshold-incomplete" | "pending-evaluation" | "publicity" | "promoted" | "rejected" | "withdrawn";
-}
-
-export interface FinalApproveAttendanceSheetDto {
-  "finalReviewNote"?: string;
-}
-
-export interface FinalRejectAttendanceSheetDto {
-  "finalReviewNote": string;
 }
 
 export interface GateStatusDto {
@@ -2829,9 +2681,17 @@ export interface ParticipationOverviewMonthDto {
   "activityCount": number;
   "completedActivityCount": number;
   "participationCount": number;
-  "totalServiceHours": string;
-  "averageAttendanceRate": number;
-  "noShowRate": number;
+  "registeredParticipationCount": number;
+  "temporaryParticipationCount": number;
+  "mixedOriginParticipationCount": number;
+  "unknownOriginParticipationCount": number;
+  "totalServiceHours": string | null;
+  "pendingCount": number;
+  "pendingSessionCount": number;
+  "otherResultCount": number;
+  "durationUnknownCount": number;
+  "averageAttendanceRate": number | null;
+  "noShowRate": number | null;
   "durationHistogram": DurationHistogramDto;
 }
 
@@ -3166,20 +3026,12 @@ export interface RecruitmentStatsTodayDto {
   "manualProcessed": number;
 }
 
-export interface RejectAttendanceSheetDto {
-  "reviewNote": string;
-}
-
 export interface RejectCertificateDto {
   "verifyNote": string;
 }
 
 export interface RejectRegistrationDto {
   "reviewNote": string;
-}
-
-export interface ReopenAttendanceSheetDto {
-  "reason": string;
 }
 
 export interface ReplaceMemberAudienceTagsDto {
@@ -3223,15 +3075,9 @@ export interface ResolvedResourceDto {
   "extra"?: Record<string, unknown>;
 }
 
-export type ResubmitAttendanceSheetDto = Record<string, unknown>;
-
 export interface ReturnActivityPublishReviewDto {
   "reviewNote": string;
   "operationKey"?: string;
-}
-
-export interface ReturnAttendanceSheetDto {
-  "returnNote": string;
 }
 
 export interface ReviewCertificateClaimDto {
@@ -3558,10 +3404,6 @@ export interface UpdateAttachmentDto {
   "accessLevel"?: "PUBLIC" | "INTERNAL" | "SENSITIVE";
   "tags"?: string[];
   "expireAt"?: Record<string, unknown>;
-}
-
-export interface UpdateAttendanceSheetDto {
-  "records"?: AttendanceRecordInputDto[];
 }
 
 export interface UpdateCertificateDto {

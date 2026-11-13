@@ -28,11 +28,7 @@
   GET 保留历史评价，最新关账纠错撤销当前资格时返回 `eligibilityCorrected=true`，新获资格可提交。
 - F3 已注册 Admin feedbacks / feedback-summary 2 endpoint；复用 `attendance.read.sheet` + activity ref，
   列表固定 3 次业务读，member relation select 与固定五桶均无 N+1。
-- `ActivityFeedbacksQueryService.aggregateForActivity()` 作为唯一单查询聚合出口，被 activity
-  participation-summary 复用；Admin `feedbackRate` 分母在旧流程下取「当前 approved distinct
-  member ∪ 已提交 live feedback member」；v1.1 闸开启后取「当前 active closure 对应的评价资格
-  member ∪ 已提交 live feedback member」。新版分子、分母及 closure 在同一 repeatable-read 快照
-  内读取，更正后历史评价保留在分母；两种模式都不落库、按成员去重，比例不超过 1。
+- `ActivityFeedbacksQueryService.aggregateForActivity()` 是 activity participation-summary 的单查询复用出口；Admin `feedbackRate` 仅使用当前 active closure 对应的评价资格成员与已提交 live feedback 成员的去重并集。分子、分母和 closure 在同一 repeatable-read 快照读取，历史评价在更正后保留；工作流关闭返回 20153/503，不查询旧考勤。
 - F4 真实 DB E2E 锁定无当前结算资格者不可写、最新 closure 窗口、纠错增减资格与历史保留、
   DTO 边界、覆盖更新、本人 scope、Admin 实名与统计、跨汇总自洽、并发只留一条 live row，
   以及评价写入不产生 AuditLog。

@@ -5,6 +5,8 @@
 > 不做清单(§3)、债务(§4)。版本号 / main HEAD / open PR / tag run 等**机器可查事实已删** ——
 > 现场跑 `pnpm agent:preflight`。§1 计数块由 `pnpm docs:counts` 生成。
 
+> **未合入候选（2026-11-12）**：旧 Sheet/GPS/记录入口与旧写服务已注销；成员/参与汇总、评价、对账、月报、活动列表/仪表盘、报名及活动删除保护已切新版。负责人列表不读旧单、详情读结算摘要；服务段锁脱离旧准入；离队仍读旧考勤，权限诊断保留旧资源，入队达标通知未接。汇总关闸返 20153/503（无可见组织月报先返空）。PG／HTTP 未测、未部署。
+
 ## 1. 现实世界状态(机器查不到,必须人维护)
 
 > **R5收口（2026-10-24 UTC）**：原容量隔离全链已PASS，153审阅结论经用户真实认可并已登记；active500不变。prepare／两审／普通policy_v1 E4提交60秒，标准7／D7 15／取锁4／10槽及完整校验、原子审计outbox不变；更长锁连接占用非SLA或性能提升。最终CI／Smoke／Trusted待完成，未Ready、合并、部署或开闸。技术明细及全部旧FAIL见[验收台账](plans/activity-os-r5-limited500-release-readiness.md)，预算见[工程合同](plans/activity-os-r5-e4-ledger-commit-budget.md)。
@@ -19,7 +21,7 @@
 
 > **D8 仓库交付与生产边界（2026-09-22）**：D8-1 [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341)
 > 与 D8-2 [#1342](https://github.com/BA7IEE/srvf-nest-api/pull/1342) 已合入 main，仓库侧正式参与时长证明、
-> 不可逆切换地基、官方统计和新关账接线已完成；仍未部署或切换生产。新收据不存在时既有统计继续按原口径，
+> 不可逆切换地基、官方统计和新关账接线已完成；仍未部署或切换生产。该历史提交在新收据不存在时的原口径已被上面的未合入本地候选部分改变，
 > 正式证明入口 fail-closed。生产 Gate 仍是 NO-GO；v1.1 独立稳定窗、exact deployed SHA／fleet、证据包、
 > 结算只读、worker 排空及 D8-OPS 两次现场授权仍须另行完成，AI 不得自行运行 `--execute`。
 
@@ -32,7 +34,7 @@
 | 计数项 | 值 |
 |---|---|
 | 模块 | 43 |
-| Controller | 130 |
+| Controller | 124 |
 | Endpoint | 673 |
 | Migration | 155 |
 | BizCode | 584 |
@@ -41,6 +43,8 @@
 | 内建角色 | 15 |
 | Cron | 2 |
 <!-- counts:end -->
+
+Endpoint 为旧合同数；现有 643。
 
 ## 2. 能力清单
 
@@ -98,7 +102,7 @@
   §16.3 顺序本身;上面两段 ⚠️ 自此为历史记录。
   ⭐ **⑦ 已不在其列(2026-08-24 订正)**:worker 运维 runbook 早在 `#1088`(`a1b25764`,2026-08-19)
   就合了(`docs/ops/activity-batch-worker-runbook.md`),本行此前一直把它当未做在写。
-**R5受限500首发口径（2026-10-19，维护者已批准）**：AC-013/020/025仍为上线后按诉求立项，AC-017继续搁置；四项保持TODO，不冒充实现或永久豁免。ADV-010/P2-21已接入真实账本进度验证。默认完整`cutover:check`的9a仍严格要求零TODO；显式`--profile r5-limited500`单列首发机器口径，其他A项、签字及B/C待确认不豁免。贡献读取随既有单闸：off旧考勤北京日封顶3，on仅committed credited，不叠加、不二次封顶、不空时回退；旧分开闸前先转换并逐人对账生涯及入队cutoff。实际目标数据/转换/shadow/fleet/worker排空/稳定窗与10a/10b均NOT_RUN，生产NO_GO。方案、历史9a读数及证据边界见[完整Goal](plans/activity-os-r5-limited500-release-readiness.md)。
+**R5受限500首发口径（2026-10-19，维护者已批准）**：AC-013/020/025仍为上线后按诉求立项，AC-017继续搁置；四项保持TODO，不冒充实现或永久豁免。ADV-010/P2-21已接入真实账本进度验证。默认完整`cutover:check`的9a仍严格要求零TODO；显式`--profile r5-limited500`单列首发机器口径，其他A项、签字及B/C待确认不豁免。当时的贡献读取口径为 off旧考勤、on仅committed credited；本候选已取消前者并在off返回503，on不叠加、不二次封顶、不空时回退；旧分开闸前先转换并逐人对账生涯及入队cutoff。实际目标数据/转换/shadow/fleet/worker排空/稳定窗与10a/10b均NOT_RUN，生产NO_GO。方案、历史9a读数及证据边界见[完整Goal](plans/activity-os-r5-limited500-release-readiness.md)。
   ⚠️ 账本写入口的 **service 层**跨锚点校验(`ledger-preparation.service.ts` 实测零处)
   本刀**未补** —— 数据库闭合后它是纵深冗余而非唯一防线,是否补另行判断。
 

@@ -24,6 +24,7 @@
 | [`deployment.md`](./deployment.md) | Docker 镜像、生产部署、迁移流程 |
 | [`development.md`](./development.md) | 项目结构 / 路由总览 / 环境变量 / 排错 |
 | [`testing.md`](./testing.md) | E2E 测试运行与覆盖范围 |
+| [测试验收统一入口（2026-11-12）](./plans/test-acceptance-status-20261112.md) | 可公开测试证据整合与接手清单；区分 LOCAL/CI、真实 HTTP、GUI 及未完成项；不覆盖 current-state 或业务合同 |
 | [`docker-smoke-test.md`](./docker-smoke-test.md) | docker smoke CI 形态说明 |
 | [`ops/certificate-standard-library-initialization.md`](./ops/certificate-standard-library-initialization.md) | 证书标准库首批 Standard/Policy 初始化指引(§20.3 步骤 6;**判据:法规定义的证书可内置,队里自己认定的一律人工建** —— 2026-08-25 拍板,已内置仅业余无线电 A/B/C;含三组规则对照表 + 8 步最小 smoke + 两个顺序坑) |
 | [`ops/certificate-evidence-retention-sop.md`](./ops/certificate-evidence-retention-sop.md) | 证书证据(L3)留存与手动清理 SOP(证据两个属主 / PROMOTED Claim 图**绝不可删** / 三类可清理 + 只读核对 SQL / 先删对象后清列 / 不引入 cron) |

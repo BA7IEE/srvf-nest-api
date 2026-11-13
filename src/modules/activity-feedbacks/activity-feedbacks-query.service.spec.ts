@@ -24,7 +24,7 @@ const ROW = {
   member: { memberNo: 'V001', ...memberIdentityData('队员甲') },
 };
 
-function makeService() {
+function makeService(enabled = false) {
   const activityFindFirst = jest.fn().mockResolvedValue({ id: 'activity-1' });
   const feedbackFindMany = jest.fn().mockResolvedValue([ROW]);
   const feedbackCount = jest.fn().mockResolvedValue(1);
@@ -36,7 +36,20 @@ function makeService() {
     { rating: 1, _count: { _all: 1 } },
     { rating: 4, _count: { _all: 1 } },
   ]);
-  const memberCount = jest.fn().mockResolvedValue(3);
+  const memberCount = jest.fn().mockRejectedValue(new Error('legacy attendance must not be read'));
+  const queryRaw = jest.fn().mockResolvedValue([{ total: 3 }]);
+  const tx = {
+    activitySettlementClosureRevision: {
+      findFirst: jest
+        .fn()
+        .mockResolvedValue({ settlementVersionId: 'version-1', postingBatchId: 'batch-1' }),
+    },
+    activityFeedback: { aggregate: feedbackAggregate, groupBy: feedbackGroupBy },
+    $queryRaw: queryRaw,
+  };
+  const transaction = jest
+    .fn()
+    .mockImplementation((fn: (client: typeof tx) => unknown) => Promise.resolve(fn(tx)));
   const prisma = {
     activity: { findFirst: activityFindFirst },
     activityFeedback: {
@@ -46,6 +59,7 @@ function makeService() {
       groupBy: feedbackGroupBy,
     },
     member: { count: memberCount },
+    $transaction: transaction,
   } as unknown as PrismaService;
   const authzExplain = jest.fn().mockResolvedValue({ allow: true, reason: 'allowed' });
   const authz = { explain: authzExplain } as unknown as AuthzService;
@@ -53,7 +67,7 @@ function makeService() {
   const rbac = { can: rbacCan } as unknown as RbacService;
   return {
     service: new ActivityFeedbacksQueryService(prisma, authz, rbac, {
-      participationReadSource: () => 'approved-attendance',
+      participationReadSource: () => (enabled ? 'committed-ledger' : 'approved-attendance'),
     } as ActivityWorkflowGate),
     activityFindFirst,
     feedbackFindMany,
@@ -61,6 +75,8 @@ function makeService() {
     feedbackAggregate,
     feedbackGroupBy,
     memberCount,
+    queryRaw,
+    transaction,
     authzExplain,
     rbacCan,
   };
@@ -112,9 +128,16 @@ describe('ActivityFeedbacksQueryService Admin read model', () => {
     });
   });
 
-  it('汇总固定 4 次业务读，均分两位、五桶补零、并集分母评价率四位', async () => {
-    const { service, activityFindFirst, feedbackAggregate, feedbackGroupBy, memberCount } =
-      makeService();
+  it('committed summary keeps the rating buckets and four-decimal union rate in one snapshot', async () => {
+    const {
+      service,
+      activityFindFirst,
+      feedbackAggregate,
+      feedbackGroupBy,
+      memberCount,
+      queryRaw,
+      transaction,
+    } = makeService(true);
 
     await expect(service.summary('activity-1', CURRENT_USER)).resolves.toEqual({
       count: 2,
@@ -131,36 +154,16 @@ describe('ActivityFeedbacksQueryService Admin read model', () => {
     expect(activityFindFirst).toHaveBeenCalledTimes(1);
     expect(feedbackAggregate).toHaveBeenCalledTimes(1);
     expect(feedbackGroupBy).toHaveBeenCalledTimes(1);
-    expect(memberCount).toHaveBeenCalledTimes(1);
-    expect(memberCount).toHaveBeenCalledWith({
-      where: {
-        OR: [
-          {
-            attendanceRecords: {
-              some: {
-                deletedAt: null,
-                sheet: { activityId: 'activity-1', deletedAt: null, statusCode: 'approved' },
-              },
-            },
-          },
-          {
-            activityFeedbacks: {
-              some: { activityId: 'activity-1', deletedAt: null },
-            },
-          },
-        ],
-      },
-    });
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(memberCount).not.toHaveBeenCalled();
   });
 
-  it('无评价且 approved 分母为 0 时 avgRating=null、feedbackRate=0', async () => {
-    const setup = makeService();
-    setup.feedbackAggregate.mockResolvedValue({
-      _count: { _all: 0 },
-      _avg: { rating: null },
-    });
+  it('an empty committed denominator returns zero without using legacy attendance', async () => {
+    const setup = makeService(true);
+    setup.feedbackAggregate.mockResolvedValue({ _count: { _all: 0 }, _avg: { rating: null } });
     setup.feedbackGroupBy.mockResolvedValue([]);
-    setup.memberCount.mockResolvedValue(0);
+    setup.queryRaw.mockResolvedValue([{ total: 0 }]);
 
     await expect(setup.service.summary('activity-1', CURRENT_USER)).resolves.toEqual({
       count: 0,
@@ -174,6 +177,7 @@ describe('ActivityFeedbacksQueryService Admin read model', () => {
       ],
       feedbackRate: 0,
     });
+    expect(setup.memberCount).not.toHaveBeenCalled();
   });
 
   it('resource_not_found + 全局持码时回退，真实 Activity 不存在仍返 20001', async () => {
@@ -199,6 +203,18 @@ describe('ActivityFeedbacksQueryService Admin read model', () => {
     expect(setup.activityFindFirst).not.toHaveBeenCalled();
     expect(setup.feedbackFindMany).not.toHaveBeenCalled();
     expect(setup.feedbackCount).not.toHaveBeenCalled();
+  });
+
+  it('summary preserves authorization before the disabled workflow response', async () => {
+    const setup = makeService();
+    setup.authzExplain.mockResolvedValue({ allow: false, reason: 'forbidden' });
+
+    await expect(setup.service.summary('activity-1', CURRENT_USER)).rejects.toMatchObject({
+      biz: BizCode.RBAC_FORBIDDEN,
+    });
+    expect(setup.activityFindFirst).not.toHaveBeenCalled();
+    expect(setup.memberCount).not.toHaveBeenCalled();
+    expect(setup.transaction).not.toHaveBeenCalled();
   });
 
   it('aggregateForActivity 是 participation-summary 的单查询复用出口', async () => {

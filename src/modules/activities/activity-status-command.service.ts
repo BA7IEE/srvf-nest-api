@@ -102,23 +102,17 @@ export class ActivityStatusCommandService {
               : BizCode.ACTIVITY_STATUS_INVALID,
           );
         }
-        const [reviewCount, registrationCount, attendanceSheetCount, checkInCount, identityCount] =
+        const [reviewCount, registrationCount, identityCount, settlementRunCount] =
           await Promise.all([
             tx.activityPublishReview.count({ where: { activityId: current.id } }),
             tx.activityRegistration.count({ where: { activityId: current.id } }),
-            tx.attendanceSheet.count({ where: { activityId: current.id } }),
-            tx.activityCheckIn.count({ where: { activityId: current.id } }),
             tx.activityParticipationIdentity.count({ where: { activityId: current.id } }),
+            tx.attendanceSettlementRun.count({ where: { activityId: current.id } }),
           ]);
         if (reviewCount > 0) {
           throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
         }
-        if (
-          registrationCount > 0 ||
-          attendanceSheetCount > 0 ||
-          checkInCount > 0 ||
-          identityCount > 0
-        ) {
+        if (registrationCount > 0 || identityCount > 0 || settlementRunCount > 0) {
           throw new BizException(BizCode.ACTIVITY_PARTICIPATION_EXISTS_DELETE_FORBIDDEN);
         }
       } else {
@@ -131,18 +125,17 @@ export class ActivityStatusCommandService {
           throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
         }
 
-        const [activeRegistrations, attendanceSheets] = await Promise.all([
+        const [activeRegistrations, identities, settlementRuns] = await Promise.all([
           tx.activityRegistration.count({
             where: notDeletedWhere({
               activityId: current.id,
               statusCode: { in: [...ACTIVE_REGISTRATION_STATUS_CODES] },
             }),
           }),
-          tx.attendanceSheet.count({
-            where: notDeletedWhere({ activityId: current.id }),
-          }),
+          tx.activityParticipationIdentity.count({ where: { activityId: current.id } }),
+          tx.attendanceSettlementRun.count({ where: { activityId: current.id } }),
         ]);
-        if (activeRegistrations > 0 || attendanceSheets > 0) {
+        if (activeRegistrations > 0 || identities > 0 || settlementRuns > 0) {
           throw new BizException(BizCode.ACTIVITY_PARTICIPATION_EXISTS_DELETE_FORBIDDEN);
         }
       }

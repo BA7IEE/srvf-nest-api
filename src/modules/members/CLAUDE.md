@@ -9,6 +9,8 @@
 
 ## Local facts
 
+- `nonDeletedMemberExists` 是成员域的最小存在性查询原语，只返回布尔值，不校验 ACTIVE；调用方必须先完成自己的资源范围和权限检查。
+
 - **正式等级唯一真值**:`isFormalMemberGradeCode()` 只对精确 `level-1`…`level-7` 返回 true；函数归本模块 `member-grade.ts`，其他模块不得复制正则/Set，也不得用组织归属推导正式等级。
 
 - **部门数据范围(v0.49)**:`list/options` 先取 `AuthzService.getVisibleOrganizationScope('member.read.record')`，再与用户 `organizationId/includeDescendants` 过滤取交集；成员归属只认 active PRIMARY，SECONDARY/TEMPORARY/SUPPORT 不扩大可见范围。有效持码但组织集合为空返回空列表，无码才返 30100。

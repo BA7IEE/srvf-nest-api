@@ -467,12 +467,6 @@ export class AppManagedActivityCountsDto {
 
   @ApiProperty()
   waitlistedRegistrations!: number;
-
-  @ApiProperty()
-  attendanceSheets!: number;
-
-  @ApiProperty()
-  unresolvedAttendanceSheets!: number;
 }
 
 export class AppManagedActivityProjectionDto {
@@ -560,39 +554,80 @@ export class AppManagedActivityProjectionDto {
   updatedAt!: Date;
 }
 
-export class AppManagedActivityClosureDto {
-  @ApiPropertyOptional({ nullable: true, type: String, format: 'date-time' })
-  attendanceDeclaredCompleteAt!: Date | null;
-
+export class AppManagedActivityWorkflowDto {
   @ApiProperty({
     enum: [
       'draft',
       'publish-review-pending',
       'published',
+      'completed',
+      'terminated',
       'cancelled',
-      'waiting-attendance-declaration',
-      'attendance-first-review',
-      'attendance-returned',
-      'attendance-final-review',
-      'closed',
-      // 归档(2026-08-25):活动被收进抽屉,没有「下一步」。
       'archived',
+      'unknown',
     ],
   })
   status!:
     | 'draft'
     | 'publish-review-pending'
     | 'published'
+    | 'completed'
+    | 'terminated'
     | 'cancelled'
-    | 'waiting-attendance-declaration'
-    | 'attendance-first-review'
-    | 'attendance-returned'
-    | 'attendance-final-review'
-    | 'closed'
-    | 'archived';
+    | 'archived'
+    | 'unknown';
 
-  @ApiPropertyOptional({ nullable: true, type: String })
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: 'null 表示未推断下一步，不代表结算已完成或没有待办。',
+  })
   nextAction!: string | null;
+}
+
+export class AppManagedActiveClosureDto {
+  @ApiProperty()
+  revision!: number;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  closedAt!: Date;
+}
+
+export class AppManagedSettlementSummaryDto {
+  @ApiProperty({
+    enum: ['available', 'workflow-disabled', 'forbidden', 'not-requested'],
+    description: '仅活动结算读权通过后判断工作流开关；写后响应不附加结算查询，标记 not-requested。',
+  })
+  availability!: 'available' | 'workflow-disabled' | 'forbidden' | 'not-requested';
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: '结算 run 流程状态；null 表示当前无 run，不代表已关账或无参与。',
+  })
+  runStatus?: string | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    description: 'run 当前提交版本指针，不代表当前正式生效版本。',
+  })
+  currentSubmittedVersion?: number | null;
+
+  @ApiPropertyOptional({
+    type: AppManagedActiveClosureDto,
+    description:
+      '该活动最新 active 关账记录，未校验其与账本指针的一致性；available 时省略表示没有 active 记录。更正可能仍在进行。',
+  })
+  activeClosure?: AppManagedActiveClosureDto;
+
+  @ApiPropertyOptional({ description: '结算写入是否处于只读维护态；读面仍可查看。' })
+  readOnly?: boolean;
+
+  @ApiPropertyOptional({
+    description: '具备结算工作台读取权限时的相对 API 路径；不代表具备写权限。',
+  })
+  workbenchPath?: string;
 }
 
 export class AppManagedActivityDetailDto {
@@ -614,8 +649,11 @@ export class AppManagedActivityDetailDto {
   @ApiProperty({ type: AppManagedActivityCountsDto })
   counts!: AppManagedActivityCountsDto;
 
-  @ApiProperty({ type: AppManagedActivityClosureDto })
-  closure!: AppManagedActivityClosureDto;
+  @ApiProperty({ type: AppManagedActivityWorkflowDto })
+  workflow!: AppManagedActivityWorkflowDto;
+
+  @ApiProperty({ type: AppManagedSettlementSummaryDto })
+  settlement!: AppManagedSettlementSummaryDto;
 }
 
 export class AppManagedActivityListItemDto {
@@ -640,10 +678,11 @@ export class AppManagedActivityListItemDto {
   @ApiProperty()
   pendingRegistrations!: number;
 
-  @ApiProperty()
-  unresolvedAttendanceSheets!: number;
-
-  @ApiPropertyOptional({ nullable: true, type: String })
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: 'null 表示未推断下一步，不代表结算已完成或没有待办。',
+  })
   nextAction!: string | null;
 
   // AC-004「长期未处理草稿在工作台提示」。后端只给事实位,徽标怎么画是前端的事。
