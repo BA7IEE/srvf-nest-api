@@ -174,8 +174,13 @@ export class NotificationOutboxService {
    */
   async enqueueMany(
     inputs: readonly NotificationOutboxEnqueueInput[],
-    client: OutboxClient = this.prisma,
+    client: Prisma.TransactionClient,
   ): Promise<NotificationOutboxIntent[]> {
+    // Business producers must pass their own client explicitly. TypeScript cannot prove that a
+    // supplied client belongs to an interactive transaction, so callers still own that boundary.
+    if (!client) {
+      throw new NotificationOutboxInvariantError('enqueueMany requires a caller-supplied client');
+    }
     if (inputs.length === 0) return [];
     const byKey = new Map<string, NotificationOutboxEnqueueInput>();
     for (const input of inputs) {
