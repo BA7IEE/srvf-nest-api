@@ -393,7 +393,7 @@ export class ActivityRegistrationsService {
       });
 
       const cancelledAt = new Date();
-      await this.registrationLifecycle.cancelInTransactionTrusted(tx, {
+      const cancellation = await this.registrationLifecycle.cancelInTransactionTrusted(tx, {
         activityId: lockedReg.activityId,
         registrationId: lockedReg.id,
         memberId: lockedReg.memberId,
@@ -429,6 +429,7 @@ export class ActivityRegistrationsService {
           ? await this.allocations.promoteAfterCancellationInTransactionTrusted(tx, {
               activityId: lockedReg.activityId,
               registrationId: lockedReg.id,
+              releasedIdentityIds: cancellation.cancelledPassIdentityIds,
               actorUser: currentUser,
               promotedAt: cancelledAt,
               auditMeta,
@@ -449,10 +450,7 @@ export class ActivityRegistrationsService {
             })
           : { activityTitle: activity?.title ?? '活动', promoted: [] };
 
-      // B-D3（维护者 2026-08-01 拍板）：只有取消**已通过**报名才通知负责人。pending / waitlisted
-      // 的自助取消对负责人没有任何要做的事 —— 名额本来就没被占住、不用补人、不用改排班，
-      // 全发只是噪音。取消 pass 的 intent 形状（eventKey / aggregateId / 收件人解析）逐字不变，
-      // 只是不再为另两个状态多发一条。
+      // B-D3（维护者 2026-08-01 拍板）：只有取消已通过报名才通知负责人。
       const ownerRecipientResolution =
         lockedReg.statusCode === REGISTRATION_STATUS_PASS
           ? await this.notificationProducer.enqueueSelfCancellation(tx, {

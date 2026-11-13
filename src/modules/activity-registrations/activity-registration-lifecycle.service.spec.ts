@@ -191,7 +191,7 @@ describe('ActivityRegistrationLifecycleService', () => {
   it('releases capacity, appends both immutable revisions and advances all current projections', async () => {
     const { service, tx, capacity } = setup();
 
-    await service.cancelInTransactionTrusted(tx as never, {
+    const cancellation = await service.cancelInTransactionTrusted(tx as never, {
       activityId: 'activity-1',
       registrationId: 'registration-1',
       memberId: 'member-1',
@@ -200,6 +200,8 @@ describe('ActivityRegistrationLifecycleService', () => {
       cancelReason: 'cannot attend',
       cancelledAt,
     });
+
+    expect(cancellation.cancelledPassIdentityIds).toEqual(['identity-1']);
 
     expect(capacity.releaseInTransactionTrusted).toHaveBeenCalledWith(tx, {
       activityId: 'activity-1',
@@ -242,6 +244,40 @@ describe('ActivityRegistrationLifecycleService', () => {
       }) as unknown,
     });
     expect(tx.activityEvidenceState.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not report an earlier cancelled identity as released by this cancellation', async () => {
+    const { service, tx } = setup({ terminalIdentity: true });
+    const cancellation = await service.cancelInTransactionTrusted(tx as never, {
+      activityId: 'activity-1',
+      registrationId: 'registration-1',
+      memberId: 'member-1',
+      actorUserId: 'user-1',
+      sourceCode: 'admin',
+      cancelReason: 'cannot attend',
+      cancelledAt,
+    });
+    expect(cancellation.cancelledPassIdentityIds).toEqual(['identity-1']);
+  });
+
+  it('does not report a pending identity as a released occupied slot', async () => {
+    const { service, tx } = setup({
+      statusCode: 'pending',
+      pointer: null,
+      populationIncluded: false,
+      activeSessionReservation: false,
+      currentPositionId: null,
+    });
+    const cancellation = await service.cancelInTransactionTrusted(tx as never, {
+      activityId: 'activity-1',
+      registrationId: 'registration-1',
+      memberId: 'member-1',
+      actorUserId: 'user-1',
+      sourceCode: 'admin',
+      cancelReason: null,
+      cancelledAt,
+    });
+    expect(cancellation.cancelledPassIdentityIds).toEqual([]);
   });
 
   it('rejects an occupied pass identity by releasing capacity and advancing only participation state', async () => {

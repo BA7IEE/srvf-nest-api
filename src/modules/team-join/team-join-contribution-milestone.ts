@@ -13,7 +13,9 @@ import { CONTRIBUTION_THRESHOLD } from './team-join.constants';
  * Build the existing one-per-application milestone intent when a committed net crosses the
  * threshold. This function does not read the ledger or enqueue anything: the caller must obtain
  * both snapshots and enqueue the returned intent in the same locked transaction as the posting.
- * The fixed application/threshold key deliberately survives reversals and re-crossings.
+ * The fixed application/threshold key deduplicates reversals and re-crossings only while the
+ * outbox row is retained. The retention SOP permits deleting terminal rows; a caller must provide
+ * a durable deduplication decision across that boundary before enabling this notification.
  */
 export function contributionMilestoneIntent(input: {
   applicationId: string;

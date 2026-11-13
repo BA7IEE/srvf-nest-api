@@ -485,7 +485,7 @@ export class ActivityRegistrationReviewService {
       await this.access.assertNoParticipationEvidence(lockedReg.id, tx);
 
       const cancelledAt = new Date();
-      await this.registrationLifecycle.cancelInTransactionTrusted(tx, {
+      const cancellation = await this.registrationLifecycle.cancelInTransactionTrusted(tx, {
         activityId,
         registrationId: lockedReg.id,
         memberId: lockedReg.memberId,
@@ -517,6 +517,7 @@ export class ActivityRegistrationReviewService {
           ? await this.allocations.promoteAfterCancellationInTransactionTrusted(tx, {
               activityId,
               registrationId: lockedReg.id,
+              releasedIdentityIds: cancellation.cancelledPassIdentityIds,
               actorUser: currentUser,
               promotedAt: cancelledAt,
               auditMeta,

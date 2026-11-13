@@ -60,6 +60,7 @@ type ParticipationProjection = {
 };
 
 export type RegistrationCancellationSource = 'admin' | 'self';
+export type RegistrationCancellationResult = { cancelledPassIdentityIds: string[] };
 
 /**
  * Owns the cross-table projection for one registration cancellation. Callers must already hold
@@ -259,7 +260,7 @@ export class ActivityRegistrationLifecycleService {
       cancelReason: string | null;
       cancelledAt: Date;
     },
-  ): Promise<void> {
+  ): Promise<RegistrationCancellationResult> {
     const registration = await this.lockRegistration(tx, input);
     const identities = await this.lockIdentities(tx, input);
     await this.assertCapacityPointersReconciledInTransactionTrusted(tx, identities, {
@@ -386,6 +387,11 @@ export class ActivityRegistrationLifecycleService {
         input.cancelledAt,
       );
     }
+    return {
+      cancelledPassIdentityIds: cancellableIdentities
+        .filter((identity) => identity.currentStatusCode === 'pass')
+        .map((identity) => identity.id),
+    };
   }
 
   async incrementPopulationRevisionInTransactionTrusted(
