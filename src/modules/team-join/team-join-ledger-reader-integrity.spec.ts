@@ -30,7 +30,7 @@ describe('contribution ledger reader integrity', () => {
       ledger.sumCommittedCreditedPointsForMemberInTx.mockResolvedValue(new Prisma.Decimal(value));
       await expect(
         computeCappedContribution(client, 'member-1', null, enabledGate, ledger),
-      ).rejects.toThrow('Contribution ledger reader returned incomplete or non-finite totals');
+      ).rejects.toThrow('Contribution ledger snapshot is incomplete or contains non-finite totals');
     },
   );
 
@@ -41,7 +41,7 @@ describe('contribution ledger reader integrity', () => {
     );
     await expect(
       computeCappedContribution(client, 'member-1', null, enabledGate, ledger),
-    ).rejects.toThrow('Contribution ledger reader returned incomplete or non-finite totals');
+    ).rejects.toThrow('Contribution ledger snapshot is incomplete or contains non-finite totals');
   });
 
   it('rejects a batch missing one requested member instead of silently omitting them', async () => {
@@ -51,7 +51,7 @@ describe('contribution ledger reader integrity', () => {
     );
     await expect(
       computeCappedContributionBatch(client, ['member-1', 'member-2'], null, enabledGate, ledger),
-    ).rejects.toThrow('Contribution ledger reader returned incomplete or non-finite totals');
+    ).rejects.toThrow('Contribution ledger snapshot is incomplete or contains non-finite totals');
   });
 
   it('rejects an unrequested member instead of leaking it into the batch result', async () => {
@@ -64,7 +64,7 @@ describe('contribution ledger reader integrity', () => {
     );
     await expect(
       computeCappedContributionBatch(client, ['member-1'], null, enabledGate, ledger),
-    ).rejects.toThrow('Contribution ledger reader returned incomplete or non-finite totals');
+    ).rejects.toThrow('Contribution ledger snapshot is incomplete or contains non-finite totals');
   });
 
   it('rejects a same-size batch that substitutes an unrequested member', async () => {
@@ -74,7 +74,7 @@ describe('contribution ledger reader integrity', () => {
     );
     await expect(
       computeCappedContributionBatch(client, ['member-1'], null, enabledGate, ledger),
-    ).rejects.toThrow('Contribution ledger reader returned incomplete or non-finite totals');
+    ).rejects.toThrow('Contribution ledger snapshot is incomplete or contains non-finite totals');
   });
 
   it('propagates a reader permission error without converting it into an unmet gate', async () => {
@@ -95,7 +95,7 @@ describe('contribution ledger reader integrity', () => {
       );
       await expect(
         computeCappedContributionBatch(client, ['member-1'], null, enabledGate, ledger),
-      ).rejects.toThrow('Contribution ledger reader returned incomplete or non-finite totals');
+      ).rejects.toThrow('Contribution ledger snapshot is incomplete or contains non-finite totals');
     },
   );
 
@@ -184,7 +184,7 @@ describe('contribution ledger reader integrity', () => {
         { requestId: 'integrity-test', ip: null, ua: null },
         new Date('2026-11-13T00:00:00Z'),
       ),
-    ).rejects.toThrow('Contribution ledger reader returned incomplete or non-finite totals');
+    ).rejects.toThrow('Contribution ledger snapshot is incomplete or contains non-finite totals');
     expect(tx.teamJoinApplication.update).not.toHaveBeenCalled();
     expect(audit.log).not.toHaveBeenCalled();
   });

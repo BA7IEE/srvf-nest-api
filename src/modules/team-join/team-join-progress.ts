@@ -47,7 +47,7 @@ function contributionLedgerCutoff(cutoff: Date | null): Date | null {
 
 function assertFiniteLedgerTotal(value: unknown): asserts value is Prisma.Decimal {
   if (!Prisma.Decimal.isDecimal(value) || !value.isFinite()) {
-    throw new Error('Contribution ledger reader returned incomplete or non-finite totals');
+    throw new Error('Contribution ledger snapshot is incomplete or contains non-finite totals');
   }
 }
 
@@ -88,7 +88,7 @@ export async function computeCappedContributionBatch(
     contributionLedgerCutoff(cutoff),
   );
   if (totals.size !== unique.length) {
-    throw new Error('Contribution ledger reader returned incomplete or non-finite totals');
+    throw new Error('Contribution ledger snapshot is incomplete or contains non-finite totals');
   }
   for (const memberId of unique) assertFiniteLedgerTotal(totals.get(memberId));
   return totals;
