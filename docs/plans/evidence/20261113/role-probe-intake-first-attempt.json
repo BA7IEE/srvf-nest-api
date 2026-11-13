@@ -23,6 +23,7 @@
   "limits": [
     "No login command or target business request was triggered in this attempt.",
     "The exact exception cause and the R1 click/response stage were not retained.",
-    "The local intake page and listener were closed; no account value, credential, or identifier is recorded."
+    "The local intake page and listener were closed; no account value, credential, or identifier is recorded.",
+    "A later offline audit found that the script entrypoint also converts normal SystemExit(0) into exit 1; the observed exit code cannot distinguish normal stop from an exception."
   ]
 }
