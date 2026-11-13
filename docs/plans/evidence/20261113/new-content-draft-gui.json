@@ -1,0 +1,304 @@
+{
+  "classification": [
+    "DEPLOYED_HTTP",
+    "GUI"
+  ],
+  "origin": "https://dp.srvf.team",
+  "deployment_sha": "UNKNOWN",
+  "role": "existing synthetic-system administrator",
+  "cache_disabled_for_readbacks": true,
+  "read_requests": [
+    {
+      "purpose": "audience",
+      "time_utc": "2026-11-13T03:12:17.315Z",
+      "method": "GET",
+      "path_template": "/api/admin/v1/organizations/<ORG_A>",
+      "query": [],
+      "http_status": 200,
+      "business_code": 0,
+      "request_id": "cmweei94o99f4911c4b0e2c62449c886c",
+      "loading_finished": true
+    },
+    {
+      "purpose": "audience",
+      "time_utc": "2026-11-13T03:12:17.911Z",
+      "method": "GET",
+      "path_template": "/api/admin/v1/organizations/<ORG_A>/memberships",
+      "query": [
+        "status=ACTIVE",
+        "includeDescendants=false",
+        "page=1",
+        "pageSize=100"
+      ],
+      "http_status": 200,
+      "business_code": 0,
+      "request_id": "cmweei9l5fa26862053ec225d02813548",
+      "loading_finished": true
+    },
+    {
+      "purpose": "audience",
+      "time_utc": "2026-11-13T03:12:18.631Z",
+      "method": "GET",
+      "path_template": "/api/admin/v1/members/<MEMBER_B>/memberships",
+      "query": [],
+      "http_status": 200,
+      "business_code": 0,
+      "request_id": "cmweeia57d182d5c8e3cbc71774790bfc",
+      "loading_finished": true
+    },
+    {
+      "purpose": "audience",
+      "time_utc": "2026-11-13T03:12:19.222Z",
+      "method": "GET",
+      "path_template": "/api/admin/v1/members/<MEMBER_A>",
+      "query": [],
+      "http_status": 200,
+      "business_code": 0,
+      "request_id": "cmweeiallb570d27ad6fde578a09c2598",
+      "loading_finished": true
+    },
+    {
+      "purpose": "audience",
+      "time_utc": "2026-11-13T03:12:19.841Z",
+      "method": "GET",
+      "path_template": "/api/admin/v1/members/<MEMBER_R1>",
+      "query": [],
+      "http_status": 200,
+      "business_code": 0,
+      "request_id": "cmweeib3813f7dcbb294b36dffda48c9b",
+      "loading_finished": true
+    },
+    {
+      "purpose": "audience",
+      "time_utc": "2026-11-13T03:12:20.470Z",
+      "method": "GET",
+      "path_template": "/api/admin/v1/members/<MEMBER_R2>",
+      "query": [],
+      "http_status": 200,
+      "business_code": 0,
+      "request_id": "cmweeibk9bfe2871732247148c392a7ff",
+      "loading_finished": true
+    },
+    {
+      "purpose": "title_precheck",
+      "time_utc": "2026-11-13T03:13:06.103Z",
+      "method": "GET",
+      "path_template": "/api/admin/v1/contents",
+      "query": [
+        "page=1",
+        "pageSize=50",
+        "keyword=<UNIQUE_SYNTHETIC_TITLE>"
+      ],
+      "http_status": 200,
+      "business_code": 0,
+      "request_id": "cmweejar169065464e10ada8aa438811c",
+      "loading_finished": true
+    },
+    {
+      "purpose": "dictionary",
+      "time_utc": "2026-11-13T03:15:27.885Z",
+      "method": "GET",
+      "path_template": "/api/system/v1/dict-types",
+      "query": [
+        "page=1",
+        "pageSize=100",
+        "status=ACTIVE"
+      ],
+      "http_status": 200,
+      "business_code": 0,
+      "request_id": "cmweemc5pd4fc32cc4271b7c9a643a71b",
+      "loading_finished": true
+    },
+    {
+      "purpose": "dictionary",
+      "time_utc": "2026-11-13T03:15:38.479Z",
+      "method": "GET",
+      "path_template": "/api/system/v1/dict-items",
+      "query": [
+        "typeId=<CONTENT_TYPE>",
+        "page=1",
+        "pageSize=100",
+        "status=ACTIVE"
+      ],
+      "http_status": 200,
+      "business_code": 0,
+      "request_id": "cmweemkbn6a57e3379a1410cd5018eaee",
+      "loading_finished": true
+    },
+    {
+      "purpose": "org_option",
+      "time_utc": "2026-11-13T03:16:10.503Z",
+      "method": "GET",
+      "path_template": "/api/admin/v1/organizations",
+      "query": [
+        "status=ACTIVE",
+        "page=1",
+        "pageSize=100"
+      ],
+      "http_status": 200,
+      "business_code": 0,
+      "request_id": "cmween91ycd3b59e61c02160274cee0b8",
+      "loading_finished": true
+    },
+    {
+      "purpose": "readback",
+      "time_utc": "2026-11-13T03:18:32.359Z",
+      "method": "GET",
+      "path_template": "/api/admin/v1/contents/<NEW_CONTENT>",
+      "query": [],
+      "http_status": 200,
+      "business_code": 0,
+      "request_id": "cmweeqahqb7252555640ab3595be12659",
+      "loading_finished": true
+    },
+    {
+      "purpose": "readback",
+      "time_utc": "2026-11-13T03:18:32.969Z",
+      "method": "GET",
+      "path_template": "/api/admin/v1/attachments",
+      "query": [
+        "page=1",
+        "pageSize=100",
+        "ownerType=content-image",
+        "ownerId=<NEW_CONTENT>"
+      ],
+      "http_status": 200,
+      "business_code": 0,
+      "request_id": "cmweeqayj76c1b5f677a91ef8592184b8",
+      "loading_finished": true
+    },
+    {
+      "purpose": "readback",
+      "time_utc": "2026-11-13T03:18:33.613Z",
+      "method": "GET",
+      "path_template": "/api/admin/v1/attachments",
+      "query": [
+        "page=1",
+        "pageSize=100",
+        "ownerType=content-file",
+        "ownerId=<NEW_CONTENT>"
+      ],
+      "http_status": 200,
+      "business_code": 0,
+      "request_id": "cmweeqbgh607ca9f7122b32f7fcf0f27b",
+      "loading_finished": true
+    },
+    {
+      "purpose": "title_after",
+      "time_utc": "2026-11-13T03:19:26.538Z",
+      "method": "GET",
+      "path_template": "/api/admin/v1/contents",
+      "query": [
+        "page=1",
+        "pageSize=50",
+        "keyword=<UNIQUE_SYNTHETIC_TITLE>"
+      ],
+      "http_status": 200,
+      "business_code": 0,
+      "request_id": "cmweergca66038a92e30c4cb119383012",
+      "loading_finished": true
+    }
+  ],
+  "audience_preflight": {
+    "org_a_active": true,
+    "membership_status": "ACTIVE",
+    "include_descendants": false,
+    "total": 3,
+    "items": 3,
+    "unique_members": 3,
+    "member_set_exactly_a_r1_r2": true,
+    "all_memberships_current": true,
+    "all_known_members_active": true,
+    "b_memberships_complete": true,
+    "b_has_no_current_a_membership": true
+  },
+  "title_precheck": {
+    "all_statuses": true,
+    "total": 0,
+    "items": 0,
+    "exact_matches": 0
+  },
+  "dictionary": {
+    "announcement_active": true,
+    "label_matches_gui_option": true
+  },
+  "organization_option": {
+    "org_a_on_loaded_page": true,
+    "same_label_option_count": 1,
+    "sole_label_match_is_a": true
+  },
+  "gui": {
+    "real_form": true,
+    "one_save_click": true,
+    "type_selected_from_gui": true,
+    "department_selected_from_gui": true,
+    "org_a_only_selected": true,
+    "submitted_without_request_adaptation": true,
+    "after_save_dialog_closed": true,
+    "after_save_title_visible": true,
+    "screenshot": "NOT_CAPTURED"
+  },
+  "create": {
+    "time_utc": "2026-11-13T03:18:13.680Z",
+    "method": "POST",
+    "path": "/api/admin/v1/contents",
+    "http_status": 201,
+    "business_code": 0,
+    "request_id": "cmweepw42c192e566e6a4e7af882bce6e",
+    "response_loading_finished": true,
+    "payload_field_names": [
+      "title",
+      "summary",
+      "body",
+      "contentTypeCode",
+      "visibilityCode",
+      "visibleOrganizationIds",
+      "tags",
+      "pinned"
+    ],
+    "payload_title_matches": true,
+    "payload_type_announcement": true,
+    "payload_department_only_org_a": true,
+    "payload_body_exact": false,
+    "payload_body_trim_matches": true,
+    "payload_body_only_trailing_whitespace_difference": true,
+    "payload_tags_empty": true,
+    "payload_pinned_false": true,
+    "later_network_buffer_truncated": true
+  },
+  "readback": {
+    "same_content": true,
+    "title_exact": true,
+    "body_exact": false,
+    "body_trim_matches": true,
+    "body_has_only_trailing_whitespace_difference": true,
+    "body_utf16_code_units": 31,
+    "expected_body_utf16_code_units": 30,
+    "extra_trailing_whitespace_code_units": 1,
+    "external_link": false,
+    "attachment_markup": false,
+    "status": "draft",
+    "content_type": "announcement",
+    "visibility": "department",
+    "visible_organization_exactly_a": true,
+    "detail_attachments_count": 0,
+    "cover_present": false,
+    "image_attachment_total": 0,
+    "file_attachment_total": 0,
+    "title_search_total": 1,
+    "title_search_exact_matches": 1,
+    "title_match_is_created_draft": true
+  },
+  "not_performed": [
+    "upload-url",
+    "upload",
+    "attachment confirmation",
+    "publish"
+  ],
+  "limitations": [
+    "The extra body whitespace is not byte-for-byte identical to the requested input.",
+    "Later historical network-event inspection was truncated; the original observed response window was not truncated.",
+    "Database triggers and independent workers were not inspected in this batch.",
+    "Compiled storage boundary was reported separately; deployment SHA is unknown."
+  ]
+}
