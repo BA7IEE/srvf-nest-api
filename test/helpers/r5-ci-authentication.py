@@ -18,9 +18,7 @@ import time
 from urllib.parse import quote
 from r5_ci_resources import memory_admission
 
-# Use the same immutable registry reference pulled by CI. A config digest is
-# not a runnable image ID on every Docker image store (notably containerd).
-PG_IMAGE = 'postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea'
+PG_IMAGE_REF = 'postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea'
 NODE_IMAGE = 'node@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413'
 DB = 'app_test_r5_setmat_20261029_q1'
 ROLES = ['r5_boundary_owner_h7c6', 'r5_boundary_caller_h7c6', 'r5_mat_writer_20261029_q1',
@@ -128,6 +126,14 @@ def docker(argv, stem, **kw):
     return run(DOCKER + argv, stem, **kw)
 
 
+def resolve_pg_image_id():
+    value = json.loads(docker(['image', 'inspect', '--format', '{{json .Id}}', PG_IMAGE_REF],
+                              'resolve-pg-image-id').stdout)
+    if not isinstance(value, str) or not re.fullmatch(r'sha256:[a-f0-9]{64}', value):
+        raise RuntimeError('PG_IMAGE_ID_INVALID')
+    return value
+
+
 def pg_exit_evidence(container, stem):
     # Read Docker metadata only. No database connection, credentials or restart.
     evidence = {'status': 'UNKNOWN'}
@@ -200,12 +206,8 @@ try:
                     'test/fixtures/r5-ci-source-catalog.json', 'test/r5-authenticated-ci-suites.json']
     save('EXECUTION-SOURCE.json', {p: hashlib.sha256((repo / p).read_bytes()).hexdigest()
                                  for p in source_paths})
-    # Resolve before creating any fixture resources; retain Docker's native ID
-    # for the existing timed-out-create ownership check during cleanup.
-    pg_image_id = json.loads(docker(['image', 'inspect', '--format', '{{json .Id}}', PG_IMAGE],
-                                   'pg-image-identity').stdout)
-    assert isinstance(pg_image_id, str) and re.fullmatch(r'sha256:[a-f0-9]{64}', pg_image_id), 'INVALID_PG_IMAGE_ID'
     assert not docker(['ps', '-aq', '--filter', 'label=srvf.r5.ci-auth'], 'other-fixture-preflight').stdout.strip()
+    pg_image_id = resolve_pg_image_id()
     save('WINDOW.json', {'startedAt': stamp(), 'stageLimitSeconds': 600,
                          'controlLimitSeconds': 1800, 'authenticationLimitSeconds': 180,
                          'campaign': campaign, 'claim': name})
@@ -239,7 +241,7 @@ try:
     cid = docker(['run', '--detach', '--pull=never', '--name', name, '--label', label,
                   '--network', 'none', '--cpus', '1', '--memory', str(PG_MEMORY_BYTES), '--pids-limit', '128',
                   '--tmpfs', '/var/lib/postgresql/data:rw,size=' + str(PG_DATA_TMPFS_BYTES), *socket_mount, '--entrypoint', '/bin/sh',
-                  PG_IMAGE, '-ceu', shell], 'create-pg').stdout.strip()
+                  pg_image_id, '-ceu', shell], 'create-pg').stdout.strip()
     assert re.fullmatch('[a-f0-9]{64}', cid)
     receipt['containerId'] = cid
     for i in range(60):
@@ -396,7 +398,7 @@ finally:
                            'resolve-pg-create-outcome', cleanup=True).stdout.strip()
             if found:
                 assert re.fullmatch('[a-f0-9]{64}', found)
-                assert pg_image_id is not None and json.loads(docker(['inspect', '--format', '{{json .Image}}', found], 'resolve-pg-image', cleanup=True).stdout) == pg_image_id
+                assert json.loads(docker(['inspect', '--format', '{{json .Image}}', found], 'resolve-pg-image', cleanup=True).stdout) == pg_image_id
                 cid = found
         if not app_cid:
             found = docker(['ps', '-aq', '--filter', 'name=^/' + name + '-app$', '--filter', 'label=' + label],
