@@ -6,6 +6,7 @@ import {
   IsArray,
   IsBoolean,
   IsDateString,
+  IsDefined,
   IsIn,
   IsInt,
   IsNumber,
@@ -788,6 +789,8 @@ export class AppActivityChangePositionDto extends CreateAppManagedActivityPositi
 
 export class AppSubmitActivityChangeReviewDto {
   @ApiProperty({ type: UpdateAppManagedActivityDto })
+  @IsDefined()
+  @IsObject()
   @ValidateNested()
   @Type(() => UpdateAppManagedActivityDto)
   activity!: UpdateAppManagedActivityDto;
