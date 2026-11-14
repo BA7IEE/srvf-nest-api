@@ -53,6 +53,7 @@
 
 - `BizException` → 读 `httpStatus`,响应 `{ code, message, data: null }` + 对应 HTTP status
 - NestJS `HttpException` → 沿用其 HTTP status,`code` 用通用 BizCode(`BAD_REQUEST` / `UNAUTHORIZED` / `FORBIDDEN` / `NOT_FOUND` / `INTERNAL_ERROR`)
+- Express/body-parser 带字符串 `type` 的 400 / 413 / 415 解析异常（如 `entity.too.large`）→ 保留 HTTP status，统一 `BAD_REQUEST=40000` 和通用文案，不回显请求内容；不改请求体上限
 - 未知异常 → HTTP 500,`code` 为 `INTERNAL_ERROR`,生产环境不暴露 `error.message`
 
 业务响应体始终 `{ code, message, data }` 三字段;HTTP status 始终保持语义。**禁止为了"统一"返回 HTTP 200。**

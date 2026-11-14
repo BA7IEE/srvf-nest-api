@@ -725,6 +725,59 @@ describe('App managed activities core', () => {
     });
   });
 
+  it.each([
+    ['missing activity', {}],
+    ['non-object activity', { activity: 'x' }],
+  ])('smoke-500: rejects change review with %s', async (_description, body) => {
+    const owner = await createMember('change-validation', 'level-5', true);
+    const response = await request(httpServer(app))
+      .post('/api/app/v1/my/managed-activities/c000000000000000000000000/submit-change-review')
+      .set('Authorization', owner.auth)
+      .send(body);
+    expectBizError(response, BizCode.BAD_REQUEST, { strictMessage: false });
+  });
+
+  it('smoke-500: preserves activity not found for a valid change review body', async () => {
+    const owner = await createMember('change-not-found', 'level-5', true);
+    const response = await request(httpServer(app))
+      .post('/api/app/v1/my/managed-activities/c000000000000000000000000/submit-change-review')
+      .set('Authorization', owner.auth)
+      .send({ activity: {} });
+    expectBizError(response, BizCode.ACTIVITY_NOT_FOUND);
+  });
+
+  it('smoke-500: reports unavailable correction job authority without a trusted binding', async () => {
+    const reviewer = await createMember('correction-job-reviewer');
+    const permission = await prisma.permission.upsert({
+      where: { code: 'activity.settlement-final-review.record' },
+      update: {},
+      create: {
+        code: 'activity.settlement-final-review.record',
+        module: 'activity',
+        action: 'record',
+        resourceType: 'settlement-final-review',
+      },
+    });
+    const role = await prisma.rbacRole.create({
+      data: { code: 'smoke-correction-final-reviewer', displayName: 'Smoke correction reviewer' },
+    });
+    await prisma.rolePermission.create({ data: { roleId: role.id, permissionId: permission.id } });
+    await prisma.roleBinding.create({
+      data: {
+        principalType: PrincipalType.USER,
+        principalId: reviewer.userId,
+        roleId: role.id,
+        scopeType: BindingScopeType.GLOBAL,
+      },
+    });
+    const response = await request(httpServer(app))
+      .get(
+        '/api/app/v1/my/managed-activities/c000000000000000000000000/time-corrections/c000000000000000000000001/commit-jobs/c000000000000000000000002',
+      )
+      .set('Authorization', reviewer.auth);
+    expectBizError(response, BizCode.SERVICE_UNAVAILABLE);
+  });
+
   it('rejects a published change proposal that changes organizationId', async () => {
     const owner = await createMember('change-org-rejected', 'level-5', true);
     const activityId = await createManagedDraft(owner, 'Published organization change');

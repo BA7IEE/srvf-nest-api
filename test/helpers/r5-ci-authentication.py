@@ -18,7 +18,7 @@ import time
 from urllib.parse import quote
 from r5_ci_resources import memory_admission
 
-PG_IMAGE = 'sha256:81bd698b4594e751a3269e4dcd3e03a4a0ec0daf7b72e7aa1abd43cce9887542'
+PG_IMAGE_REF = 'postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea'
 NODE_IMAGE = 'node@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413'
 DB = 'app_test_r5_setmat_20261029_q1'
 ROLES = ['r5_boundary_owner_h7c6', 'r5_boundary_caller_h7c6', 'r5_mat_writer_20261029_q1',
@@ -60,6 +60,7 @@ assert campaign_start <= now < campaign_end, 'ORIGINAL_CAMPAIGN_EXPIRED_NO_RESET
 deadline = min(started + 600, started + (campaign_end - now).total_seconds())
 auth_deadline = None
 cid = None
+pg_image_id = None
 app_cid = None
 socket_volume = None
 passwords = []
@@ -123,6 +124,14 @@ def run(argv, stem, text=None, allow=False, cleanup=False, timeout=30, persist=T
 
 def docker(argv, stem, **kw):
     return run(DOCKER + argv, stem, **kw)
+
+
+def resolve_pg_image_id():
+    value = json.loads(docker(['image', 'inspect', '--format', '{{json .Id}}', PG_IMAGE_REF],
+                              'resolve-pg-image-id').stdout)
+    if not isinstance(value, str) or not re.fullmatch(r'sha256:[a-f0-9]{64}', value):
+        raise RuntimeError('PG_IMAGE_ID_INVALID')
+    return value
 
 
 def pg_exit_evidence(container, stem):
@@ -198,6 +207,7 @@ try:
     save('EXECUTION-SOURCE.json', {p: hashlib.sha256((repo / p).read_bytes()).hexdigest()
                                  for p in source_paths})
     assert not docker(['ps', '-aq', '--filter', 'label=srvf.r5.ci-auth'], 'other-fixture-preflight').stdout.strip()
+    pg_image_id = resolve_pg_image_id()
     save('WINDOW.json', {'startedAt': stamp(), 'stageLimitSeconds': 600,
                          'controlLimitSeconds': 1800, 'authenticationLimitSeconds': 180,
                          'campaign': campaign, 'claim': name})
@@ -231,7 +241,7 @@ try:
     cid = docker(['run', '--detach', '--pull=never', '--name', name, '--label', label,
                   '--network', 'none', '--cpus', '1', '--memory', str(PG_MEMORY_BYTES), '--pids-limit', '128',
                   '--tmpfs', '/var/lib/postgresql/data:rw,size=' + str(PG_DATA_TMPFS_BYTES), *socket_mount, '--entrypoint', '/bin/sh',
-                  PG_IMAGE, '-ceu', shell], 'create-pg').stdout.strip()
+                  pg_image_id, '-ceu', shell], 'create-pg').stdout.strip()
     assert re.fullmatch('[a-f0-9]{64}', cid)
     receipt['containerId'] = cid
     for i in range(60):
@@ -388,7 +398,7 @@ finally:
                            'resolve-pg-create-outcome', cleanup=True).stdout.strip()
             if found:
                 assert re.fullmatch('[a-f0-9]{64}', found)
-                assert json.loads(docker(['inspect', '--format', '{{json .Image}}', found], 'resolve-pg-image', cleanup=True).stdout) == PG_IMAGE
+                assert json.loads(docker(['inspect', '--format', '{{json .Image}}', found], 'resolve-pg-image', cleanup=True).stdout) == pg_image_id
                 cid = found
         if not app_cid:
             found = docker(['ps', '-aq', '--filter', 'name=^/' + name + '-app$', '--filter', 'label=' + label],
