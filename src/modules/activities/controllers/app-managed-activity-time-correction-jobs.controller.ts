@@ -11,6 +11,7 @@ import {
 } from '../../../common/decorators/current-user.decorator';
 import { RequiresPermission } from '../../../common/decorators/route-authz.decorator';
 import { BizCode } from '../../../common/exceptions/biz-code.constant';
+import { BizException } from '../../../common/exceptions/biz.exception';
 import { ActivityTimeCorrectionBackgroundService } from '../activity-time-correction-background.service';
 import {
   AppActivityTimeCorrectionParamsDto,
@@ -20,6 +21,18 @@ import {
   AppActivityTimeCorrectionJobDto,
   AppActivityTimeCorrectionJobParamsDto,
 } from '../dto/app/app-activity-time-correction-job.dto';
+import { HumanCorrectionAuthorityUnavailableError } from '../human-correction-intent';
+
+async function translateAuthority<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof HumanCorrectionAuthorityUnavailableError) {
+      throw new BizException(BizCode.SERVICE_UNAVAILABLE);
+    }
+    throw error;
+  }
+}
 
 const ERRORS = [
   BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
@@ -28,6 +41,7 @@ const ERRORS = [
   BizCode.UNAUTHORIZED,
   BizCode.FORBIDDEN,
   BizCode.NOT_FOUND,
+  BizCode.SERVICE_UNAVAILABLE,
   BizCode.RBAC_FORBIDDEN,
   BizCode.CORRECTION_OPERATION_KEY_CONFLICT,
   BizCode.CORRECTION_APPLY_STATUS_INVALID,
@@ -59,7 +73,9 @@ export class AppManagedActivityTimeCorrectionJobsController {
     @Body() dto: AppCommitActivityTimeCorrectionDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.jobs.enqueue(params.activityId, params.requestId, dto, user);
+    return translateAuthority(() =>
+      this.jobs.enqueue(params.activityId, params.requestId, dto, user),
+    );
   }
 
   @Get(':jobId')
@@ -79,7 +95,9 @@ export class AppManagedActivityTimeCorrectionJobsController {
     @Param() params: AppActivityTimeCorrectionJobParamsDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.jobs.detail(params.activityId, params.requestId, params.jobId, user);
+    return translateAuthority(() =>
+      this.jobs.detail(params.activityId, params.requestId, params.jobId, user),
+    );
   }
 
   @Post(':jobId/retry')
@@ -100,6 +118,8 @@ export class AppManagedActivityTimeCorrectionJobsController {
     @Param() params: AppActivityTimeCorrectionJobParamsDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.jobs.retry(params.activityId, params.requestId, params.jobId, user);
+    return translateAuthority(() =>
+      this.jobs.retry(params.activityId, params.requestId, params.jobId, user),
+    );
   }
 }

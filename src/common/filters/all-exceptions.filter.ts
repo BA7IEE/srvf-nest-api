@@ -50,6 +50,16 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return;
     }
 
+    const parserStatus = this.parserFailureStatus(exception);
+    if (parserStatus !== null) {
+      response.status(parserStatus).json({
+        code: BizCode.BAD_REQUEST.code,
+        message: BizCode.BAD_REQUEST.message,
+        data: null,
+      });
+      return;
+    }
+
     // 未知异常 → 500 + INTERNAL_ERROR
     this.logger.error(
       'Unhandled exception',
@@ -64,6 +74,20 @@ export class AllExceptionsFilter implements ExceptionFilter {
           : String(exception),
       data: null,
     });
+  }
+
+  private parserFailureStatus(exception: unknown): 400 | 413 | 415 | null {
+    if (
+      typeof exception !== 'object' ||
+      exception === null ||
+      !('type' in exception) ||
+      typeof exception.type !== 'string'
+    )
+      return null;
+    const status =
+      ('status' in exception ? exception.status : undefined) ??
+      ('statusCode' in exception ? exception.statusCode : undefined);
+    return status === 400 || status === 413 || status === 415 ? status : null;
   }
 
   // 仅 BadRequest(400)且来自 ValidationPipe(message 是 string[])时透传字段校验细节;
