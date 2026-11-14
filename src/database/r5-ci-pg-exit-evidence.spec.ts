@@ -60,3 +60,78 @@ describe('Docker exit evidence preserves uncertainty without SQL, raw logs or se
     ).not.toHaveProperty('running');
   });
 });
+
+describe('isolated PG startup and timed-out-create recovery across Docker image stores', () => {
+  const startupProbe = `
+import ast,json,re,sys
+from pathlib import Path
+from types import SimpleNamespace
+tree=ast.parse(Path(sys.argv[1]).read_text())
+case=json.load(sys.stdin)
+main=next(node for node in tree.body if isinstance(node,ast.Try))
+def assigns(node,name):
+ return isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id==name for t in node.targets)
+constants=[node for node in tree.body if any(assigns(node,name) for name in ['PG_IMAGE','PG_MEMORY_BYTES','PG_DATA_TMPFS_BYTES'])]
+lookup=next(i for i,node in enumerate(main.body) if assigns(node,'pg_image_id'))
+create=next(node for node in main.body if assigns(node,'cid'))
+recover=next(node for part in main.finalbody for node in ast.walk(part) if isinstance(node,ast.If)
+ and isinstance(node.test,ast.UnaryOp) and isinstance(node.test.op,ast.Not)
+ and isinstance(node.test.operand,ast.Name) and node.test.operand.id=='cid')
+pin='postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea'
+calls=[]
+def docker(argv,stem,**kw):
+ calls.append(argv)
+ if argv[:2]==['image','inspect']:
+  assert argv[-1]==pin
+  return SimpleNamespace(stdout=json.dumps(case['imageId']))
+ if argv[0]=='run':
+  # Model an engine that accepts the pulled reference, not a config-digest alias.
+  assert pin in argv, 'No such image'
+  assert '--pull=never' in argv and argv[argv.index('--network')+1]=='none'
+  return SimpleNamespace(stdout='c'*64)
+ if argv[0]=='ps': return SimpleNamespace(stdout='c'*64)
+ if argv[0]=='inspect': return SimpleNamespace(stdout=json.dumps(case['containerImageId']))
+ raise AssertionError('Unexpected Docker operation')
+scope={'docker':docker,'json':json,'re':re,'name':'owned-fixture','label':'test-label',
+       'socket_mount':[],'shell':'test-only'}
+def execute(nodes):
+ exec(compile(ast.Module(body=nodes,type_ignores=[]),'<pg-image-identity>','exec'),scope)
+try:
+ execute(constants+main.body[lookup:lookup+2]+[create])
+ scope['cid']=None
+ execute([recover])
+ print(json.dumps({'recovered':scope['cid'],'calls':calls}))
+except AssertionError:
+ print(json.dumps({'rejected':True,'calls':calls}))
+`;
+
+  function startup(imageId: unknown, containerImageId: unknown = imageId) {
+    return JSON.parse(
+      execFileSync(
+        'python3',
+        ['-B', '-c', startupProbe, resolve('test/helpers/r5-ci-authentication.py')],
+        { input: JSON.stringify({ imageId, containerImageId }), encoding: 'utf8' },
+      ),
+    ) as { recovered?: string; rejected?: boolean; calls: string[][] };
+  }
+
+  it.each([
+    'sha256:81bd698b4594e751a3269e4dcd3e03a4a0ec0daf7b72e7aa1abd43cce9887542',
+    'sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea',
+  ])('uses the immutable reference and recovers only the resolved engine identity: %s', (id) => {
+    expect(startup(id).recovered).toBe('c'.repeat(64));
+  });
+
+  it('refuses cleanup ownership of a container with a different image', () => {
+    expect(startup(`sha256:${'a'.repeat(64)}`, `sha256:${'b'.repeat(64)}`).rejected).toBe(true);
+  });
+
+  it.each([null, '', 'postgres:latest', 'sha256:short'])(
+    'rejects invalid image identity before creating a container: %j',
+    (id) => {
+      const result = startup(id);
+      expect(result.rejected).toBe(true);
+      expect(result.calls.some((argv) => argv[0] === 'run')).toBe(false);
+    },
+  );
+});
