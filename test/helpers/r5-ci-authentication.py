@@ -18,7 +18,9 @@ import time
 from urllib.parse import quote
 from r5_ci_resources import memory_admission
 
-PG_IMAGE = 'sha256:81bd698b4594e751a3269e4dcd3e03a4a0ec0daf7b72e7aa1abd43cce9887542'
+# Use the same immutable registry reference pulled by CI. A config digest is
+# not a runnable image ID on every Docker image store (notably containerd).
+PG_IMAGE = 'postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea'
 NODE_IMAGE = 'node@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413'
 DB = 'app_test_r5_setmat_20261029_q1'
 ROLES = ['r5_boundary_owner_h7c6', 'r5_boundary_caller_h7c6', 'r5_mat_writer_20261029_q1',
@@ -60,6 +62,7 @@ assert campaign_start <= now < campaign_end, 'ORIGINAL_CAMPAIGN_EXPIRED_NO_RESET
 deadline = min(started + 600, started + (campaign_end - now).total_seconds())
 auth_deadline = None
 cid = None
+pg_image_id = None
 app_cid = None
 socket_volume = None
 passwords = []
@@ -197,6 +200,11 @@ try:
                     'test/fixtures/r5-ci-source-catalog.json', 'test/r5-authenticated-ci-suites.json']
     save('EXECUTION-SOURCE.json', {p: hashlib.sha256((repo / p).read_bytes()).hexdigest()
                                  for p in source_paths})
+    # Resolve before creating any fixture resources; retain Docker's native ID
+    # for the existing timed-out-create ownership check during cleanup.
+    pg_image_id = json.loads(docker(['image', 'inspect', '--format', '{{json .Id}}', PG_IMAGE],
+                                   'pg-image-identity').stdout)
+    assert isinstance(pg_image_id, str) and re.fullmatch(r'sha256:[a-f0-9]{64}', pg_image_id), 'INVALID_PG_IMAGE_ID'
     assert not docker(['ps', '-aq', '--filter', 'label=srvf.r5.ci-auth'], 'other-fixture-preflight').stdout.strip()
     save('WINDOW.json', {'startedAt': stamp(), 'stageLimitSeconds': 600,
                          'controlLimitSeconds': 1800, 'authenticationLimitSeconds': 180,
@@ -388,7 +396,7 @@ finally:
                            'resolve-pg-create-outcome', cleanup=True).stdout.strip()
             if found:
                 assert re.fullmatch('[a-f0-9]{64}', found)
-                assert json.loads(docker(['inspect', '--format', '{{json .Image}}', found], 'resolve-pg-image', cleanup=True).stdout) == PG_IMAGE
+                assert pg_image_id is not None and json.loads(docker(['inspect', '--format', '{{json .Image}}', found], 'resolve-pg-image', cleanup=True).stdout) == pg_image_id
                 cid = found
         if not app_cid:
             found = docker(['ps', '-aq', '--filter', 'name=^/' + name + '-app$', '--filter', 'label=' + label],
