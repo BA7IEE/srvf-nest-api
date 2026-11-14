@@ -1,124 +1,105 @@
-# notifications — 本地铁律
+# notifications — 执行与受众边界
 
-> 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);生日冻结评审稿 [`/docs/archive/reviews/queue-b-otp-birthday-infra-review.md §6`](../../../docs/archive/reviews/queue-b-otp-birthday-infra-review.md);到期提醒冻结评审稿 [`/docs/archive/reviews/expiry-reminder-attendance-reopen-v0.47.0-review.md`](../../../docs/archive/reviews/expiry-reminder-attendance-reopen-v0.47.0-review.md);运维送审 SOP [`/docs/ops/sms-production-rollout-checklist.md`](../../../docs/ops/sms-production-rollout-checklist.md)。本文件**只**记录在本目录工作时容易踩雷的本地铁律。
+负责站内 pull、微信订阅、显式短信兜底、企业微信及定向业务通知。
+验证码/渠道配置归各自模块；报名前非会员通知仍走查询 pull，不增加通知偏好或全员短信任务。
+业务规格见 `docs/archive/reviews/unified-notification-dispatcher-review.md`；
+发布现场见 `docs/ops/wecom-message-channel-rollout.md`（均相对仓库根）。
 
-## Scope
+## 事务与 durable outbox
 
-**统一通知中枢**(2026-06-25 由「生日批单服务」扩容而来)。四条渠道 + 两个 cron:
+- producer 在业务事务内写不可变 intent，enqueue 失败使业务回滚；worker/provider 重试不重放业务写。
+  招新/入队、报名审批/候补/取消、活动发布/改期/取消/审核/扩容、责任移交、考勤审核均沿此边界。
+  责任 assignment、RoleBinding、audit 和新旧 owner 两个 intent 必须同事务。
+- 稳定状态版本复用 eventKey，reopen 后的新审核产生新 key。活动结果收件人只认当前 ACTIVE owner，
+  缺失时安全告警、不入队、不回退 publisher。自助取消正文只有 memberNo/displayName 安全快照，
+  缺任一字段即匿名，不用内部 ID 补位。考勤终审逐 record snapshot；
+  milestone 为 team_join_application 的固定 5 分门槛，同 application+threshold 重放须完整同内容。
+- worker 独立进程、PG `FOR UPDATE SKIP LOCKED` claim/lease/fence，provider 恒在事务外。
+  不 import AppModule/ScheduleModule、不新增 cron/queue/内存幂等。
+- permission 锁序：
+  `Notification FOR SHARE → intent FOR UPDATE → Member FOR UPDATE → organization topology →
+  User → RoleBinding → RbacRole → Permission → RolePermission`（后五类 FOR SHARE）。
+  parent writer 等待所有 permission 事务；同代 child 可共享 parent。
+- draft→published 在根锁内原子 `publishGeneration +1`，新 admin root/child/SMS 只用 v2。
+  v1 admin intent terminal dead；切换期 v1 child 仅接受未 prepare、published system-directed、
+  directed audience、同 member 且有 wechat channel。`preparedAt != null && preparedTemplateId == null` 拒绝。
+- 每 intent JIT claim，稳定 lockedAt；heartbeat 与 beforeEffect 共用单一在途 renew。
+  微信 cache hit 不 guard，cache miss token fetch、首次 send、强制刷新和第二次 send 各在真实 fetch 前 guard。
+  sticky lease failure 后不启动新 provider、不 ack/nack/dead。
+- quota 首次 reservation 与 preparedAt/preparedTemplateId 同短事务；重领只用持久模板，半状态拒绝。
+  退款仅限同进程同 attempt 正向 reservation capability，最终 permission 拒绝且 provider 尚未开始；
+  旧 attempt、崩溃或结果未知均不退款。
+- provider 返回到 evidence commit 为 at-least-once 歧义窗口，不宣称 exactly-once。
+  跨代 active 微信 child 使新 root 停 heartbeat 后无损 defer：恢复 attempt，延至 max(active lease,now)+BASE。
+  只有 NotificationDelivery SENT 是跨 generation 永久去重事实。
+- payload/eventKey 不含 phone/openid/token/secret/credential/signed URL/provider 原文；
+  envelope/payload 的 notification/member ID 一致。关停先停 claim/唤醒 idle，再 drain attempt/heartbeat。
+  lease/DB 异常安全分类、退避续跑；未知 type/version 零 Effect。
 
-| 面 | 承载 | 关键点 |
-|---|---|---|
-| 站内信 | `NotificationAdminController` 8 端点 + `NotificationAppController` 4 端点 | **pull 零发送**;可见性复用 `content.visibility`(去 public = 4 档) |
-| 微信订阅 | `NotificationWechatDispatchService` + quota / 模板配置 | 有 quota ∩ 可见才发;发送能力 additive 在 `wechat/` |
-| 短信兜底 | `NotificationSmsDispatchService` | **仅 admin 显式 `confirmed=true` 触发**,预览零发送零计费 |
-| 定向业务通知 | producer 在业务事务内 enqueue outbox intent | 均**仅站内**,0 schema / 0 端点 / 0 RBAC 码 |
-| 两个 `@Cron` | 生日祝福(09:00)+ 到期提醒(v0.47.0,09:00) | 都是薄壳,只入队;外发由独立 worker 执行 |
+## 受众与可见性
 
-**durable outbox 是全模块的执行底座**:业务事务同写 `NotificationOutboxIntent`,
-独立 `notification-outbox-worker` 进程(**不是第三个定时器**)以 PostgreSQL
-`FOR UPDATE SKIP LOCKED` claim + lease/fencing 驱动 Effect,provider 恒在事务外。
+- Decision 15.1=B、Decision 15.2=B（业务负责人最终确认：2026-07-27）：
+  management 仅 SUPER_ADMIN 或显式 GLOBAL read grant，Role.ADMIN 不直通；
+  department 接受 PRIMARY/SECONDARY/TEMPORARY/SUPPORT 当前有效任职，Organization ACTIVE 且未软删。
+  App pull、SMS/WeChat 根受众和 Effect 最终复核同义。
+- directed/membership audience 的归属组织仍只认当前 PRIMARY：
+  ACTIVE、startedAt<=now、endedAt=null、未软删；不与 department 广播四类资格混用。
+- 唯一受众原语为 `notification-recipient-authorization.service.ts` 的
+  `authorizeBroadcastRecipients` / `authorizeRecipientForEffect`，新渠道必须复用。
+  它们是函数，不为手工构造的消费方擅加 Injectable 依赖；地址由调用方 loadActiveUsers 注入。
+- canSeeContent 只判断 status；读侧 buildVisibilityWhere、推送侧 authorizeAdminNotificationEffect
+  才检查软删，新渠道不能漏用。广播根按 Member 取候选，无 ACTIVE User 者仍可进入地址为空的候选；
+  最终闸再拒绝/跳过，不将两阶段规则合并。
+- 微信 v2 child 同事务复核 parent/generation/lease、Member/User、任职/组织、visibility 与 GLOBAL RBAC，
+  全程同一 tx client，openid 只取 shared-lock User 快照。pre-permission quota=0 记 no-quota，
+  recipientRef='-'，不伪造 destination evidence。
+- 广播 feed 必须 `audienceType=broadcast`；定向只限 recipientMemberId=本人，他人 31001。
+  系统定向直接 published/system/authorUserId=null，不走 admin 状态机、不写运营 audit；
+  dispatcher 不反向 import/callback producer。
 
-> 业务负责人于 2026-07-27 最终确认 **Decision 15.1=B / Decision 15.2=B**：management 仅认 SUPER_ADMIN 或明确 GLOBAL read grant，Role.ADMIN 不自动放行；department 认 PRIMARY/SECONDARY/TEMPORARY/SUPPORT 四类当前有效 Membership，且 Organization 必须 ACTIVE、未软删。App pull、SMS/WeChat 根受众与 WeChat Effect 前最终复核同义。
+## 渠道特殊规则
 
-- **不负责**:验证码(`SmsCodeService`)/ wechat·sms settings 管理(各自模块)/ 报名前 5 触发(申请人非队员,维持查询 pull;openid 推送路另立项)/ 真·全员短信批处理异步(延后,未立项)/ 退订偏好(未立项)。
+- SMS 只允许 admin 显式 confirmed=true；预览零发送零计费、缺字段400，publish 不自动发送 SMS。
+  每 recipient 独立 pending child；provider accepted 后 sms_send_logs SENT 与 delivery sent 同短事务，
+  任一失败外抛给 worker nack。已被别的 worker claim 的首轮计 failed，不算 skipped；通道关闭不 ack。
+  空通知模板 confirmed 发送返24030，真实模板须零变量且过审；
+  沿 sms.constants 的同号每日10次/间隔60s和同日同模板幂等，不另设阈值。
+- 微信只向 quota∩可见候选 fan-out；扣 quota 用条件原子 updateMany/decrement，count=1 才发。
+  ack 是 additive、非去重幂等，封顶5；模板 ID/thing/time 映射须真机核对，null 模板不发送。
+  不改变已有 code2session、验证码或生日 provider 行为。
+- wecom 与 wechat 的身份键、事件、active-slot partial unique、reason/错误码分离。
+  publish 先查 readiness，不可用不建 root；Effect 锁后复读 settings，关闭则 skipped/channel-disabled，
+  不迟到补发。共同实体锁序必须 `settings → User → identity`；
+  settings 在 T5A 前取锁，但通道开关判定仍在资格之后，失效资格不能多留 delivery。
+- wecom 一次 resolveMessageContext 取得 provider/corpId/generation/webBaseUrl，
+  最终锁后校验代际与 corpId，不一致 config-changed、不发送不记账、交下次 attempt；
+  identity 用同 corpId，提交后只用该 provider，不再 resolveRoute。wecomUserId 只来自锁内快照。
+- wecom 失败只按 WECOM_ERROR_KIND：network/timeout/http-5xx/system-busy/token-invalid 退避；
+  rate-limited/provider-contract/http-4xx dead 待人工 replay；
+  config-fatal/invalid-response/upstream-rejected terminal ack。
+  errcode=0 也查 invaliduser/unlicenseduser；81013 不记 SENT。
+  四个名单字段：缺席/空串为空，字符串解析，其他类型 INVALID_RESPONSE；
+  errcode 非0时 invalidparty/invalidtag 也要检查。
+- 系统定向重发唯一入口 replayDirectedWecomDelivery：新 child/key；SENT 和 active attempt 拒绝。
+  默认仅 dead 且最后 reason 为 rate-limited/provider-contract-error；
+  never-attempted、channel-disabled、recipient-unlicensed 不重发。
+  overrideReason 只绕历史 reason，其他闸不绕。admin 广播仍 unpublish+publish。
+  HTTP 入口只判权/参数/审计，不复制原语判据；恒200，outcome 闭集须同步 DTO/contract/runbook。
+  每次通过判权调用都记 notification.publish + operation=replay-wecom + overrideReason，
+  不记录身份/深链/凭证。暂态失败 delivery 不占 intent.id，否则重试会被幂等入口吞掉。
+  开 messageEnabled 前必须排空旧 worker fleet。
 
-> **模块沿革**(S1→S5 各期怎么长出来的、durable outbox 与 G2 generation fence 的完整设计叙述)
-> 已移至 [`/docs/archive/module-notes/notifications.md`](../../../docs/archive/module-notes/notifications.md) ——
-> 那段 5.9k 字符对**要改代码的人**没有约束力,却在每次触碰本目录时全额注入。
-> **叙事搬走了,规则没搬**:原文里嵌在叙事中的不变量已逐条落在下面 `Local facts` 与 `Risk points`。
-> 设计权威源仍是冻结评审稿 [`unified-notification-dispatcher-review.md`](../../../docs/archive/reviews/unified-notification-dispatcher-review.md)。
+## 两个 cron
 
-## Local facts
+生日与到期提醒均09:00、runOnce 扫描入队，独立 worker 外发，不新增调度器或 retention cron。
+生日按 UTC+8 月日：profile 未删、Member ACTIVE未删、User 存在且 ACTIVE未删、User.phone 非空；
+只发 User.phone，不发 profile.mobile；2/29 不顺延，零变量，不写 audit_logs。
+eventKey=北京日期+memberId，PG unique 防重复 intent，sms_send_logs SENT 防重复触达。
+provider/临时DB/缺配置/production-like DEV_STUB 均 nack/retry，最多8次后 dead。
+启动日志 `Birthday greeting cron registered (09:00 Asia/Shanghai)` 是 docker-smoke 锚点。
+普通日志只用闭集 operation/safeErrorCategory/safeErrorCode/retryable/必要稳定ID，
+未知错误 unexpected-error/code=null；不输出 message/stack/cause、地址、对象键或 provider URL。
 
-- 招新发号与入队 producer 在各自业务 transaction 内 enqueue `notification.targeted@1`；worker commit 后执行 Effect。producer 不再 commit 后 best-effort 直调 dispatcher，enqueue 失败必须使业务回滚。
-- 报名审批、候补递补与自助取消 producer 同样在业务 transaction 内 enqueue；同一状态版本复用稳定 eventKey，reopen 后新审核生成新 eventKey。自助取消只接收 `memberNo/displayName` 安全快照用于正文，任一字段不可用即匿名兜底，禁止用 Member/User 内部 ID 补位；gate=true 缺 ACTIVE owner 时不入队且只记安全告警，禁止回退 publisher。
-- 活动发布广播、改期、取消、发布审核结果与 Activity/岗位扩容递补同样在业务 transaction 内 enqueue；审核 change 收件人只认审核时当前 ACTIVE owner，缺失时不入队且记安全告警，禁止回退 publisher。
-- 责任委托/结束与 owner 移交同样在 assignment、RoleBinding、audit 的业务 transaction 内 enqueue；移交分别快照旧/新 owner，两个 intent 任一失败都回滚完整移交。
-- 考勤 `firstReturn`/`finalReturn`/`finalApprove` 同样在 Sheet 状态、audit 的业务 transaction 内 enqueue；退回收件人从 active attendance assignment/提交人解析，终审逐 record snapshot；milestone payload 只含稳定 5 分门槛正文，aggregate=`team_join_application`，同 application+threshold 重放必须完整同内容。enqueue 失败整体回滚，worker/provider 失败不得重放业务写。
-- membership audience / 定向归属组织只接受当前有效 PRIMARY(`ACTIVE + startedAt<=now + endedAt=null + 未软删`)；本口径不改变 durable Outbox 的 enqueue 位置与事务顺序。
-- department 广播是独立读取可见档：App pull、SMS/WeChat 根受众与 WeChat 最终复核均接受当前有效 PRIMARY/SECONDARY/TEMPORARY/SUPPORT；不改变上一条 directed/membership audience 的 PRIMARY 语义。
-- **受众资格判定唯一真相 = [`notification-recipient-authorization.service.ts`](notification-recipient-authorization.service.ts)**(T5A；决策 D-WC-19)。两个入口：`authorizeBroadcastRecipients`(渠道无关批量判定)与 `authorizeRecipientForEffect`(Provider 前最终闸，事务内固定锁序，返回锁内 User 快照)。**新渠道一律消费这两个入口，禁止再抄第二份可见性/RBAC 口径**；渠道地址(openid / phone / 其它)由调用方经 `loadActiveUsers` 注入，判定层不认识任何投递地址。该文件导出的是**函数不是 Injectable**——三个消费方在既有 spec 里手搓 `new` 构造，加构造依赖会打穿它们。
-- ⚠️ **软删闸不在受众判定里**：`canSeeContent` 只看 `statusCode`。读侧靠 `buildVisibilityWhere` 的 `deletedAt: null`，推送侧靠 outbox `authorizeAdminNotificationEffect` 的 `deletedAt !== null` 检查。**新渠道必须复用其中之一**，只调受众判定会把软删通知发出去；该边界由 `test/e2e/notification-recipient-authorization.e2e-spec.ts` 钉住。
-- 广播**根候选**按 Member 解析，无 ACTIVE User 者仍进候选(地址为空)，由最终闸/渠道侧兜住(微信落 `skipped/no-openid`、短信直接不计入可计费受众)——这是两阶段裁决的第一阶段，不是漏判。
-- **企业微信应用消息(T5B,2026-08-02;第四条渠道,默认关)**:`wecom` ≠ `wechat` —— 前者是企业微信应用消息(身份键 `corpId + wecomUserId`),后者专指微信小程序订阅消息(`openid`)。**两条链全程分家**:独立 outbox 事件(`notification.wecom-broadcast` / `notification.wecom-delivery`)、独立 active-slot partial unique(第 69 migration,谓词按 `eventType` 分域 —— 合并索引会让同一通知同一人无法同时收两个渠道)、独立 reasonCode 组、独立 errcode 段(360xx vs 25xxx)。受众判定**消费 T5A 两入口**,零第二份可见性口径。**两层开关判据缺一不可**:`NotificationService.transition` 在 publish 前问 `resolveChannelReadiness()`(关着则不建 root intent),`NotificationWecomDispatchService.authorizeDurableRecipient` 在 Provider 前**用 `FOR SHARE` 锁后复读** `wecom_settings`(root 之后被关掉 ⇒ 终态 `skipped/channel-disabled`,**不迟到补发**)。最终闸锁序(**2026-08-03 外部评审 F2 / B4 改**):`wecom_settings`(FOR SHARE)排在 T5A 之**前**,`wecom_identities`(FOR SHARE)仍在最后 ⇒ 共同实体相对锁序全仓统一为 **`settings → User → identity`**,与绑定路径(`users/user-wecom-binding.service.ts`、`auth/login-wecom.service.ts`)逐字一致。⚠️ 上一版把 settings 追加在**尾部**,理由是"settings 写路径只锁自己那一行、不可能成环"—— 那次枚举**漏了绑定路径**:它 `FOR SHARE` 持 settings 的同时 `FOR UPDATE` 持 User。**如实记录**:这个倒置在当时的锁模式组合下还兑现不成死锁(两边对 settings 都是 `FOR SHARE`,且实测 PG 16 的新 `FOR SHARE` 不排在等待中的 `FOR UPDATE` 身后),修的是那个"缺一条边就会兑现"的结构隐患 —— 判据与 PG 相容矩阵护栏都在 `test/e2e/notifications-wecom-lock-order-concurrency.e2e-spec.ts`。⚠️ **缺的边在 settings 上,不在 User 上**(2026-08-03 第二轮评审订正):旧序下要兑现,得**任一侧**把 settings 升成 `FOR NO KEY UPDATE`/`FOR UPDATE`,或新增一条"持 User 再申请 settings 写锁"的路径;**单纯把闸的 User 升成 `FOR UPDATE` 补不上这条边**(上一版这么写,不对)。而**现在**两条路径同为 `settings → User`,顺序一致就没有反向边,调锁模式也构不成环(实测把闸的 settings 改成 `FOR UPDATE`,并发 spec 仍全绿)——**做功的是顺序,不是模式**;会让它重新可兑现的只有"把 settings 挪回 User 之后",守这条的是该 spec 的**主用例**,不是 PG 矩阵护栏(后者用手写 SQL 造锁,改应用代码不会让它红)。**锁与判据分离**:settings 在最前面取锁读值,但"通道开着吗"的判定仍排在 T5A 资格判定之后(资格失效必须继续赢过 channel-disabled,否则退队/停用的人会平白多一条 delivery 行)。`wecomUserId` **只从最终闸的事务内快照产生**,不入 payload、不入日志、不入 Audit;`NotificationDelivery.recipientRef` 只存掩码。
-
-**同代配置(F2 / B5)**:投递开工时调 `WecomService.resolveMessageContext()` 取**一次** `provider + corpId + configurationGeneration + webBaseUrl`;最终闸锁后复读校验 corpId 与 generation 仍与之一致(不一致 ⇒ `config-changed`,不发不记账,交下一次 attempt),identity 查询用**同一个** corpId;提交后**只用**那个 provider,`deliverWecom` 里**不得**再调 `resolveRoute()`。
-
-**错误分类(F2 / B7)**:Provider 抛出与返回的每个失败都带 `kind` 闭集(`wecom.constants.ts` 的 `WECOM_ERROR_KIND`),Outbox **只认 kind**、不做 errCode 字符串嗅探。退避集**恰五种**:network / timeout / http-5xx / system-busy / token-invalid。`rate-limited`、`provider-contract`、`http-4xx` → 终态 **dead** 等人工 replay;`config-fatal` / `invalid-response` / `upstream-rejected` → 终态 ack。回执分类:`errcode=0` **仍必须**逐条查 `invaliduser`/`unlicenseduser`,81013 一律不记 SENT;四个名单字段**严格三分**(缺席/空串=空名单,字符串=解析,**其它类型=`INVALID_RESPONSE`**,不得记 SENT),且 invalidparty/invalidtag 在 `errcode != 0` 时同样要判。
-
-**定向通知 replay(F2 / SF2)**:`NotificationOutboxService.replayDirectedWecomDelivery(notificationId)` 是系统定向通知**唯一**的重发入口(admin 广播继续走 unpublish + publish)。它建**新 child id + 新 eventKey**(v1 定向键允许追加 `:r{n}` nonce),已 SENT 者返 `already-sent`、在途 attempt 返 `active-attempt-exists`。**历史终态也是判据**(2026-08-03 第二轮评审 SHOULD-FIX 3):默认只放行上一次是 `rate-limited` / `provider-contract-error` 的(intent dead 过 **且** 最后那条 delivery 的 reasonCode 在允许集内),`channel-disabled` / `recipient-unlicensed` 返 `last-attempt-not-replayable`、**从未建过 child** 返 `never-attempted` —— 这三类重发一次也解决不了,只会把上游调用量放大一轮。越界要显式传 `{ overrideReason: true }`,它**只**绕这一条,其余护栏一概不绕。⚠️ 此前 runbook §6 写了这条限制但**代码里没有执行位**。**运维入口已落地(T6-1,2026-08-03)**:`POST admin/v1/notifications/:id/replay-wecom`(新码 `notification.replay.wecom`,绑 **ops-admin** 不绑 biz-admin;R 模式 service 层 `rbac.can`)。**端点层零第二份判据** —— 允许集与四条护栏全在原语里,端点只做判权 + 参数 + 记账,连"通知存不存在"都不预检(那会是原语已有判断的第二份拷贝);**恒返 200**,结局在 `results[0].outcome` 十值闭集里。审计复用 `notification.publish` 伞事件 + `extra.operation='replay-wecom'`(**零新 AuditLogEvent**),每次通过判权的调用都记(含被拒的),`extra.overrideReason` 使「谁绕过了允许集」可直接筛出;`wecomUserId` / 深链 / 凭证不入 audit。⚠️ **改 `replayDirectedWecomDelivery` 的返回联合会连坐端点出参闭集**(`notification.dto.ts` 的 `outcome` enum + contract snapshot + runbook §6.2 三处),不是只改一个 `switch`。⚠️ **暂态失败的 delivery 行绝不能占 `intent.id`** —— 占了就会被 `deliverWecom` 开头的幂等判据短路,"重试 8 次"退化成"第一次网络抖动即永久放弃"且现场看起来一切正常。上线/回滚见 [`runbook`](../../../docs/ops/wecom-message-channel-rollout.md);⚠️ 旧 worker 不认识 `notification.wecom-*` 会误判 terminal dead,开 `messageEnabled` 前必须确认 fleet 只剩新版本。
-- 通知派发普通日志只记录固定 `event`、闭集 `operation`、后端映射的 `safeErrorCategory/safeErrorCode`、`retryable` 与必要稳定 ID；未知错误固定 `unexpected-error/code=null`。禁止 message/stack/cause、destinationRef、手机号、openid、object key、provider URL、secret/token/Authorization；持久化 delivery/outbox/sms_send_logs 诊断语义不因此改变。
-
-### durable outbox 不变量(从原 Scope 叙事中提取,一条未删)
-
-- **锁序固定**:provider permission 走 `Notification parent(FOR SHARE)` → `outbox intent(FOR UPDATE)` → `Member(FOR UPDATE)` → shared organization topology → `User` → `RoleBinding` → `RbacRole` → `Permission` → `RolePermission`(后五类均 `FOR SHARE`)。同代 child 可共享 parent;update/unpublish 等 writer 仍等待全部 permission 提交。
-- **generation fence**:admin `draft→published` 在 Notification 根行锁内原子 `publishGeneration +1`,只生产带 generation 的 v2 root/child/admin-SMS;v1 admin root/child/SMS 直接 terminal dead。切换期只允许「尚未 prepare + 对应 published system-directed + directed audience + 同 member + 含 wechat channel」的 v1 child 留存;`preparedAt != null && preparedTemplateId == null` **永远 fail-closed**。
-- **lease/heartbeat**:每条 intent JIT claim;稳定 `lockedAt` 下的 heartbeat 与 provider 最终 Effect 紧邻的 `beforeEffect` guard **共享单一在途 renew**。WeChat cache hit 不执行 guard;cache miss 的 stable-token fetch、首次订阅发送、token-invalid force-refresh、第二次订阅发送**各自在真实 fetch 紧前独立 guard**。**sticky lease failure 后不再启动新 provider,也不 ack/nack/dead。**
-- **退款条件(极窄)**:只有**同进程同 attempt 正向 reservation 返回的 capability**,可在 final permission 拒绝且 provider 尚未开始时原子精确退款。旧 attempt / 崩溃 / provider 结果未知 —— **一律不得退款**。WeChat 首次 quota reservation 与 `preparedAt + preparedTemplateId` 同短事务,重领只消费持久模板,半状态 terminal fail-closed。
-- **交付语义**:provider 返回到本地 evidence commit 之间是 **at-least-once 歧义窗口,不宣称 exactly-once**。跨代 active WeChat child 令新 root 在停止 heartbeat 后**无损 defer**(恢复 attempt、`max(active lease, now)+BASE`),不 ack/nack/dead。只有 `NotificationDelivery SENT` 是跨 generation 的永久去重事实。
-- **v2 WeChat child 重验**:同一事务内重验 live parent/generation/lease + recipient 的 active Member/User、四类 effective membership + active Organization、四档 visibility;management GLOBAL RBAC 全程只用**同一 transaction client**,openid 只取 User shared-lock 快照;Effect 只用锁内快照,provider 仍在事务外。pre-permission `quota=0` 只记 `no-quota` 且 `recipientRef='-'`,**不伪造尚未读取的 destination evidence**。
-- **payload 禁字段**:outbox `payload` / `eventKey` 禁手机号、openid、token、secret、credential、signed URL 与 provider 原始报文;envelope 与 payload 的通知 ID / 会员 ID 必须一致。
-- **关停顺序**:`OnModuleDestroy` 先 stop 新 claim、唤醒空闲等待,再 drain 在途 attempt/heartbeat。worker 单轮 lease/DB 异常只记安全 errorClass 并退避续跑。
-- **admin SMS 抢领语义**:另一 worker 已抢领时首轮显式计 `failed`(**不是 skipped**),durable final 仍由持 lease 的 worker 推进。
-
-- **本仓恰好两个 `@Cron`**:生日批 + v0.47.0 到期提醒;`ScheduleModule.forRoot()` 在 `app.module.ts` 全局装配。第三个 cron / 独立业务调度 interval/timeout 仍须独立 D 档评审；随单 intent 启停并等待在途续租的 outbox lease heartbeat 是本 D 档已拍板的 worker 正确性循环，不是新调度器
-- **选取六条件**(评审稿 E-B5,全部同时满足):`MemberProfile.birthDate` 月日=今天(固定 UTC+8 日界)/ profile 未软删 / Member ACTIVE 未软删 / User 存在 / `User.phone` 非空 / User ACTIVE 未软删;**仅发 `User.phone`**(拍板⑤,`MemberProfile.mobile` 永不使用);2/29 仅闰年当天发(不顺延)
-- **幂等防重发**(E-B6):生日 cron 的 eventKey 固定为「北京时间日期 + memberId」;outbox unique 防重复 intent,handler 仍以 `sms_send_logs` SENT 记录防重复触达;所有跨进程正确性均以 PostgreSQL 为准
-- **失败语义**(D-Outbox):provider/临时 DB 失败由 intent 退避重试,最多 8 次后 dead;通道整体不可用(settings 缺失 / templateIdBirthday 空 / production-like DEV_STUB)同样只 nack/retry、耗尽后 dead，不在 cron 事务内外发
-- **不进 `audit_logs`**(E-B8,运营触达);应用日志一律 `maskPhone`;首版模板**零变量**(`TemplateParamSet=[]`)
-- **`runOnce()` 是两个 job 的唯一扫描/入队入口**(`@Cron` 都是薄壳);外发只由独立 worker handler 执行,e2e / unit 不等真实定时
-- **worker 不是第三个定时器**:`src/notification-outbox-worker.ts` 用独立 Nest application context 启动,不 import `AppModule` / `ScheduleModule`,不注册 decorator cron;轮询等待只属于该进程消费循环
-- **docker-smoke 锚行**:`NotificationsModule.onModuleInit` 输出 `Birthday greeting cron registered (09:00 Asia/Shanghai)`,smoke workflow grep 该行;改文案必须同步 [`/.github/workflows/docker-smoke.yml`](../../../.github/workflows/docker-smoke.yml)
-
-## Risk points (不要做)
-
-- ❌ **不**在本模块新增第三个 `@Cron` / 独立业务调度 interval / timeout(v0.47.0 只解锁第二个到期扫描;后续新定时任务 = 新 D 档评审；仅允许本轮随 intent 生命周期启停、停止时等待在途 renew 的 lease heartbeat)
-- ❌ **不**把 retention 清理做成定时任务(拍板③:永走 [`/docs/ops/sms-data-retention-sop.md`](../../../docs/ops/sms-data-retention-sop.md) 手动 SOP)
-- ❌ **不**改发 `MemberProfile.mobile` / 不加模板变量(姓名等)/ 不做群发、退订、农历生日、2-29 顺延(goal 禁止域;需变更先回评审)
-- ❌ **不**给生日批写 audit_logs / 不在日志输出完整手机号
-- ❌ **不**绕过 durable intent 让 notifications-owned cron/publish/admin SMS 直接调用 provider;不把 claim/幂等/lease 状态搬进内存
-
-### S1/S2 通知渠道(2026-06-25)
-
-- ❌ **不**把微信/短信外部 HTTP 放进 publish DB 事务(§6.2:8s HTTP 绝不拖事务;事务内只写 immutable intent,provider 由 worker 在事务外调用)。
-- ❌ **不**为 quota 扣减用「读后写」(竞态双花);**只**用条件原子 `updateMany({where:{availableCount:{gt:0}}, decrement})`,`count===1` 才发、`count===0` 记 skipped no-quota。
-- ❌ **不**让 access_token / appSecret / openid 明文入日志 / URL / 出参 / audit(L3;沿 `wechat.provider` E-12 + `maskOpenid`;`NotificationDelivery.recipientRef` 存掩码 openid)。
-- ❌ **不**引第三个 cron / Redis / BullMQ / 外部 queue / 事件总线;durable outbox 是已拍板的 PostgreSQL 事务边界,worker handler 只承载既有通知 Effect。
-- ❌ **不**对非订阅会员 fan-out(候选 = 有 quota ∩ 可见;§2.1 收窄)。
-- ❌ **不**碰 S1 站内状态机 / 可见性 / 已读语义(微信是 additive 分支);不碰 birthday cron / wechat 登录 code2session(仅 additive 扩 Provider 发送能力)。
-- ⚠️ ack **非去重幂等**(微信无授权回执 ID;additive 累积,靠 D-N2 封顶 5 + 前端只在真授权后上报缓解);doc 据实记不假装幂等。
-- ⚠️ 微信模板 `templateId` + 字段映射(`notification.wechat-data.ts` 的 thing/time key)**须运维按真实小程序模板核对**(默认 templateId=null = 该类型不发)。
-
-### S3 producer 接入 + 派发器 Effect(2026-06-25)
-
-- ❌ **不**让 `NotificationDispatcher` import / 回调招新或 team-join(**防环**:producer → notifications **单向**;通知绝不反向触发业务)。
-- ❌ 招新 promote / 入队**不**再 commit 后直调 `dispatchTargeted`；必须在业务 transaction 内 enqueue `notification.targeted@1`，enqueue 失败整体回滚，外部 Effect 只由 worker 在事务外执行。
-- ❌ 报名审批 / 候补递补 / 自助取消**不**再 commit 后直调 `dispatchTargeted`；业务写、audit 与 intent 必须同事务，provider 重试不得重放业务写。
-- ❌ **不**给定向 feed 的广播分支去掉 `audienceType=broadcast` 收窄 —— 定向行 `visibilityCode='member'`,不收窄会借广播 member 可见档泄漏给他人(越权);定向仅 `recipientMemberId=本人`可见,他人 `31001` 防枚举。
-- ❌ 系统定向通知**不**走 admin 状态机(直接建 published / sourceType=system / authorUserId=null;不污染 admin CRUD 路径,不入 audit,§13)。
-- ⚠️ **报名前 5 触发不做**(申请人非队员,S1/S2 够不着):报名受理/转人工/门槛/评定/公示维持**查询进度 pull**;openid 非会员推送路 = 另立项。
-
-### S5 短信兜底渠道(2026-06-27)
-
-- ❌ **不**让短信随 publish 自动发 / 不默认 / 不强制(站内+微信优先;**短信只由 admin 显式 confirmed=true 端点触发**,成本动作显式 gating;`NotificationService.publish` 绝不调短信派发)。
-- ❌ **不**在无 `confirmed=true` 时发任何短信(预览 confirmed=false 零发送零计费;缺 confirmed 走通用 400)——防误触发资费。
-- ❌ **不**改 `SmsProviderRouter` / 两 provider 的 `sendVerifyCode` / `sendBirthdayGreeting` 既有发送(行为锁;S5 仅 **additive** `sendNotification`)。
-- ❌ 外部 SMS API **在任何 DB 事务之外**;每收件人一个 pending child，claim 后才进入 Effect；provider accepted 后 `sms_send_logs SENT` + `NotificationDelivery sent` 在同一短事务提交，任一步失败都外抛给 worker nack。worker 在 Effect 前续租并以稳定 `lockedAt` fence 做单路 heartbeat；admin `dispatchRecipient` 必须在 `router.sendNotification` 紧邻处执行同一 `beforeEffect` guard。续租失败绝不 ack/nack/dead，也不再启动尚未开始的 provider；已经在途/accepted 后丢 lease 仍保留 at-least-once 窗口，不宣称取消或 exactly-once；通道关闭不 ack。
-- ❌ **不**引第三个 cron / Redis / BullMQ / 外部 queue / 事件总线;admin SMS 只复用 PostgreSQL outbox 的同一 worker,不再另建异步基建。
-- ❌ **不**输出明文手机号(响应/日志/审计一律 `maskPhone`;`NotificationDelivery.recipientRef` 存掩码;audit 仅收件人计数无明文)。
-- ⚠️ 短信模板 `sms_settings.templateIdNotification` **须运维填真实零变量模板 ID 并先过审**(空 = 该渠道未配置,confirmed 发送返 24030;DevStub 忽略其值但须非空,对齐生日批口径)。
-- ⚠️ 防滥发**继承同号封顶 10/间隔 60s**(查 `sms_send_logs`,跨模板)+ **同日同模板幂等**(一日一兜底 nudge,镜像生日批);改阈值改既有 `sms.constants` 常量(勿在本模块另立第二套)。
-
-## Validation
-
-- `pnpm test -- birthday` — 生日批:选取六条件 / 2-29 / 日界 / 失败继续 / 前置跳过(mock prisma + router)
-- `pnpm test -- wechat.provider wechat.service notification.wechat-data notification-subscription` — S2 单测:stable_token 缓存 / sendSubscribeMessage errcode + E-12 / token 刷新重试 / 字段映射截断 / quota 封顶
-- `pnpm test -- notification-dispatcher recruitment-promotion` — S3 单测:定向行形态 + 渠道编排 + 发号 intent 与业务同事务 + enqueue 失败整体回滚
-- `pnpm test:e2e -- notifications-birthday notifications-admin notifications-app notifications-wechat notifications-directed` — 直调 / 全链:生日 + S1 站内信 + S2 微信 + S3 定向(收件人可见 / **他人 404 防枚举** / 微信 sent·no-quota·no-template)
-- `pnpm test:e2e -- recruitment.e2e team-join.e2e` — S3 producer:同事务 intent / batch 中途失败整批回滚 / 重复请求与 worker drain 零重复 Effect
-- `pnpm test -- notification-sms-dispatch dev-stub.provider tencent-sms.provider` — S5 单测:通道未就绪 / 仅可见有手机者 / 同日同模板幂等·日封顶·间隔继承 / re-trigger 去重 / FAILED 不阻断 / maskPhone / 预览不发 / provider `sendNotification` + 行为锁
-- `pnpm exec jest --config test/jest-e2e.config.ts --runInBand --no-cache --runTestsByPath test/e2e/notifications-sms.e2e-spec.ts` — S5 全链:RBAC + 31001/31013 闸 + confirmed 缺失 400 + 预览不发 + 确认逐人 send_log/delivery/maskPhone/audit + 同日幂等 + re-trigger 去重 + 仅可见有手机者 + 24030
-- `pnpm test -- notification-outbox birthday-greeting expiry-reminder` — durable outbox:payload 安全 / enqueue 内容幂等 / claim lease / fencing / retry·dead / 未知 type-version 零 Effect + 两 cron 只入队
-- `pnpm exec jest --config test/jest-e2e.config.ts --runInBand --no-cache --runTestsByPath test/e2e/notification-outbox.e2e-spec.ts` — 独立 worker + 真 PostgreSQL 并发 claim / 崩溃租约回收 / Effect 幂等 / admin SMS 首轮非最终(精确 path 可避免 worktree 绝对路径被 Jest regex 误展开；须在静态 migration review P0-P3=0 后运行派生测试库)
-- `pnpm exec jest --config test/jest-e2e.config.ts --runInBand --no-cache --runTestsByPath test/e2e/notification-recipient-authorization.e2e-spec.ts` — **受众判定行为矩阵**(T5A F0)：4 可见档 × 4 判定站点(App 读侧 / 微信根候选 / Provider 前最终闸 / 短信可计费)全集合比对 + 资格失效四形态 + 软删/未知档/public/directed 现状留痕。**改受众判定必先跑它**；任一站点多放行或少放行一人即红
-- 改启动锚行文案 → 必须同步 docker-smoke workflow 并跑该 workflow
+改动按需跑 outbox、recipient-authorization、各渠道与相关 producer 的单测/定向 E2E；
+受众改动先跑 `notification-recipient-authorization.e2e-spec.ts`，锁序跑 wecom-lock-order-concurrency。
+历史沿革从 `harness-v3-final` 取回，不在本文件追加每次 PR 状态。

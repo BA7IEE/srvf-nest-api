@@ -1,52 +1,47 @@
-# authz — 本地铁律
+# authz — 授权解析边界
 
-> 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);架构边界读 [`/docs/architecture-boundary.md`](../../../docs/architecture-boundary.md);权限地图读 [`/docs/ai-harness/RBAC_MAP.md`](../../../docs/ai-harness/RBAC_MAP.md)。**设计权威源 = T0 冻结评审稿 [`/docs/archive/reviews/org-position-scoped-authz-terminal-design-review.md`](../../../docs/archive/reviews/org-position-scoped-authz-terminal-design-review.md) §5.1/§5.2/§5.3 + v0.49 supersession [`/docs/archive/reviews/department-data-scope-v0.49.0-review.md`](../../../docs/archive/reviews/department-data-scope-v0.49.0-review.md) §2/§3/§5**。本文件只记录在本目录工作时容易踩雷的本地铁律。
+设计来源为 `docs/archive/reviews/org-position-scoped-authz-terminal-design-review.md`
+与 `department-data-scope-v0.49.0-review.md`（同目录，后者覆盖副职/可见范围旧约定）。
+Authz 解析 direct RoleBinding、职务 policy、分管三源 grant，判 scope 与域约束；
+业务列表由各模块把 organizationIds 下推到自己的查询，不在此编排列表。
 
-## Scope
+- **无 ref 必须复用 RbacService.judge**：SA 短路、当前 GLOBAL 码集、`.self` 缺资源拒绝均保持；
+  scoped grant 无 ref 不覆盖。GLOBAL 任期共用 role-binding-validity，起止含边界，
+  每 decision/请求现查 PostgreSQL，不恢复 Map/TTL/invalidate cache。
+- 显式 tx 贯穿三源、角色含码、组织闭包与全部资源解析（含 attachment 递归）。
+  未传仍用原客户端；本层不新建事务、不隐式取锁，也不代替业务锁后 User/Member 身份复验。
+  getExplicitVisibleOrganizationScope 必传 tx，只认实际 grant，SA 不自动取得 GLOBAL；
+  旧 getVisibleOrganizationScope 的管理员语义不变，不混用两入口。
+- 副职只经 seed policy 推导 org-readonly/group-readonly；写码、read.sensitive、
+  recruitment/team-join family 为零，不以头衔硬编码兜底。
+  终审中枢由 POSITION_ASSIGNMENT RoleBinding 配置，不写 APD/部门字面量；
+  分管角色用 SUPERVISOR_ROLE_CODE。
+- assignment 非 ACTIVE、过任期或软删立即使其 binding 失权；
+  policy.conditionJson 非 null 直接跳过，不把未实现条件当无条件允许。
+- ActionConstraint 对 SA 同样生效：一级审核/退回与 settlement-first-review 禁提交人自审；
+  终审/退回与 settlement-final-review 再禁一级和终审同人。
+  settlement 复用 submitterUserId/reviewerUserId；ATTENDANCE_ALLOW_SAME_REVIEWER 仅配置兼容，
+  true/false 都不解除该约束。未注册 action 无约束，sensitive_denied 仍是保留 reason。
+- 资源解析失败 null→resource_not_found，不能降级成无 scope 放行。
+  member 组织只取有效 PRIMARY（ACTIVE、startedAt<=now、endedAt=null、未删）；
+  recruitment 无 org/owner；广播 notification 的 org=null；
+  attachment 只委派 member/certificate/activity，其余 ownerType fail-closed。
+  父资源软删不阻断既有解析，scope org ACTIVE 在 covers 判断。
+- deny 归因顺序：resource_not_found → 约束否决 → inactive_org → expired_grant →
+  out_of_[supervised_]scope → no_permission。失效 grant 只参与归因、不参与 allow。
 
-- **统一判权大脑(终态 scoped-authz PR8,2026-07-02)**:`AuthzService.can/explain(user, action, ref?)` —— 三源 grant 归集(直接 RoleBinding ∪ 职务 policy 推导 ∪ 分管推导)+ `covers()` scope 覆盖判定 + `ActionConstraint` 域不变量否决
-- **`ResourceResolverService`**:14 类资源归属解析(organization / activity / activity_publish_review / attendance_sheet / attendance_settlement_version / attendance_record / activity_registration / member / member_profile / certificate / team_join_application / recruitment_application / notification / attachment〔按 ownerType 委派〕),输出统一 `ResolvedResource`;解析失败一律 null → deny(resource_not_found)fail-close
-- **explain 诊断端点(终态 scoped-authz PR10,2026-07-02;冻结稿 §7.6)**:`AuthzController` — `POST admin/v1/authz/explain`(1 码 `authz.explain.decision` 绑 ops-admin;0 schema / 0 BizCode);薄编排 `AuthzExplainService` = 调用者 `rbac.can` → 目标用户加载 → **纯消费** `AuthzService.explain` 原样返 `{targetUser, decision}`,不改判权语义
-- **批量诊断面(F3「C 组」,2026-07-04;v0.47.0 F2 additive)**:`POST admin/v1/authz/explain-batch`(扩 `AuthzController`;单条的批量壳 ≤200,**同一套 11 值 reason 枚举不扩值**,任一 userId 不存在 → 整请求 10001)+ `POST admin/v1/authz/action-state/batch`(**模块第二个 controller** `ActionStateController` + `ActionStateService`;判定对象 = 调用者本人,`allowed = authz.explain ∧ 已注册 action 的状态机只读校验`,reason ∈ 11 值 ∪ `state_forbidden` 入 OpenAPI;注册表 [`action-state-checks.ts`](action-state-checks.ts) 15 项 = attendance_sheet 9 + activity 3 + activity_registration 3);+2 码 `authz.{explain-batch,action-state}.decision` 绑 ops-admin;**两批量面都是 AuthzService.explain 的纯消费者,判权语义零新增**
-- **v0.49 部门数据范围**:`AuthzService.getVisibleOrganizationScope()` 把同一三源 grant 展开为 `{hasPermission,global,organizationIds}`；`getEffectivePermissionCodes()` 聚合三源有效码，独立 `EffectivePermissionsController` 暴露 `GET system/v1/authz/me/effective-permissions`。既有 `RbacService` / `rbac/me/permissions` 读源与语义零变化
-- **D8 模块环规避(F3 落地方式)**:三个业务 StateMachine(attendance-sheet / activity / activity-registration)是零依赖纯决策类,以 **providers 直列**进 authz.module(TS 类 import,非 Nest module import)——本模块**不** import 任何业务 module(它们反向依赖本模块,import 即成环);若未来某状态机长出依赖,回 D8 mini-T0 重议,禁止顺手 import 业务 module
-- **不负责**:本模块只解析授权 grant / 点资源 / 可见组织集合；各业务模块负责把 `organizationIds` 与自己的 query/filter 求交，不在 authz 内编排 members/participation 的 Prisma 列表查询
+## 诊断与状态提示
 
-## Local facts
+explain/explain-batch 是 AuthzService.explain 的纯消费者：先验证调用者权限，再加载目标。
+deny 是200数据，资源不存在也是 reason；目标不存在/软删10001，DISABLED 目标可解释并原样返状态。
+非法 type/action400；matchedGrant 内部ID可返回 ops-admin；不新增 audit/deny采样或第二份授权逻辑。
+批量最多200，任一 user 不存在整批失败。action-state 只判断调用者本人，
+allowed=explain∧已注册状态机只读校验，仅在既有 reason 闭集上加 state_forbidden。
 
-- **C2 D2 显式组织授权**：`getExplicitVisibleOrganizationScope(user, action, tx)` 必传调用者事务，只认实际有效三源授权，SUPER_ADMIN 不自动获得全局范围。与旧 `getVisibleOrganizationScope` 共用归集实现；旧入口的管理员特例和全部旧行为保留。新入口仍不替代当前身份、业务责任或目标组织资格校验。
+AUTHZ_REASON_VALUES、GRANT_SOURCE_VALUES、EXPLAINABLE_RESOURCE_TYPES 与类型/resolver/contract
+必须同步。状态机以零依赖纯类直列 providers，不 import 业务 Nest module；长出依赖须重新设计边界。
+System effective-permissions 聚合三源，不改变 legacy rbac/me/permissions 语义。
 
-- **C1 D2b 显式事务透传**：`can/explain(user, action, ref?, tx?)`、`getVisibleOrganizationScope(user, action, tx?)` 与 `ResourceResolverService.resolve(ref, tx?)` 可消费调用者事务；三源 grant、角色含码、组织状态/闭包及全部 14 类资源解析（含 attachment 递归委派）使用同一个 tx。未传 tx 仍走原 PrismaService，不变更 scope、任期、软删、约束或 deny reason。这里只透传、不新建事务、不取隐式锁；等待锁后的当前 User/Member 复验由业务事务编排负责，不能把本接口当作身份刷新器。`getEffectivePermissionCodes` 等旧入口不批迁。
-
-- **🔴 消费者接线进度(改本模块前先核对)**:**PR9(2026-07-02)起首个消费者 = attendances 终审两方法**(`finalApprove`/`finalReject` 走 `authz.explain` + deny→BizCode 映射〔22074/22075/30100,见 attendances/CLAUDE.md〕);**PR12(2026-07-02)起 activities / activity-registrations / attendances 三模块(participation 首批,共 24 处调用位点)全量切 `authz.can`/`authz.explain`**(ref 矩阵见各模块 CLAUDE.md;当前在期 GLOBAL 行为不变,未来/过期 GLOBAL 在 rbac/authz 两引擎均失效;scoped 持有者树内获新点动作能力);members / certificates / content / notifications 等其余业务面仍走 rbac.can,逐面迁移留后续批。**本模块行为调整自 PR9 起影响现网终审面,PR12 起影响 participation 三模块管理端全部动作**;等价矩阵行为锁必须始终成立
-- **🔴 无 ref 退化 = 行为锁(goal 决断①)**:`authz.can(user, action)`〔无 ref〕**逐字复用 `RbacService.judge`** —— 与 `rbac.can` 逐项一致(SUPER_ADMIN 短路 / GLOBAL 码集每请求读当前 DB / `.self` 无 resource fail-close);scoped grant 无 ref 一律不 covers。等价矩阵锁在 `test/e2e/authz-rbac-equivalence.e2e-spec.ts`,改判权流程必跑
-- **GLOBAL 任期真值单一来源(2026-07-13 第二档安全收口)**:`AuthzService` 与 `RbacService` 共用 [`../permissions/role-binding-validity.ts`](../permissions/role-binding-validity.ts);`startedAt<=now` 且 `endedAt=null|>=now` 才有效,边界时刻有效。未来/过期/在期三族在 `authz-rbac-equivalence` 具名 e2e 中同时断言 `rbac.can` / `getEffectiveRoles` / `authz.explain`,禁止两套谓词再次漂移
-- **🔴 R5 v0.49 supersession**:副职(vice-captain / dept-deputy / deputy-group-leader)只允许通过 seed policy 自动推导 `org-readonly` / `group-readonly` 的动态只读投影；**不得推导 org-admin/group-manager 等管理写角色，不得在代码里按头衔 hardcode 兜底**。全部写码、`*.read.sensitive` 与 recruitment/team-join family 仍为零
-- **BD-2 终审中枢不 hardcode**:终审身份只认 `RoleBinding(principalType=POSITION_ASSIGNMENT, …)` 配置行;本模块禁止出现任何 "APD" / 部门字面量门控。分管监督角色锚点 = 常量 `SUPERVISOR_ROLE_CODE`('org-supervisor',BD-3)
-- **POSITION_ASSIGNMENT 主体绑定随任职失效**:底层 assignment 非 ACTIVE / 出任期 / 软删 → 该绑定不产权(换届即失权,无需清绑定行)
-- **conditionJson 保守跳过**:`OrganizationPositionRolePolicy.conditionJson` 非 null 的行本刀不评估、直接跳过(fail-close 不越权;seed 全 null)。首个真实条件需求出现时再落评估器,禁止"忽略条件当无条件"的过渡实现
-- **ActionConstraint 对 SUPER_ADMIN 也生效**(域不变量非权限):`attendance.{approve,reject,return}.sheet` 与 `activity.settlement-first-review.record` 禁提交人自审；`attendance.{final-approve,final-reject,final-return}.sheet` 与 `activity.settlement-final-review.record` 再禁一级审核人与终审人同人。结算版本复用 `submitterUserId/reviewerUserId` 字段，approve / return 共用 action 均受约束。`ATTENDANCE_ALLOW_SAME_REVIEWER` 只保留配置解析兼容，true / false 均不放开；未注册 action 零约束；`sensitive_denied` 是保留 reason(敏感分级由 §4.2 独立权限码承载,不在此双轨)
-- **resolver 口径**:member 的归属组织 = 当前有效 PRIMARY membership(`ACTIVE + startedAt<=now + endedAt=null + 未软删`);recruitment_application 恒无 org/owner(D-R-1);notification 广播态 org=null(多组织「任一覆盖」covers 留消费面迁移时扩展);attachment 仅委派 member/certificate/activity 三类 ownerType,其余(content-\*)null fail-close;链上父资源软删不阻断解析,scope org 的 ACTIVE 闸门在 `covers()`
-- **性能口径(goal 决断④)**:三源每 decision 现查、legacy GLOBAL 每请求现查;`RbacService.getRoleIdsWithPermission` 是 PR8 additive(批量角色含码,RolePermission roleId 索引);本地 Map/TTL/invalidate 已退役,性能优化不得恢复跨请求 permission cache
-- **deny reason 归因优先级**:resource*not_found > 约束否决 >(covers 失败后)inactive_org > expired_grant > out_of*[supervised_]scope > no_permission;失效 grant 只参与归因**绝不参与 allow**
-- **explain 端点契约(PR10 拍板)**:**deny 是数据不是错误** —— 入参合法即 200 返 decision,`resource_not_found` 亦是 decision reason;仅输入错误走异常(目标用户不存在/已软删 → 10001;type/action 白名单不过 → 通用 400,BizCode +0);DISABLED 目标可 explain(status 原样返,决断③);matchedGrant 内部 id 原样返 ops-admin 面(不脱敏);**无 audit**(决断④;deny 采样 = 冻结稿 §10.6 可选项,做须 goal)。`authz.dto.ts` 的 `AUTHZ_REASON_VALUES`(11 值)/`GRANT_SOURCE_VALUES`/`EXPLAINABLE_RESOURCE_TYPES`(= resolver 14 类)是 OpenAPI 契约锁:改 `authz.types` 联合或 resolver 支持面时**必须同步**(`satisfies` 编译锁 + authz-explain e2e Record 完备锁双向兜底)
-
-## Risk points (不要做)
-
-- ❌ **不**给 `covers()` 的 GLOBAL 之外任何 scope 在「无 ref」时放行(等价矩阵行为锁会红)
-- ❌ **不**在 3b 给副职加 seed policy 之外的头衔兜底或管理写角色 / 不评估却放行非 null conditionJson(两者都是越权面)
-- ❌ **不**把 `RbacService.can/judge` 的调用改成绕过(无 ref 路径必须持续复用,防两套全局语义漂移)
-- ❌ **不**在本模块写 "APD" / 具体部门 / 具体职务的字面量判权门控(BD-2;配置行决定一切)
-- ❌ **不**在 AuthzService 内直接写业务列表查询；v0.49 consumers 只能消费统一 visible scope 后在各自模块下推过滤
-- ❌ **不**给 explain 端点加 audit / deny 采样(§10.6 可选项须 goal)/ **不**把 explain 的 deny 改成抛错(deny 是 200 数据 = PR10 决断②)/ **不**在 explain 薄编排里叠加自己的判权逻辑(它必须始终是 `AuthzService.explain` 的纯消费面)
-- ❌ **不**为 GLOBAL permission resolution 重新引入跨请求 Map/TTL、no-op cache 或提交后 invalidate 正确性链
-- ❌ **不**让 ActionConstraint 豁免 SUPER_ADMIN(它是数据完整性不变量;场景 4「SA 亦拒自审」是拍板)
-- ❌ **不**把 resolver 的 fail-close(null → resource_not_found)改成"解析失败按无 scope 资源放行"
-- ❌ **不**在 legacy `.self` 后缀语义上创新:无 ref fail-close(镜像 rbac),带 ref 属主硬门;attachments 现网 `.self` 路径到 PR12 前仍走 rbac.can,不迁
-
-## Validation
-
-- `pnpm lint` + `pnpm typecheck`
-- `pnpm test` — `action-constraints.spec.ts`(约束注册表)
-- `pnpm test:e2e` — **四件套必跑**:`authz-rbac-equivalence`(🔴 等价矩阵行为锁)/ `authz-three-source`(队长甲/副队长乙/BD-2 终审+自审/R5 副职/失效族/SELF)/ `authz-resource-resolver`(14 类逐类 + 软删 fail-close + attachment 委派)/ `authz-explain`(PR10 端点:五 allow 形态 + 四 deny-as-data + 10001/400/30100 + reason 枚举完备锁);改 F3 批量面另跑 `authz-explain-batch` + `authz-action-state`(壳行为 + state_forbidden 矩阵 + 枚举完备锁)
-- 改判权流程 / covers / 三源归集 → 四件套全跑 + `pnpm test:contract`；v0.49 起总路由 338、authz 面 = explain + explain-batch + action-state/batch + effective-permissions 四路
+改判权流程/covers/三源归集，验证 authz-rbac-equivalence、authz-three-source、
+authz-resource-resolver、authz-explain 与 contract；改批量壳另跑 explain-batch/action-state。
+不据历史消费者清单批迁调用方；用实际引用链确定受影响业务面。

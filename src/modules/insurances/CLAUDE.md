@@ -1,32 +1,60 @@
-# insurances — 本地铁律
+# insurances — 资格、证据与部署边界
 
-> 全局规则读 [`/AGENTS.md`](../../../AGENTS.md)；参与域边界读 [`/docs/participation-bounded-context.md`](../../../docs/participation-bounded-context.md)。本文件只记录保险模块当前代码事实与 D-INSURANCE v3 分阶段边界。
+InsuranceRequirementService是Activity/Team Join唯一保险资格/evidence出口。
+INSURANCE_ENFORCEMENT_ENABLED只设一个gate，归app.config；代码已接入不代表生产已部署。
+上线须maintainer drain旧server/事务，独立deploy D81/D82+探针，再保持drain切精确runtime SHA，
+不混跑新旧版本、不回滚旧runtime；不自动开启生产gate或运行数据库破坏命令。
 
-## Scope 与当前行为
+## 审核与版本
 
-- App 自助 `app/v1/me/insurances`、Admin 队保单/覆盖名单与队员保险查询沿既有 surface；Admin 队员 360 另有 `GET admin/v1/members/:memberId/insurances/overview` 一次返回 `selfPurchased` / `teamProvided` / 北京当前日 `summary`。`MemberInsuranceOverviewService` 是 Admin 队员轴的只读展示聚合应用服务，负责 scoped-authz 编排、保险读取、DTO 汇总与 fail-closed 读取审计；它不替代 `InsuranceRequirementService`，也不属于 D-7 的纯 QueryService 边界。`InsuranceRequirementService` 仍是 Activity/Team Join 的唯一保险资格与 evidence 出口。
-- overview 复用 `member-insurance.read.other` + member ref scoped-authz；一个事务内各查一次个人保险与团队 coverage/policy，禁止 N+1。团队投影不得返回 policyNumber/note/其他成员/reviewer；个人投影也不返回 reviewer。概览审计复用 `member-insurance.read.other`，extra 只允许 `operation=overview` 与两个计数。
-- overview 的 confirmed 口径为 active 团队保险，或 active + verified 且 reviewer/reviewedAt 完整的个人保险；该汇总不是具体 Activity/Team Join 资格结果，不读取 enforcement gate。旧 `GET .../insurances` 行为与排序保持不变。
-- D-INSURANCE v3 PR2 增加唯一审核动作 `POST admin/v1/members/:memberId/insurances/:insuranceId/review`：body 仅 `decision=verified|rejected` + 必填 `expectedVersion`；Service 只走 `rbac.can('member-insurance.review.record')`。
-- 审核锁序固定 Authz → Member `FOR UPDATE` → live 且属于该 member 的 MemberInsurance `FOR UPDATE NOWAIT` → audit；版本冲突/NOWAIT 分别统一 `26011`，非 pending 为 `26012`。mutation 与 `member-insurance.review` audit 同事务；audit before/after 仅 status+version，extra 仅 memberId/insuranceId/decision。
-- PR3 客户端契约把 App PATCH body / DELETE query 的 `expectedVersion` 标为 required；single gate=true 时缺失/null/空白在事务前统一 40000 且零写/审计，显式 stale 仍 26011。gate=false 保留 PR2 optional runtime compatibility。实质 PATCH `version+1` 并回 pending/清 reviewer-time，DELETE `version+1` 但保留审核结论，等值 PATCH 是真 no-op。
-- App/Admin 保险响应只 additive 暴露 `reviewStatusCode`、`version`、`reviewedAt`；不得暴露 reviewer 身份或新增 insurer/policy/note/image/key/URL 等审核审计内容。
-- single gate=true 的来源固定 verified live self → live Team Policy+Coverage；self 排序 `coverageEnd DESC,coverageStart DESC NULLS LAST,reviewedAt DESC,id ASC`，team 排序 `policy.coverageEnd DESC,coverageStart DESC NULLS LAST,policy.id ASC,coverage.id ASC`。source 锁保持 self `FOR SHARE` 或 Policy→Coverage，覆盖写固定 Policy→稳定 Coverage 集→稳定 Member。
-- `InsuranceEligibilityEvidence` 的 PR4 约束与第 82 migration 已接 runtime、但尚未生产 deploy：新 Activity producer 必须把 evidence 绑定当次 `activityRegistrationRevisionId`；approval 在 `currentRevision>0` 时只认该 revision 恰一条 evidence、绝不回退 header-only，`currentRevision=0` 仅兼容恰一条 revisionId NULL 的 legacy evidence。复合 FK 保证 revision 同头，旧 evidence 零回填，legacy/revision 分别唯一。上线须先 drain、由维护者独立 deploy D81/D82 + 探针，再保持 drain 整批切 runtime exact SHA；禁新旧版本混跑或旧版回滚。DB 终态为 8 CHECK、3 个 owner partial unique、既有 member-match 与 immutable 双 trigger。
-- gate=false 时 Activity 保留旧 consumer、Team Join 不查资格，二者均 0 evidence；gate=true 时 Activity 无来源仍 26030，Team Join final join 无来源仅用 26031。
-- 保险生命周期 PR-A 复用同一 gate：Activity update 仅在受保护字段真实变化时查 live 非 cancelled 报名并复用 20030；approve 的保险 exact-source 重验仍只在 gate=true + Activity.requiresInsurance=true 启用。PR-E 起所有 approve（含 gate=false/无需保险）固定先锁 Activity→claim Registration 并取得 currentRevision，再锁后重读 Member/source/evidence，最后才 capacity/registration/audit/outbox 写；不存在/软删→15001，inactive→17030。insured self 后段为 Member lifecycle→MemberInsurance，team 为 Policy→Coverage→Member lifecycle；只有 evidence/source 失配仍统一 26030，禁止 fallback。
+- 唯一review action只收verified/rejected与expectedVersion，
+  service校验member-insurance.review.record。
+  锁序Authz→Member FOR UPDATE→所属live MemberInsurance FOR UPDATE NOWAIT→audit；
+  stale/NOWAIT为26011，非pending26012。
+  审计与mutation同事务，before/after仅status+version，
+  extra仅memberId/insuranceId/decision，不暴露reviewer。
+- App PATCH body/DELETE query契约要求expectedVersion；
+  gate=true缺失/null/空白在事务前40000、零写/audit，显式stale26011；
+  gate=false维持旧optional runtime兼容。
+  实质PATCH version+1、回pending并清reviewer/time；DELETE加版本但保留审核结论；
+  等值PATCH真no-op。响应仅沿reviewStatusCode/version/reviewedAt安全投影。
 
-## 分阶段硬边界
+## 来源与事务
 
-- `INSURANCE_ENFORCEMENT_ENABLED` 必须保持单 gate，归 `app.config.ts`；production 显式配置且上线先 drain 旧 server/旧事务、禁止混档。本 PR 只交付可切换代码，不表示已部署或旧 server=0 已验证。
-- PR4 最终约束已写入 migration source（未 deploy）；member-match 仅在结构合法且 source/owner 均存在时比较。INSERT 结构非法/缺 FK/跨 member 分别交 CHECK 23514/FK 23503/member-match 23514；对已命中 Evidence 的 UPDATE，仅结构合法、目标存在且跨 member 先得 member-match 23514，其它 UPDATE 与 DELETE 均由 immutable 55000 拒绝。Trigger 名只排序两个 BEFORE trigger，不代表先于 CHECK/FK。
-- Evidence 不得存 insurer/policy number、note/reason、图片/附件、key/URL/signed URL、reviewer name 或任何自由文本；不得在 owner 表增加 `evidenceId`。
-- 不得拆 gate、增加第二 review route/permission/AuditLogEvent，或把 26031 用到 Team Join final join 之外；不得提供 Evidence update/delete service，也不得借最终约束增加 route/DTO。
-- PR-E 已让 offboard 与 registration approve 共用 Member 生命周期锁，但离队前活动责任/参与影响阻断归后续 PR-F；首签到、考勤 submit/edit 与其它 participation producer 仍不在本切片。
+- gate=true固定verified live self优先于live Team Policy+Coverage。
+  self顺序coverageEnd DESC、coverageStart DESC NULLS LAST、reviewedAt DESC、id ASC；
+  team顺序policy.coverageEnd DESC、coverageStart DESC NULLS LAST、policy.id ASC、coverage.id ASC。
+  读锁self FOR SHARE或Policy→Coverage；coverage写锁Policy→稳定Coverage集→稳定Member。
+- gate=false沿Activity旧consumer，Team Join不查资格，两者零evidence。
+  gate=true Activity无来源26030，26031只用于Team Join final join。
+- Activity update仅在受保护字段真变更时查live非cancelled报名，沿20030。
+  所有approve先Activity锁→claim Registration/currentRevision→锁后复核Member/source/evidence，
+  最后capacity/registration/audit/outbox写；无Member/软删15001，inactive17030。
+  self后段Member lifecycle→Insurance；team后段Policy→Coverage→Member lifecycle。
+  exact-source资格只在gate=true且requiresInsurance时启用，失配26030，不fallback。
 
-## Validation
+## Evidence
 
-- 先跑 insurances unit/characterization，overview 必须用专属 E2E 锁定旧 GET 兼容、scoped-authz、日期/确认口径、安全投影、查询数与 audit fail-closed；再跑派生 PostgreSQL 的 App CAS、review、Activity 与 Team Join suites。竞态必须两 Nest/两 Prisma pool + `pg_stat_activity/pg_blocking_pids` barrier，contract snapshot diff 必须逐行解释。
-- 常规静态门禁：`pnpm lint`、`pnpm typecheck`、`pnpm build`、`pnpm test:contract`、`pnpm docs:rbacmap:check`。
-- 独立 review P0–P3 清零后才由总控安排独占 full。
-- 禁止自动运行 `prisma migrate dev|reset|db push`；默认/生产 DB 永不触碰。
+新Activity producer绑定当次activityRegistrationRevisionId；
+currentRevision>0只认该revision恰一条evidence，不回退header；
+revision=0只兼容恰一条revisionId=NULL的legacy evidence。复合FK同头，零旧数据回填。
+Evidence不可变，无update/delete service，owner表不加evidenceId；
+不存insurer/policy number、note/reason、附件/图片、key/URL、reviewer name或自由文本。
+
+member-match只在结构合法且source/owner存在时比较：
+INSERT结构/缺FK/跨member分别CHECK23514/FK23503/member-match23514。
+命中Evidence的UPDATE仅结构合法、目标存在且跨member先报member-match23514；
+其他UPDATE/DELETE为immutable55000。trigger名仅排列BEFORE trigger，不代表先于CHECK/FK。
+不借约束新增route/DTO、第二review权限/事件或第二gate。
+offboard与approve共享Member lifecycle锁，不据此宣称首签到/考勤或离队影响阻断已闭环。
+
+## 队员概览
+
+MemberInsuranceOverviewService是只读聚合应用服务（含scoped-authz/audit），不是纯QueryService，
+也不代替资格判定。member-insurance.read.other+member ref，同事务各查一次self与team、无N+1。
+北京当天summary：active team，或active+verified且reviewer/time齐全的self才confirmed；
+不读enforcement gate。旧GET排序/行为保持，team不返policyNumber/note/其他成员/reviewer，
+self也不返reviewer；fail-closed读取audit仅operation=overview与两个计数。
+
+验证unit/characterization、overview安全投影/查询数/audit、App CAS、review及两consumer E2E。
+竞态使用独立Nest/Prisma pool与真实PG锁屏障，不用串行调用冒充并发。
