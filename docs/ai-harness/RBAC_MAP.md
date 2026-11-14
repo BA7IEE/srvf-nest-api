@@ -12,7 +12,8 @@ Role enum 是身份层；授权事实为 RbacRole/Permission/RolePermission/Role
 
 管理/System 入口已登录，service 显式判权；App 默认 self-scope，不以 role 短路 scope。
 不新增活跃 `@Roles`，不移除最后 SUPER_ADMIN/ops-admin 保护、防枚举或 `assertCanManageUser`。
-终审自审 22074 对 SA 也拒绝；一级同人默认拒绝 22075，沿现有配置。
+终审自审 22074 对 SA 也拒绝；一级审核人与终审人同人拒绝 22075，
+`ATTENDANCE_ALLOW_SAME_REVIEWER` 仅兼容解析，不放开审核分离。
 biz-admin 不持有终审两码；任职绑定或 SA 的既有授权路径保持。
 
 ## 保留决策
