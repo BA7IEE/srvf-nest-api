@@ -247,7 +247,7 @@ Prefer a named boundary class when **any** of the following is true:
 - **Do not** extract QueryService / Effect until a concrete trigger appears(沿 §6 Trigger rules;Presenter 已于 2026-06-10 P1-4 第一刀按"逐个立项"路径抽出,见 §5)。
 - **Do not** rename existing extracted classes just to match this document(`contribution-calculator.ts` 保留现名,不强行改为 "Service" / "Policy" 等)。
 - **Do not** move participation / attachment / permissions module directories as part of this policy(沿 [`docs/participation-bounded-context.md §8`](participation-bounded-context.md) "禁止大搬目录" 铁律)。
-- **Do not** alter the large attendances / attachments / activity-registrations / activities services as an incidental cleanup — 拆分需先补 characterization tests + 单独立项(沿 [`docs/current-state.md §3 / §4`](current-state.md));实时体量由 `docs:codemap:check` 报告,本 policy 不固化易漂 LOC。
+- **Do not** alter the large attendances / attachments / activity-registrations / activities services as an incidental cleanup — 拆分须在授权范围内并先补 characterization tests；不再维护 service 尺寸台账。
 
 ---
 

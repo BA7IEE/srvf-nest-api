@@ -357,7 +357,7 @@ function countEndpoints(): number {
   return entries;
 }
 
-function gather(): ReadonlyArray<readonly [string, number]> {
+export function gather(): ReadonlyArray<readonly [string, number]> {
   const srcFiles = walkTsFiles('src');
   const seedSource = read('prisma/seed.ts');
   const seedFactSources = readSeedFactsClosure();

@@ -2,9 +2,8 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-// 冻结稿台账的验收覆盖度计算侧 —— 它在 selfGuard(`scripts/check-*.ts`)内。
-// 这里只**读它的结论**用来做「两把尺子」对拍,不在本文件里重算一份(第二份真相)。
-import { activityAcceptanceCoverage } from '../../../scripts/check-frozen-drafts-ledger';
+// Business coverage calculation is retained independently of the retired ledger.
+import { activityAcceptanceCoverage } from '../../../scripts/activity-acceptance-coverage';
 
 /**
  * 活动业务改造 v1.1 —— 验收编号骨架 + 合同完整性守护(第 0 批交付项)。

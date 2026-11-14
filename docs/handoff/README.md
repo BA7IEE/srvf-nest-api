@@ -60,7 +60,7 @@
 | 后端改了什么 | 同 PR 必改(本目录) | 同 PR 另核(目录外,多有守护) |
 |---|---|---|
 | **auth 契约**(login / refresh / token 语义、auth 错误码) | [`admin-web.md §3.1`](admin-web.md)(登录/令牌接线,全端通用)+ §3 踩坑 #1(3-call);[`miniapp.md §1.1`](miniapp.md) | `reference/auth-jwt-refresh.md`(P0-E 冻结,动它先过决策锁);openapi.json |
-| **RBAC 码 / 绑定语义**(新增、摘除、换绑、派生角色) | admin-web.md 受影响能力图行的 `[rbac:]` 标注 + §2.6 落地进度与提示文案;影响 App 能力时 → miniapp.md capabilities 相关行 | `RBAC_MAP.md`(`docs:rbacmap:check` 守护)+ current-state §1 计数(`docs:counts:check`);openapi.json(summary 变) |
+| **RBAC 码 / 绑定语义**(新增、摘除、换绑、派生角色) | admin-web.md 受影响能力图行的 `[rbac:]` 标注 + §2.6 落地进度与提示文案;影响 App 能力时 → miniapp.md capabilities 相关行 | 以 permission-catalog、seed 和 service 为准；`pnpm check:rbac` 校验代码；summary 变化同步 openapi.json |
 | **新增 / 删除端点** | 对应能力图(admin-web §2.x / miniapp §2);若答某缺口 → 对应 gap-ledger 行标「已发」 | openapi.json 刷新;`EXPECTED_ROUTES` 显式登记(contract spec 自带断言) |
 | **DTO 字段(additive)** | 仅当带对接语义(新开关 / 新展示口径 / 新过滤参数)才补对应行;纯字段不抄(字段真相在 docs-json) | openapi.json 刷新 |
 | **DTO 字段(breaking)/ 行为变更** | 对应行加 **⚠️ 行为变更** 注记(旧客户端后果 + 适配点);admin / miniapp 两篇**都**查一遍(如 submit 收紧同时打 H5 与小程序) | openapi.json;CHANGELOG 置顶 ⚠️ 清单(process §3) |
