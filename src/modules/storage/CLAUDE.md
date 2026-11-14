@@ -1,53 +1,44 @@
-# modules/storage — 本地铁律(2026-06-11 自 src/common 区旧址全量迁入,B 队列评审稿 §3;纯搬迁零行为)
+# storage — 配置、凭证与 Effect
 
-> 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);附件配置三表边界读 [`/docs/attachment-config-boundary.md`](../../../docs/attachment-config-boundary.md);架构边界读 [`/docs/architecture-boundary.md`](../../../docs/architecture-boundary.md);安全章节读 [`/docs/security.md`](../../../docs/security.md)。本文件**只**记录在本目录工作时容易踩雷的本地铁律。
+业务只注入 STORAGE_PROVIDER（useExisting StorageProviderRouter），不直接注入 COS/Local。
+附件业务与配置三表分别归 attachments/attachment-configs。
 
-## Scope
+- 每次调用 live-read 一份 settings snapshot，绑定本次 Effect并新建 SDK；
+  StorageSettingsService 是凭证读取唯一出口，无跨请求客户端/权限/配置缓存。
+  DB constant unique 保证 singleton，首配竞争 P2002 后重跑事务，不“取最早+WARN”。
+- production 启动必须 settings 存在、COS、bucket/region 非空、credentialStatus=CONFIGURED。
+  enabled=false 只放行控制面启动并 WARN，普通 pinned/non-pinned put/delete/sign/head/read
+  （含 worker）全部拒绝；仅人工复核的 manual_relocate 证据采集可显式绕过。
+- production 建立 location 后普通 PATCH 不改 providerType/bucket/region；
+  同值、enabled/TTL/remarks/同 location credentials 可改。
+  relocation 须独立 inventory/copy/hash/cutover/rollback 流程。
+- non-pinned COS 每次检查 settings、enabled、COS 类型、凭证状态、bucket/region；
+  不满足抛 CosProviderUnavailableError。pinned Provider 用历史 locator，Router 仍先检查 enabled。
+  production 运行时 null/LOCAL/unknown fail-closed；dev/test/smoke 的 null/LOCAL 才能 fallback。
+- Local resolveKey 防 `../` 逃逸。Local upload URL 是非路由 stub，head 不提供未持久化的 etag/contentType；
+  不强行与 COS 对称。COS PUT 的 Content-Type 必须匹配签名，下载 disposition 走 query。
+  readObjectPrefix 只读固定小前缀供魔数校验，COS ranged getObject，不扩成下载接口。
 
-- **storage 抽象层**:`StorageProvider` 接口(6 方法:putObject / deleteObject / generateUploadUrl / generateDownloadUrl / headObject / `readObjectPrefix`)+ `LocalStorageProvider` + `CosStorageProvider`(腾讯云 COS);`readObjectPrefix` 仅供 confirm-upload 魔数校验,固定小前缀,COS 必须 ranged getObject,不得扩成通用下载面(finding #23)
-- **动态路由** `StorageProviderRouter`:每次方法调用 live-read 一次 `storage_settings`，并把同一 snapshot 绑定到本次 Effect;`STORAGE_PROVIDER` DI token = `useExisting StorageProviderRouter`(沿 [`storage.module.ts`](storage.module.ts) 第 40 行)
-- **配置 singleton** `storage_settings` row(沿 §6.5.4)+ 第 49 migration constant unique DB 约束 + `StorageSettingsService` 每次直读 PostgreSQL 当前已提交事实
-- **凭证加密** `StorageCryptoService`(AES-256-GCM)+ **uploadToken HMAC-SHA256**(`upload-token.util.ts`,签名 key 由 `STORAGE_ENCRYPTION_KEY` scrypt 派生)
-- **空生产库离线初始化**:`node dist/storage-settings-bootstrap --config-file=<0600-json> --confirm-database=<db>`;仅创建 COS + enabled singleton,默认拒绝覆盖;`--dry-run` 零写入
-- **Storage Settings admin**:`GET / PATCH / POST reset-credentials` 三端点,经 `rbac.can()` 判权
-- **不负责**:附件业务流(在 [`/src/modules/attachments/`](../../modules/attachments/));附件配置三表(在 [`/src/modules/attachment-configs/`](../../modules/attachment-configs/))
+## 密钥与审计
 
-## Local facts
+AES-256-GCM，scrypt(envKey,fixedSalt,32)，序列化 base64(iv12B+tag16B+ciphertext)。
+算法、salt、派生参数或密钥变化可能让旧密文 INVALID，必须带独立凭证迁移方案。
+credentialStatus 为 MISSING/CONFIGURED/INVALID；状态来自字段存在及实际解密结果。
+uploadToken 使用独立 salt 派生的 HMAC-SHA256，格式 base64url(claims).base64url(hmac)，
+timingSafeEqual 验签，失败统一13001，不引 jsonwebtoken 或新缓存依赖。
 
-- **production fail-fast 4 项严格校验 + 恢复态**(`onApplicationBootstrap`,仅 `env === 'production'` 触发):settings 存在 / `providerType='COS'` / `bucket+region` 非空 / `credentialStatus=CONFIGURED`；`enabled=false` 允许 API/worker 控制面启动并 WARN
-- **`enabled` 生命周期**:`enabled=false` 会拒绝普通业务 pinned / non-pinned put/delete/sign/head/read Effect（含自动 worker）；仅经过人工复核的 `manual_relocate` 证据采集显式绕过。production PATCH 允许关闭和恢复，但其余不变量必须持续成立
-- **production location 冻结**:singleton 建立后，普通 PATCH 不得改变 `providerType/bucket/region`；同值与 enabled/TTL/remarks/同 location credentials 可改，真实 relocation 只走独立评审的 inventory/copy/hash/cutover/rollback 流程
-- **凭证加密 算法/key 派生**:AES-256-GCM + `scrypt(envKey, fixedSalt, 32)` 派生 32 字节 key;序列化 `base64(iv:12B || authTag:16B || ciphertext)`(沿 [`storage-crypto.service.ts`](storage-crypto.service.ts) 第 9–25 行)
-- **`credentialStatus` 三档**:`MISSING`(无凭证字段)/ `CONFIGURED`(解密成功)/ `INVALID`(解密失败 / `STORAGE_ENCRYPTION_KEY` 被轮换)
-- **`StorageSettingsService` 是凭证读取唯一出口**:`getActiveSettings()` 每次直读 PostgreSQL,无跨请求 Map/TTL/invalidate 正确性链;第 49 migration 的 `storage_settings_singleton_key ON ((true))` 在 DB 层保证至多一行,首配并发 P2002 后重跑事务命中既有单行,不再有“取最早 + WARN”分支
-- **离线 bootstrap 安全边界**:进程 env 只解析 `APP_ENV + STORAGE_ENCRYPTION_KEY`，不装配完整 app config；配置文件必须无 group/other 权限,内含显式 `databaseUrl`(仅 `public` schema)且库名与 `--confirm-database` 逐字一致;仅 production 或 `test + app_test*` 可运行;空表才写,同事务读回并用当前 key 解密校验;输出永不含 URL/凭证明文/密文
-- **`CosStorageProvider` non-pinned 5 档守护**(每次方法调用):settings null / enabled=false / providerType ≠ COS / credentialStatus ≠ CONFIGURED / bucket+region 缺失 → 抛 `CosProviderUnavailableError`;pinned 方法在 Provider 层按历史 locator 解析，Router 默认先检查 enabled，仅显式人工 maintenance 绕过
-- **`LocalStorageProvider.resolveKey`** 防 `../` 逃逸 root(沿 Q-88-6;[`providers/local.provider.ts`](providers/local.provider.ts) 第 221–229 行);dev/test/smoke settings null/LOCAL 可 fallback，production 运行期 null/LOCAL/unknown 均 fail-closed
-- **signed URL**:COS PUT 上传约定客户端必须带 `Content-Type` 与签名一致;`response-content-disposition` 通过 query 参数附加(沿 §6.4.6 CORS);Local provider 返非路由 stub URL(`/internal/storage/local-stub-upload/...`;接口对称用,不会被实际命中)
-- **uploadToken** 紧凑格式 `<base64url(claims)>.<base64url(hmac)>`,**不**引 jsonwebtoken;HMAC key 由 `STORAGE_ENCRYPTION_KEY` 经 scrypt 派生(单独 salt);验签 `timingSafeEqual`;失败统一映射 `13001`(信息泄漏防御)
-- **入口判权当前事实**:`StorageSettingsController` 三端点入口仅 `JwtAuthGuard`,**不**挂 `@Roles`,经 Service 内 `rbac.can()`;`storage-setting.reset.credentials` 当前**未**绑 `ops-admin`,仅 SUPER_ADMIN 经 `RbacService.can` 短路通过(沿 P0-F PR-2B D2=A);此处仅作为当前事实记录,**不得**在 docs-only PR 中改变权限策略
-- **credential write audit 当前事实(2026-07-13 第六刀)**:`PATCH` 与 `reset-credentials` 均与 settings 行写入在同一事务记录 `storage-setting.update` / `storage-setting.reset-credentials`;update 只记非敏感 `changedFields` 字段名,reset context 严格只有请求元数据,**不**传 before/after/extra,明文 / 密文 / SecretId / SecretKey / signed URL 永不入 audit。
-- **`accessUrl` 字段语义**:`attachments` 模块的 response field;Provider 接通后由 `generateDownloadUrl` 生成,解析失败统一**降级返 null**,不向 client 抛凭证状态;**不**写入 audit snapshot(沿 [`attachments.service.ts`](../../modules/attachments/attachments.service.ts) 第 137–170 行;同文件第 73–78 行锁定 audit 边界)
-- **0 新依赖**:仅 `crypto` 原生 + `cos-nodejs-sdk-v5`(已在 package.json);**不**新增 lru-cache / node-cache / jsonwebtoken / ms
+settings 三端点 service 判权；reset.credentials 仅 SA，不给 ops-admin 自动授码。
+PATCH/reset 与行写同事务 audit；update 只记非敏感 changedFields，
+reset 仅请求元数据，无 before/after/extra。凭证明文/密文、SecretId/Key、完整 signed URL/accessUrl
+不进响应、日志、审计、Swagger 或示例。附件 accessUrl 解析失败降级 null，不暴露凭证状态。
 
-## Risk points (不要做)
+## 离线 bootstrap
 
-- ❌ **不**把 `secretId` / `secretKey` / `credentials` / 完整 signed URL / `accessUrl` 写入日志 / audit / OpenAPI 示例 / e2e fixture / 文档示例 / pino logger fields
-- ❌ **不**把 `accessUrl` / signed URL 写入 audit `extra` / snapshot;`accessUrl` 解析失败必须**降级 null**,不向 client 抛凭证状态
-- ❌ **不**绕过 `StorageProviderRouter.resolve()` 直接注入 `CosStorageProvider` / `LocalStorageProvider` 到业务模块(动态路由是显式拍板,沿 Q-89-1 A);上游业务请走 `STORAGE_PROVIDER` token
-- ❌ **不**绕过 `onApplicationBootstrap` production 4 项不变量；`enabled=false` 仅放行控制面启动，不得放行普通 Storage Effect
-- ❌ **不**替换 AES-256-GCM 算法 / 改 scrypt 派生参数 / 改固定 salt — 改动会让既有 ciphertext 全部转 `INVALID`,需独立设计 PR + 凭证迁移 SOP
-- ❌ **不**自动引入 multipart upload(Q13)/ STS(Q19)/ 跨 provider migration / test-connection 端点 / queue/cron 清理任务 — 任一需独立设计决议
-- ❌ **不**对 COS / Local 行为差异做"对称化"假定:Local `generateUploadUrl` 返 stub URL 不会被实际命中;Local `headObject` 不返 etag / contentType(未持久化)
-- ❌ **不**给 `storage-settings` GET / PATCH response **回显**任何凭证字段(`secretIdEncrypted` / `secretKeyEncrypted` / `credentials` 均不出参,沿 §6.6.2 / §6.6.5)
-- ❌ **不**缓存 COS 客户端实例(沿 Q-89-2 A;每次 Effect 从单份 settings snapshot 新建 SDK 实例)
-- ❌ **不**新建非 `app.config.ts` 的常驻业务 storage env 读取点；离线 bootstrap 是窄配置例外，仍复用 `app.config.ts` 导出的 APP_ENV/key parser
-- ❌ 改 storage 行为通常影响 attachments / attachment-configs / production safety,按 D 档降速;**任何凭证 / 加密 / fail-fast 改动都不是 docs-only**
+只初始化空 COS+enabled singleton，默认不覆盖，dry-run 零写。
+窄配置仅复用 app.config 的 APP_ENV/key parser；文件无 group/other 权限，
+显式 databaseUrl 只准 public schema，库名与 confirm-database 完全一致；
+仅 production 或 test+app_test*。同事务读回并用当前 key 解密验证，输出不含 URL/凭证。
+不新增常驻 env 读取点、multipart/STS、test-connection、迁移或清理调度能力。
 
-## Validation
-
-- `pnpm lint` + `pnpm typecheck`
-- `pnpm test` — 覆盖 `storage-crypto.service.spec.ts` / `storage-provider.router.spec.ts` / `storage-settings.service.spec.ts` / `upload-token.util.spec.ts` / `providers/*.spec.ts`
-- `pnpm test:e2e -- attachments` — 覆盖经 `STORAGE_PROVIDER` 的附件上传 / 下载 / 删除路径
-- 涉及 Storage Settings 端点 → 还需跑 storage-settings 相关 e2e(若存在)+ `pnpm test:contract`
-- 改 DTO 字段 / endpoint path / Swagger schema / 错误码 → 必须再跑 `pnpm test:contract`
+改此层验证 crypto/router/settings/upload-token/providers 与受影响附件 E2E；
+端点/DTO 改动再跑 contract。来源与生产规程见 `docs/security.md`、相关 ops SOP。
