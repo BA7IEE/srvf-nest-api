@@ -1532,15 +1532,6 @@ function collectAcceptance(): AcceptanceEvidence {
   }
 }
 
-/** ②-b 的证据:本 worktree 的红区授权令牌(只增不减、无过期、per-worktree ⇒ 开闸前必须是空的)。 */
-function collectGrants(): string[] {
-  const r = spawnSync('pnpm', ['harness:grant', '--list'], { cwd: ROOT, encoding: 'utf8' });
-  return `${r.stdout ?? ''}`
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0 && !l.startsWith('>') && !l.startsWith('用法'));
-}
-
 /**
  * 签字可对拍的**机器现读**。
  *
@@ -2661,7 +2652,6 @@ function buildItems(signoff: SignoffState, acceptance: AcceptanceEvidence): Item
   const reconcile = collectReconcile();
   const openapiVersion = (JSON.parse(read(OPENAPI_JSON)) as { info: { version: string } }).info
     .version;
-  const grants = collectGrants();
 
   // 合同目录里不在 SHA256 清单内的 .md = 非合同附件(复核产物等),①-b 的证据面。
   const attachments = git(['ls-files', '--', `${CONTRACT_DIR}/*.md`])
@@ -2699,10 +2689,10 @@ function buildItems(signoff: SignoffState, acceptance: AcceptanceEvidence): Item
     {
       text: CONTRACT_ITEMS[1],
       subs: [
-        eviSub('2a', 'B', '本 worktree 的红区授权令牌(只增不减、无过期、per-worktree)', [
-          ...(grants.length === 0 ? ['(读不到 harness:grant --list 输出)'] : grants),
-          '开闸前这里应当是「当前无红区授权」——留着的令牌等于一扇没关的门。',
-          '⚠️ 令牌是 per-worktree 的:本条只证明**这个** worktree,别的 worktree 要各自跑一遍。',
+        eviSub('2a', 'B', '维护者对目标版本的红区审批证据', [
+          '本地 grant/write hooks 已退役，不再用本地令牌状态证明授权。',
+          '核对目标 PR、精确 head SHA 与 Red-zone (trusted) / harness-review 的人工审批回执。',
+          '本工具不代取或代签审批；本项仍待维护者确认，不自动标为通过。',
         ]),
         eviSub('2b', 'C', '「goal、预检、维护者授权和所有红区写集明确」', [
           '这是对**开发过程**的要求(每一刀有 goal、开工前跑过预检、授权由维护者亲发、写集事先声明),',

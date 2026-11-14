@@ -1,45 +1,19 @@
 name: CI
 
-# Harness 3.0 P1:单一 test job 拆为 fast ∥ slow 双队列 + 保名 gate 聚合。
-#
-# ⚠️ 分支保护红线(动本文件前必读):main 的 required_status_checks.contexts 逐字为
-#   ["Lint / Typecheck / E2E", "Docker image build"] 且 enforce_admins=true。
-# 这两个 check 名一旦不再上报,所有 PR 永久卡死且 owner 也无法合并。
-# 因此:`gate` job 的 name 与 `docker-build` job 的 name **逐字不得改**;
-# 拆分/改名必须先在 main 上让新名跑过、再改保护规则,且不得在同一个 PR 内做。
-#
-# 结构:
-#   changeset(docs-only 判定)──┐
-#   fast(lint/typecheck/docs guards/build/unit;无 Postgres,~5m30s)──┤
-#   harness-selftest(守卫自测 + eslint 阳性对照;恒跑,~5m30s)────────┤
-#   harness-replay(事故回放 + 反向案例;恒跑,~4m)──────────────────┤
-#   slow(contract + e2e 五分片并行;docs-only 跳过)◄─ changeset ──────┤
-#   journeys(金五条独立库 / 单 worker;docs-only 跳过)◄─ changeset ───┤
-#   gate(name 恒为 'Lint / Typecheck / E2E';needs 含上列全部)◄────────┘
-#
-# harness 两 job 于 2026-08-15 从 fast 拆出(维护者拍板):它们合计占 fast 预算 61%
-# 且 5 天涨了一倍,把 fast 顶到 15 分钟上限。拆分**不新增 required context** ——
-# 只折进 gate 的 needs,详见两个 job 自己的头注。
-#
-# e2e 并行化(per-worker 派生库)见 test/setup/;句柄泄漏检测由
-# nightly-e2e-leaks.yml 串行线承接(detectOpenHandles 与并行互斥)。
-
 on:
   push:
     branches: [main, dev]
   pull_request:
 
-# 频率刀(维护者 2026-08-02 拍板):PR 上迭代推送时,被替代的旧 run 立即取消
-# (两天实测 23 条 PR run 里有多条是同 PR 的过期推送,烧完全程纯浪费)。
-# main/dev 的 push run 恒不取消 —— strict=false 下它是「合并后漂移」的唯一探测器,
-# 每次合并的 run 必须各自跑完,取消任何一条都在探测器上开洞。
+permissions:
+  contents: read
+  pull-requests: read
+
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# 与 .env.test 对齐(测试环境配置在仓库公开,值均为非敏感)。
-# 见 .env.test。SUPER_ADMIN_EMAIL 故意留空,seed 校验在 APP_ENV=test 下放行默认值。
-# DATABASE_URL 的 connection_limit/pool_timeout 与 .env.test 同步(并行 e2e 连接预算)。
+# Public test fixture values; never production credentials.
 env:
   APP_ENV: test
   APP_PORT: '3001'
@@ -53,505 +27,137 @@ env:
   SUPER_ADMIN_EMAIL: ''
 
 jobs:
-  # docs-only 快速路径(2026-06-11 拍板;效率排查 goal 简报方案 A):
-  # 变更文件「全部 *.md」才算 docs-only(白名单取反:任一非 .md → 全量);
-  # API 失败 / 文件列表为空或被截断(changedFiles > 已列出数,>100 文件场景)
-  # → 一律回退全量,只会多跑不会少跑。
-  # 取文件列表用 `gh pr view --json files` 的原始路径,不用 `gh pr diff --name-only`
-  # (后者对非 ASCII 路径做 C 转义加引号,行尾不再是 .md,会误判;JSON 无此问题)。
-  #
-  # push 事件自 2026-08-02(维护者拍板,CI 提效·频率刀)起同样判定:两天实测
-  # 14 条 push run 里多条是纯文档合并(#872/#877 各白烧一条全量)。判定用
-  # compare API(before...after),任何异常(比较失败 / 首推 before 全零 /
-  # 文件数≥250 触发截断风险 / 列表为空)→ 回退全量,方向与 PR 侧一致:多跑不少跑。
   changeset:
-    name: Change set
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      docs_only: ${{ steps.changeset.outputs.docs_only || steps.changeset-push.outputs.docs_only }}
+      docs_only: ${{ steps.detect.outputs.docs_only }}
     steps:
-      - name: Detect docs-only change set
-        id: changeset
-        if: github.event_name == 'pull_request'
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect documentation-only changes
+        id: detect
         env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
+          # A missing/invalid base falls back to the full pipeline.
           docs_only=false
-          json=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json files,changedFiles 2>/dev/null) || json=""
-          if [ -n "$json" ]; then
-            total=$(jq -r '.changedFiles // 0' <<< "$json")
-            listed=$(jq -r '.files | length' <<< "$json")
-            non_md=$(jq -r '[.files[].path | select(test("\\.md$") | not)] | length' <<< "$json")
-            echo "changedFiles=$total listed=$listed non_md=$non_md"
-            if [ "$listed" -gt 0 ] && [ "$total" -eq "$listed" ] && [ "$non_md" -eq 0 ]; then
-              docs_only=true
-            fi
-          else
-            echo "gh pr view failed; fallback to full pipeline"
+          if git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            export BASE
+            docs_only=$(python3 - <<'PY'
+          import os, subprocess
+          files = subprocess.check_output(
+              ['git', 'diff', '--name-only', '--no-renames', '-z', os.environ['BASE'], 'HEAD']
+          ).split(b'\0')
+          files = [f for f in files if f]
+          print('true' if files and all(f.endswith(b'.md') for f in files) else 'false')
+          PY
+          )
           fi
           echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
-          echo "docs_only=$docs_only"
 
-      - name: Detect docs-only change set (push)
-        id: changeset-push
-        if: github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BEFORE: ${{ github.event.before }}
-          AFTER: ${{ github.event.after }}
-        run: |
-          docs_only=false
-          # 首推 / 新分支的 before 是全零 SHA,compare 无意义 → 全量
-          if [ -n "$BEFORE" ] && [ -n "$AFTER" ] && ! printf '%s' "$BEFORE" | grep -q '^0*$'; then
-            json=$(gh api "repos/$GITHUB_REPOSITORY/compare/$BEFORE...$AFTER" 2>/dev/null) || json=""
-            if [ -n "$json" ]; then
-              listed=$(jq -r '.files | length' <<< "$json")
-              non_md=$(jq -r '[.files[].filename | select(test("\\.md$") | not)] | length' <<< "$json")
-              echo "listed=$listed non_md=$non_md"
-              # compare API 最多列 300 files;≥250 视为有截断风险 → 全量(多跑不少跑)
-              if [ "$listed" -gt 0 ] && [ "$listed" -lt 250 ] && [ "$non_md" -eq 0 ]; then
-                docs_only=true
-              fi
-            else
-              echo "compare API failed; fallback to full pipeline"
-            fi
-          fi
-          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
-          echo "docs_only=$docs_only"
-
-  # 快信号线:无 Postgres 依赖的全部检查。实测 2026-08-02(run 30710337669):全跑 6m57s,
-  # 其中 lint+typecheck+build+unit ≈ 3m —— 这四步的输入全是 ts / 构建产物,纯 .md 变更
-  # 碰不到,docs-only 时跳过(维护者 2026-08-02 拍板,CI 提效)。
-  # docs-only 仍恒跑:docs guards(md 正是其守护对象)+ A 类元数据门 + 尺寸棘轮。
-  # harness 自测与事故回放**同样恒跑**,但已于 2026-08-15 拆到各自的并行 job ——
-  # 它们的判据文件含 md/json,红了必须当场知道,不能等下一个代码 PR。
-  # push 事件自 2026-08-02 起同样判定 docs-only(见 changeset 头注)——
-  # 纯文档合并的 main run 同享此跳过;判定失败恒回退全量。
   fast:
     name: Fast checks
     runs-on: ubuntu-latest
-    # 20 → 15(2026-08-15):#1003 把上限提到 20 是**止血**,并在此写明真修法是
-    # 「把 selftest / replay 拆到并行 job」。本次正是那一刀 —— 两步已移出本 job,
-    # 根因消失,故把止血值收回 15。
-    # 实测口径:拆分前 876s(run 31812869850),其中 selftest 318s + replay 230s;
-    # 移出后本 job ≈ 328s ⇒ 15 分钟 ≈ 2.7x 余量。
-    # ⚠️ 这两步**不是被删掉**,是搬到了 harness-selftest / harness-replay 两个
-    #    并行 job,并通过 gate 的 needs 照样卡合并;触发条件逐字未变。
     timeout-minutes: 15
     needs: changeset
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # pnpm/action-setup 必须在 actions/setup-node 之前,
-      # setup-node 的 'cache: pnpm' 需要 pnpm 已可用才能定位 store。
-      # version 不显式声明,从 package.json#packageManager (pnpm@10.14.0) 自动读取。
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
         with:
           run_install: false
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      # Prisma client 不会随 pnpm install 自动生成(项目无 .npmrc / postinstall 钩子,
-      # @prisma/client 的 build script 被 pnpm 默认忽略)。
-      # lint / typecheck 都依赖 generate 后的类型(如 Role / UserStatus enum)。
-      - name: Generate Prisma client
-        run: pnpm prisma:generate
-
-      # V1.4-1:严格模式(`--max-warnings 0`)写在 package.json#scripts.lint 里,
-      # 本地 / CI 共用同一入口。CI 恒冷跑(无 --cache):缓存不追踪跨文件类型依赖,
-      # 冷跑是 lint 的权威口径(本地 agent:check:quick 用缓存换速度)。
-      - name: Lint
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma:generate
+      - name: Cold lint
         if: needs.changeset.outputs.docs_only != 'true'
-        # Keep the repository-wide, cold type-aware lint unchanged. Its working
-        # set now exceeds Node's default hosted-runner heap; 6 GiB is a
-        # verified passing ceiling for this workload.
         env:
           NODE_OPTIONS: --max-old-space-size=6144
         run: pnpm lint
-
       - name: Typecheck
         if: needs.changeset.outputs.docs_only != 'true'
         env:
           NODE_OPTIONS: --max-old-space-size=6144
         run: pnpm typecheck
-
-      # Harness 2.0(T0 §1.4):恒读层预算 + 事实计数守护;前四项均纯文件解析、秒级。
-      # openapi 一项(Harness 3.0 P4d)在进程内建 Nest 应用导出契约再逐字比对,
-      # **不监听端口、不连数据库**,故可留在这个无 Postgres 的 fast job 里(~10s)。
-      # 它把「改契约必须同 PR 刷新交接文档」从散文铁律变成机器判据。
-      - name: Docs guards (readtax + counts + codemap + rbacmap + openapi + feclient)
-        run: pnpm docs:readtax:check && pnpm docs:counts:check && pnpm docs:codemap:check && pnpm docs:rbacmap:check && pnpm docs:openapi:check && pnpm docs:feclient:check
-
-      # 「加一条 migration 打挂 N 份 e2e 计数 spec」类闸(2026-08-25 维护者拍板立项)。
-      # 立项证据:#1186 加了第 96 条 migration,6 份冷库重放 e2e 里手写的
-      # `CURRENT_MIGRATION_COUNT = 95` 全部过期,而本机 lint / typecheck / 全量 unit /
-      # 十余条静态判据**全绿零症状** —— 只有 CI 的 e2e 分片会红(最贵最晚的那一格)。
-      #
-      # ⚠️ **为什么挂在 fast 而不是跟着 `pnpm test` 走**(接闸前逐字读 workflow 得出,
-      # 不是凭印象):本 job 里 Lint / Typecheck / Build / Run unit tests 四步都带
-      # `if: needs.changeset.outputs.docs_only != 'true'` —— 纯 .md 变更时它们**一次都不跑**。
-      # 而 Docs guards / Ops required / Architecture governance 三步**没有 if**,恒跑;
-      # `fast` job 自身也没有 job 级 if(只有 `needs: changeset`),且在 `gate` 的 needs 里。
-      # 本判据读的是 `prisma/migrations/` 目录与 `test/**/*.ts`,与 docs-only 判定正交,
-      # 故与后三步同列:**无 if,恒跑**。
-      #
-      # ⚠️ **单列一步,不并进上面那条 `&&` 链**(同 ops:required:check 的理由):
-      # 链式下前面任一条挂掉它就不跑,且失败归因不清。
-      # 纯文件解析 + 语法树,不连库不起 Nest,秒级 —— 留在这个无 Postgres 的 job 里正合适。
-      - name: Migration count pinned in e2e specs is in sync
-        run: pnpm docs:migcount:check
-
-      # 第七轮评审包 F(F-01 + F-02):「生产必填项必须在部署 runbook 里有条目」类闸。
-      # 两条断言都从源动态发现 —— (a) `app.config.ts` 在 production / smoke 下 fail-fast
-      # 点名的环境变量,(b) `package.json` 里的 `start:*-worker` 脚本,各自必须至少在一份
-      # 部署 runbook 中出现。立项时实测:12 条必填变量里 7 条两份 runbook 都没提,
-      # 三个常驻 worker 类零提部署方式 —— 真机因此从未部署过 worker。
-      #
-      # ⚠️ **单列一步,不并进上面那条 `&&` 链**:链式下前面任一条挂掉它就不跑,
-      # 且失败归因不清。本判据纯文件解析、秒级,留在无 Postgres 的 fast job 里正合适。
-      - name: Ops required items registered in deployment runbooks
-        run: pnpm ops:required:check
-
-      # Phase 0 A-class bootstrap: R1/R4/R7/R10 metadata integrity is now blocking
-      # inside the existing Fast checks context. B-class findings remain visible only.
-      #
-      # Phase 5 adds the R14 implication-graph integrity check here. Only the *registry*
-      # is validated in this job; the base↔head semantic diff itself is deliberately NOT
-      # here — it must run base-trusted (the PR must not be able to edit its own judge),
-      # so it lives in the Red-zone (trusted) workflow. Locally: pnpm gate:authz:semantic.
-      # Phase 3 前置 adds the debt call-site identity check. It is A-class
-      # (metadata integrity), so it is blocking with no `|| true`: it asserts that
-      # every registered call-site debt entry still resolves to a live call site
-      # under the normalized-AST identity. Left un-wired, an identity mismatch
-      # caused by ordinary code movement would stay invisible until the day R5/R6
-      # flip to blocking — and would then surface as "all historical debt repaid,
-      # an equal pile of new debt appeared", which is the shape of a real
-      # regression. Blocking here is safe because the check is idempotent and
-      # currently passes 201/201; it does not judge the code, only the ledger.
-      #
-      # 2026-08-15 补 `docs:boundaries:debt:check`。它此前**存在于 package.json 却未接
-      # 任何 CI**,而它是 `semanticFieldsComplete` 的**唯一**执法者:
-      #   · `docs:boundaries`(--violations)输出里带 debtRegistry,但被 `|| true` 兜住,永不阻断;
-      #   · `docs:boundaries:check`(--metadata)的 errors 只装 domain-map 元数据,**完全不碰**它;
-      #   · `docs:boundaries:ids:check` 管 call-site 身份,是另一件事。
-      # 也就是说「每条债务都必须填满 7 个语义字段(classification / reason / risk /
-      # desiredExit / ownerApiTarget / reviewTrigger / introducedAt)且不留 pending-phase2 占位」
-      # 这条不变量,在此之前**零执法** —— 纯散文。
-      #
-      # 与上面两条同属 A 类(registry integrity:判台账不判代码),故同样**无 `|| true`**。
-      # 接闸时机选在此刻是因为台账 222/222 全绿,零存量摩擦。
-      # ⚠️ harness/architecture-debt.json 在 selfGuard 内,但授权闸管的是「能不能改」,
-      #    管不了「改得完不完整」—— 两个问题,故人闸不替代本条。
-      # 2026-08-21 补 `docs:boundaries:newdebt:check` —— v4 §6 元规则
-      # 「**禁新增代码债**」此前**零执法**,与 2026-08-15 那次是同一形状的下一层:
-      # 那次是「命令在 package.json 却没接 CI」,这次是「接上了 CI,但它执法的
-      # 不是元规则说的那件事」。
-      #   · `docs:boundaries:debt:check` 的 enforcement 字段自述 registry-integrity-only,
-      #     只校验已登记条目的 7 个语义字段填没填,**从不与扫描结果比对**;
-      #   · 真正产出 findings 的 `docs:boundaries` 带 `|| true`。
-      # 实测 641 条 finding 里 412 条不在台账中 —— 登记与否对 CI 毫无影响,
-      # 于是 B 类规则(R2/R3/R5/R15)整条升级路径所依赖的「baseline 只减不增」
-      # 从来没有执行位。
-      #
-      # 本条判的是**身份集合**:每条 finding 的 callSiteId ∪ legacyCallSiteId
-      # 必须已在 harness/architecture-debt-baseline.json 里。两者都不在 = 本 PR 新写的违规。
-      # **无 `|| true`** —— 接闸时机选在此刻是因为基线刚由当前 main 生成,零存量摩擦
-      # (实测 scanned 641 / unknown 0 / exit 0)。
-      #
-      # ⚠️ 与既有三条 A 类检查的分工:它们判「台账/清单本身完不完整」,本条判
-      #    「有没有出现没登记过的违规」。两件事,互不顶替。
-      # ⚠️ 基线自身在 selfGuard 红区,且已登记为 set-monotonic 棘轮 ——
-      #    「顺手把新违规登进基线」被人闸(授权+环境审批)与 base-trusted 裁判
-      #    (集合只减不增)同时挡住。
-      - name: Architecture governance A-metadata gate (B reports only)
-        run: |
-          pnpm docs:boundaries || true
-          pnpm docs:boundaries:check
-          pnpm docs:boundaries:ids:check
-          pnpm docs:boundaries:debt:check
-          pnpm docs:boundaries:newdebt:check
-          pnpm docs:authz:check
-          pnpm gate:authz:graph:check
-
-      # Phase 6-A 尺寸棘轮(report)。接在**既有 required job 内**,不新增 required
-      # context —— 「required context 必须先合后加」是本仓第五轮 harness 评审的既有教训,
-      # 新 context 会卡死所有 base 上没有它的在飞分支。
-      #
-      # `|| true` 是 report 期**唯一**的不阻断开关:脚本本身有发现就退出 1,
-      # 所以转 blocking = 删掉这一个 `|| true`,一行,且不可能只翻一半。
-      # (scripts/harness-guards.selftest.ts 钉住了「此刻它必须在」——
-      #  真要转闸时那条断言要一起改,那正是翻闸该有的摩擦。)
-      # Exit Criteria 见 docs/ai-harness/SERVICE_SIZE_RATCHET.md。
-      - name: Service size ratchet (report only)
-        run: pnpm harness:servicesize || true
-
-      # 显式跑 nest build,防止"typecheck 通过但 build 失败"的隐性回归。
+      - name: API artifacts and authorization declarations
+        run: pnpm docs:openapi:check && pnpm docs:feclient:check && pnpm docs:authz:check
+      - name: RBAC code invariants
+        run: pnpm check:rbac
       - name: Build
         if: needs.changeset.outputs.docs_only != 'true'
         run: pnpm build
-
-      - name: Run unit tests
-        if: needs.changeset.outputs.docs_only != 'true'
+      # Some business specs consume Markdown fixtures, so units also run for docs.
+      - name: Unit tests
         run: pnpm test
-
-      - name: Run E4 historical prefix offline regression
+      - name: E4 historical prefix offline regression
         if: needs.changeset.outputs.docs_only != 'true'
         run: >-
           pnpm exec jest --config test/jest-unit.config.ts --runInBand
           --testRegex 'test/helpers/e4-migration-prefix\.spec\.ts$'
           --runTestsByPath test/helpers/e4-migration-prefix.spec.ts
 
-  # ── 守护线:harness 自测 ∥ 事故回放 ─────────────────────────────────────────
-  # 为什么拆出来(2026-08-15,维护者拍板):这两步在 fast 里合计 9m08s = 61% 预算,
-  # 且 5 天内从 4m17s 涨到 9m08s(08-09 run 31318061317:147s + 110s;
-  # 08-14 run 31812869850:318s + 230s)—— fast 因此贴着 15 分钟上限跑并自行 cancel 两次。
-  # 增量全部来自 R8 治理线(#996 typed-AST / #997 self-by-construction),
-  # 那是正当的能力增长,不该靠删检查来省时间 —— 该改的是**它们串在关键路径上**。
-  #
-  # 拆分后实测预期:fast ~5m30s、本两 job 各 ~5m30s / ~4m。三者与 slow(892s)并行,
-  # 而 slow 本就是关键路径 ⇒ **全程墙钟不变,超时风险归零**。
-  #
-  # ⚠️ 为什么是两个 job 而不是一个:`harness:replay` 的 eslint-rules-live 探针会
-  #    **整份重跑** scripts/harness-eslint.selftest.ts(见 scripts/replay-incidents.ts
-  #    的该探针)。本机实测 replay 155.5s 中 127.6s 是这次重跑 = 82%。
-  #    合成一个 job 就要串行付两遍;拆成两个,这份重复变成并行,**零墙钟代价**,
-  #    且不必为了省时间去动探针语义(standalone `pnpm harness:replay` 仍是自足的)。
-  #    真正消除重复 / 消除 R8 的 30 次 ts.Program 重建是独立一刀,不在本次范围。
-  #
-  # ⚠️ 两者**不带** `if: docs_only`:它们的判据文件含 md/json,docs-only 时同样必须跑
-  #    (与拆分前 fast 内的行为逐字一致 —— 拆分不得改变任何一条检查的触发条件)。
-  #    因此 gate 对这两个 job 只接受 success,**skipped 一律拒绝**(与 slow/journeys 不同)。
-  #
-  # ⚠️ 两者都**不是** required context:branch protection 的 contexts 逐字锁定为
-  #    ["Lint / Typecheck / E2E", "Docker image build", "Diff guards", "Red-zone (trusted)"],
-  #    新 job 只通过 `gate` 的 needs 折进既有聚合门 —— 这正是「required context 必须
-  #    先合后加」那条教训的合规走法:不新增 context,就不会卡死在飞分支。
-  harness-selftest:
-    name: Harness selftests
-    runs-on: ubuntu-latest
-    # 实测 318s(run 31812869850)。取 15m ≈ 2.8x 余量,与拆分前 fast 同量级。
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      # 与 fast 同源:harness 的 eslint 阳性对照走仓库正式 lint 入口,
-      # 而 eslint.config.mjs 是类型感知的(parserOptions.project),没有生成物会直接解析失败。
-      - name: Generate Prisma client
-        run: pnpm prisma:generate
-
-      # Harness 3.0 P2:守卫自测 + eslint 执法块阳性对照。
-      # 后者对每条执法规则喂必定违规的合成片段,断言确实被抓到 ——
-      # 防「lint 全绿是因为 selector 写错/被 flat config 后块静默覆盖」这一最坏失败模式。
-      - name: Harness selftests (guards + eslint positive controls)
-        run: pnpm harness:selftest
-
-  harness-replay:
-    name: Incident replay
-    runs-on: ubuntu-latest
-    # 实测 230s(run 31812869850)。取 15m ≈ 3.9x 余量。
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Generate Prisma client
-        run: pnpm prisma:generate
-
-      # Harness 3.0 P2.5:历史事故回放 + 反向案例。
-      # 前者答「这些事故今天还会不会重演」,后者答「守护是不是开始误伤」——
-      # 两者都失效即防线不可信(前者让事故重演,后者让人绕过防线)。
-      - name: Replay historical incidents (+ inverse cases)
-        run: pnpm harness:replay
-
-  # 慢验证线:contract + 全量 e2e(并行,JEST_MAX_WORKERS 显式给定)。
-  # docs-only PR 跳过(gate 对 skipped 视为通过,与旧版步骤级跳过语义一致)。
-  #
-  # 二分片(维护者 2026-08-02 拍板,CI 提效):jest --shard 按文件把 suite 切到两台
-  # runner,每台仍是「4 vCPU + 同机 postgres + 2 worker」—— 不碰下方 JEST_MAX_WORKERS
-  # 的单独观察约束,只减少每台要跑的 suite 数(本地验证 109+108 均分,globalSetup
-  # 各自独立建库互不相扰)。实测基线:单 job 18m03s(run 30712142404,e2e 步骤 ~15m)
-  # → 预期每片 ~10m(固定 setup ~3m 不摊薄)。
-  # contract + 生产迁移命令与分片无关,只在 shard 1 跑(双跑纯浪费)。
-  # branch protection 的 required context 是聚合 gate 名,不含本 job 名 → 矩阵改
-  # 显示名安全;gate 读 needs.slow.result:全片 success 才 success、任一 failure 即
-  # failure、docs-only 全片 skipped → skipped —— 三种语义与单 job 逐字一致,gate 零改动。
   slow:
     name: Contract + E2E
     runs-on: ubuntu-latest
+    timeout-minutes: 35
+    needs: changeset
+    if: needs.changeset.outputs.docs_only != 'true'
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4, 5]
-    # 旧单 job 有两次超时误杀前科(147 suites/15m → 误杀;177 suites/25m → 再误杀 → 提到 35m)。
-    # 并行化实测(2026-07-28,PR #801 首跑,run 30361346317,195 suites / 4 vCPU / 2 worker):
-    #   本 job 12m17s,其中 e2e 步骤 11m23s(改前单 job 25m59s、e2e 步骤 22m14s)。
-    # 取 25m ≈ 实测 2 倍余量(旧两次误杀分别只有 1.03x / 1.16x 余量)。
-    #
-    # 2026-08-16 二分片 → 三分片(**第三次超时误杀**,run 31945697039 分片1 25m16s 被杀):
-    #   spec 数 195 → 279(+43%)把那 2 倍余量吃到了 ~1.4 倍。历史读数:
-    #   分片1 16m30s/16m40s/16m59s/17m33s/18m09s(常态) vs 分片2 13m52s/14m05s/14m17s。
-    #   **不均衡是设计使然**:分片 1 额外扛 prisma:deploy 与 test:contract(下方 if 条件),
-    #   那 ~3 分钟差正是它们 —— 与 jest --shard 的切法无关,故加片而非改切法。
-    #   三分片后 e2e 部分 ~9m,分片 1 合计 ~12m,恢复到 2 倍余量。
-    #   未把 contract 挪成独立 job:每 job 重装依赖 + 起 PostgreSQL 约 4m 启动开销,
-    #   为省 3m 多开一个 job 不划算。
-    #
-    # 2026-08-23 三分片 → 五分片(CI 提速刀②,维护者拍板;非超时驱动,是墙钟驱动):
-    #   基线 = 刀①(转译模式,#1149)合入后的 main run 32591391154:
-    #   e2e 步骤 8m56s / 13m28s / 8m47s(304 specs),全 run 墙钟 14m06s —— slow 是
-    #   唯一关键路径,e2e 总量 ~31 worker-min 摊 3 台的商就是墙钟地板。
-    #   为什么是 5 不是 6+:账号级 20 并发 job 上限(Free plan),五分片单 run 峰值
-    #   ~11 job,两条 run 并飞才轻度排队;六片起单 run 就把并飞挤成常态排队。
-    #   ⚠️ 已知不均衡(与 2026-08-16 那段「设计使然」不同源,是 jest --shard 本身):
-    #   --shard 按**文件数**均分(实测 102/101/101),不按耗时 —— 同 run 里片间耗时
-    #   差 43–53%,单 spec 硬地板 notification-outbox 205s / allocation-command-replay
-    #   169s 落在哪片哪片就慢。故五分片的预期是「最慢片 e2e ~7–9m、墙钟 ~9m」而非
-    #   理想商 6.2m;若实测显著差于此,下一刀是按耗时加权分片,不是继续加片。
-    #   timeout 原定 25m:对预期最慢片 ~9m 是 2.7x 余量,与历史校准一致。
-    #
-    # 2026-09-11 PR #1316 的 D1-3 回放 spec 进入原生 jest --shard 后,第 5 片的
-    # 文件级分配发生变化。run 34570013410 在 25m job 上限被 GitHub 取消,而本次
-    # 新增的 activity-service-segment-correction-pending-migration spec 已 PASS(130.983s),
-    # 因此这是执行预算不足而非断言失败。先升至 35m 保留完整回归证据;五分片、2 worker
-    # 与 gate 均不变。后续仍须观察各片时长,若负载继续漂移应单独做按耗时加权分片,不能靠
-    # 无限抬高 timeout 掩盖问题。
-    timeout-minutes: 35
-    needs: changeset
-    if: needs.changeset.outputs.docs_only != 'true'
     env:
-      # ubuntu-latest 4 vCPU(且 postgres 容器同机):保守 2 worker。
-      # 实测:e2e 步骤 22m14s(串行)→ 11m23s(2 worker),约 1.95x。
-      # **暂不上调到 3-4**:runner 只有 4 vCPU 且要与 postgres 分,本机曾在 CPU 争抢下
-      # 出现整批 beforeAll 撞 30s testTimeout(见 docs/testing.md 并行纪律段);
-      # 若要调,应单独一刀 + 观察多轮 CI,不与其他改动同 PR。
       JEST_MAX_WORKERS: '2'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      # 通过项目自带的 docker-compose.yml 启动 postgres:16-alpine。
-      # 容器名固定为 'u-nest-api-postgres',与 package.json#db:test:init 与
-      # test/setup/test-db.ts 硬编码的 docker exec 目标一致。
-      # 不使用 GitHub Actions 的 services: 字段:services 容器名由 runner 自动生成,
-      # 无法对齐既有 db:test:init 脚本,会导致 'docker exec u-nest-api-postgres' 失败。
-      - name: Start PostgreSQL 16 service container
-        run: docker compose up -d postgres
-
-      - name: Wait for PostgreSQL ready
+      - run: docker compose up -d postgres
+      - name: Wait for PostgreSQL
         run: |
           for i in $(seq 1 60); do
-            if docker exec u-nest-api-postgres pg_isready -U postgres -d app >/dev/null 2>&1; then
-              echo "PostgreSQL is ready after ${i}s"
-              exit 0
-            fi
+            if docker exec u-nest-api-postgres pg_isready -U postgres -d app >/dev/null 2>&1; then exit 0; fi
             sleep 1
           done
-          echo "PostgreSQL not ready after 60s; dumping logs:"
           docker compose logs postgres
           exit 1
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v4
         with:
           run_install: false
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Generate Prisma client
-        run: pnpm prisma:generate
-
-      - name: Initialize test database
-        run: pnpm db:test:init
-
-      # Fresh runner-local PostgreSQL only; never part of a production migration.
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma:generate
+      - run: pnpm db:test:init
       - name: Install sealed R5 CI roles and verify default refusal
         run: |
           test "$GITHUB_ACTIONS" = true
           docker exec -i u-nest-api-postgres psql -X -v ON_ERROR_STOP=1 -U postgres -d app_test < test/fixtures/r5-ci-sealed-roles.sql
           pnpm prisma:deploy
           docker exec -i u-nest-api-postgres psql -X -v ON_ERROR_STOP=1 -U postgres -d app_test < test/fixtures/r5-ci-default-closed.sql
-
-      # 显式跑一次生产迁移命令,验证 `pnpm prisma:deploy` 脚本存在且可执行。
-      # 复用同一份测试库(模板库);E2E 的 globalSetup 之后还会再跑一次
-      # `prisma migrate deploy`,Prisma 对已应用的 migration 是 no-op。
-      - name: Verify production migration command
+      - name: Verify production migration command on test database
         if: matrix.shard == 1
         run: pnpm prisma:deploy
-
-      # OpenAPI 契约快照:任何 schema 漂移(路由白名单 / DTO 字段 / 错误响应)都会被拦截。
-      - name: Run contract tests
+      - name: Contract tests
         if: matrix.shard == 1
         run: pnpm test:contract
-
-      # 句柄泄漏信号(每 PR,**告警级**;权威检测在 nightly-e2e-leaks.yml)。
-      #
-      # 实测事实(2026-07-28,本仓 195 suites):
-      #   - 并行模式恒打 'A worker process has failed to exit gracefully'(退出码仍为 0);
-      #   - 同一套件串行 + detectOpenHandles 跑完 **零个开放句柄报告**(1641s,195/195 绿)。
-      # 即该警告在本仓的基线就非零,来源是 jest worker 关闭时序(Prisma 引擎子进程等),
-      # 而非测试代码 teardown 缺失 —— 设成硬失败会让 CI 永久红且毫无鉴别力。
-      # 因此这里只升告警注解(PR 上可见),真正的泄漏判据是夜间线的 detectOpenHandles 报告。
-      - name: Run E2E tests (parallel; worker force-exit = warning)
+      - name: E2E tests
+        shell: bash
         run: |
           set -o pipefail
           mkdir -p tmp
           echo '::notice::Native launch scope: 500 identities / 2500 slices / 2000 units. Historical 2000-identity E4 capacity is NOT_VALIDATED; explicit manual/diagnostic positive selection only. Default and nightly E2E keep every other applicable test.'
           pnpm test:e2e --shard=${{ matrix.shard }}/5 2>&1 | tee tmp/e2e.log
           if grep -q 'failed to exit gracefully' tmp/e2e.log; then
-            echo "::warning::并行 e2e 出现 worker 强制退出(本仓已知基线,非硬失败)。若近期新增/改动了 spec,请核对 afterAll 是否 app.close();权威检测见 nightly-e2e-leaks.yml,本地复现:pnpm test:e2e:leaks"
+            echo "::warning::Jest worker did not exit gracefully; inspect app.close(). Leak detection remains in nightly-e2e-leaks.yml."
           fi
 
-  # Fresh single-instance authentication and current Human V3 regressions.
-  # No production identity, repository secret, persistent PG data or external port.
   r5-human-ci:
     name: Authenticated Human V3
     runs-on: ubuntu-latest
@@ -559,21 +165,16 @@ jobs:
     needs: changeset
     if: needs.changeset.outputs.docs_only != 'true'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
         with:
           run_install: false
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: pnpm
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Generate Prisma client
-        run: pnpm prisma:generate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma:generate
       - name: Pull pinned isolated fixture images
         run: |
           docker pull postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
@@ -600,9 +201,6 @@ jobs:
           path: tmp/r5-authenticated-ci/
           retention-days: 7
 
-  # 金五条与既有 e2e 物理隔离：独立 Jest config、独立派生库、单 worker。
-  # 它们跨越招新、活动、证书、出箱等域，不能混入 e2e shard 后被偶然的执行顺序掩盖。
-  # docs-only 时同 slow 合法跳过，gate 会正面核验跳过理由。
   journeys:
     name: Golden journeys
     runs-on: ubuntu-latest
@@ -612,335 +210,83 @@ jobs:
     env:
       JEST_MAX_WORKERS: '1'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Start PostgreSQL 16 service container
-        run: docker compose up -d postgres
-
-      - name: Wait for PostgreSQL ready
+      - uses: actions/checkout@v4
+      - run: docker compose up -d postgres
+      - name: Wait for PostgreSQL
         run: |
           for i in $(seq 1 60); do
-            if docker exec u-nest-api-postgres pg_isready -U postgres -d app >/dev/null 2>&1; then
-              echo "PostgreSQL is ready after ${i}s"
-              exit 0
-            fi
+            if docker exec u-nest-api-postgres pg_isready -U postgres -d app >/dev/null 2>&1; then exit 0; fi
             sleep 1
           done
-          echo "PostgreSQL not ready after 60s; dumping logs:"
           docker compose logs postgres
           exit 1
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v4
         with:
           run_install: false
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Generate Prisma client
-        run: pnpm prisma:generate
-
-      - name: Initialize test database
-        run: pnpm db:test:init
-
-      # Fresh runner-local PostgreSQL only; never part of a production migration.
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma:generate
+      - run: pnpm db:test:init
       - name: Install sealed R5 CI roles and verify default refusal
         run: |
           test "$GITHUB_ACTIONS" = true
           docker exec -i u-nest-api-postgres psql -X -v ON_ERROR_STOP=1 -U postgres -d app_test < test/fixtures/r5-ci-sealed-roles.sql
           pnpm prisma:deploy
           docker exec -i u-nest-api-postgres psql -X -v ON_ERROR_STOP=1 -U postgres -d app_test < test/fixtures/r5-ci-default-closed.sql
+      - run: pnpm test:journeys
 
-      - name: Run golden journeys (isolated, serial)
-        run: pnpm test:journeys
-
-  # 保名 gate:branch protection 的 required context 逐字指向本 job 的 name。
-  # fast 必须 success;slow / journeys 允许 success(全量)或 skipped(docs-only)。
-  # 其余一切结果(failure / cancelled)→ gate 红。
-  # ── Harness 3.0 P2c:红区触碰的 agent 无关守护 ────────────────────────────
-  # 为什么在 CI 而不只在 hook:`.claude/hooks/redzone-guard.sh` 只对 Claude Code
-  # 会话生效。Codex / Cursor / 人手 vim / GitHub 网页编辑全都绕过它 ——
-  # 也就是说 P2b 建起来的红区执法,此前覆盖的只是「其中一个执行体」。
-  # 判定复用同一份 harness/redzone.json;两侧裁决一致性由 harness-guards.selftest
-  # 的 parity 用例逐条锁死,避免「一边拦一边放」。
-  #
-  # ⚠️⚠️ 本 job **不是权威判定**,只是快速反馈。(2026-07-29 跨模型评审 finding 2)
-  #      它 checkout PR 的合并引用 → `pnpm install`(PR 的锁文件)→ 跑
-  #      `scripts/check-redzone.ts`(**PR 自己提供的裁判**)。PR 只要让 main()
-  #      输出 touched=false,红区审批就被跳过;而 judge() 不动,parity 自测照样
-  #      全绿 —— 自考自评的门不是门。
-  #      **权威判定在 `.github/workflows/redzone-trusted.yml`**:它用
-  #      pull_request_target 只跑 base 分支上的裁判,不 checkout PR、不装 PR
-  #      依赖、不执行 PR 内任何脚本。本 job 保留是因为它快、能在同一次 run 里
-  #      给出注解;真正卡合并的是那一个。
   redzone-scan:
     name: Diff guards
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    outputs:
-      touched: ${{ steps.scan.outputs.touched }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          # 要算 base...HEAD,浅克隆不够
           fetch-depth: 0
-
-      # 与 fast job 同型:pnpm 必须先于 setup-node(后者的 cache: pnpm 要 pnpm 已可用)。
-      # ⚠️ 别自创配置 —— 首版这里写了 `node-version-file: .nvmrc`,而本仓根本没有
-      # .nvmrc,scan job 直接失败。照抄同文件里已在跑的 job,不凭印象写。
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Scan changed files against red-zone registry
-        id: scan
+      - name: Report protected paths (approval is in the trusted workflow)
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          BASE="origin/${{ github.base_ref || github.event.repository.default_branch }}"
-          git fetch --no-tags origin "${{ github.base_ref || github.event.repository.default_branch }}"
-          pnpm exec tsx scripts/check-redzone.ts --base "$BASE"
-
-      # Harness 3.0 P6:并行 PR 必须用 changelog.d fragment,不直接改 ## Unreleased。
-      # 立项证据:2026-07-28/29 通宵 8 个 PR **每一个都撞了 CHANGELOG 冲突**,
-      # 而 fragment 机制 Harness 2.0 就建好了、当晚一个都没人用。
-      # 规则写了、工具有了、没人用 —— 所以不再写第二遍散文,直接判。
-      # 放在本 job 是因为它已有全深度历史与 base;它失败 → 本 job 失败 → gate 拒绝放行。
-      - name: Changelog fragment check
-        run: |
-          BASE="origin/${{ github.base_ref || github.event.repository.default_branch }}"
-          pnpm exec tsx scripts/check-changelog-fragment.ts --base "$BASE"
-
-      # 台账状态收口闸:`docs/ai-harness/NEXT_TASKS.md` 每条 `### Pn-m` 必须有显式状态,
-      # 且「写着待办却已有交付类 commit 点名它」当场红。立项证据:2026-08 内同一形态
-      # **复发四次**(P2-8 / P2-12 / P2-13 / P2-15)—— 活干完了台账仍写待办,
-      # 于是条目被重新下发、或在进度盘点里被算成未完成。
-      #
-      # 🔴 **为什么挂这里而不是 unit 轮(`pnpm test`)**:fast job 的 unit 步骤带
-      # `if: needs.changeset.outputs.docs_only != 'true'` —— 而改台账的 PR **大多是 docs-only**,
-      # 判据会恰好在最该拦的那批 PR 上不执行。本 job 不随 docs-only 短路,
-      # 且 checkout 用 `fetch-depth: 0`(判据 C 要读 main 的 commit subject,浅克隆会让它全程失明)。
-      # 与上面那条 changelog fragment 闸逐字同一个理由,故并排放在这里。
-      - name: NEXT_TASKS status gate
-        run: |
-          BASE="origin/${{ github.base_ref || github.event.repository.default_branch }}"
-          pnpm exec tsx scripts/check-next-tasks-state.ts --base "$BASE"
-
-      # 冻结稿落地台账闸(`docs/ai-harness/FROZEN_DRAFTS.md`)。六条判据:分类完整性(双向
-      # 集合相等)· 分类闭集 · §1↔§3 互证 · 读数新鲜度(逐字节)· 自证非空 ·
-      # **跨台账落地度对照**(§1 落地度 ↔ NEXT_TASKS 状态行,治「沉默」不治「不一致」)。
-      #
-      # 🔴 **本条不是"新增一条判据的接线",是把既有五条第一次真正接上。**
-      # 立项前它的**唯一**入口是 `src/frozen-drafts-ledger.criteria.spec.ts`(即 `pnpm test`),
-      # 而上面 fast job 的 `Run unit tests` 带 `if: docs_only != 'true'`,
-      # 且 docs-only 判定 = 变更文件全部 `*.md` ⇒ **一个只改那份台账的 PR 就是 docs-only,
-      # 六条判据一条都不跑** —— 恰好在最该拦的那批 PR 上失效。
-      # 与上面 NEXT_TASKS 那条逐字同一个理由;`#1166` 修了那一个、没回头看这一个。
-      # (台账 §4 当时还写着"不随 docs-only 短路" —— 自称有执法而实际没有,同 PR 已订正。)
-      #
-      # 无 `--base`:六条判据全部是**当前工作树内**的静态对照,不读 git 历史。
-      # 无 `|| true`:接闸时机选在此刻是因为当前 main 上它已是绿的(实测 96 份归档 .md),
-      # **零存量摩擦**;薄运行器仍留在 unit 轮,两处同源不产生第二份真相。
-      - name: Frozen drafts ledger gate
-        run: pnpm exec tsx scripts/check-frozen-drafts-ledger.ts
-
-      # 切换前签字登记表的**可信性**闸(`docs/ai-harness/CUTOVER_SIGNOFF.md`)。
-      # 判的四件事:机器现读非退化 · 逐条对拍(签字里记的读数 ↔ 机器现读逐字相等)·
-      # 签了闸里不存在 / 不接受签字(A 类)的编号 · ⑨-c 规模档登记闭合。
-      #
-      # 🔴 **本条不是"新增一条判据",是把 2026-08-25 建好的签字机制第一次接上执行位。**
-      # 立项当天实测:`cutover:check` 在全部 workflow 里 **0 命中** ⇒
-      # 「签字与机器读数矛盾即红」至今只是散文,`scale-tiers-passing` 这类对拍值
-      # **任何 PR 都能改成任意数字而 CI 一片绿**。
-      #
-      # 🔴 **为什么挂这里而不是 unit 轮(`pnpm test`)**:登记表是一份 `.md`,
-      # 只改它的 PR **恰恰就是 docs-only** —— 而 fast job 的 Lint / Typecheck /
-      # Build / Run unit tests 四步都带 `if: docs_only != 'true'`,`Contract + E2E`
-      # 与 `Golden journeys` 是 job 级 `if` 整个跳过。挂错地方 = 在最该拦的那批 PR
-      # 上一次都不跑。本 job 不随 docs-only 短路,与上面三条闸逐字同一个理由。
-      #
-      # 无 `--base`:`--signoff` 全部是**当前工作树内**的静态对照,不读 git 历史。
-      # 无 `|| true`:带上等于把刚接的执行位当场拆掉(本仓已记录的「空开关」形状:
-      # 被 `|| true` 兜住的脚本根本不会失败)。
-      # 预算:`--signoff` 是全量的**子集** —— 不连库、不需要 Prisma client、
-      # 不跑验收套件与生成物对账,本机实测 1.9s,对本 job 的 `timeout-minutes: 5`
-      # 是三位数倍余量。
-      # ⚠️ 全量 `pnpm cutover:check` **仍然不接**:十条里今天还有必不过的
-      # (9a 尚有 it.todo、⑩ 要部署侧产物),接了等于全仓永久红,
-      # 而「闸红了没人消费 = 没有执法」是本仓已记录的事故形状。
-      #
-      # ⚠️ 接线的前置条件(顺序不可反):`scripts/cutover-check.ts` 已在**同一个 PR 里**
-      # 收进 `harness/redzone.json` 的 selfGuard。反过来做 ⇒ `P4a ci-guard-coverage`
-      # 当场判红 —— CI 依赖一个「同一个 PR 内就能改成恒 PASS 的裁判」,
-      # 那正是 2026-07-29 跨模型评审 BLOCKER-1 的形状。
-      - name: Cutover sign-off ledger gate
-        run: pnpm cutover:check:signoff
-
-  # 触碰红区/执法层时才跑:environment 上挂了 required reviewer,
-  # 这个 job 会一直 pending 直到维护者在 PR 页面点批准。
-  #
-  # ⚠️ 它是**摩擦与留痕**,不是不可伪造的授权 —— 本仓 AI 用的就是维护者本人的
-  #    token,GitHub 侧任何门在协议上都分不清「人点的」和「AI 拿人的 token 点的」。
-  #    真正不可绕过的一步,只能是维护者合并前亲自看一眼被标红的 PR。
-  # ⚠️ 本 job 已于 2026-07-29 **降级为纯报告**,不再要求维护者审批。
-  #
-  # 为什么降级(不是嫌麻烦,是它作为「门」本来就不成立):
-  #   本 job 依赖的 redzone-scan 跑的是 **PR 自己提供的** check-redzone.ts ——
-  #   那正是跨模型评审 BLOCKER-1 指出的问题,也正是我们为此新建 `Red-zone (trusted)`
-  #   (pull_request_target,只跑 base 分支裁判)的原因。
-  #   既然它的输入不可信,再对着它的结论要一次人类审批,就是**仪式而非保障**:
-  #   摩擦是真的(每个执法层 PR 要在两个不同 workflow 页面各批一次),
-  #   安全增量是零(一个能改 scan 的 PR,同样能让它报 touched=false)。
-  #
-  # 权威判定在 `.github/workflows/redzone-trusted.yml`,那条才是 required context。
-  # 本 job 保留的价值:PR 内快速反馈 + 把命中路径以注解形式标在 Files changed 上。
-  redzone-approval:
-    name: Red-zone approval (report-only)
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    needs: redzone-scan
-    if: needs.redzone-scan.outputs.touched == 'true'
-    steps:
-      - name: Report (authoritative gate is the trusted judge)
-        run: |
-          echo "本次触碰红区/执法层。"
-          echo "::notice::红区触碰已记录。**权威判定与审批在 'Red-zone (trusted)'**(base-trusted 裁判);本 job 仅快速反馈,不构成审批。"
+          git diff --check "$BASE" HEAD
+          node .github/workflows/redzone-trusted-judge.mjs --local "$BASE"
 
   gate:
+    # Required check names must stay unchanged.
     name: Lint / Typecheck / E2E
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # ⚠️ 这一行**必须保持单行 `[a, b, …]` 形态且顺序不变**:
-    # scripts/harness-guards.selftest.ts 的「P2c ci:gate 依赖 redzone-scan 与
-    # redzone-approval」用逐字正则钉住整份 needs 列表。钉整份(而不只钉 redzone 两项)
-    # 是有意的 —— 从这里摘掉 fast / slow / journeys 中任何一个,gate 都会在那项没跑的
-    # 情况下放行,正是最该拦的 fail-open。代价是往 gate 加 job 必须同步改那条正则;
-    # 那不是麻烦,那是加 job 该有的摩擦(与 #1003 尺寸棘轮翻闸同源)。
-    # 本文件不在 prettier 覆盖范围(format 只跑 src/**/*.ts),故单行形态不会被自动重排。
-    needs: [changeset, fast, harness-selftest, harness-replay, slow, journeys, r5-human-ci, redzone-scan, redzone-approval]
+    needs: [changeset, fast, slow, journeys, r5-human-ci, redzone-scan]
     if: always()
     steps:
       - name: Aggregate results
+        env:
+          RESULTS: ${{ toJSON(needs) }}
         run: |
-          echo "changeset=${{ needs.changeset.result }} fast=${{ needs.fast.result }} selftest=${{ needs.harness-selftest.result }} replay=${{ needs.harness-replay.result }} slow=${{ needs.slow.result }} journeys=${{ needs.journeys.result }} docs_only=${{ needs.changeset.outputs.docs_only }}"
-          # ① changeset 必须成功:它失败 → slow 被 GitHub 标 skipped(不是 failure),
-          #    若不判这一条,gate 会在 contract+e2e 一次都没跑的情况下放行(fail-open 假绿)。
-          if [ "${{ needs.changeset.result }}" != "success" ]; then
-            echo "::error::changeset 判定未成功,无法确认是否 docs-only —— 拒绝放行"
-            exit 1
-          fi
-          if [ "${{ needs.fast.result }}" != "success" ]; then
-            echo "::error::fast checks 未通过"
-            exit 1
-          fi
-          # harness 两 job(2026-08-15 从 fast 拆出)恒跑,**docs-only 也不跳** ——
-          # 与它们还在 fast 里时的触发条件逐字一致。因此这里只接受 success:
-          # skipped 对它们没有任何合法理由,若出现即是 workflow 被改坏(有人给它们
-          # 加了 if 条件),那正是必须拦下的配置漂移,不能像 slow 那样放过。
-          if [ "${{ needs.harness-selftest.result }}" != "success" ]; then
-            echo "::error::harness 自测未通过(结果:${{ needs.harness-selftest.result }})"
-            exit 1
-          fi
-          if [ "${{ needs.harness-replay.result }}" != "success" ]; then
-            echo "::error::事故回放未通过(结果:${{ needs.harness-replay.result }})"
-            exit 1
-          fi
-          human='${{ needs.r5-human-ci.result }}'
-          if [ "$human" != "success" ]; then
-            if [ "$human" != "skipped" ] || [ "${{ needs.changeset.outputs.docs_only }}" != "true" ]; then
-              echo "::error::Authenticated Human V3 未通过或被非法跳过"
-              exit 1
-            fi
-          fi
-          # ② slow / journeys 允许 skipped 的**唯一**合法理由必须被正面证明
-          #    (docs_only == 'true'),不从 skipped 反推。
-          if [ "${{ needs.slow.result }}" = "skipped" ] || [ "${{ needs.journeys.result }}" = "skipped" ]; then
-            if [ "${{ needs.changeset.outputs.docs_only }}" != "true" ]; then
-              echo "::error::slow 或 journeys 被跳过但变更集并非 docs-only —— 拒绝放行"
-              exit 1
-            fi
-            echo "✓ gate passed (docs-only:slow / journeys 合法跳过;harness 两 job 已恒跑通过)"
-            exit 0
-          fi
-          if [ "${{ needs.slow.result }}" != "success" ]; then
-            echo "::error::contract/e2e 未通过"
-            exit 1
-          fi
-          if [ "${{ needs.journeys.result }}" != "success" ]; then
-            echo "::error::golden journeys 未通过"
-            exit 1
-          fi
-          echo "✓ gate passed (fast + harness 两 job + slow + journeys 均通过)"
+          node --input-type=module - <<'JS'
+          const results = JSON.parse(process.env.RESULTS);
+          for (const key of ['changeset', 'fast', 'redzone-scan']) {
+            if (results[key]?.result !== 'success') throw new Error(`${key} did not succeed`);
+          }
+          const docsOnly = results.changeset.outputs.docs_only === 'true';
+          for (const key of ['slow', 'journeys', 'r5-human-ci']) {
+            const result = results[key]?.result;
+            if (result !== 'success' && !(docsOnly && result === 'skipped')) {
+              throw new Error(`${key}: ${result}`);
+            }
+          }
+          JS
 
-      # ③ 红区审批(P2c)。与 slow 同一套「不从 skipped 反推」的判法:
-      #    redzone-approval 被跳过的**唯一**合法理由是 scan 明确报告 touched=false。
-      #    若 scan 本身失败,touched 会是空字符串或 'error' —— 那不是「没触碰」,
-      #    是「没查出来」,必须拒绝放行(INC-07:无法验证 ≠ 通过)。
-      - name: Red-zone approval gate
-        run: |
-          scan='${{ needs.redzone-scan.result }}'
-          touched='${{ needs.redzone-scan.outputs.touched }}'
-          approval='${{ needs.redzone-approval.result }}'
-          echo "redzone-scan=$scan touched=$touched approval=$approval"
-          if [ "$scan" != "success" ]; then
-            echo "::error::红区扫描未成功($scan)—— 无法确认本次是否触碰红区,拒绝放行"
-            exit 1
-          fi
-          case "$touched" in
-            false)
-              if [ "$approval" != "skipped" ]; then
-                echo "::error::未触碰红区却跑了审批 job($approval)—— 条件表达式与扫描结论不一致,拒绝放行"
-                exit 1
-              fi
-              echo "✓ 未触碰红区/执法层,无需审批"
-              ;;
-            true)
-              # 2026-07-29 起 redzone-approval 是**纯报告**,不再是审批门(见其定义处的降级说明)。
-              # 这里仍要求它 success,判的是**接线一致性**而不是授权:
-              # scan 既然说 touched=true,那份报告就必须真的跑出来;若失败或被跳过,
-              # 说明 if 条件与 scan 结论已经对不上 —— 那是配置漂移,该拦。
-              # **真正的授权在 `Red-zone (trusted)`**(base-trusted 裁判 + 环境审批),
-              # 它是独立 workflow 上的 required context,与本 gate 互不依赖。
-              if [ "$approval" != "success" ]; then
-                echo "::error::scan 报告触碰红区,但报告 job 未成功($approval)—— 接线不一致,拒绝放行"
-                exit 1
-              fi
-              echo "✓ 红区触碰已记录(授权由 'Red-zone (trusted)' 承担,不在本 gate)"
-              ;;
-            *)
-              echo "::error::红区扫描未给出明确结论(touched='$touched')—— 无法验证 ≠ 通过,拒绝放行"
-              exit 1
-              ;;
-          esac
-
-  # 验证 Dockerfile 多阶段构建可成功产出生产镜像。
-  # 与上面的测试链解耦:测试链关注源码质量与运行时行为;docker-build 关注交付物链路。
-  # 不做容器启动 / smoke test:容器启动需要外部 PostgreSQL,与 V1.1.1 收口范围(只验证
-  # build 链路)一致;真正的运行时验证仍由 E2E 在 Node 进程内完成。
-  # ⚠️ name 'Docker image build' 是 branch protection required check,逐字不得改。
   docker-build:
     name: Docker image build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Build Docker image
         run: docker build -t u-nest-api-starter:ci .

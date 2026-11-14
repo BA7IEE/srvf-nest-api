@@ -1,6 +1,6 @@
 # 测试纪律(reference · 触碰才读)
 
-> Harness 2.0 细则层:承接 harness v1 `AGENTS.md` §16 **原文逐字搬家(零放宽;唯一机械改写=相对链接前缀)**;恒读入口与速查见根 [`AGENTS.md`](../../AGENTS.md),原文快照 [`archive/harness-v1/AGENTS.md`](../archive/harness-v1/AGENTS.md)。
+> 按需细则；协作规则见根 [AGENTS.md](../../AGENTS.md)。历史来源保存在 `harness-v3-final` 标签。
 > 机器锁定:CI 全量(agent:check:full)。
 
 ## 16. 测试策略
@@ -13,9 +13,8 @@
 
 ## 16.1 并行纪律(Harness 3.0 P1;约束收紧,非放宽)
 
-- **查 `pg_locks` / `pg_stat_activity` 必须按当前库或自身 pid 收敛**(`AND datname = current_database()` / `AND lock.database = (SELECT oid FROM pg_database WHERE datname = current_database())` / `pid = pg_backend_pid()`)。理由:这两个是**实例级**视图,而 per-worker 测试库由 `CREATE DATABASE ... TEMPLATE` 克隆,各 worker 库里同一张表的 `pg_class.oid` **完全相同** —— 不收敛的并发屏障会把别的 worker 的锁计入,提前放行、把真并发测试悄悄降级成串行(假绿)。由 `scripts/harness-guards.selftest.ts` 静态守护
+- **查 `pg_locks` / `pg_stat_activity` 必须按当前库或自身 pid 收敛**(`AND datname = current_database()` / `AND lock.database = (SELECT oid FROM pg_database WHERE datname = current_database())` / `pid = pg_backend_pid()`)。这两个是实例级视图；模板克隆的 worker 库可有相同表 OID，不收敛会把其他 worker 的锁当成自己的屏障。旧 harness 静态自测已退役，新增并发测试须验证此隔离条件。
 - 新 e2e **不得依赖跨 spec 残留状态**(每 spec 自建 fixture;resetDb 是全库擦除,并行下顺序不可预期)
 - **不得写入固定共享路径**:本地文件走 config 的 `storage.localRoot`(已按 worker 派生 `tmp/storage-w<N>`)或 `mkdtemp(os.tmpdir())`
 - **不得在 spec 内 inline 破坏性 SQL 打非当前库**;`docker exec psql -d <库>` 类操作必须用 `deriveTestDbName()` 定位本 worker 库
 - afterAll 必须 `app.close()`(纪律不变;检测由 `test:e2e:leaks` 串行线承接,禁 `forceExit`)
-

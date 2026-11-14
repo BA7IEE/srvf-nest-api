@@ -1,112 +1,63 @@
-# AGENTS.md — SRVF AI 协作铁律(Harness 3.0)
+# SRVF — AI 协作规则
 
-> 所有 AI 编码助手(Claude Code / Codex / Cursor / 其他 Agent)的**唯一恒读规则入口**。
-> **Harness 3.0 原则:规则语义零放宽,执法从散文搬到机器。** 本文件只留三类内容 ——
-> ①机器执法索引(违反时物理拦截或 CI 红,不靠你记住)②**无机器守护的判断型规则**(靠你自己)③决策锁索引。
-> 逐条去向见 [`archive/plans/harness-3.0-p3-rule-classification.md`](docs/archive/plans/harness-3.0-p3-rule-classification.md);v2 全文冻结于 [`archive/harness-v1/`](docs/archive/harness-v1/)。
+维护者依靠 AI 长期维护本项目。优先保证稳定、清晰、可维护；用代码检查和行为测试验证结果。
+任务授权内连续推进，范围外的问题先报告。已有授权无需重复申请。
 
----
+## 工作方式
 
-## 0. 读取协议
+- 阅读本文件；涉及业务或部署现状时读 `docs/current-state.md`，进入模块时读当地 `CLAUDE.md`。
+  细则按需读 `docs/reference/`、`docs/api-surface-policy.md` 和相关 `docs/ops/`。
+- 先查实际代码、引用链和测试，再改动。当前事实以代码、GitHub 状态和现场证据为准；
+  历史文档只作证据。规则与事实冲突时说明冲突，不默默选一边。
+- 不要求固定 Goal、PR 分级、lane、开工令牌或台账更新。多任务使用独立工作树，避免交叉改动。
+- 不输出密钥、JWT、完整签名 URL 或个人敏感信息。新增敏感字段先明确业务用途、查看角色/掩码、保存期限/退队清理。
+- 报告实际改动、验证结果及未完成项；局部通过不能写成全量通过，合并不能写成上线。
 
-- **恒读**:本文件 → [`docs/current-state.md`](docs/current-state.md)(当前事实 + 不做清单 + 债务)。Claude Code 另读 `CLAUDE.md`。
-- **触碰才读**:[`docs/reference/`](docs/reference/) 九篇(§5 索引)· [`RBAC_MAP`](docs/ai-harness/RBAC_MAP.md)(改权限)· 边界四篇 · [`docs/handoff/`](docs/handoff/)(改契约必同 PR 更新)· [`process`](docs/process.md)(开工 / 分级 / 降速 / 收口)
-- **不主动读**:`ARCHITECTURE.md` / baseline / V2 红线 / `docs/archive/**`(历史证据,**不是当前事实**)
-- **勿整读**:contract snapshot(~3.6 万行,用 diff)/ `pnpm-lock.yaml`
+## 命令与验证
 
-**权威源冲突顺序**:当前事实(current-state + 代码 + GitHub)> 本文件 > baseline > V2 红线 > api-surface-policy > process > ARCHITECTURE > archive。
-**发现文档-代码冲突或权威源互冲 → 暂停上报,不擅自调和。**
+使用 Node ≥22、pnpm（版本见 `package.json`）。新工作树先 `pnpm install --frozen-lockfile && pnpm prisma:generate`。
 
----
-
-## 1. 机器执法清单(违反 = 物理拦截或 CI 红,不必背)
-
-> 这些规则**语义与 Harness 2.0 完全一致**,只是不再要求你记住 —— 违反时会被当场拦下并告知正确做法。
-> 本地自证:`pnpm lint && pnpm harness:selftest && pnpm test:contract`。
-
-| 域 | 载体 | 管什么 |
-|---|---|---|
-| **字面语法拦截**(17 条,非语义分析) | `eslint.harness.mjs` + `eslint.config.mjs` 接线 | 禁 `@UseGuards`/`@Roles`/裸 `@ApiOkResponse`/局部 `ValidationPipe`/Prisma `$use`·`$extends`/硬删/重定义 Prisma enum/手工包响应/Mapped Types 派生 DTO/`LocalStrategy`/分页别名/散落 `process.env`/判权路径缓存与定时器/裸 `@Param('id')`;禁引 Redis·queue·cache;App DTO 禁引 Admin;Presenter·Policy 禁碰 DB;禁跨模块深引私有子目录。⚠️ 匹配的是**语法树的字面形状**:`import 别名`(`UseGuards as UG`)、`变量中转`(`const db = this.prisma`)、`computed property` **已知可绕过**(`pnpm harness:selftest` 输出的「已知缺口」段逐条列出);自定义规则另立 goal |
-| 红区路径 | `harness/redzone.json`(唯一机读源);**权威判定** = `.github/workflows/redzone-trusted.yml`(base-trusted);本地 `redzone-guard.sh` / `bash-write-guard.sh` = **提前反馈,不是最终边界** | 六大红区文档 · workflows · prisma schema/migrations/seed · 全局 Guard/Filter/Interceptor/bootstrap · auth · storage-crypto · archive · 容器构建 · **CI 控制面**(package.json / lock / eslint 与 tsconfig / jest config)· **生产入口**(main.ts / app.module.ts)· authz 与限流装饰器 · 发版脚本;**执法层自身**(scripts 裁判 / hooks / harness / test setup 与 contract) |
-| 开工门禁 | `preflight-gate.sh` + `preflight-required.sh` | 依赖或 Prisma 生成物陈旧、落后 origin/main、门禁不可验证 → **拦写**;工作树脏 / open PR → 只提示 |
-| 危险命令 | `.claude/settings.json` deny/ask | `migrate reset`/`db push`(**deny 而非 ask** = 任何预授权都不算,必须人当场执行)· `push --force[-with-lease]` · `reset --hard` · 批量 `-D` · 盲 `-u` 更新快照 · 包管理器 |
-| 派生文档 | `docs:{readtax,counts,codemap,rbacmap}:check` + `pnpm docs:rbacmap` 生成 | 恒读层体积 · 事实计数 · 模块地图 · **权限地图(生成物,禁手改)** |
-| 契约 | `test/contract` snapshot + `EXPECTED_ROUTES` | 5 canonical 前缀 · 端点白名单 · schema 零漂移 |
-| 事故回放 | `pnpm harness:replay` | 历史事故 + 反向案例(不该拦时不拦),已挂 CI。输出**分两组计数**:「真触发」(实跑守护并断言裁决)与「结构断言」(只查源码字符串,发现不了『代码还在但不起作用』)—— 别把两组加起来当同一种保证 |
-
-**触碰红区的正确流程**:出人话简报 → 维护者拍板 → **由维护者**跑 `pnpm harness:grant '<glob>' --reason "<出处>"`。
-**AI 不得自行发放授权。** 本地令牌只解开「能不能写」,不解开「能不能合」。
-
----
-
-## 2. 判断原则区(**无机器守护,靠你自己**)
-
-> 这些无法做成确定性检查 —— 它们是本文件真正需要你读进去的部分。
-
-- 🔴 **读到「零」或「异常整齐」的读数时,先验仪器,再下结论。**
-  本仓工具链有一批**不报错、退出码正常、读数看着完全正常,而它测的不是你以为的那个量**的陷阱
-  (`grep -E` 的 `\|` 与 `\s` · 大文件被当二进制 · `-o` 摘掉文件名 · `git diff -- <不存在路径>` ·
-  管道吃掉退出码 · `harness:needs` 用通配符漏报 · `docs:refresh` 是动作不是闸 …)。
-  **每一条都实测栽过,且换任何 AI 都会踩** ⇒ 动手前读 [`docs/ai-harness/TOOL_TRAPS.md`](docs/ai-harness/TOOL_TRAPS.md)。
-
-- **授权边界**:已授权清单内连续推进;**清单外停下**。审计 / 调研中发现的问题(即使是明显 bug)**不顺手修**,先汇报。goal 内已写明范围的 C 档免二次确认;goal 外新发现一律按 [process §4.1](docs/process.md) 人话简报上报。
-- **诚实**:每次收尾必须输出**「本次未做」**段。所有判断给证据(路径:行号 / 命令输出 / PR 链接),**不凭印象、不确定不写成事实**。无 Docker 时跑 quick 并显式声明「contract / e2e 留给 CI」,**不得谎报全绿**。
-- **测试纪律**(⚠️ 当前**无机器守护**,P2c 补):**禁删测试 / 禁放宽断言**;改既有 e2e 断言 = 改行为契约 → **停下报告**。改 service 编排先跑 characterization,行为差异即停。
-- **事务**:多写 / 先查后写 / 管理员保护操作必 `$transaction`;计数守护类不变式必须同事务。(AST 判不了 —— 事务常在 caller 或跨方法编排。)
-- **跨文件改动**:先用符号 / 引用链确认再动手;**grep 同名只定位候选,禁凭同名盲改**。
-- **软删与查询语义**:`notDeletedWhere` 统一过滤;唯一性预检查用 `findUnique`(含软删),详情用 `findFirst`。(lint 只拦硬删,「哪些查询该带过滤」是语义判断。)
-- **敏感字段三问**:入 schema / DTO 前必答 —— 业务用途?查看角色与掩码?保存期限与退队清理?**「先占位以后再用」视作越权**;不假设合规方案。
-- **snapshot diff 必须逐行可解释**;L3 字段(passwordHash / *token* / secret* / 完整 signed URL)出现即拒。
-- **不输出任何 secret**(.env / bucket / APPID / SecretId / SecretKey / signed URL / JWT 内容),调研与报告中亦然。
-- **不擅自调和文档冲突**;不主动展开未授权的次要任务。
-- **受影响范围**:改哪个模块跑哪组 e2e;动依赖枢纽(permissions / audit-logs / `common/*`)或全局横切,先列引用链并覆盖直接受影响的定向 e2e。本地验证口径统一按 [process §3](docs/process.md):`quick` + 定向 e2e;`agent:check:full` 的执行体为 PR CI 冷跑,全量要求不减。
-
----
-
-## 3. 决策锁索引(**重开任一条前,必须先暂停声明本节存在**)
-
-> 锁 = 维护者已拍板、不得重新质疑的事项。全文见 [`api-client-boundary`](docs/reference/api-client-boundary.md) 与各 reference。
-
-| 锁 | 一句话 | 机器载体 |
-|---|---|---|
-| D-1 | `contribution-rules` 归 System surface | contract 路由白名单 |
-| D-5 | App 准入 = `memberId ≠ null ∧ User.ACTIVE ∧ Member.ACTIVE`;capabilities ≠ 权限码;`/me/*` 与 `/my/*` 物理分离 | contract 断言 + e2e |
-| D-6 | App DTO 禁派生自 Admin;L3 默认不返(content-* 读面例外见 api-surface-policy §9.6) | eslint + contract |
-| D-7 | 六类职责边界(Presenter / QueryService / Policy / StateMachine / AuditRecorder / Effect)。附注: `AuthzDeclarationGuard` 仅验证路由已有结构化访问声明，不执行或替代 Service 层 `rbac.can()` / `authz.can()` 判权。 | eslint 禁 Presenter·Policy 碰 DB;归属判断留人 |
-| P0-E | refresh token 冻结九条(opaque+sha256 / rotation always / family revoke / 90d 绝对 / 失败统一 10007 / logout 幂等无限流 / access 15m 自然过期 / 联动撤销九场景同事务 / 三 DTO zero drift) | 红区路径 + auth e2e 行为锁 |
-| 判权单轨 | 全仓活跃 `@Roles` = 0;业务判权走 Service 层 `rbac.can()`;`RolesGuard` 保留兜底不删;scope 不进权限码;`RbacService` 只读 GLOBAL | eslint + check-rbac-map |
-| 防枚举 | 登录失败四场景统一 10004 + dummy bcrypt 抗 timing;SMS / 微信沿 24010 泛化 200;refresh 失败不细分。**message / 错误码差异一律算漏洞**;**耗时**:我方可控分支必须归一(统一出口 + 有界最小响应时长),**第三方上游墙钟只做有界缓解 —— 残余差异经维护者 2026-08-03 明确接受**(P1-27 评审 SHOULD-FIX 2;真实分布须在 T6 真机实测,不得用 DEV_STUB 数据替代) | contract 断言(耗时侧信道无法断言 → 判断) |
-| 身份/权限不缓存 | 每请求查库;**零跨请求 Map / TTL / invalidate 正确性链** | eslint |
-| 永久铁律 | 不引入 `LocalStrategy`;不建 `*.entity.ts`;不用 Prisma 全局软删中间件 / client extension | eslint |
-| 基础设施冻结 | cron 全仓终态**恰好 2 个**(第 3 个起 = 新 D 档评审);Redis / queue / LLM / vector / 多租户不引入;数据清理走手动 SOP | counts + eslint 禁引 |
-| 敏感字段三问 | 见 §2 判断区 | — |
-| 业务行为冻结 | 由冻结评审稿 + e2e 行为锁承载;**改既有断言 = 改行为契约 → 停下报告** | ⚠️ 无(P2c 补) |
-
-**不可逆红线**:`prisma migrate dev|reset|db push` 任何环境**禁自动跑**(reset 恒需用户实时同意,**goal 预授权不算**);生产只 `prisma migrate deploy` 已审查 migration。物理删数据 / 批量回填必须先拍板。
-
----
-
-## 4. 流程与并行
-
-- **开工**:`pnpm agent:preflight`(Claude 会话已由 SessionStart hook 自动执行并注入结论);fresh worktree 先 `pnpm install --frozen-lockfile && pnpm prisma:generate`。
-- **分级与降速**:PR 五档(A/B/C/D/E)、D 档六步降速、人话简报格式、release 两段式收口(`pnpm release:prepare` / `release:finish`)、squash 清理八条 → 全部在 [`docs/process.md`](docs/process.md)。
-- **C 档及以上默认以 goal 形态立项**(`srvf-goal-author` 起草);goal 五要素:DoD / 探针队列 / 授权清单 / 禁止域 / 写集声明。
-- **lane 并行**(≤3 条):写集相交或同 bounded context → 不并行;schema-touching lane ≤1;串行集成;唯一简报流;总控不写业务代码。全文 [process §8](docs/process.md)。
-- **跨模型互查**:写与查跨模型(同模型自写自查会一起漏);分歧不内部调和,升级进简报。
-
----
-
-## 5. reference 索引(触碰才读)
-
-| 细则 | 何时读 |
+| 场景 | 命令 |
 |---|---|
-| ⭐ [TOOL_TRAPS](docs/ai-harness/TOOL_TRAPS.md) | **动手前**;以及任何时候读数为 0 / 异常整齐 |
-| [naming-dto-validation](docs/reference/naming-dto-validation.md) | 建模块 / 写 DTO / 字段校验 |
-| [response-pagination-errors](docs/reference/response-pagination-errors.md) | 返回结构 / 分页 / 错误码 / P2002 |
-| [swagger](docs/reference/swagger.md) | 写 / 改 endpoint 注解 |
-| [auth-jwt-refresh](docs/reference/auth-jwt-refresh.md) | 碰登录 / JWT / 密码 / refresh / throttler |
-| [soft-delete-transactions](docs/reference/soft-delete-transactions.md) | 删除语义 / 事务边界 |
-| [roles-admin-protection](docs/reference/roles-admin-protection.md) | 用户管理 / 角色边界 |
-| [config-env](docs/reference/config-env.md) | 新增 env / 配置 |
-| [testing-discipline](docs/reference/testing-discipline.md) | 写测试 / 动 snapshot / **e2e 并行纪律** |
-| [api-client-boundary](docs/reference/api-client-boundary.md) | surface / App DTO / **决策锁全文** |
+| 日常反馈 | `pnpm agent:check:quick`（缓存 lint、类型、单测） |
+| 提交前 / 跨文件类型变化 | `pnpm lint && pnpm typecheck`（冷 lint 为权威口径） |
+| API 契约变化 | `pnpm agent:check:api`，审阅 snapshot diff，同步 `docs/handoff/` |
+| 行为变化 | 相关单测与定向 `pnpm test:e2e <spec名>` |
+| 构建 | `pnpm build` |
+
+全量 E2E 留给 PR CI，避免耗尽共享机器。公共依赖变化须覆盖直接受影响模块。
+不删除业务测试或放宽断言来获得绿灯；行为契约变化须在授权范围内。修改服务编排先做 characterization。
+snapshot 每一处变化都应可解释，不能盲目 `-u`。
+
+## 实现边界与既定决策
+
+- Service 执行业务判权：`rbac.can()` / `authz.can()`；`AuthzDeclarationGuard` 仅校验访问声明，不替代判权。
+  活跃 `@Roles` 保持零，`RolesGuard` 保留兜底；`RbacService` 只读 GLOBAL，scope 不编码进权限码。
+  身份和权限每请求查库，禁止跨请求缓存、TTL 或 invalidate 正确性链。
+- 多写、先查后写和管理员保护使用同一事务；计数守护与写入同事务。锁后重读权限和业务前置。
+  软删查询用 `notDeletedWhere`；唯一性预查用 `findUnique`（含软删），详情用 `findFirst`。
+- 沿六类职责边界：Presenter / QueryService / Policy / StateMachine / AuditRecorder / Effect。
+  Presenter、Policy 不查库。禁止跨模块深引私有实现；不建 `*.entity.ts`、`LocalStrategy` 或 Prisma 全局软删中间件/extension。
+- D-1：`contribution-rules` 属 System。D-5：App 准入为 memberId 非空且 User/Member 均 ACTIVE；
+  capabilities 不是权限码，`/me/*` 与 `/my/*` 分离。D-6：App DTO 不派生自 Admin，
+  L3 默认不返回（content 读面既有例外见 `docs/api-surface-policy.md` §9.6）。
+- P0-E：opaque refresh token + sha256；始终 rotation；family revoke；90 天绝对寿命；
+  失败统一 10007；logout 幂等且不限流；access 15 分钟自然过期；
+  九种联动撤销与主写同事务；三个 DTO zero drift。详见 `docs/reference/auth-jwt-refresh.md`。
+- 防枚举：密码登录四场景统一 10004，缺用户也跑 dummy bcrypt；SMS/微信沿 24010 泛化 200；
+  refresh 不细分失败。我方可控耗时分支归一，上游耗时仅有界缓解，残余差异为已接受决策，
+  仍须 T6 真机验证，不能用 DEV_STUB 代替。
+- 基础设施维持两个 cron；不自行新增 Redis、queue、LLM、vector、多租户或自动数据清理。
+  既定业务行为及以上决策需维护者明确授权才能重开。
+
+## 人工边界
+
+- 不自动执行 `prisma migrate dev`、`migrate reset`、`db push`，不自动操作生产数据库、
+  物理删除数据、批量回填或启用生产 Gate。已审查 migration 的生产 deploy 由维护者执行。
+- 不 force push、`reset --hard`、强删分支/工作树或 `rm -rf` 非构建目录，不覆盖他人改动。
+- 数据库、鉴权核心与 CI 控制面由 `harness/redzone.json` 定义最小审批范围。
+  `Red-zone (trusted)` 只运行 base 上的裁判，维护者在 `harness-review` 审批；AI 不代点。
+  本地设置中的危险命令限制是补充，不假定每个 Agent 都支持 hooks。
+- 未获授权不合并、发布或部署。发版按 `docs/process.md` 的两段命令执行。
+
+历史规则与台账全文：`git show harness-v3-final:<原路径>`；恢复时只读所需片段，不将旧流程重新作为现行要求。

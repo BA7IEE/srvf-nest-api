@@ -1,6 +1,6 @@
 # 鉴权 · 密码 · refresh token(P0-E 行为冻结)(reference · 触碰才读)
 
-> Harness 2.0 细则层:承接 harness v1 `AGENTS.md` §8 / §9,并按后续已拍板的 P0-E、identity session 与判权单轨终态 true-up;恒读入口与速查见根 [`AGENTS.md`](../../AGENTS.md),原文快照 [`archive/harness-v1/AGENTS.md`](../archive/harness-v1/AGENTS.md)。
+> 按需细则；协作规则见根 [AGENTS.md](../../AGENTS.md)。历史来源保存在 `harness-v3-final` 标签。
 > 机器锁定:auth e2e(JwtPayload 字段集硬断言 / 防枚举四场景 / §7.5 反向锁)+ throttler e2e + P0-E 冻结评审稿。
 
 ## 8. 权限与鉴权
