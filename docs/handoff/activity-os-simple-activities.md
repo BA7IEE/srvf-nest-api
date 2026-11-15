@@ -19,7 +19,7 @@
 | `POST /from-template` | 201；必填 operationKey、templateVersionId、title、organizationId、startAt、endAt、location、defaultPlaceVisibilityCode；可选 instance、places、confirmedCapacity |
 | `GET /{id}/simple-draft` | 200；服务端最终活动／单场次／单默认岗位／地点／有权政策摘要、精确模板版本/hash、draftHash、editable 和真实最新 review |
 | `PUT /{id}/simple-draft` | 200；完整 title、organizationId、startAt、endAt、location、instance、places 加 expectedDraftHash；返回同一完整最终投影 |
-| `POST /{id}/publish-reviews` | 200；operationKey（8–128 字符）和 confirmation=true；调用现行 proposal，返回真实 review，成功提交不代表 published |
+| `POST /{id}/publish-reviews` | 200；operationKey（8–128 字符）、confirmation=true；可选 expectedDraftHash 为确认时读取的 draftHash；调用现行 proposal，返回真实 review，成功提交不代表 published |
 
 `GET` 与 `PUT simple-draft` 共用一个路径；共 5 个新增路径、6 个方法。Admin DTO 物理独立，不派生 App DTO。ID 8–64 字符；标题 1–100、文字地点 1–200；日期使用 ISO8601。
 
@@ -54,3 +54,27 @@
 q6 是全新 socket-only PG16.15 隔离集群，155 迁移正常安装；三个业务账号均 USER、组织范围授权、GLOBAL binding=0。六入口及独立审核发布通过；父子／两地点／审计同 XID1415，注入审计失败的 XID1423 独立 aborted；实际根锁等待后撤权返回403。普通发布人经现有专业 PATCH 缩短岗位、改变签到窗口后，简单 GET/PUT 均拒绝且配置不变；显式恢复后继续发布成功。该阶段正常销毁，其他客户端/prepared transaction 和容器/卷均为零。
 
 这不是生产数据库最小权限身份验收：SQL 连接是隔离 fixture owner。结束／正式结算／更正本轮未重跑，按先前真实证据原范围复用；组合到本次新根的后半链 NOT_RUN。UI/L3/A16 按用户最新优先级延期，不作为 API 编码阻断，也不计通过。生产目标、155 前置、运行身份/开关与备份恢复另核；本轮不含生产操作。
+
+## 提审确认指纹（本地候选）
+
+Admin 提审新增可选 `expectedDraftHash`（64 位小写十六进制）。客户端确认后提交同一次 GET simple-draft 的 `draftHash`，不再先读后自行比较；服务端在 Activity 行锁事务内比较，过期返回既有 `ACTIVITY_SIMPLE_DRAFT_STALE`，不创建 review 或提交审计。刷新并重新确认后使用新幂等键；失败请求未写回执时也可用原键携带刷新后的指纹。
+
+授权和身份复核仍先于重放。同一 operationKey 的完整请求（含提供的 expectedDraftHash）先匹配既有回执，再检查新提交的版本，因此新增 review 导致 draftHash 变化不会破坏成功请求重试。已成功的键改指纹或去掉指纹返回 operationKey 冲突。省略该字段保持旧版“提交锁内最新草稿”语义和原哈希字节，**旧客户端没有确认版本保护**。App DTO 不变。
+
+带版本的新提审在同一 Activity 行锁内、授权与完整幂等重放之后，先检查资格配置和 simple 指纹；随后由现有 buildInitial 完成引用校验与锁定，对**将直接保存到 review 的同一个快照**运行简单配置白名单。偏离允许配置返回 `ACTIVITY_SIMPLE_REVIEW_REQUIRES_PROFESSIONAL_FLOW`（20256／409），提示使用专业流程，不自动删除或覆盖配置。资格 RuleSet 的 draft／active 状态在活动、场次、岗位任一层级存在即拒绝；retired 历史不阻止当前无规则草稿。
+
+| 范围 | 新简单提审允许的配置 |
+|---|---|
+| 可见的活动／场次／岗位字段与地点 | 保持既有 simple 形态校验与指纹检查；本次实例值可不同于模板。地点仍由既有 root/session 一致性检查约束 |
+| 活动隐藏字段 | 性别限制、保险、公开报名、报名方式、可见性、默认定位与半径、归档天数须等于精确模板值；模板未写时沿既有物化／DB 默认：null、isPublicRegistration=true、requiresInsurance=false、archiveWaitingDays=7。content、registrationSchema、活动旧经纬度须为 null |
+| 场次隐藏字段 | locationText 等于当前活动地点；集合／执行／撤离点、坐标、半径为 null；locationRequired=false、locationPolicySourceCode=template、accuracyWarningMeters=100；迟到／早退阈值及排序等于模板 |
+| 岗位隐藏字段 | 性别限制、定位、半径、职责、装备说明与排序等于模板及既有 nullable 默认；负责人和资格引用须为 null |
+| 报名表 | 与模板的完整 canonical definition 一致；模板无表时不得另加。模板自带 governed 表保留 |
+| 指标 | requirement 与完整版本 pointer 等于模板；旧模板未声明时仅允许 not_required／null |
+| 时长与贡献政策 | 实例 selection document 等于既有模板物化 helper 的结果。拒绝新增 activity/session/position 覆盖，即便恰好指向相同政策；模板政策继续由现有 builder 校验、解析和锁定 |
+
+白名单保留 `false`、`0`、null 的区别；不以“非空”作为专业配置判据。活动、场次、岗位使用完整类型化 expected 对象，新增快照字段必须补明确决策；字段矩阵单测逐项改变隐藏字段，真实数据库用例覆盖组合变化、正常非空模板默认值、并发、重放及撤权。分类与语义标签由已显示 activityTypeCode 的静态注册表派生；resolvedConfig 由既有 builder 按已检查原始值、选中模板和系统默认派生，不是额外可自由填写的输入。
+
+**这是受限模板白名单，不是完整快照确认。** 允许继承模板固定配置不代表用户已看过这些字段；simple GET 仍不提供政策全文、表单正文等全部内容。hash 更新只证明版本变化，不能证明阅读。产品若要让简单页接受模板外专业配置，仍须增加完整展示和同一业务快照的确认绑定，不能只扩大 hash。
+
+成功请求的同键重放先于本白名单，并继续复核当前授权。省略 expectedDraftHash 的旧客户端保留原行为与原请求哈希；专业 App 提审也保持原契约。新保护不是对所有旧客户端的强制升级。只回退业务配置而不改变成功 operationKey 不能复用该键提交新请求。
