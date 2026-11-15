@@ -1,6 +1,7 @@
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { gather } from './docs-counts';
 
 // Harness 3.0 P4c — 发版收口阶段 A(合并前的全部簿记,一次做完)。
 //
@@ -26,7 +27,6 @@ import * as path from 'path';
 
 const ROOT = path.resolve(__dirname, '..');
 const CHANGELOG = 'CHANGELOG.md';
-const CURRENT_STATE = 'docs/current-state.md';
 const SWAGGER = 'src/bootstrap/apply-swagger.ts';
 const PKG = 'package.json';
 
@@ -65,18 +65,8 @@ function assertSemver(v: string): void {
 }
 
 function readCounts(): Array<[string, string]> {
-  // current-state 的 counts 块由 pnpm docs:counts 生成,是唯一事实源
-  const doc = read(CURRENT_STATE);
-  const b = doc.indexOf('<!-- counts:begin -->');
-  const e = doc.indexOf('<!-- counts:end -->');
-  if (b === -1 || e === -1) throw new Error('current-state 缺少 counts 块 —— 无法取 footprint');
-  const block = doc.slice(b, e);
-  const out: Array<[string, string]> = [];
-  for (const m of block.matchAll(/^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|$/gm)) {
-    const k = m[1].trim();
-    if (k && k !== '计数项' && !/^-+$/.test(k)) out.push([k, m[2].trim()]);
-  }
-  return out;
+  // Release snapshots read source facts directly; no per-PR count ledger.
+  return gather().map(([name, count]) => [name, String(count)]);
 }
 
 function extractChangelogSection(version: string): string {
@@ -220,7 +210,7 @@ function buildSteps(version: string, tag: string, date: string, handoffRel: stri
           '',
           `- **${tag}**(Release 日期 **${date}**)`,
           `- 生成时代码基线:\`${baseline}\``,
-          '- 仓库 footprint(取自 `pnpm docs:counts` 守护计数,与 current-state 同源):',
+          '- 仓库 footprint(发版时直接读取源码、seed 与契约事实):',
           '',
           '| 计数项 | 值 |',
           '|---|---|',
@@ -243,7 +233,7 @@ function buildSteps(version: string, tag: string, date: string, handoffRel: stri
     //
     // 它往 current-state §1 写 `| 版本 / Release | **vX.Y.Z**(日期…) |` 这一行,
     // 而 **P3 恒读层重写把那一行删了** —— 版本号 / main HEAD / open PR 属机器可查事实,
-    // 现场跑 `pnpm agent:preflight` 即得,留在恒读层只会周期性过期。
+    // 现场查 Git / GitHub 即得,留在恒读层只会周期性过期。
     // 于是这一步永久失败(它 fail-closed 拒绝盲改,这点是对的),
     // 而**直到本次真实发版才暴露** —— release:prepare 此前只在自测里跑过。
     //
@@ -309,8 +299,8 @@ function main(): void {
   // 2026-08-02 拍板:本地不再跑 agent:check:full —— 本机连跑全量 e2e 必出榨干假红
   // (耗时翻倍 + 数百条假失败,三次实录;v0.65.0 发版当天差点被 365 条假红拦住),
   // 全量的权威口径恒为 PR CI 冷跑。本地只做 quick(25s)兜底。
-  console.log('  2. pnpm docs:counts && pnpm agent:check:quick(全量以 PR CI 冷跑为准,勿本机全量 e2e)');
-  console.log('  3. 提交 + 开 PR(档位 E),由**维护者**拍板合并');
+  console.log('  2. pnpm agent:check:quick(全量以 PR CI 冷跑为准,勿本机全量 e2e)');
+  console.log('  3. 提交 + 开 PR，由维护者批准合并');
   console.log(`  4. 合并后跑:pnpm release:finish ${version}`);
 }
 

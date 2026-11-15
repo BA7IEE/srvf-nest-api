@@ -1,6 +1,6 @@
 # 模块结构 · 命名 · 校验 · DTO 边界(reference · 触碰才读)
 
-> Harness 2.0 细则层:承接 harness v1 `AGENTS.md` §2 / §3 / §7 / §11,并按已拍板的 surface 布局、判权单轨与当前 Mixed Controller 终态 true-up;恒读入口与速查见根 [`AGENTS.md`](../../AGENTS.md),原文快照 [`archive/harness-v1/AGENTS.md`](../archive/harness-v1/AGENTS.md)。
+> 按需细则；协作规则见根 [AGENTS.md](../../AGENTS.md)。历史来源保存在 `harness-v3-final` 标签。
 > 机器锁定:全局 ValidationPipe + contract snapshot + lint/typecheck。
 
 ## 2. 模块结构:默认 4 文件基线 + 已解锁例外

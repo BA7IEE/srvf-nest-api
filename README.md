@@ -303,27 +303,22 @@ E2E 使用独立测试数据库，并支持 per-worker 数据库隔离。详细�
 
 ### Harness / Guard
 
-仓库通过 ESLint、自定义脚本、Git hooks 与 CI 对高风险变更做机器守护，包括但不限于：
+仓库通过 ESLint、业务测试与 CI 验证代码：
 
 - API contract drift；
-- 权限声明与权限地图；
+- 权限声明与 RBAC 代码不变量；
 - 模块 / 架构边界；
-- 大 Service 体量棘轮；
 - 高风险“红区”文件；
 - Prisma 迁移与危险命令；
-- 历史事故 replay；
-- 自动生成文档的新鲜度；
+- OpenAPI / client / 授权声明的新鲜度；
 - AI Coding 授权边界。
 
 常用入口：
 
 ```bash
-pnpm agent:preflight
 pnpm agent:check:quick
 pnpm agent:check:api
 pnpm agent:check:full
-pnpm harness:selftest
-pnpm harness:replay
 ```
 
 长期 AI 协作规则以 [`AGENTS.md`](./AGENTS.md) 为入口；Claude Code 另读 [`CLAUDE.md`](./CLAUDE.md)。
@@ -426,17 +421,13 @@ pnpm start:notification-outbox-worker
 pnpm start:storage-consistency-worker
 
 # AI / 工程治理
-pnpm agent:preflight
 pnpm agent:check:quick
 pnpm agent:check:api
 pnpm agent:check:full
-pnpm harness:selftest
-pnpm harness:replay
 
 # 文档 / 契约派生检查
-pnpm docs:counts:check
-pnpm docs:codemap:check
-pnpm docs:rbacmap:check
+pnpm check:rbac
+pnpm docs:authz:check
 pnpm docs:openapi:check
 pnpm docs:feclient:check
 ```
@@ -450,7 +441,7 @@ README 负责回答“深圳公益救援队数字化平台是什么、怎么开�
 | 我想知道 | 权威入口 |
 |---|---|
 | 当前生产状态、已落地能力、未部署能力、风险 / 债务 | [`docs/current-state.md`](./docs/current-state.md) |
-| 源码模块职责与风险 | [`CODEMAP.md`](./CODEMAP.md) |
+| 源码模块职责与风险 | `src/modules/` 下相关代码与当地 `CLAUDE.md` |
 | 数据模型 | [`prisma/schema.prisma`](./prisma/schema.prisma) |
 | API / DTO 实时契约 | `/api/docs` / `/api/docs-json` |
 | API Surface 边界 | [`docs/api-surface-policy.md`](./docs/api-surface-policy.md) |
@@ -499,7 +490,6 @@ README 负责回答“深圳公益救援队数字化平台是什么、怎么开�
 ├── Dockerfile                  # 生产多阶段镜像
 ├── docker-compose.yml          # 本地 PostgreSQL
 ├── AGENTS.md                   # AI Coding 长期规则入口
-├── CODEMAP.md                  # 模块地图
 └── ARCHITECTURE.md             # 顶层架构背景入口
 ```
 

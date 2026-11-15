@@ -1,183 +1,22 @@
 {
-  "_comment": [
-    "红区路径的唯一机读源(Harness 3.0 P2b)。三处消费:",
-    "  1. .claude/hooks/redzone-guard.sh —— Claude 侧 PreToolUse 写前拦截",
-    "  2. .claude/hooks/bash-write-guard.sh —— 堵 sed -i / > / cp / git checkout -- 等 Bash 旁路",
-    "  3. (P2c)scripts/check-redzone.ts —— CI 侧 agent 无关兜底(Codex / 人手唯一受约束处)",
-    "单一机读源的意义:否则 hook 与 CI 的红区清单会各自演化,出现『一边拦一边放』。",
-    "本文件自身在 selfGuard 内 —— 模型改不了自己的约束边界。",
-    "语义与 AGENTS §3『红区精确清单』逐条对应;新增/删除条目 = 改规则语义,须用户拍板。"
-  ],
-  "version": 1,
+  "version": 2,
   "redzone": [
     {
-      "id": "protected-docs",
-      "globs": [
-        "AGENTS.md",
-        "CLAUDE.md",
-        ".claude/CLAUDE.md",
-        "ARCHITECTURE.md",
-        "docs/srvf-foundation-baseline.md",
-        "docs/V2红线与复活路径.md",
-        "docs/api-surface-policy.md"
-      ],
-      "why": "六大红区文档(AGENTS §0)。注意 CLAUDE.md 有两份,漏掉 .claude/CLAUDE.md 等于留后门"
+      "id": "database",
+      "globs": ["prisma/schema.prisma", "prisma/migrations/**", "prisma/seed.ts", "src/modules/permissions/permission-catalog.ts"],
+      "why": "数据结构、迁移与权限 seed"
     },
     {
-      "id": "ci-workflows",
-      "globs": [
-        ".github/workflows/**"
-      ],
-      "why": "CI / smoke 影响所有 PR;且 branch protection 的 required check 名逐字锁定在此(改名=全仓 PR 永久卡死)"
-    },
-    {
-      "id": "prisma-schema",
-      "globs": [
-        "prisma/schema.prisma",
-        "prisma/migrations/**",
-        "prisma/seed.ts"
-      ],
-      "why": "schema / migration / seed 恒 D 档,不可逆"
-    },
-    {
-      "id": "permission-seed-facts",
-      "globs": ["src/modules/permissions/permission-catalog.ts"],
-      "why": "跨运行时共享的权限 seed 事实；seed、生产控制面与 seed e2e 均消费，改动等同权限定义 / seed 语义变更。P1-32 PR1 把权限定义从 rbac-seed-facts.ts 与 prisma/seed.ts 搬进 permission-catalog.ts，本 glob 随之跟到新位置 —— 否则纯搬家会把这道 D 档护栏拆掉（今天要授权才能改的权限定义变成随便写）"
-    },
-    {
-      "id": "global-pipeline",
-      "globs": [
-        "src/common/guards/**",
-        "src/common/filters/**",
-        "src/common/interceptors/**",
-        "src/bootstrap/**"
-      ],
-      "why": "全局 Guard / Filter / Interceptor / Pipe 影响每个请求。bootstrap 是全局 ValidationPipe 与 setVersion 的真身(AGENTS §3 触发即停 8 的落点,原清单遗漏)"
-    },
-    {
-      "id": "auth-frozen",
-      "globs": [
-        "src/modules/auth/**"
-      ],
-      "why": "P0-E refresh token 行为冻结 + 防枚举锁。限流语义已挪到 authz-core:原先挂在这里的 `src/**/*throttler*` 实测匹配不到任何文件(自制 glob 引擎把 ** 之后的部分当字面后缀),且仓内真实文件名是 *-throttle*(少个 r)"
-    },
-    {
-      "id": "authz-core",
-      "globs": [
-        "src/modules/authz/**",
-        "src/**/*throttle*"
-      ],
-      "why": "判权核心与限流语义。2026-07-29 跨模型评审 F2/F5 实测:authz 整个模块与 13 个限流文件全部不在保护内 —— 原挂在 auth-frozen 的 `src/**/*throttler*` 既拼错了名(仓内真实文件是 *-throttle*,少个 r)又因自制 glob 引擎的缺陷匹配不到任何文件。`*throttle*` 同时覆盖 throttle 与 throttler(后者含前者),实测 13/13"
-    },
-    {
-      "id": "production-entrypoint",
-      "globs": [
-        "src/main.ts",
-        "src/app.module.ts"
-      ],
-      "why": "生产进程入口与全局 provider 装配(APP_GUARD / APP_FILTER / APP_INTERCEPTOR 的注册处)。改它等于改每个请求的鉴权与响应链路,而它此前不在任何红区"
-    },
-    {
-      "id": "release-tooling",
-      "globs": [
-        "scripts/release-prepare.ts",
-        "scripts/release-finish.ts"
-      ],
-      "why": "两段式发版的执行体(打 tag / 归并 fragment / 刷 openapi 快照)。INC-17 已证明它坏了要到真发版才显形,不该允许顺手改"
-    },
-    {
-      "id": "storage-crypto",
-      "globs": [
-        "src/modules/storage/storage-crypto.service.ts"
-      ],
-      "why": "凭证加密;密钥不可轮换"
-    },
-    {
-      "id": "archive-frozen",
-      "globs": [
-        "docs/archive/**"
-      ],
-      "why": "归档冻结不回改(仅允许新增文件,Edit 既有文件需授权)",
-      "allowCreate": true
-    },
-    {
-      "id": "test-env",
-      "globs": [
-        ".env.test"
-      ],
-      "why": "e2e 的 DATABASE_URL 真源 —— 它决定 reset-db.ts 那条 55 表 TRUNCATE 打到哪个库。2026-07-29 跨模型评审 F1:此前它不在任何红区,一条 PR 就能把它改到别处,而当时的安全闸只查 'app_test' 子串"
-    },
-    {
-      "id": "container-build",
-      "globs": [
-        "Dockerfile",
-        ".dockerignore",
-        "docker-compose.yml"
-      ],
-      "why": "交付物链路 + 测试库容量配置(AGENTS §3 触发即停 7 的『Dockerfile』半条,原清单无载体)"
+      "id": "authentication",
+      "globs": ["src/modules/auth/**", "src/modules/authz/**", "src/modules/permissions/*.service.ts", "src/common/guards/**", "src/common/decorators/*auth*", "src/common/decorators/*public*", "src/**/*throttle*", "src/modules/storage/storage-crypto.service.ts", "src/bootstrap/**", "src/main.ts", "src/app.module.ts"],
+      "why": "身份、判权核心、凭证加密与全局接线"
     }
   ],
   "selfGuard": [
     {
-      "id": "enforcement-layer",
-      "globs": [
-        "harness/**",
-        ".claude/hooks/**",
-        ".claude/settings.json",
-        ".claude/settings.example.json",
-        ".claude/rules/**",
-        "eslint.harness.mjs",
-        "eslint-rules/**",
-        "scripts/check-*.ts",
-        "scripts/check-*.sh",
-        "scripts/*.selftest.ts",
-        "scripts/*.selftest.sh",
-        "scripts/agent-preflight.sh",
-        "scripts/docs-counts.ts",
-        "scripts/docs-readtax.ts",
-        "scripts/harness-grant.ts",
-        "scripts/db-test-prune.ts",
-        "scripts/generate-*.ts",
-        "scripts/replay-*.ts",
-        "scripts/*-semantic-diff.ts",
-        "scripts/cutover-check.ts",
-        "test/setup/**",
-        "test/contract/**"
-      ],
-      "why": "裁判保护(对抗性评审 blocker):CI 跑的是 PR 分支上的守卫脚本 —— 不锁住裁判,任何违规 PR 都可以顺手把检查改成恒 PASS、检查名不变、CI 照绿。同理 test/setup(全量 e2e 的地基)与 test/contract(考卷本体)。⚠️ 与 AGENTS §3 现文『test/** 属 🟢 自由区』冲突,该口径需在 P3 同步收窄为『test/** 减去 setup 与 contract』",
-      "scopeNote": "2026-07-28 拍板收窄:原为整个 scripts/**,导致每新增一个普通脚本(生成器等)都要授权一次 —— 授权一旦沦为例行公事就不再是拍板,与『误伤摧毁守护可信度』同源。现按「是不是裁判」列具名清单:CI 门禁(check-* / docs-counts / docs-readtax)、守卫的守卫(*.selftest)、开工门禁(agent-preflight)、**授权工具本身(harness-grant —— 能改它就能自授权,最关键的一条)**、破坏性操作(db-test-prune)。非裁判脚本(如 changelog-merge)放开。⚠️ 收窄当天由 ci-guard-coverage 断言当场纠正了一处判断错误:**生成器也是裁判** —— `generate-*.ts --check`(新鲜度校验)是 CI 的一道门,把它改成恒返回通过,校验就静默失效;故 `scripts/generate-*.ts` 一并纳入。防「改名绕过」由该断言持续兜底:凡被 CI 检查链引用的 scripts/ 文件必须落在本清单内,新增守卫却未纳入保护 → 当场红。2026-08-13(架构治理 Phase 5)新增 `scripts/*-semantic-diff.ts`:R14 授权语义门与 R11 契约语义门的判据本体。它们判定「这次改动要不要维护者点批」,是货真价实的裁判 —— 而 `harness-needs` 按**当前** redzone 算,开工时如实报告它们「不需要授权」,收编后才受保护(授权预算的级联盲区,本刀开工简报里已具名预告并一次性批掉)。同一支脚本还被 trusted 工作流以 base 版跑,收编保证 PR 改不动裁判。2026-07-31(第五轮评审 J2·L3)新增 `eslint-rules/**`:第 18 条从 no-restricted-syntax 的一条选择器换成本仓首条**真自定义规则**,规则体因此成了一个新的执法体。eslint.harness.mjs 早在保护内,但把判定逻辑挪进 eslint-rules/ 却不同步扩保护,就等于把防线搬到了闸门外 —— 「守护可被同一 PR 整体删掉」是本仓已记录的事故形状,这次在引入新执法体的同一个 PR 里就补上。2026-08-26 新增 `scripts/cutover-check.ts`(维护者当日拍板「收进去」)。**理由**不是「这个脚本重要」,而是 ci-guard-coverage 那条规矩本身:它的 `--signoff` 模式同一天接进了 ci.yml 的 `Diff guards`,被 CI 引用却不在本清单 = 让一个**同一个 PR 内就能改成恒 PASS 的裁判**去卡合并(跨模型评审 BLOCKER-1 的形状)。它判的是切换前签字登记表 `docs/ai-harness/CUTOVER_SIGNOFF.md` 可不可信,而那是一份 `.md`、改它的 PR 恰恰是 docs-only ⇒ 这条判据是那张表**唯一**的执行位,裁判本身可被同 PR 改松就等于没接。**影响面**:此后改本文件与改其它裁判同价 —— 要维护者发令牌;`harness:needs 'scripts/cutover-check.ts'` 从此报「需要授权」(它按当前 redzone 现算,收编前如实报「不需要」,是同一处授权预算级联盲区)。**为什么是具名一条、不是回到整个 `scripts/**`**:2026-07-28 收窄的理由一字未变 —— 全量收编会让每新增一个普通脚本都要授权一次,授权沦为例行公事就不再是拍板;判别式仍是「是不是裁判」,而本文件恰好在这条线的裁判一侧(全量模式仍**不**接 CI:9a 尚有 it.todo、⑩ 要部署侧产物,接了等于全仓永久红 —— 接 CI 的只有 `--signoff` 这个子集)。**为什么不改名成 `scripts/check-cutover.ts` 让它自动落进既有 glob**:该路径被 `docs/ops/activity-batch-worker-runbook.md` 点名,而那份 runbook 的 sha256 正是 ⑦-c 签字的对拍锚(`worker-runbook-sha256-12`)⇒ 改名会让 ⑦-c 当场过期。省一条 glob 不值得让一条已签字的结论失效。"
-    },
-    {
-      "id": "ci-control-plane",
-      "globs": [
-        "package.json",
-        "pnpm-lock.yaml",
-        "eslint.config.mjs",
-        "tsconfig.json",
-        "test/tsconfig.test.json",
-        "scripts/tsconfig.json",
-        "prisma/tsconfig.eslint.json",
-        "test/jest-*.config.ts",
-        "nest-cli.json",
-        "scripts/harness-needs.ts"
-      ],
-      "why": "决定「检查本身还成不成立」的那一层。2026-07-29 跨模型评审 F2 实测 12/12 全部不在保护内:把 package.json 里 lint / typecheck / test 的脚本体改成恒成功,fast 与 slow 两个 job 就全绿 —— 检查名一字未动,CI 一片绿,而什么都没跑。",
-      "scopeNote": "逐条理由:package.json = 所有检查命令的真身;pnpm-lock.yaml = 依赖真身(换掉 eslint / tsc 即换掉裁判);eslint.config.mjs = **执法块的接线**(eslint.harness.mjs 早在保护内,但把 `...harnessConfigBlocks` 从接线里删掉,17 条规则静默全失效、lint 照绿 —— 已实测:同一违规文件 exit 1 → exit 0);三份 tsconfig + prisma/tsconfig.eslint.json = 类型检查与 lint 的覆盖范围(缩 include 即缩掉被检查的代码);三份 jest config = 跑哪些 spec(testRegex 一改,e2e 可以一个用例都不跑却报绿);nest-cli.json = 构建入口;scripts/harness-needs.ts = 授权预算工具,改它可以让它少报需要授权的路径,把维护者骗成「这次不用授权」。prisma/tsconfig.eslint.json 是 DoD 清单外的一条,因为锁了 eslint.config.mjs 却不锁它指向的 project 等于留门 —— 在 PR 里已具名说明,不是顺手扩集。"
-    },
-    {
-      "id": "architecture-governance-phase0-artifacts",
-      "globs": [
-        "docs/ai-harness/BASELINE_HEALTH.md",
-        "docs/ai-harness/EXTERNAL_IO_INVENTORY.md",
-        "docs/ai-harness/ROUTE_AUTHZ.md",
-        "docs/archive/reviews/architecture-governance-v4/README.md",
-        "docs/archive/reviews/architecture-governance-v4/DECISIONS-2026-08-09.md",
-        "changelog.d/architecture-governance-phase0.added.md",
-        "changelog.d/architecture-governance-phase0-gate.added.md"
-      ],
-      "why": "架构治理 v4 Phase 0 的其余新增取证产物、维护者拍板纪要与 A 类翻闸记录。五个 harness JSON 已由 harness/** 覆盖，两支扫描/生成器已由 scripts/check-*.ts 与 scripts/generate-*.ts 覆盖；此处补齐此前未落入 selfGuard 的文档与 changelog fragment，保证本 goal 的全部新增文件都走可信红区审批。"
+      "id": "ci-control",
+      "globs": [".github/workflows/**", "harness/redzone.json", "package.json", "pnpm-lock.yaml", "eslint*.mjs", "eslint-rules/**", "harness/*baseline*.json", "harness/ratchet-registry.json", "tsconfig*.json", "test/jest*.ts", "test/tsconfig*.json", "test/setup/**", "scripts/check-cold-lint.ts", ".env.test", ".claude/settings.json"],
+      "why": "测试和 lint 执行入口、豁免基线、危险命令设置及可信裁判"
     }
-  ],
-  "grantFile": "srvf-redzone-grant.json",
-  "_grantNote": "授权令牌落在 $(git rev-parse --git-path srvf-redzone-grant.json):每个 worktree 独立、天然不入库、lane 间不串。该路径由 hook 硬编码识别,不接受来自 tool_input 的路径覆盖。"
+  ]
 }

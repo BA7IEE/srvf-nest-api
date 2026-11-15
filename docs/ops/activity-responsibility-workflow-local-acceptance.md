@@ -290,7 +290,6 @@ L3 黑名单。unknown 字段、unrelated admin 获得任何活动责任 capabil
 下面的命令仅供后端开发者回归自动聚合 E2E，不会创建可供前端长期登录的 17 个稳定账号，也不能替代 bootstrap：
 
 ```bash
-pnpm agent:preflight --lane activity-workflow-v2-pr15-local-frontend-bootstrap
 pnpm test:e2e -- test/e2e/activity-workflow-local-acceptance.e2e-spec.ts --runInBand
 ```
 

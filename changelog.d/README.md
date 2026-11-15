@@ -1,14 +1,8 @@
-# changelog.d/ — CHANGELOG fragment 暂存目录
+# changelog.d/ — 发布说明片段
 
-> Harness 2.0 lane 并行协议的一部分(T0 §1.4 / d4)。CHANGELOG `## Unreleased` 是单一追加点,并行 PR 必然冲突;fragment 把每条 lane 的登记拆成独立文件,bump 前由总控一次归并。
+需要发布说明的变更放在 `changelog.d/<topic>.md`，减少并行修改 CHANGELOG 的冲突。
+内容使用可直接并入 `## Unreleased` 的 Markdown 条目。普通文档修订无需机械登记。
 
-## 用法
-
-- **写**:lane 的 PR 需要登记 CHANGELOG 时,新建 `changelog.d/<branch-or-topic>.md`,内容 = 可直接并入 `## Unreleased` 的 markdown 条目(与直接写 CHANGELOG 的格式完全一致)。
-- **并**:release 收口 bump 前,总控执行 `pnpm changelog:merge` —— 按文件名序归并进 CHANGELOG `## Unreleased`(无该段则自动新建)并删除 fragment。
-- 本 README 不参与归并。
-
-## 边界
-
-- 单 lane 场景直接编辑 CHANGELOG 的旧路径**不废除**(process §5);fragment 仅在并行 lane 期间为必须。
-- A 档 docs-only PR 照旧不登记 CHANGELOG(既有约定)。
+发版前按 `docs/process.md` 执行 `pnpm changelog:merge`：
+按文件名顺序归并到 CHANGELOG 的 Unreleased 段并删除已归并片段。
+本 README 不参与归并。不再要求 lane 或 PR 分级。

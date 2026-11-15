@@ -1,6 +1,6 @@
 # Swagger 100% 覆盖(reference · 触碰才读)
 
-> Harness 2.0 细则层:承接 harness v1 `AGENTS.md` §6 **原文逐字搬家(零放宽;唯一机械改写=相对链接前缀)**;恒读入口与速查见根 [`AGENTS.md`](../../AGENTS.md),原文快照 [`archive/harness-v1/AGENTS.md`](../archive/harness-v1/AGENTS.md)。
+> 按需细则；协作规则见根 [AGENTS.md](../../AGENTS.md)。历史来源保存在 `harness-v3-final` 标签。
 > 机器锁定:contract snapshot(schema 漂移即红)。
 
 ## 6. Swagger 100% 覆盖
