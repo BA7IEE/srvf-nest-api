@@ -22,39 +22,11 @@ import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 
-// 终态 scoped-authz PR9(2026-07-02;冻结稿 §5.2/§5.3 + BD-2;首个 authz 消费者)+
-// 摘码微刀(2026-07-03;RBAC_MAP §5 挂账关闭):考勤终审 HTTP 面接线矩阵。
-// 角色 / 职务 / 组织树(含 closure)用**真 seed**(子进程,沿 authz-three-source 范式)——
-// scoped 通路用的是 seed 真第 7 角色 `attendance-final-reviewer`,与生产逐字一致;
-// sheet 直造(pending_final_review + 显式 submitter/reviewer)。
-//
-// ⚠️ PR-11 contract 终态:biz-admin 不再持任何考勤责任动作，仅保留 attendance.read.sheet；
-// 一审/终审权只归独立 scoped 绑定 + SUPER_ADMIN 短路兜底。
-// 判定顺序(authz.service.ts):约束否决只发生在 grant 命中之后,
-// 故无码者(含持 biz-admin 的 ADMIN)一律 30100(no_permission),约束用例须由持权身份承载。
-//
-// 覆盖:
-//   真收紧(约束语义,持权身份承载):①SA 自审 → 22074(域不变量不随短路豁免;单据零变化)
-//     ①b scoped 持权者自审 → 22074(须先于 ⑥ 运行 —— ⑥ 永久 END 任职,本文件本就依赖声明顺序)
-//     ②一级同人(SA 为一级审后自终审)→ 22075(默认;SA 亦受同人约束)
-//     ③final-reject 与 final-approve 同约束矩阵:自审 22074 / 一级同人 22075
-//   摘码翻面:④持 biz-admin 的 ADMIN 终审他人单 → 30100(原 B 方案 GLOBAL ALLOW 翻转;
-//     final-approve/final-reject 双拒 + DB 显式断言终审两码不在 biz-admin 绑定)
-//     ④b SUPER_ADMIN 终审他人单 → 200(super_admin_pass 兜底恒在)
-//     ⑤裸 USER / 无 biz-admin 的 ADMIN → 30100(权限拒绝面零变)
-//     ⑤b PR-11 摘码边界:biz-admin 仅 attendance.read.sheet ALLOW，create/update/delete/
-//       approve/reject/return/final-return 与既有终审三码全部 false
-//       (HTTP 面另见 attendances-rbac-boundary)
-//   scoped 通路(BD-2 全链,零变):⑥dept-leader 任职 + RoleBinding(POSITION_ASSIGNMENT,
-//     attendance-final-reviewer, TREE@root)且**无 biz-admin** → 终审他人单 200
-//     (service 级 explain 自证 matchedGrant.source=role_binding);撤任职(ENDED)→ 同请求
-//     30100(explain=expired_grant,换届即失权);⑦同职务无绑定者 → 30100(no_permission ——
-//     职务→org-admin policy 不含终审码,BD-2 终审绝不随职务推导)
-//   兼容 env:⑧ATTENDANCE_ALLOW_SAME_REVIEWER=true(独立 app 实例)→ 同人仍 22075,
-//     自审仍 22074；运行时永不读取该值放开约束
-//
-// 约束语义的纯函数/服务级矩阵在 action-constraints.spec + authz-three-source 场景 4;
-// deny → BizCode 映射的 unit 面在 attendances.service.spec「PR9 终审 authz 判权」。
+// 原 PR9 人员隔离和 BD-2 任职授权矩阵，迁到不可变结算版本/ReviewAction。
+// 使用真实 seed 的角色、职务、组织闭包，保留无绑定拒绝、撤任职即时失权、
+// SA/scoped 自审和两级同人拒绝、兼容 env 不放宽约束，以及拒绝零写。
+// 重提创建新版本并保留旧版本；旧 reopen 只验证不可作为新版本的兼容别名。
+// 真实账本更正另由 activity-settlement-correction 和入队并发套件验证。
 
 const SEED_ENV = {
   APP_ENV: 'test',
@@ -78,7 +50,7 @@ const PAST_START = new Date('2020-01-01T00:00:00.000Z');
 const FIRST_REVIEWER_ROLE_CODE = 'attendance-first-reviewer';
 const FINAL_REVIEWER_ROLE_CODE = 'attendance-final-reviewer';
 
-describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 scoped 通路)', () => {
+describe('原生结算审核人员隔离与 BD-2 scoped 授权', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let authz: AuthzService;
@@ -86,11 +58,22 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
   let rootId: string;
   let apdId: string;
   let activityId: string;
+  const previousWorkflowGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+  const expectations = new Map<
+    string,
+    {
+      evidenceSealId: string;
+      evidenceRevision: number;
+      populationRevision: number;
+      workflowRevision: number;
+      contentHash: string;
+    }
+  >();
 
   // HTTP 身份(均 loginAs 真登录)
-  let subAdminId: string; // ADMIN + biz-admin;固定当 submitter(摘码后不再作终审人)
+  let subAdminId: string; // ADMIN + biz-admin + 显式一审角色；兼作自审拒绝主体
   let subAdminAuth: string;
-  let revAdminId: string; // ADMIN + biz-admin;固定当一级审核人(同上)
+  let revAdminId: string; // 历史一审事实的 actor；不据此授予当前审核权限
   let finalAdminAuth: string; // ADMIN + biz-admin;PR-11 摘码主体(④ 终审 30100 / ⑤b 责任动作边界)
   let finalAdminPayload: CurrentUserPayload;
   let saUserId: string;
@@ -105,43 +88,171 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
   // 同职务无绑定者(⑦)
   let deptPeerAuth: string;
 
-  // 直造 pending_final_review sheet(显式 submitter / 一级 reviewer;绕过 submit/approve 状态机,
-  // 约束只读这两个事实字段)。时间窗不建 record —— 终审判权/状态机不读 records。
-  async function mkSheet(
+  // 只构造授权所消费的不可变提交/既有一审事实；不改写提交人或复活旧服务。
+  // 每个运行独立活动；重提用 priorVersionId 关联新版本，保留旧版本。
+  async function createVersion(
     submitterUserId: string,
     reviewerUserId?: string,
-    statusCode = 'pending_final_review',
-    lastSubmittedByUserId?: string,
+    stage: 'first' | 'final' = 'final',
+    priorSubmitterUserId?: string,
   ): Promise<string> {
-    const sheet = await prisma.attendanceSheet.create({
+    const prototype = await prisma.activity.findUniqueOrThrow({ where: { id: activityId } });
+    const activity = await prisma.activity.create({
       data: {
-        activityId,
-        submitterUserId,
-        lastSubmittedByUserId: lastSubmittedByUserId ?? null,
-        reviewerUserId: reviewerUserId ?? null,
-        statusCode,
-        version: 1,
+        title: prototype.title,
+        activityTypeCode: prototype.activityTypeCode,
+        organizationId: prototype.organizationId,
+        startAt: prototype.startAt,
+        endAt: prototype.endAt,
+        location: prototype.location,
+        statusCode: 'published',
       },
-      select: { id: true },
     });
-    return sheet.id;
+    const seal = await prisma.evidenceSeal.create({
+      data: {
+        activityId: activity.id,
+        sealRevision: 1,
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        allWindowsClosedAt: activity.endAt,
+        openSegmentCount: 0,
+        manualReviewPendingCount: 0,
+        populationCountDistinct: 0,
+        populationCountBySession: {},
+        contentHash: `fra-seal-${activity.id}`,
+        statusCode: 'active',
+        sealedByUserId: submitterUserId,
+        sealedAt: activity.endAt,
+      },
+    });
+    const versionNumber = priorSubmitterUserId === undefined ? 1 : 2;
+    const run = await prisma.attendanceSettlementRun.create({
+      data: {
+        activityId: activity.id,
+        statusCode: stage === 'first' ? 'pending_first_review' : 'pending_final_review',
+        currentSubmittedVersion: versionNumber,
+      },
+    });
+    const common = {
+      settlementRunId: run.id,
+      evidenceSealId: seal.id,
+      evidenceRevision: 0,
+      populationRevision: 0,
+      workflowRevision: 0,
+      personCount: 0,
+      sessionParticipationCount: 0,
+      serviceSegmentCount: 0,
+      submittedAt: activity.endAt,
+    };
+    const prior =
+      priorSubmitterUserId === undefined
+        ? null
+        : await prisma.attendanceSettlementVersion.create({
+            data: {
+              ...common,
+              version: 1,
+              createdByUserId: priorSubmitterUserId,
+              statusCode: 'returned',
+              returnFromStage: 'first',
+              returnReason: '修订后重新提交',
+              contentHash: `fra-prior-${activity.id}`,
+              operationKey: `fra-prior-${activity.id}`,
+              requestHash: `fra-prior-hash-${activity.id}`,
+            },
+          });
+    const version = await prisma.attendanceSettlementVersion.create({
+      data: {
+        ...common,
+        version: versionNumber,
+        priorVersionId: prior?.id,
+        createdByUserId: submitterUserId,
+        statusCode: 'submitted',
+        contentHash: `fra-version-${activity.id}`,
+        operationKey: `fra-submit-${activity.id}`,
+        requestHash: `fra-submit-hash-${activity.id}`,
+      },
+    });
+    if (stage === 'final') {
+      await prisma.settlementReviewAction.create({
+        data: {
+          settlementVersionId: version.id,
+          stageCode: 'first',
+          actionCode: 'approve',
+          actorUserId: reviewerUserId ?? revAdminId,
+          actedAt: new Date(),
+          operationKey: `fra-first-${version.id}`,
+          requestHash: `fra-first-hash-${version.id}`,
+        },
+      });
+    }
+    expectations.set(version.id, {
+      evidenceSealId: seal.id,
+      evidenceRevision: 0,
+      populationRevision: 0,
+      workflowRevision: 0,
+      contentHash: version.contentHash,
+    });
+    return version.id;
   }
 
-  function finalApprove(sheetId: string, auth: string) {
-    return request(httpServer(app))
-      .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-approve`)
+  function review(
+    versionId: string,
+    auth: string,
+    stage: 'first' | 'final',
+    action: 'approve' | 'return',
+    instance = app,
+  ) {
+    const expectation = expectations.get(versionId);
+    if (!expectation) throw new Error('missing immutable review fixture');
+    return request(httpServer(instance))
+      .post(`/api/admin/v1/attendance-settlements/${versionId}/${stage}-${action}`)
       .set('Authorization', auth)
-      .send({ finalReviewNote: 'authz matrix' });
+      .send({
+        operationKey: `fra-${stage}-${action}-${versionId}`,
+        ...expectation,
+        ...(action === 'return' ? { note: '人员隔离验证' } : {}),
+      });
   }
 
-  function reopen(sheetId: string, auth: string) {
-    return request(httpServer(app))
-      .post(`/api/admin/v1/attendance-sheets/${sheetId}/reopen`)
+  function finalApprove(versionId: string, auth: string) {
+    return review(versionId, auth, 'final', 'approve');
+  }
+
+  async function versionState(versionId: string) {
+    const version = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+      where: { id: versionId },
+    });
+    return {
+      version,
+      run: await prisma.attendanceSettlementRun.findUniqueOrThrow({
+        where: { id: version.settlementRunId },
+      }),
+      actions: await prisma.settlementReviewAction.findMany({
+        where: { settlementVersionId: versionId },
+        orderBy: { id: 'asc' },
+      }),
+      batches: await prisma.ledgerPostingBatch.findMany({
+        where: { settlementVersionId: versionId },
+        orderBy: { id: 'asc' },
+      }),
+      auditCount: await prisma.auditLog.count(),
+      intentCount: await prisma.notificationOutboxIntent.count(),
+    };
+  }
+
+  async function expectRetiredReopen(versionId: string, auth: string) {
+    const before = await versionState(versionId);
+    await request(httpServer(app))
+      .post(`/api/admin/v1/attendance-sheets/${versionId}/reopen`)
       .set('Authorization', auth)
-      .send({ reason: '终审后发现需重新修订' });
+      .send({ reason: '不能把新版本当旧单据重开' })
+      .expect(404);
+    expect(await versionState(versionId)).toEqual(before);
   }
 
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
     runSeed();
@@ -304,99 +415,104 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
   }, 120_000);
 
   afterAll(async () => {
-    await app.close();
+    try {
+      await app?.close();
+    } finally {
+      if (previousWorkflowGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousWorkflowGate;
+    }
   });
 
   // ============ 真收紧(约束语义;摘码后由持权身份承载)============
 
-  it('①自审(SUPER_ADMIN 亦拒——域不变量不随短路豁免):submitter==终审人 → 22074;单据零变化(deny 在事务前)', async () => {
-    const sheetId = await mkSheet(saUserId);
+  it('① SA 不能终审自己的提交；版本、审核、批次、审计及通知零变化', async () => {
+    const versionId = await createVersion(saUserId);
+    const before = await versionState(versionId);
     expectBizError(
-      await finalApprove(sheetId, saAuth),
-      BizCode.ATTENDANCE_SELF_FINAL_REVIEW_FORBIDDEN,
+      await finalApprove(versionId, saAuth),
+      BizCode.SETTLEMENT_SELF_FINAL_REVIEW_FORBIDDEN,
     );
-    const db = await prisma.attendanceSheet.findUniqueOrThrow({
-      where: { id: sheetId },
-      select: { statusCode: true, finalReviewerUserId: true },
-    });
-    expect(db).toEqual({ statusCode: 'pending_final_review', finalReviewerUserId: null });
+    expect(await versionState(versionId)).toEqual(before);
   });
 
-  it('①b scoped 持权者(role_binding grant)自审 → 22074(约束在 scoped grant 命中后仍否决)', async () => {
+  it('①b scoped 持权者仍不能终审自己的提交', async () => {
     // 依赖声明顺序先于 ⑥(⑥ 会永久 END deptHead 任职);此时绑定仍 ACTIVE。
-    const sheetId = await mkSheet(deptHeadUserId);
+    const versionId = await createVersion(deptHeadUserId);
+    const before = await versionState(versionId);
     expectBizError(
-      await finalApprove(sheetId, deptHeadAuth),
-      BizCode.ATTENDANCE_SELF_FINAL_REVIEW_FORBIDDEN,
+      await finalApprove(versionId, deptHeadAuth),
+      BizCode.SETTLEMENT_SELF_FINAL_REVIEW_FORBIDDEN,
     );
+    expect(await versionState(versionId)).toEqual(before);
   });
 
-  it('②一级同人:reviewer==终审人 → 22075(默认禁止;SA 亦受同人约束)', async () => {
-    const sheetId = await mkSheet(subAdminId, saUserId);
-    expectBizError(await finalApprove(sheetId, saAuth), BizCode.ATTENDANCE_SAME_REVIEWER_FORBIDDEN);
+  it('② SA 不能兼任两级审核', async () => {
+    const versionId = await createVersion(subAdminId, saUserId);
+    const before = await versionState(versionId);
+    expectBizError(
+      await finalApprove(versionId, saAuth),
+      BizCode.SETTLEMENT_SAME_REVIEWER_FORBIDDEN,
+    );
+    expect(await versionState(versionId)).toEqual(before);
   });
 
-  it('②b 一审自审:最初提交人或最近重提人 approve/reject → 22081', async () => {
-    const originalSubmitterSheet = await mkSheet(subAdminId, undefined, 'pending');
+  it('②b 初次和重提版本的提交人都不能一审通过/退回；旧版本保持不变', async () => {
+    const originalVersionId = await createVersion(subAdminId, undefined, 'first');
+    const original = await versionState(originalVersionId);
     expectBizError(
-      await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${originalSubmitterSheet}/approve`)
-        .set('Authorization', subAdminAuth)
-        .send({ reviewNote: '不得自审' }),
-      BizCode.ATTENDANCE_SELF_FIRST_REVIEW_FORBIDDEN,
+      await review(originalVersionId, subAdminAuth, 'first', 'approve'),
+      BizCode.SETTLEMENT_SELF_FIRST_REVIEW_FORBIDDEN,
     );
+    expect(await versionState(originalVersionId)).toEqual(original);
 
-    const resubmittedSheet = await mkSheet(revAdminId, undefined, 'pending', subAdminId);
+    const resubmittedId = await createVersion(subAdminId, undefined, 'first', revAdminId);
+    const before = await versionState(resubmittedId);
+    const priorId = before.version.priorVersionId;
+    expect(priorId).not.toBeNull();
+    if (priorId === null) throw new Error('missing prior settlement version');
+    const prior = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+      where: { id: priorId },
+    });
+    expect(prior).toMatchObject({
+      createdByUserId: revAdminId,
+      statusCode: 'returned',
+      version: 1,
+    });
+    expect(before.version).toMatchObject({ createdByUserId: subAdminId, version: 2 });
     expectBizError(
-      await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${resubmittedSheet}/reject`)
-        .set('Authorization', subAdminAuth)
-        .send({ reviewNote: '不得审核自己重提的单据' }),
-      BizCode.ATTENDANCE_SELF_FIRST_REVIEW_FORBIDDEN,
+      await review(resubmittedId, subAdminAuth, 'first', 'return'),
+      BizCode.SETTLEMENT_SELF_FIRST_REVIEW_FORBIDDEN,
     );
+    expect(await versionState(resubmittedId)).toEqual(before);
+    await expect(
+      prisma.attendanceSettlementVersion.findUniqueOrThrow({ where: { id: prior.id } }),
+    ).resolves.toEqual(prior);
   });
 
-  it('③final-reject 同样严格:SA 自审 → 22074；一级同人 → 22075', async () => {
-    const selfSheetId = await mkSheet(saUserId, revAdminId);
-    expectBizError(
-      await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${selfSheetId}/final-reject`)
-        .set('Authorization', saAuth)
-        .send({ finalReviewNote: '自审仍拒' }),
-      BizCode.ATTENDANCE_SELF_FINAL_REVIEW_FORBIDDEN,
-    );
-
-    const sameReviewerSheetId = await mkSheet(subAdminId, saUserId);
-    expectBizError(
-      await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sameReviewerSheetId}/final-reject`)
-        .set('Authorization', saAuth)
-        .send({ finalReviewNote: '同人仍拒' }),
-      BizCode.ATTENDANCE_SAME_REVIEWER_FORBIDDEN,
-    );
+  it('③终审退回同样禁止 SA 自审和两级同人', async () => {
+    for (const [creatorId, firstId, biz] of [
+      [saUserId, revAdminId, BizCode.SETTLEMENT_SELF_FINAL_REVIEW_FORBIDDEN],
+      [subAdminId, saUserId, BizCode.SETTLEMENT_SAME_REVIEWER_FORBIDDEN],
+    ] as const) {
+      const versionId = await createVersion(creatorId, firstId);
+      const before = await versionState(versionId);
+      expectBizError(await review(versionId, saAuth, 'final', 'return'), biz);
+      expect(await versionState(versionId)).toEqual(before);
+    }
   });
 
   // ============ 摘码翻面(2026-07-03;原 B 方案 GLOBAL ALLOW 翻转)============
 
-  it('④持 biz-admin 的 ADMIN 终审/reopen 他人单 → 30100;三码不在 biz-admin 绑定', async () => {
-    const sheetId = await mkSheet(subAdminId, revAdminId);
-    // 原 B 方案:200(GLOBAL grant 通路);摘码后:no_permission → 30100
-    expectBizError(await finalApprove(sheetId, finalAdminAuth), BizCode.RBAC_FORBIDDEN);
+  it('④ biz-admin 不获得新旧终审动作；拒绝零写，旧 reopen 不作别名', async () => {
+    const versionId = await createVersion(subAdminId, revAdminId);
+    const before = await versionState(versionId);
+    expectBizError(await finalApprove(versionId, finalAdminAuth), BizCode.RBAC_FORBIDDEN);
     expectBizError(
-      await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-reject`)
-        .set('Authorization', finalAdminAuth)
-        .send({ finalReviewNote: 'X' }),
+      await review(versionId, finalAdminAuth, 'final', 'return'),
       BizCode.RBAC_FORBIDDEN,
     );
-    const approvedSheetId = await mkSheet(subAdminId, revAdminId, 'approved');
-    expectBizError(await reopen(approvedSheetId, finalAdminAuth), BizCode.RBAC_FORBIDDEN);
-    // 单据零变化(deny 在事务前)
-    const db = await prisma.attendanceSheet.findUniqueOrThrow({
-      where: { id: sheetId },
-      select: { statusCode: true, finalReviewerUserId: true },
-    });
-    expect(db).toEqual({ statusCode: 'pending_final_review', finalReviewerUserId: null });
+    expect(await versionState(versionId)).toEqual(before);
+    await expectRetiredReopen(versionId, finalAdminAuth);
 
     // DB 显式断言:终审三码不在 biz-admin 绑定(seed 对账另见 seed-biz-admin.e2e-spec 68)
     const bizRole = await prisma.rbacRole.findFirstOrThrow({
@@ -413,6 +529,8 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
                 'attendance.final-approve.sheet',
                 'attendance.final-reject.sheet',
                 'attendance.reopen.sheet',
+                'activity.settlement-first-review.record',
+                'activity.settlement-final-review.record',
               ],
             },
           },
@@ -421,33 +539,38 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
     ).toBe(0);
   });
 
-  it('④b SUPER_ADMIN 终审他人提交、他人一级审的单 → 200(super_admin_pass 兜底恒在)', async () => {
-    const sheetId = await mkSheet(subAdminId, revAdminId);
-    const res = await finalApprove(sheetId, saAuth);
+  it('④b SA 可以终审他人版本，只准备批次；旧 reopen 不改变已批准版本', async () => {
+    const versionId = await createVersion(subAdminId, revAdminId);
+    const res = await finalApprove(versionId, saAuth);
     expect(res.status).toBe(200);
-    expect(res.body.data.statusCode).toBe('approved');
-    expect(res.body.data.finalReviewerUserId).toBe(saUserId);
-    const reopened = await reopen(sheetId, saAuth);
-    expect(reopened.status).toBe(200);
-    expect(reopened.body.data).toMatchObject({
-      statusCode: 'pending',
-      reviewerUserId: null,
-      finalReviewerUserId: null,
+    expect(res.body.data).toMatchObject({
+      versionStatusAfter: 'approved',
+      runStatusAfter: 'posting',
+      ledgerPostingBatchStatus: 'preparing',
     });
+    const after = await versionState(versionId);
+    expect(after.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stageCode: 'final',
+          actorUserId: saUserId,
+          actionCode: 'approve',
+        }),
+      ]),
+    );
+    expect(after.batches).toHaveLength(1);
+    expect(after.batches[0]).toMatchObject({ statusCode: 'preparing', committedAt: null });
+    await expectRetiredReopen(versionId, saAuth);
   });
 
   it('⑤裸 USER / 无 biz-admin 的 ADMIN → 30100(权限拒绝面契约零变)', async () => {
-    const sheetId = await mkSheet(subAdminId, revAdminId);
-    expectBizError(await finalApprove(sheetId, bareUserAuth), BizCode.RBAC_FORBIDDEN);
-    expectBizError(await finalApprove(sheetId, adminNoGrantAuth), BizCode.RBAC_FORBIDDEN);
-    // final-reject 同样 30100(切 authz 后权限面不变)
-    expectBizError(
-      await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-reject`)
-        .set('Authorization', bareUserAuth)
-        .send({ finalReviewNote: 'X' }),
-      BizCode.RBAC_FORBIDDEN,
-    );
+    const versionId = await createVersion(subAdminId, revAdminId);
+    const before = await versionState(versionId);
+    for (const auth of [bareUserAuth, adminNoGrantAuth]) {
+      expectBizError(await finalApprove(versionId, auth), BizCode.RBAC_FORBIDDEN);
+      expectBizError(await review(versionId, auth, 'final', 'return'), BizCode.RBAC_FORBIDDEN);
+      expect(await versionState(versionId)).toEqual(before);
+    }
   });
 
   it('⑤b PR-11 摘码边界:biz-admin 仅保留考勤读取,全部责任动作 DENY', async () => {
@@ -463,6 +586,8 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
       'attendance.final-approve.sheet',
       'attendance.final-reject.sheet',
       'attendance.reopen.sheet',
+      'activity.settlement-first-review.record',
+      'activity.settlement-final-review.record',
     ]) {
       expect(await authz.can(finalAdminPayload, action)).toBe(false);
     }
@@ -472,47 +597,56 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
 
   it('⑥scoped 全链:任职+绑定 → 200(source=role_binding);撤任职 → 同请求 30100(expired_grant 换届即失权)', async () => {
     // 无 biz-admin 的 USER,仅凭 POSITION_ASSIGNMENT 主体绑定终审他人单 → ALLOW
-    const sheetA = await mkSheet(subAdminId, revAdminId);
-    const explainAllow = await authz.explain(deptHeadPayload, 'attendance.final-approve.sheet', {
-      type: 'attendance_sheet',
-      id: sheetA,
-    });
+    const versionA = await createVersion(subAdminId, revAdminId);
+    const explainAllow = await authz.explain(
+      deptHeadPayload,
+      'activity.settlement-final-review.record',
+      { type: 'attendance_settlement_version', id: versionA },
+    );
     expect(explainAllow.allow).toBe(true);
     expect(explainAllow.matchedGrant?.source).toBe('role_binding');
     expect(explainAllow.matchedGrant?.roleCode).toBe(FINAL_REVIEWER_ROLE_CODE);
     expect(explainAllow.matchedGrant?.scopeType).toBe(BindingScopeType.ORGANIZATION_TREE);
-    const resAllow = await finalApprove(sheetA, deptHeadAuth);
+    const resAllow = await finalApprove(versionA, deptHeadAuth);
     expect(resAllow.status).toBe(200);
-    expect(resAllow.body.data.statusCode).toBe('approved');
-
-    const explainReopen = await authz.explain(deptHeadPayload, 'attendance.reopen.sheet', {
-      type: 'attendance_sheet',
-      id: sheetA,
-    });
-    expect(explainReopen.allow).toBe(true);
-    expect(explainReopen.matchedGrant?.roleCode).toBe(FINAL_REVIEWER_ROLE_CODE);
-    const reopened = await reopen(sheetA, deptHeadAuth);
-    expect(reopened.status).toBe(200);
-    expect(reopened.body.data.statusCode).toBe('pending');
+    expect(resAllow.body.data.versionStatusAfter).toBe('approved');
+    const approved = await versionState(versionA);
+    expect(approved.version.statusCode).toBe('approved');
+    expect(approved.run.statusCode).toBe('posting');
+    expect(approved.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stageCode: 'final',
+          actionCode: 'approve',
+          actorUserId: deptHeadUserId,
+        }),
+      ]),
+    );
+    await expectRetiredReopen(versionA, deptHeadAuth);
 
     // 换届:任职 ENDED → POSITION_ASSIGNMENT 主体绑定随之失效(不动绑定行)
     await prisma.organizationPositionAssignment.update({
       where: { id: deptHeadAssignmentId },
       data: { status: AssignmentStatus.ENDED, endedAt: new Date('2026-01-01T00:00:00.000Z') },
     });
-    const sheetB = await mkSheet(subAdminId, revAdminId);
-    const explainDeny = await authz.explain(deptHeadPayload, 'attendance.final-approve.sheet', {
-      type: 'attendance_sheet',
-      id: sheetB,
-    });
+    const versionB = await createVersion(subAdminId, revAdminId);
+    const before = await versionState(versionB);
+    const explainDeny = await authz.explain(
+      deptHeadPayload,
+      'activity.settlement-final-review.record',
+      { type: 'attendance_settlement_version', id: versionB },
+    );
     expect(explainDeny.allow).toBe(false);
     expect(explainDeny.reason).toBe('expired_grant');
-    expectBizError(await finalApprove(sheetB, deptHeadAuth), BizCode.RBAC_FORBIDDEN);
+    expectBizError(await finalApprove(versionB, deptHeadAuth), BizCode.RBAC_FORBIDDEN);
+    expect(await versionState(versionB)).toEqual(before);
   });
 
   it('⑦同职务无绑定者 → 30100(no_permission;终审绝不随职务推导 —— org-admin policy 无终审码)', async () => {
-    const sheetId = await mkSheet(subAdminId, revAdminId);
-    expectBizError(await finalApprove(sheetId, deptPeerAuth), BizCode.RBAC_FORBIDDEN);
+    const versionId = await createVersion(subAdminId, revAdminId);
+    const before = await versionState(versionId);
+    expectBizError(await finalApprove(versionId, deptPeerAuth), BizCode.RBAC_FORBIDDEN);
+    expect(await versionState(versionId)).toEqual(before);
   });
 
   // ============ 兼容 env(独立 app 实例读 env，但运行时忽略)============
@@ -520,6 +654,7 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
   describe('⑧ATTENDANCE_ALLOW_SAME_REVIEWER=true(独立 app;同人/自审仍严格拒绝)', () => {
     let relaxedApp: INestApplication;
     let relaxedSaAuth: string;
+    const previousSameReviewer = process.env.ATTENDANCE_ALLOW_SAME_REVIEWER;
 
     beforeAll(async () => {
       process.env.ATTENDANCE_ALLOW_SAME_REVIEWER = 'true';
@@ -530,28 +665,24 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
     }, 60_000);
 
     afterAll(async () => {
-      delete process.env.ATTENDANCE_ALLOW_SAME_REVIEWER;
-      await relaxedApp.close();
+      try {
+        await relaxedApp?.close();
+      } finally {
+        if (previousSameReviewer === undefined) delete process.env.ATTENDANCE_ALLOW_SAME_REVIEWER;
+        else process.env.ATTENDANCE_ALLOW_SAME_REVIEWER = previousSameReviewer;
+      }
     });
 
-    it('一级同人 → 22075；自审 → 22074（兼容 env 不影响运行时）', async () => {
-      const sameReviewerSheet = await mkSheet(subAdminId, saUserId);
-      expectBizError(
-        await request(httpServer(relaxedApp))
-          .patch(`/api/admin/v1/attendance-sheets/${sameReviewerSheet}/final-approve`)
-          .set('Authorization', relaxedSaAuth)
-          .send({}),
-        BizCode.ATTENDANCE_SAME_REVIEWER_FORBIDDEN,
-      );
-
-      const selfSheet = await mkSheet(saUserId, revAdminId);
-      expectBizError(
-        await request(httpServer(relaxedApp))
-          .patch(`/api/admin/v1/attendance-sheets/${selfSheet}/final-approve`)
-          .set('Authorization', relaxedSaAuth)
-          .send({}),
-        BizCode.ATTENDANCE_SELF_FINAL_REVIEW_FORBIDDEN,
-      );
+    it('兼容 env 不放宽原生两级人员隔离', async () => {
+      for (const [creatorId, firstId, biz] of [
+        [subAdminId, saUserId, BizCode.SETTLEMENT_SAME_REVIEWER_FORBIDDEN],
+        [saUserId, revAdminId, BizCode.SETTLEMENT_SELF_FINAL_REVIEW_FORBIDDEN],
+      ] as const) {
+        const versionId = await createVersion(creatorId, firstId);
+        const before = await versionState(versionId);
+        expectBizError(await review(versionId, relaxedSaAuth, 'final', 'approve', relaxedApp), biz);
+        expect(await versionState(versionId)).toEqual(before);
+      }
     });
   });
 });
