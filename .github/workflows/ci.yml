@@ -286,7 +286,12 @@ jobs:
     name: Docker image build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: changeset
     steps:
       - uses: actions/checkout@v4
       - name: Build Docker image
+        if: needs.changeset.outputs.docs_only != 'true'
         run: docker build -t u-nest-api-starter:ci .
+      - name: Documentation-only change
+        if: needs.changeset.outputs.docs_only == 'true'
+        run: echo 'Markdown-only change; no runtime image inputs changed.'
