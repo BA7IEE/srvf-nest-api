@@ -1,0 +1,4 @@
+### Fixed
+
+- Split nightly serial E2E into four workload groups. Retain the historical 42-suite list as evidence and preserve the relative order of its ordinary E2E suites with a cache-independent Jest sequencer. Authenticated and operator suites remain on their dedicated channels; this does not reproduce the complete historical process context. Keep the platform group intact, with every ordinary suite covered exactly once and other activity suites in whole business-family groups.
+- Keep each shard's 70-minute test budget, 85-minute job limit, 8 GiB Node heap cap, serial handle detection, assertions and workflow permissions unchanged. Peak test concurrency increases from two to four. Timing estimates are planning evidence rather than an SLA; unknown interactions between the new groups and the original slow-query cause remain unproven. Preserve each shard's planned suite list with its full log.
