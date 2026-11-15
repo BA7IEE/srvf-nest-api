@@ -2141,8 +2141,9 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
     });
   });
 
-  // ============ I. cancel 考勤守卫(已考勤报名禁取消) ============
-  describe('I. cancel 考勤守卫(v0.40.0 收口⑦)', () => {
+  // 新打卡阻断及并发锁等待由 registration-cancel-attendance-concurrency 验收。
+  // 此处保留旧历史输入，确认取消不再消费它、也不删除或改写它。
+  describe('I. cancellation preserves retired attendance history', () => {
     beforeEach(isolateFixtures);
 
     afterEach(async () => {
@@ -2151,19 +2152,15 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
     });
 
     // 造一条引用该 registration 的未软删 AttendanceRecord(经最小 AttendanceSheet)。
-    async function seedAttendanceForRegistration(
-      registrationId: string,
-      memberId: string,
-    ): Promise<void> {
+    async function seedAttendanceForRegistration(registrationId: string, memberId: string) {
       const sheet = await ctx.prisma.attendanceSheet.create({
         data: {
           activityId: ctx.publishedActivityId,
           submitterUserId: ctx.adminUserId,
-          statusCode: 'pending',
+          statusCode: 'approved',
         },
-        select: { id: true },
       });
-      await ctx.prisma.attendanceRecord.create({
+      const record = await ctx.prisma.attendanceRecord.create({
         data: {
           sheetId: sheet.id,
           memberId,
@@ -2175,57 +2172,92 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
           registrationId,
         },
       });
+      return { sheet, record };
     }
 
-    it('I1. cancelAdmin:pass 报名有考勤记录 → ACTIVITY_REGISTRATION_HAS_ATTENDANCE,DB 不变,无 audit', async () => {
+    it('I1. cancelAdmin:旧终审记录不阻断取消，历史整行不变且只写一次取消审计', async () => {
       const regId = await seedRegistration({
         memberId: ctx.memberCId,
         statusCode: 'pass',
         reviewerUserId: ctx.adminUserId,
       });
-      await seedAttendanceForRegistration(regId, ctx.memberCId);
+      const history = await seedAttendanceForRegistration(regId, ctx.memberCId);
 
-      await expect(
-        ctx.service.cancelAdmin(
-          ctx.publishedActivityId,
-          regId,
-          { cancelReason: '试取消' },
-          ctx.adminPayload,
-          AUDIT_META,
-        ),
-      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE });
+      const result = await ctx.service.cancelAdmin(
+        ctx.publishedActivityId,
+        regId,
+        { cancelReason: '试取消' },
+        ctx.adminPayload,
+        AUDIT_META,
+      );
+      expect(result.statusCode).toBe('cancelled');
 
       const db = await ctx.prisma.activityRegistration.findUniqueOrThrow({
         where: { id: regId },
-        select: { statusCode: true, cancelledByUserId: true },
+        select: { statusCode: true, cancelledByUserId: true, reviewedBy: true },
       });
-      expect(db.statusCode).toBe('pass'); // 未变
-      expect(db.cancelledByUserId).toBeNull();
+      expect(db).toEqual({
+        statusCode: 'cancelled',
+        cancelledByUserId: ctx.adminUserId,
+        reviewedBy: ctx.adminUserId,
+      });
+      await expect(
+        ctx.prisma.attendanceSheet.findUniqueOrThrow({ where: { id: history.sheet.id } }),
+      ).resolves.toEqual(history.sheet);
+      await expect(
+        ctx.prisma.attendanceRecord.findUniqueOrThrow({ where: { id: history.record.id } }),
+      ).resolves.toEqual(history.record);
 
       const audits = await ctx.prisma.auditLog.findMany({ where: { resourceId: regId } });
-      expect(audits).toHaveLength(0);
+      expect(audits).toHaveLength(1);
+      expect(audits[0].context).toEqual(
+        expect.objectContaining({
+          extra: expect.objectContaining({ action: 'cancel', cancelledByPath: 'admin' }),
+        }),
+      );
     });
 
-    it('I2. cancelMy:本人 pass 报名有考勤记录 → ACTIVITY_REGISTRATION_HAS_ATTENDANCE,DB 不变', async () => {
+    it('I2. cancelMy:旧终审记录不阻断本人取消，保留历史与原审核人', async () => {
       const regId = await seedRegistration({
         memberId: ctx.memberAId, // selfA owns memberA
         statusCode: 'pass',
         reviewerUserId: ctx.adminUserId,
       });
-      await seedAttendanceForRegistration(regId, ctx.memberAId);
+      const history = await seedAttendanceForRegistration(regId, ctx.memberAId);
 
-      await expect(
-        ctx.service.cancelMy(regId, { cancelReason: '试取消' }, ctx.selfAPayload, AUDIT_META),
-      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE });
+      const result = await ctx.service.cancelMy(
+        regId,
+        { cancelReason: '试取消' },
+        ctx.selfAPayload,
+        AUDIT_META,
+      );
+      expect(result.statusCode).toBe('cancelled');
 
       const db = await ctx.prisma.activityRegistration.findUniqueOrThrow({
         where: { id: regId },
-        select: { statusCode: true },
+        select: { statusCode: true, cancelledByUserId: true, reviewedBy: true },
       });
-      expect(db.statusCode).toBe('pass');
+      expect(db).toEqual({
+        statusCode: 'cancelled',
+        cancelledByUserId: ctx.selfAUserId,
+        reviewedBy: ctx.adminUserId,
+      });
+      await expect(
+        ctx.prisma.attendanceSheet.findUniqueOrThrow({ where: { id: history.sheet.id } }),
+      ).resolves.toEqual(history.sheet);
+      await expect(
+        ctx.prisma.attendanceRecord.findUniqueOrThrow({ where: { id: history.record.id } }),
+      ).resolves.toEqual(history.record);
+      const audits = await ctx.prisma.auditLog.findMany({ where: { resourceId: regId } });
+      expect(audits).toHaveLength(1);
+      expect(audits[0].context).toEqual(
+        expect.objectContaining({
+          extra: expect.objectContaining({ action: 'cancel', cancelledByPath: 'self' }),
+        }),
+      );
     });
 
-    it('I3. 软删考勤记录不阻断取消:仅未软删记录计数', async () => {
+    it('I3. 软删旧考勤同样不阻断取消，保留整行历史及删除标记', async () => {
       const regId = await seedRegistration({
         memberId: ctx.memberCId,
         statusCode: 'pass',
@@ -2239,7 +2271,7 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
         },
         select: { id: true },
       });
-      await ctx.prisma.attendanceRecord.create({
+      const record = await ctx.prisma.attendanceRecord.create({
         data: {
           sheetId: sheet.id,
           memberId: ctx.memberCId,
@@ -2261,6 +2293,9 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
         AUDIT_META,
       );
       expect(cancelled.statusCode).toBe('cancelled');
+      await expect(
+        ctx.prisma.attendanceRecord.findUniqueOrThrow({ where: { id: record.id } }),
+      ).resolves.toEqual(record);
     });
   });
 
