@@ -83,93 +83,79 @@ export interface SegmentProjection {
   chainAnomalies: string[];
 }
 
-// void / replace 的生效性:一个操作事件只有在**没有被另一个生效操作顶掉**时才生效。
-// 用不动点迭代而不是"按时间顺序扫一遍":操作链可以任意长(replace 被 replace 被 void),
-// 且不保证 occurredAt 单调(replace 事件的 occurredAt 是**被替代事实的新时刻**,
-// 完全可以早于它替代的那条)。迭代次数上界 = 操作数,不可能不收敛。
-function resolveEffectiveOperations(events: ProjectorPunchEvent[]): Set<string> {
-  const operations = events.filter(
-    (event) => event.eventTypeCode === 'void' || event.eventTypeCode === 'replace',
-  );
-  const effective = new Set(operations.map((operation) => operation.id));
-
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const operation of operations) {
-      if (!effective.has(operation.id)) continue;
-      const supersededByLiveOperation = operations.some(
-        (other) =>
-          other.id !== operation.id &&
-          effective.has(other.id) &&
-          other.supersedesEventId === operation.id,
-      );
-      if (supersededByLiveOperation) {
-        effective.delete(operation.id);
-        changed = true;
-      }
-    }
-  }
-  return effective;
-}
-
-// `replace` 事件自己的 eventTypeCode 是 `replace`,不携带"它替代的是签到还是签退"——
-// 那个信息只在**被替代事件**身上。沿链上溯直到撞到一个投影型事件为止
-// (replace 替代 replace 替代 check_in 这种链在 §3.16 的形状 CHECK 下是合法的)。
-function resolveReplacedRole(
-  operation: ProjectorPunchEvent,
-  byId: Map<string, ProjectorPunchEvent>,
-  maxHops: number,
-): string | undefined {
-  let cursor: ProjectorPunchEvent | undefined = operation;
-  for (let hop = 0; hop <= maxHops; hop += 1) {
-    const targetId = cursor?.supersedesEventId ?? null;
-    if (targetId === null) return undefined;
-    const target = byId.get(targetId);
-    if (target === undefined) return undefined;
-    if (PROJECTION_EVENT_TYPES.has(target.eventTypeCode)) return target.eventTypeCode;
-    cursor = target;
-  }
-  return undefined;
-}
-
 interface EffectiveFact {
   eventId: string;
   eventTypeCode: string;
   occurredAt: Date;
 }
 
+/** Invalid source graph; consumers may map this TypeError to their existing source error. */
+export class PunchOperationGraphError extends TypeError {}
+
 // 事件链 → **当前有效的现场事实**列表(已解析 void / replace,已按时序稳定排序)。
 export function resolveEffectiveFacts(events: ProjectorPunchEvent[]): EffectiveFact[] {
   const byId = new Map(events.map((event) => [event.id, event]));
-  const effectiveOperations = resolveEffectiveOperations(events);
-
-  // 被**生效**操作顶掉的目标事件不再参与投影。
-  // ⚠️ 只数生效操作:一条 replace 被 void 之后,它原本顶掉的那条事实**自动复活**——
-  //    这正是 §5.6「根据完整事件链重建」的含义,不需要额外的补偿逻辑。
-  const supersededTargets = new Set<string>();
+  if (byId.size !== events.length) {
+    throw new PunchOperationGraphError('Punch operation graph has duplicate IDs');
+  }
+  const successorByTarget = new Map<string, ProjectorPunchEvent>();
   for (const event of events) {
-    if (!effectiveOperations.has(event.id)) continue;
-    if (event.supersedesEventId !== null) supersededTargets.add(event.supersedesEventId);
+    if (event.eventTypeCode !== 'void' && event.eventTypeCode !== 'replace') continue;
+    if (event.supersedesEventId === null || !byId.has(event.supersedesEventId)) {
+      throw new PunchOperationGraphError('Punch operation graph has a missing target');
+    }
+    // The database unique index also rejects two operations against the same target.
+    if (successorByTarget.has(event.supersedesEventId)) {
+      throw new PunchOperationGraphError('Punch operation graph has conflicting successors');
+    }
+    successorByTarget.set(event.supersedesEventId, event);
+  }
+
+  // Supported operation chains are acyclic; detect cycles even when disconnected from a fact.
+  // Do not recurse, so a long or malformed chain cannot exhaust the call stack.
+  const visited = new Set<string>();
+  for (const event of events) {
+    const path = new Set<string>();
+    let cursor: ProjectorPunchEvent | undefined = event;
+    while (cursor !== undefined && !visited.has(cursor.id)) {
+      if (path.has(cursor.id))
+        throw new PunchOperationGraphError('Punch operation graph has a cycle');
+      path.add(cursor.id);
+      cursor = successorByTarget.get(cursor.id);
+    }
+    for (const id of path) visited.add(id);
   }
 
   const facts: EffectiveFact[] = [];
   for (const event of events) {
-    if (PROJECTION_EVENT_TYPES.has(event.eventTypeCode)) {
-      if (supersededTargets.has(event.id)) continue;
-      facts.push({
-        eventId: event.id,
-        eventTypeCode: event.eventTypeCode,
-        occurredAt: event.occurredAt,
-      });
-      continue;
+    if (!PROJECTION_EVENT_TYPES.has(event.eventTypeCode)) continue;
+
+    // The database's unique-target index makes each operation chain linear.
+    // Find its tail by relationships, never by occurredAt or input order.
+    let cursor = event;
+    for (;;) {
+      const next = successorByTarget.get(cursor.id);
+      if (next === undefined) break;
+      cursor = next;
     }
-    // 生效的 replace 以**替代者自己的 occurredAt** 顶上被替代事实的角色(goal DoD 3)。
-    if (event.eventTypeCode === 'replace' && effectiveOperations.has(event.id)) {
-      const role = resolveReplacedRole(event, byId, events.length);
-      if (role !== undefined) {
-        facts.push({ eventId: event.id, eventTypeCode: role, occurredAt: event.occurredAt });
+
+    // A replacement is the final representative of the original fact. A void
+    // removes itself and its target, after which the earlier chain is evaluated.
+    let effective: ProjectorPunchEvent | undefined = cursor;
+    while (effective?.eventTypeCode === 'void') {
+      const target = byId.get(effective.supersedesEventId ?? '');
+      if (target === undefined || PROJECTION_EVENT_TYPES.has(target.eventTypeCode)) {
+        effective = undefined;
+        break;
       }
+      effective = byId.get(target.supersedesEventId ?? '');
+    }
+    if (effective !== undefined) {
+      facts.push({
+        eventId: effective.id,
+        eventTypeCode: event.eventTypeCode,
+        occurredAt: effective.occurredAt,
+      });
     }
   }
 
