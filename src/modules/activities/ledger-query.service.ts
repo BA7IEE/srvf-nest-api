@@ -462,9 +462,9 @@ export class LedgerQueryService {
   /**
    * 已入账口径的参与面计数(活动数 / 分录数)。
    *
-   * 过滤条件与 `sumCommittedByDayForMember` **逐字同源** —— 同一个
-   * `b."statusCode" = 'committed'` join,所以两者永远描述同一批分录,
-   * 不会出现「小时数按已入账算、活动数按别的口径算」这种半切换。
+   * 时长/贡献按全部已入账分录的正负净和计算；计数则只看当前正式版本中的 credit。
+   * 更正会保留历史分录并冲回、补记全人口，直接统计全部 committed 分录会重复计数。
+   * 准备中的更正不影响当前 posted 指针，单条 SQL 读取同一时刻的版本与分录。
    *
    * 只返回两个标量计数,不返回任何分录字段 —— 合同 §3.22 的分录级不可见性一寸未让。
    */
@@ -476,18 +476,29 @@ export class LedgerQueryService {
       Array<{ activityCount: bigint; recordCount: bigint }>
     >`
       SELECT COUNT(DISTINCT e."activityId") AS "activityCount",
-             COUNT(DISTINCT (e."resultRevisionId", e."ledgerDate")) AS "recordCount"
+             COUNT(DISTINCT (e."participationIdentityId", e."ledgerDate")) AS "recordCount"
       FROM "ParticipationLedgerEntry" e
       JOIN "LedgerPostingBatch" b ON b.id = e."postingBatchId"
+      JOIN "ParticipantSettlementResultRevision" rr ON rr.id = e."resultRevisionId"
+      JOIN "AttendanceSettlementVersion" v ON v.id = rr."settlementVersionId"
+      JOIN "AttendanceSettlementRun" r ON r.id = v."settlementRunId"
       WHERE e."memberId" = ${memberId}
         AND b."statusCode" = 'committed'
+        AND rr."statusCode" = 'committed'
+        AND r."currentPostedVersion" = v.version
+        AND r."activityId" = e."activityId"
+        AND b."settlementVersionId" = v.id
+        AND b."settlementRunId" = r.id
+        AND e."participationIdentityId" = rr."participationIdentityId"
+        AND e."entryTypeCode" IN ('service_credit', 'contribution_credit')
     `;
     const row = rows[0];
     // 空账本时 Postgres 仍返回一行(COUNT 恒有值);防御性兜底避免 undefined 解构。
     return {
       activityCount: Number(row?.activityCount ?? 0),
       // D11 定案(维护者 2026-08-28 拍板「按推荐」):记录条数(账本口径)= 账本日行数
-      // (身份×北京日 去重),不是分录条数(每人每日两条)。这是与旧口径
+      // (身份×北京日 去重),不是分录条数(每人每日两条)。只按当前正式版本计数，
+      // 合法零值日行仍算一条，不能以金额或结果码过滤。这是与旧口径
       // 「考勤记录条数」最贴近的粒度 ⇒ 开闸前后数字基本连续;锚在
       // legacy-ledger-conversion.e2e-spec(转换后 committed 计数 == approved 计数)。
       recordCount: Number(row?.recordCount ?? 0),

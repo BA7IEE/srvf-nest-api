@@ -272,7 +272,7 @@ D4 八个新增入口全部在 Human App managed activity 面，详见 [小程�
 
 > 队员 360 跨轴查询备注:`registrations`/`attendance-records` 分页(`page`/`pageSize`)+ item 自带 activity 上下文(`activityId`/`activityTitle`);`attendance-records` **仅返 approved sheet 内 records**(已生效记录,镜像 app `/me` 口径);`contribution-summary` 返**生涯累计 capped 总分**(`{ memberId, contributionPoints }`,后端已按北京日封顶 3,**前端直接展示别再加**)。v0.48.0 起历史记录也按新上限读时实时重算,生涯累计数字可能变大;不存在/软删队员 → `MEMBER_NOT_FOUND`(15001)。
 
-> **新增 `participation-summary`** 把 approved-only 的 `totalServiceHours` / distinct `activityCount` / `recordCount` 与生涯 capped `contributionPoints` 合成一个卡片 DTO；贡献字段和旧 `contribution-summary` 都调用同一必传Gate的 `computeCappedContribution(memberId, null, gate)`，可做等值迁移但旧端点保留。该个人端点刻意不返回 no-show。
+> **`participation-summary` 计数口径**：旧流程下从 approved 考勤记录计算。v1.1 闸开启后，`activityCount` 是当前正式版本有已入账日行的不同活动数，`recordCount` 是这些日行按参与身份×北京日去重的条数。合法零值日行仍计数；当前版本没有日行时，历史冲回分录不再计入。更正准备中继续显示先前正式版本，生效后以新版本计算。计数不是“出勤人数”，且计数与时长分开读取，并发更正时不保证来自同一数据库快照。`totalServiceHours` 沿既有正式时长证明优先规则，`contributionPoints` 由后端计算：闸关时按旧考勤北京日封顶，闸开时按已入账 credited 正负净额，不回退旧数据或二次封顶。前端直接展示，不自行求和；此个人端点不返回 no-show。本说明是此分支的合同，合入或部署须另行核实。
 
 > **队员 360 统一保险概览**：保险 tab 的显示主数据源为 `GET /api/admin/v1/members/:memberId/insurances/overview`。`selfPurchased` 展示个人自购保险及审核动作；`teamProvided` 只读展示团队保险安全投影，不展示“核验通过 / 驳回”，也不返回保单号、备注、其他成员或 reviewer。UI 必须直接使用后端的 `dateStatus` 与 `summary.hasConfirmedCoverage`，不再仅以 `coverageEnd >= 当前时间` 自行推导日期状态。`summary` 只是按北京当前日的概览，不得替代某次活动审批或入队资格判定。旧 `GET /api/admin/v1/members/:memberId/insurances` 保留兼容，但队员 360 应迁移到 overview。
 >
