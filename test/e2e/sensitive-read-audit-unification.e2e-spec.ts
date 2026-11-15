@@ -1,10 +1,10 @@
 import type { INestApplication } from '@nestjs/common';
 import { Role, UserStatus } from '@prisma/client';
+import request from 'supertest';
 
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { PrismaService } from '../../src/database/prisma.service';
 import { ActivityRegistrationsService } from '../../src/modules/activity-registrations/activity-registrations.service';
-import { AttendancesService } from '../../src/modules/attendances/attendances.service';
 import { AuditLogsService } from '../../src/modules/audit-logs/audit-logs.service';
 import type { AuditLogEvent, AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { CertificatesService } from '../../src/modules/certificates/certificates.service';
@@ -19,6 +19,9 @@ import {
   seedCertificateStandard,
   type SeededCertificateStandard,
 } from '../fixtures/certificate-standard.fixture';
+import { loginAs } from '../fixtures/auth.fixture';
+import { createTestUser } from '../fixtures/users.fixture';
+import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
@@ -27,7 +30,8 @@ import { memberIdentityData } from '../helpers/member-identity.fixture';
 //
 // This spec deliberately calls the real Nest providers against the guarded test PostgreSQL DB.
 // It locks the three boundaries that a mock-only unit suite cannot prove together:
-// - all nine sensitive-read event families persist actor/meta with allowlisted metadata only;
+// - all eight active sensitive-read event families persist only allowlisted actor/meta;
+// - retired attendance reads return 404 without touching historical facts or audit;
 // - an audit rejection is fail-closed after the business query but before any response value;
 // - CSV generators and signed URLs remain unobtainable until the audit write completes.
 
@@ -62,7 +66,6 @@ const EXPECTED_EVENT_FAMILIES = [
   'member-insurance.read.other',
   'certificate.read.other',
   'certificate.read.qualification-flag',
-  'attendance-sheet.read.other',
   'registration.review',
   'recruitment-application.read.other',
   'recruitment-application.id-card-image.read',
@@ -90,7 +93,6 @@ type OrdinaryReadCase =
   | 'member-insurance'
   | 'certificate-list'
   | 'certificate-qualification'
-  | 'attendance-list'
   | 'recruitment-list';
 
 describe('sensitive-read audit unification (C-2)', () => {
@@ -107,6 +109,7 @@ describe('sensitive-read audit unification (C-2)', () => {
   let recruitmentClaims: RecruitmentCertificateClaimsService;
   let storage: StorageProvider;
   let actor: CurrentUserPayload;
+  let actorAuth: string;
   let fixtures: SeededFixtures;
 
   beforeAll(async () => {
@@ -127,15 +130,11 @@ describe('sensitive-read audit unification (C-2)', () => {
     recruitmentClaims = app.get(RecruitmentCertificateClaimsService);
     storage = app.get<StorageProvider>(STORAGE_PROVIDER);
 
-    const actorRow = await prisma.user.create({
-      data: {
-        username: 'sensitive-read-audit-sa',
-        passwordHash: '$2a$10$synthetic-hash-unused-no-login',
-        role: Role.SUPER_ADMIN,
-        status: UserStatus.ACTIVE,
-      },
-      select: { id: true, username: true },
+    const actorRow = await createTestUser(app, {
+      username: 'sensitive-read-audit-sa',
+      role: Role.SUPER_ADMIN,
     });
+    actorAuth = (await loginAs(app, actorRow.username)).authHeader;
     actor = {
       id: actorRow.id,
       username: actorRow.username,
@@ -319,15 +318,6 @@ describe('sensitive-read audit unification (C-2)', () => {
           actor,
           AUDIT_META,
         );
-      case 'attendance-list':
-        return app
-          .get(AttendancesService)
-          .list(
-            fixtures.activityId,
-            { page: 1, pageSize: 20, statusCode: ATTENDANCE_FILTER_VALUE },
-            actor,
-            AUDIT_META,
-          );
       case 'recruitment-list':
         return recruitmentList();
     }
@@ -339,7 +329,7 @@ describe('sensitive-read audit unification (C-2)', () => {
     return generator?.next();
   }
 
-  it('persists 9 event families with actor/meta and allowlisted extras only', async () => {
+  it('persists 8 active event families with actor/meta and allowlisted extras only', async () => {
     const storageSpy = jest.spyOn(storage, 'generateDownloadUrl').mockResolvedValue({
       url: SIGNED_URL,
       expiresAt: new Date('2099-07-19T12:05:00.000Z'),
@@ -356,14 +346,6 @@ describe('sensitive-read audit unification (C-2)', () => {
       actor,
       AUDIT_META,
     );
-    await app
-      .get(AttendancesService)
-      .list(
-        fixtures.activityId,
-        { page: 1, pageSize: 20, statusCode: ATTENDANCE_FILTER_VALUE },
-        actor,
-        AUDIT_META,
-      );
     const registrationGenerator = await registrations.exportCsv(
       fixtures.activityId,
       { format: 'csv', scope: REGISTRATION_SCOPE_FILTER_VALUE },
@@ -391,7 +373,7 @@ describe('sensitive-read audit unification (C-2)', () => {
       where: { actorUserId: actor.id },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
-    expect(rows).toHaveLength(11);
+    expect(rows).toHaveLength(10);
     expect([...new Set(rows.map((row) => row.event))].sort()).toEqual(
       [...EXPECTED_EVENT_FAMILIES].sort(),
     );
@@ -446,11 +428,6 @@ describe('sensitive-read audit unification (C-2)', () => {
       // 评审 findings F4(§12):判据从单一 certTypeCode 改成两级。
       // 审计仍只记「按哪些字段筛的」,不记筛选值 —— 字段名换了,这条不变量没换。
       filterFields: ['criterionType', 'criterionCode'],
-    });
-    expect(contextFor('attendance-sheet.read.other', 'list').extra).toEqual({
-      operation: 'list',
-      count: 1,
-      filterFields: ['statusCode'],
     });
     expect(contextFor('registration.review', 'export').extra).toEqual({
       operation: 'export',
@@ -519,7 +496,6 @@ describe('sensitive-read audit unification (C-2)', () => {
     'member-insurance',
     'certificate-list',
     'certificate-qualification',
-    'attendance-list',
     'recruitment-list',
   ])('%s rejects the read result when audit persistence rejects', async (name) => {
     const auditError = new Error(`audit unavailable: ${name}`);
@@ -528,6 +504,28 @@ describe('sensitive-read audit unification (C-2)', () => {
     await expect(invokeOrdinaryRead(name)).rejects.toBe(auditError);
     expect(auditSpy).toHaveBeenCalledTimes(1);
   });
+
+  it.each([false, true])(
+    'retired attendance-list returns no history even when audit is unavailable=%s',
+    async (auditUnavailable) => {
+      const auditSpy = jest.spyOn(auditLogs, 'log');
+      if (auditUnavailable) auditSpy.mockRejectedValue(new Error('audit unavailable'));
+      const querySpy = jest.spyOn(prisma.attendanceSheet, 'findMany');
+      const countSpy = jest.spyOn(prisma.attendanceSheet, 'count');
+
+      const response = await request(httpServer(app))
+        .get(`/api/admin/v1/activities/${fixtures.activityId}/attendance-sheets`)
+        .set('Authorization', actorAuth)
+        .query({ page: 1, pageSize: 20, statusCode: ATTENDANCE_FILTER_VALUE });
+
+      expect(response.status).toBe(404);
+      expect(response.body.data).toBeNull();
+      expect(querySpy).not.toHaveBeenCalled();
+      expect(countSpy).not.toHaveBeenCalled();
+      expect(auditSpy).not.toHaveBeenCalled();
+      expect(await prisma.auditLog.count({ where: { actorUserId: actor.id } })).toBe(0);
+    },
+  );
 
   it('CSV audit rejection exposes neither generator nor first byte for both exports', async () => {
     const auditSpy = jest.spyOn(auditLogs, 'log');

@@ -1,17 +1,24 @@
 import type { INestApplication } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma, Role, UserStatus } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import type { JwtConfig } from '../../src/config/jwt.config';
 import { PrismaService } from '../../src/database/prisma.service';
 import { ActivityRegistrationCreateService } from '../../src/modules/activity-registrations/activity-registration-create.service';
 import { ActivityRegistrationsService } from '../../src/modules/activity-registrations/activity-registrations.service';
 import { AppMyRegistrationsService } from '../../src/modules/activity-registrations/app-my-registrations.service';
+import { RegistrationCommandService } from '../../src/modules/activity-registrations/registration-command.service';
 import { ActivitiesService } from '../../src/modules/activities/activities.service';
 import { ActivityPositionsService } from '../../src/modules/activities/activity-positions.service';
 import { AppActivitiesService } from '../../src/modules/activities/app-activities.service';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
-import { AppActivityCheckInsService } from '../../src/modules/attendances/app-activity-check-ins.service';
-import { AttendancesService } from '../../src/modules/attendances/attendances.service';
+import { AttendancePunchCommandService } from '../../src/modules/attendances/attendance-punch-command.service';
+import {
+  digestAttendanceQrToken,
+  signAttendanceQrToken,
+} from '../../src/modules/attendances/attendance-qr-token';
 import { MetaService } from '../../src/modules/meta/meta.service';
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
@@ -198,8 +205,10 @@ describe('activity registration waitlist', () => {
   let organizationId: string;
   let admin: CurrentUserPayload;
   let sequence = 0;
+  const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
 
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     appB = await createTestApp();
     await resetDb(app);
@@ -254,7 +263,12 @@ describe('activity registration waitlist', () => {
   });
 
   afterAll(async () => {
-    await settleAllWithTimeout([app.close(), appB.close()], 'waitlist app shutdown');
+    try {
+      await settleAllWithTimeout([app.close(), appB.close()], 'waitlist app shutdown');
+    } finally {
+      if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
+    }
   });
 
   async function createMember(label: string): Promise<string> {
@@ -311,6 +325,115 @@ describe('activity registration waitlist', () => {
         select: { id: true },
       })
     ).id;
+  }
+
+  async function nativePunchFixture(waitlisted = false) {
+    const activityId = await createActivity(1, 'native-punch');
+    const candidate = await createMemberUser('native-punch');
+    const now = Date.now();
+    const startAt = new Date(now - 60 * 60_000);
+    const endAt = new Date(now + 60 * 60_000);
+    await prisma.activity.update({
+      where: { id: activityId },
+      data: { startAt, endAt, registrationDeadline: endAt, allocationModeCode: 'first_come' },
+    });
+    const session = await prisma.activitySession.create({
+      data: {
+        activityId,
+        code: `native-${sequence}`,
+        name: 'Native waitlist race',
+        startAt,
+        endAt,
+        locationText: 'Native waitlist race',
+        capacity: 1,
+        checkInOpenAt: startAt,
+        checkInCloseAt: endAt,
+        checkOutOpenAt: startAt,
+        checkOutCloseAt: endAt,
+        locationRequired: false,
+        locationPolicySourceCode: 'session',
+        statusCode: 'scheduled',
+      },
+    });
+    await prisma.activityCapacityBucket.createMany({
+      data: [
+        { activityId, scopeTypeCode: 'activity_person', scopeId: activityId, capacity: 1 },
+        {
+          activityId,
+          scopeTypeCode: 'session_participation',
+          scopeId: session.id,
+          capacity: 1,
+        },
+      ],
+    });
+    await prisma.activityEvidenceState.create({ data: { activityId } });
+    const register = (currentUser: CurrentUserPayload) =>
+      app.get(RegistrationCommandService).submit(
+        activityId,
+        {
+          operationKey: `waitlist-native-${randomUUID()}`,
+          formVersion: null,
+          answers: [],
+          preferences: [{ sessionId: session.id, positionIds: [] }],
+        },
+        currentUser,
+        AUDIT_META,
+      );
+    if (waitlisted) {
+      const occupant = await createMemberUser('native-occupant');
+      await register(occupant.user);
+    }
+    const registered = await register(candidate.user);
+    const identity = await prisma.activityParticipationIdentity.findFirstOrThrow({
+      where: { registrationId: registered.registrationId, sessionId: session.id },
+    });
+    expect(identity.currentStatusCode).toBe(waitlisted ? 'waitlisted' : 'pass');
+    expect(identity.populationIncluded).toBe(!waitlisted);
+
+    // Signed QR is ambient to the race; registration and punch facts use real commands.
+    const credential = {
+      credentialId: randomUUID(),
+      activityId,
+      sessionId: session.id,
+      actionCode: 'check_in' as const,
+      credentialVersion: 1,
+      validFrom: new Date(now - 60_000),
+      validUntil: endAt,
+    };
+    const qrToken = signAttendanceQrToken(
+      credential,
+      app.get(ConfigService).getOrThrow<JwtConfig>('jwt').secret,
+    );
+    await prisma.attendanceQrCredential.create({
+      data: {
+        id: credential.credentialId,
+        activityId,
+        sessionId: session.id,
+        actionCode: credential.actionCode,
+        credentialVersion: credential.credentialVersion,
+        statusCode: 'active',
+        tokenDigest: digestAttendanceQrToken(qrToken),
+        signingKeyVersion: 0,
+        validFrom: credential.validFrom,
+        validUntil: credential.validUntil,
+        issuedByUserId: admin.id,
+        issuedAt: new Date(now),
+      },
+    });
+    return {
+      activityId,
+      sessionId: session.id,
+      registrationId: registered.registrationId,
+      memberId: candidate.memberId,
+      punchInput: {
+        activityId,
+        sessionId: session.id,
+        actionCode: 'check_in' as const,
+        dto: { qrToken, eventKey: `waitlist-native-punch-${randomUUID()}` },
+        currentUser: candidate.user,
+        auditMeta: AUDIT_META,
+      },
+    };
   }
 
   async function seedRegistration(
@@ -1522,20 +1645,10 @@ describe('activity registration waitlist', () => {
     }
   });
 
-  it('F2 PG链：root Registration → submit direct waiter(持 Activity SHARE) → cancel direct waiter(submit Activity)', async () => {
-    const activityId = await createActivity(5, 'attendance-cancel-race');
-    const memberId = await createMember('attendance-cancel-member');
-    const registration = await seedRegistration(activityId, memberId, 'pass');
-    const serverNow = Date.now();
-    const checkInAt = new Date(serverNow - 2 * 3_600_000);
-    const checkOutAt = new Date(serverNow - 3_600_000);
-    await prisma.activity.update({
-      where: { id: activityId },
-      data: {
-        startAt: new Date(serverNow - 3 * 3_600_000),
-        endAt: new Date(serverNow + 3_600_000),
-      },
-    });
+  it('F2 PG链：root Session → punch direct waiter(持 Activity) → cancel direct waiter(punch Activity)', async () => {
+    const fixture = await nativePunchFixture();
+    const { activityId, memberId } = fixture;
+    const registration = { id: fixture.registrationId };
     const [poolA, poolB] = await Promise.all([backendIdentity(prisma), backendIdentity(prismaB)]);
     expect(poolA.databaseName).toBe(poolB.databaseName);
     expect(poolA.pid).not.toBe(poolB.pid);
@@ -1547,8 +1660,8 @@ describe('activity registration waitlist', () => {
       async (tx) => {
         const rows = await tx.$queryRaw<Array<{ pid: number; databaseName: string }>>(Prisma.sql`
           SELECT pg_backend_pid() AS pid, current_database() AS "databaseName"
-          FROM "ActivityRegistration"
-          WHERE "id" = ${registration.id}
+          FROM "ActivitySession"
+          WHERE "id" = ${fixture.sessionId}
           FOR UPDATE
         `);
         root = rows[0];
@@ -1558,34 +1671,18 @@ describe('activity registration waitlist', () => {
       { timeout: BLOCKER_TIMEOUT_MS },
     );
 
-    let submitPromise: ReturnType<AttendancesService['submit']> | undefined;
+    let submitPromise: ReturnType<AttendancePunchCommandService['selfPunch']> | undefined;
     let cancelPromise: ReturnType<ActivityRegistrationsService['cancelAdmin']> | undefined;
     let primaryFailure: unknown;
     let cleanupFailure: unknown;
     try {
       await withTimeout(rootReached.promise, 'attendance root blocker', BLOCKER_TIMEOUT_MS);
-      submitPromise = appB.get(AttendancesService).submit(
-        activityId,
-        {
-          records: [
-            {
-              memberId,
-              roleCode: 'member',
-              checkInAt: checkInAt.toISOString(),
-              checkOutAt: checkOutAt.toISOString(),
-              attendanceStatusCode: 'present',
-              registrationId: registration.id,
-            },
-          ],
-        },
-        admin,
-        AUDIT_META,
-      );
+      submitPromise = appB.get(AttendancePunchCommandService).selfPunch(fixture.punchInput);
       const submitWaiter = await waitForDirectWaiter(
         prisma,
         root.pid,
         submitPromise,
-        '%FROM "ActivityRegistration"%FOR NO KEY UPDATE%',
+        '%FROM "ActivitySession"%FOR UPDATE%',
       );
       expect(submitWaiter.databaseName).toBe(root.databaseName);
       expect(submitWaiter.blockingPids).toContain(root.pid);
@@ -1607,9 +1704,8 @@ describe('activity registration waitlist', () => {
         OPERATION_TIMEOUT_MS,
       );
 
-      // 本测试杀死「submit 普通读到 pass 后暂停，cancel 见 record=0 先提交，submit 再插 record」错误；
-      // 实际 PG 链跨对象：submit 持 Activity SHARE 并等 Registration root，cancel 的 Activity
-      // FOR UPDATE 直接等 submit；释放后 submit 先提交 record，cancel 锁后由 21033 拒绝。
+      // 真 PG 跨对象等待链：打卡已持 Activity，等 Session；取消直接等打卡的 Activity。
+      // 放开 Session 后打卡先提交，取消必须在锁后看到新证据并以 21033 拒绝。
       expect(results[0].status).toBe('fulfilled');
       if (results[0].status !== 'fulfilled') throw results[0].reason;
       expect(results[1]).toEqual(
@@ -1626,8 +1722,8 @@ describe('activity registration waitlist', () => {
         }),
       ).toEqual({ statusCode: 'pass' });
       expect(
-        await prisma.attendanceRecord.count({
-          where: { registrationId: registration.id, deletedAt: null },
+        await prisma.attendancePunchEvent.count({
+          where: { activityId, participationIdentity: { registrationId: registration.id } },
         }),
       ).toBe(1);
       expect(
@@ -1637,7 +1733,11 @@ describe('activity registration waitlist', () => {
       ).toBe(0);
       expect(
         await prisma.auditLog.count({
-          where: { resourceId: results[0].value.id, event: 'attendance-sheet.submit' },
+          where: {
+            resourceId: activityId,
+            event: 'activity.publish',
+            context: { path: ['extra', 'eventId'], equals: results[0].value.eventId },
+          },
         }),
       ).toBe(1);
       expect(
@@ -1697,13 +1797,14 @@ describe('activity registration waitlist', () => {
       ]),
     );
 
-    const checkInActivityId = await createActivity(1, 'waitlisted-check-in');
-    const checkInUser = await createMemberUser('check-in');
-    await seedRegistration(checkInActivityId, checkInUser.memberId, 'waitlisted');
+    const fixture = await nativePunchFixture(true);
     await expect(
-      app
-        .get(AppActivityCheckInsService)
-        .checkIn(checkInActivityId, { longitude: 114.1, latitude: 22.5 }, checkInUser.user),
+      app.get(AttendancePunchCommandService).selfPunch(fixture.punchInput),
     ).rejects.toMatchObject({ biz: BizCode.ATTENDANCE_REGISTRATION_INVALID });
+    expect(
+      await prisma.attendancePunchEvent.count({
+        where: { activityId: fixture.activityId, memberId: fixture.memberId },
+      }),
+    ).toBe(0);
   });
 });
