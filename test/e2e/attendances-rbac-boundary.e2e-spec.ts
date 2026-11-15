@@ -1,411 +1,354 @@
 import type { INestApplication } from '@nestjs/common';
-import { Prisma, Role } from '@prisma/client';
+import { Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
+import { seedParticipationReadState } from '../fixtures/contribution-ledger.fixture';
+import { RETIRED_ATTENDANCE_ROUTES } from '../fixtures/retired-attendance-contract';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
-import { memberIdentityData } from '../helpers/member-identity.fixture';
 
-const attendanceTestYear = new Date().getUTCFullYear() - 1;
-
-// Slow-4 T3(2026-06-11):attendances 模块(2 个 Admin class,10 端点)RBAC 权限边界 spec。
-// 沿冻结评审稿 slow4-rbac-business-face-review.md §7 零行为漂移验收
-// (① SA 短路 / ② ADMIN+biz-admin 照常 / ③ ADMIN 无 biz-admin 30100 / ④ USER 30100)。
-// list / detail / review-detail 共用 attendance.read.sheet(D4=A 判例)。
-// v0.61.0 PR-11 contract:biz-admin 仅保留 attendance.read.sheet；提交/编辑/删除/一审/终审
-// 全部翻 30100，动作能力由 owner/collaborator/显式 reviewer 承载。
-// 业务行为细节(状态机 / 时间重叠 / 贡献值)由 attendances*.e2e-spec.ts 系列锁定。
-
-describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
+// 保留原四类主体矩阵：SA、ADMIN+biz-admin、无绑定 ADMIN、USER。
+// 旧建单/编辑/删除验证退役后的全角色拒绝及事实不变；读取和两级审核迁到原生接口。
+// 原 reject 的相关能力是新版 return，不把旧 Sheet ID/动作码当成新版别名。
+describe('退役后结算与账本 RBAC 边界', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let saAuth: string;
+  let finalSaAuth: string;
   let admBizAuth: string;
   let admDefaultAuth: string;
   let userAuth: string;
-  let submitterUserId: string;
-  let admBizUserId: string;
-
-  let activityId: string;
+  let saUserId: string;
+  let creatorUserId: string;
+  let organizationId: string;
   let memberId: string;
-  let attendanceRoleCode: string;
-  let attendanceStatusCode: string;
-  let recordHourSeq = 0;
+  let sequence = 0;
+  const previousWorkflowGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+  const startAt = new Date('2020-03-01T01:00:00.000Z');
+  const endAt = new Date('2020-03-01T05:00:00.000Z');
+  const reviewBase = '/api/admin/v1/attendance-settlements';
 
-  // prisma 直造指定状态的 Sheet + 1 条 record(contributionPoints 已填,满足 R31;
-  // 各 sheet 时间窗错开避免 R16 重叠校验干扰 edit/submit 路径)。
-  // PR9:submitterOverride —— 默认 submitter 是 SA;SA 自己终审的用例(① 短路)因自审约束
-  // (22074,SA 亦拒)须换他人提交的单,短路语义本身不变。
-  const createSheetAt = async (statusCode: string, submitterOverride?: string): Promise<string> => {
-    recordHourSeq += 2;
-    const start = new Date(Date.UTC(2026, 8, 1, recordHourSeq % 20, 0, 0));
-    const end = new Date(Date.UTC(2026, 8, 1, (recordHourSeq % 20) + 1, 0, 0));
-    const sheet = await prisma.attendanceSheet.create({
+  async function createActivity() {
+    return prisma.activity.create({
       data: {
-        activityId,
-        submitterUserId: submitterOverride ?? submitterUserId,
-        statusCode,
-        records: {
-          create: [
-            {
-              memberId,
-              roleCode: attendanceRoleCode,
-              checkInAt: start,
-              checkOutAt: end,
-              serviceHours: new Prisma.Decimal('1.00'),
-              attendanceStatusCode,
-              contributionPoints: new Prisma.Decimal('1.50'),
-            },
-          ],
-        },
+        title: `ATRB native ${++sequence}`,
+        activityTypeCode: 'atrb-type',
+        organizationId,
+        startAt,
+        endAt,
+        location: '边界演示',
+        statusCode: 'published',
       },
-      select: { id: true },
     });
-    return sheet.id;
-  };
+  }
+
+  // 已提交的空人口输入，与原生审核 HTTP / scoped-authz 套件一致；
+  // 一审、终审与退回都调用真实 HTTP，不伪造审核结果或修改不可变提交人。
+  async function createSubmittedSettlement(createdByUserId = creatorUserId) {
+    const activity = await createActivity();
+    const seal = await prisma.evidenceSeal.create({
+      data: {
+        activityId: activity.id,
+        sealRevision: 1,
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        allWindowsClosedAt: endAt,
+        openSegmentCount: 0,
+        manualReviewPendingCount: 0,
+        populationCountDistinct: 0,
+        populationCountBySession: {},
+        contentHash: `atrb-seal-${activity.id}`,
+        statusCode: 'active',
+        sealedByUserId: createdByUserId,
+        sealedAt: endAt,
+      },
+    });
+    const run = await prisma.attendanceSettlementRun.create({
+      data: {
+        activityId: activity.id,
+        statusCode: 'pending_first_review',
+        currentSubmittedVersion: 1,
+      },
+    });
+    const version = await prisma.attendanceSettlementVersion.create({
+      data: {
+        settlementRunId: run.id,
+        version: 1,
+        evidenceSealId: seal.id,
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        contentHash: `atrb-version-${activity.id}`,
+        personCount: 0,
+        sessionParticipationCount: 0,
+        serviceSegmentCount: 0,
+        createdByUserId,
+        submittedAt: endAt,
+        statusCode: 'submitted',
+        operationKey: `atrb-submit-${activity.id}`,
+        requestHash: `atrb-submit-hash-${activity.id}`,
+      },
+    });
+    return {
+      activityId: activity.id,
+      versionId: version.id,
+      expectation: {
+        evidenceSealId: seal.id,
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        contentHash: version.contentHash,
+      },
+    };
+  }
+
+  async function reviewState(versionId: string) {
+    const version = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+      where: { id: versionId },
+    });
+    return {
+      version,
+      run: await prisma.attendanceSettlementRun.findUniqueOrThrow({
+        where: { id: version.settlementRunId },
+      }),
+      actions: await prisma.settlementReviewAction.findMany({
+        where: { settlementVersionId: versionId },
+        orderBy: { id: 'asc' },
+      }),
+      batches: await prisma.ledgerPostingBatch.findMany({
+        where: { settlementVersionId: versionId },
+        orderBy: { id: 'asc' },
+      }),
+      auditCount: await prisma.auditLog.count(),
+      intentCount: await prisma.notificationOutboxIntent.count(),
+    };
+  }
 
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
-
     const sa = await createTestUser(app, { username: 'atrb-su', role: Role.SUPER_ADMIN });
-    const admBiz = await createTestUser(app, { username: 'atrb-adm-biz', role: Role.ADMIN });
-    await createTestUser(app, { username: 'atrb-adm-default', role: Role.ADMIN });
+    await createTestUser(app, { username: 'atrb-final-su', role: Role.SUPER_ADMIN });
+    const biz = await createTestUser(app, { username: 'atrb-biz', role: Role.ADMIN });
+    await createTestUser(app, { username: 'atrb-default', role: Role.ADMIN });
     await createTestUser(app, { username: 'atrb-user', role: Role.USER });
-    saAuth = (await loginAs(app, 'atrb-su')).authHeader;
-    admBizAuth = (await loginAs(app, 'atrb-adm-biz')).authHeader;
-    admDefaultAuth = (await loginAs(app, 'atrb-adm-default')).authHeader;
-    userAuth = (await loginAs(app, 'atrb-user')).authHeader;
-    submitterUserId = sa.id;
-    admBizUserId = admBiz.id;
-
-    const bizSeed = await seedBizAdminPermissionsAndRole(app);
-    await grantBizAdminToUser(app, admBiz.id, bizSeed.bizAdminRoleId, {
+    const creator = await createTestUser(app, { username: 'atrb-creator', role: Role.USER });
+    saUserId = sa.id;
+    creatorUserId = creator.id;
+    const seed = await seedBizAdminPermissionsAndRole(app);
+    await grantBizAdminToUser(app, biz.id, seed.bizAdminRoleId, {
       includeLegacyActivityActions: false,
     });
-
-    // org / 活动 / member / 考勤字典(submit 路径的字典校验依赖)
-    const nodeDict = await prisma.dictType.create({
-      data: { code: 'node_type', label: '节点类型' },
-      select: { id: true },
+    saAuth = (await loginAs(app, sa.username)).authHeader;
+    finalSaAuth = (await loginAs(app, 'atrb-final-su')).authHeader;
+    admBizAuth = (await loginAs(app, biz.username)).authHeader;
+    admDefaultAuth = (await loginAs(app, 'atrb-default')).authHeader;
+    userAuth = (await loginAs(app, 'atrb-user')).authHeader;
+    const organization = await prisma.organization.create({
+      data: { name: 'ATRB root', nodeTypeCode: 'atrb-root' },
     });
-    await prisma.dictItem.create({
-      data: { typeId: nodeDict.id, code: 'atrb-root', label: '根' },
+    organizationId = organization.id;
+    const member = await prisma.member.create({
+      data: { memberNo: 'atrb-member', ...memberIdentityData('ATRB 队员') },
     });
-    const rootOrg = await prisma.organization.create({
-      data: { name: 'ATRB Root', nodeTypeCode: 'atrb-root', parentId: null },
-      select: { id: true },
-    });
-    const act = await prisma.activity.create({
-      data: {
-        title: 'ATRB Activity',
-        activityTypeCode: 'atrb-type',
-        organizationId: rootOrg.id,
-        startAt: new Date(Date.UTC(attendanceTestYear, 8, 1)),
-        endAt: new Date(Date.UTC(attendanceTestYear, 8, 3)),
-        location: '边界演示',
-        statusCode: 'published',
-        isPublicRegistration: true,
-      },
-      select: { id: true },
-    });
-    activityId = act.id;
-    const m = await prisma.member.create({
-      data: { memberNo: 'atrb-m-1', ...memberIdentityData('ATRB M1') },
-      select: { id: true },
-    });
-    memberId = m.id;
-
-    const roleDict = await prisma.dictType.create({
-      data: { code: 'attendance_role', label: '考勤角色' },
-      select: { id: true },
-    });
-    const role = await prisma.dictItem.create({
-      data: { typeId: roleDict.id, code: 'atrb-role', label: '队员' },
-      select: { code: true },
-    });
-    attendanceRoleCode = role.code;
-    const statusDict = await prisma.dictType.create({
-      data: { code: 'attendance_status', label: '考勤状态' },
-      select: { id: true },
-    });
-    const st = await prisma.dictItem.create({
-      data: { typeId: statusDict.id, code: 'atrb-present', label: '出勤' },
-      select: { code: true },
-    });
-    attendanceStatusCode = st.code;
+    memberId = member.id;
   });
 
   afterAll(async () => {
-    await app.close();
+    try {
+      await app?.close();
+    } finally {
+      if (previousWorkflowGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousWorkflowGate;
+    }
   });
 
-  const sheetsBase = (): string => `/api/admin/v1/activities/${activityId}/attendance-sheets`;
-  const resBase = (): string => `/api/admin/v1/attendance-sheets`;
-  const submitPayload = (): Record<string, unknown> => {
-    recordHourSeq += 2;
-    const h = recordHourSeq % 20;
-    return {
-      records: [
-        {
-          memberId,
-          roleCode: attendanceRoleCode,
-          checkInAt: new Date(Date.UTC(attendanceTestYear, 8, 2, h, 0, 0)).toISOString(),
-          checkOutAt: new Date(Date.UTC(attendanceTestYear, 8, 2, h + 1, 0, 0)).toISOString(),
-          attendanceStatusCode,
-        },
-      ],
-    };
-  };
-
-  describe('Collection:POST submit / GET list', () => {
-    it('submit(attendance.create.sheet):②③④ 30100(合法 body)/ ① 201', async () => {
-      expectBizError(
-        await request(httpServer(app))
-          .post(sheetsBase())
-          .set('Authorization', admDefaultAuth)
-          .send(submitPayload()),
-        BizCode.RBAC_FORBIDDEN,
-      );
-      expectBizError(
-        await request(httpServer(app))
-          .post(sheetsBase())
-          .set('Authorization', userAuth)
-          .send(submitPayload()),
-        BizCode.RBAC_FORBIDDEN,
-      );
-      expectBizError(
-        await request(httpServer(app))
-          .post(sheetsBase())
-          .set('Authorization', admBizAuth)
-          .send(submitPayload()),
-        BizCode.RBAC_FORBIDDEN,
-      );
-      expect(
-        (
-          await request(httpServer(app))
-            .post(sheetsBase())
-            .set('Authorization', saAuth)
-            .send(submitPayload())
-        ).status,
-      ).toBe(201);
+  it('旧建单/编辑/删除及审核不能由任一角色复活，也不改变已有记录', async () => {
+    const activity = await createActivity();
+    const sheet = await prisma.attendanceSheet.create({
+      data: { activityId: activity.id, submitterUserId: creatorUserId, statusCode: 'pending' },
     });
-    it('list(attendance.read.sheet):①② 200 / ③④ 30100', async () => {
-      expect(
-        (await request(httpServer(app)).get(sheetsBase()).set('Authorization', saAuth)).status,
-      ).toBe(200);
-      expect(
-        (await request(httpServer(app)).get(sheetsBase()).set('Authorization', admBizAuth)).status,
-      ).toBe(200);
-      expectBizError(
-        await request(httpServer(app)).get(sheetsBase()).set('Authorization', admDefaultAuth),
-        BizCode.RBAC_FORBIDDEN,
-      );
-      expectBizError(
-        await request(httpServer(app)).get(sheetsBase()).set('Authorization', userAuth),
-        BizCode.RBAC_FORBIDDEN,
-      );
-    });
+    const auditCount = await prisma.auditLog.count();
+    const intentCount = await prisma.notificationOutboxIntent.count();
+    const sheetCount = await prisma.attendanceSheet.count();
+    const recordCount = await prisma.attendanceRecord.count();
+    const routes = RETIRED_ATTENDANCE_ROUTES.filter(
+      ([method, path]) => method !== 'get' && path.startsWith('/api/admin/'),
+    );
+    for (const auth of [saAuth, admBizAuth, admDefaultAuth, userAuth]) {
+      for (const [method, path] of routes) {
+        await request(httpServer(app))
+          [method](path.replace('{activityId}', activity.id).replace('{id}', sheet.id))
+          .set('Authorization', auth)
+          .send({})
+          .expect(404);
+      }
+    }
+    await expect(
+      prisma.attendanceSheet.findUniqueOrThrow({ where: { id: sheet.id } }),
+    ).resolves.toEqual(sheet);
+    expect(await prisma.attendanceSheet.count()).toBe(sheetCount);
+    expect(await prisma.attendanceRecord.count()).toBe(recordCount);
+    expect(await prisma.auditLog.count()).toBe(auditCount);
+    expect(await prisma.notificationOutboxIntent.count()).toBe(intentCount);
   });
 
-  describe('Resource:detail / review-detail(attendance.read.sheet 共用)', () => {
-    it('①② 200 / ③④ 30100(detail 与 review-detail)', async () => {
-      const sheetId = await createSheetAt('pending');
-      for (const path of [`${resBase()}/${sheetId}`, `${resBase()}/${sheetId}/review-detail`]) {
-        expect((await request(httpServer(app)).get(path).set('Authorization', saAuth)).status).toBe(
-          200,
-        );
-        expect(
-          (await request(httpServer(app)).get(path).set('Authorization', admBizAuth)).status,
-        ).toBe(200);
+  it('结算列表与审核详情：SA/biz-admin 可读，裸 ADMIN/USER 不可读', async () => {
+    const fixture = await createSubmittedSettlement();
+    for (const path of [reviewBase, `${reviewBase}/${fixture.versionId}/review-detail`]) {
+      for (const auth of [saAuth, admBizAuth]) {
+        const response = await request(httpServer(app)).get(path).set('Authorization', auth);
+        expect(response.status).toBe(200);
+        if (path.includes('review-detail')) {
+          expect(response.body.data.version.id).toBe(fixture.versionId);
+        } else {
+          expect(response.body.data.total).toBe(1);
+          expect(response.body.data.items).toEqual([
+            expect.objectContaining({ settlementVersionId: fixture.versionId }),
+          ]);
+        }
+      }
+      for (const auth of [admDefaultAuth, userAuth]) {
         expectBizError(
-          await request(httpServer(app)).get(path).set('Authorization', admDefaultAuth),
-          BizCode.RBAC_FORBIDDEN,
-        );
-        expectBizError(
-          await request(httpServer(app)).get(path).set('Authorization', userAuth),
+          await request(httpServer(app)).get(path).set('Authorization', auth),
           BizCode.RBAC_FORBIDDEN,
         );
       }
-    });
+    }
   });
 
-  describe('Resource:edit / delete(attendance.{update,delete}.sheet)', () => {
-    it('edit:②③④ 30100(pending Sheet,{} 合法不替换 records)', async () => {
-      const sheetId = await createSheetAt('pending');
-      expectBizError(
-        await request(httpServer(app))
-          .patch(`${resBase()}/${sheetId}`)
-          .set('Authorization', admDefaultAuth)
-          .send({}),
-        BizCode.RBAC_FORBIDDEN,
-      );
-      expectBizError(
-        await request(httpServer(app))
-          .patch(`${resBase()}/${sheetId}`)
-          .set('Authorization', userAuth)
-          .send({}),
-        BizCode.RBAC_FORBIDDEN,
-      );
-      expectBizError(
-        await request(httpServer(app))
-          .patch(`${resBase()}/${sheetId}`)
-          .set('Authorization', admBizAuth)
-          .send({}),
-        BizCode.RBAC_FORBIDDEN,
-      );
-    });
-    it('delete:②③④ 30100 / ① 200(各独立 pending Sheet)', async () => {
-      const s1 = await createSheetAt('pending');
-      expectBizError(
-        await request(httpServer(app))
-          .delete(`${resBase()}/${s1}`)
-          .set('Authorization', admDefaultAuth),
-        BizCode.RBAC_FORBIDDEN,
-      );
-      expectBizError(
-        await request(httpServer(app)).delete(`${resBase()}/${s1}`).set('Authorization', userAuth),
-        BizCode.RBAC_FORBIDDEN,
-      );
-      expectBizError(
-        await request(httpServer(app))
-          .delete(`${resBase()}/${s1}`)
-          .set('Authorization', admBizAuth),
-        BizCode.RBAC_FORBIDDEN,
-      );
-      const s2 = await createSheetAt('pending');
-      expect(
-        (await request(httpServer(app)).delete(`${resBase()}/${s2}`).set('Authorization', saAuth))
-          .status,
-      ).toBe(200);
-    });
+  it('活动/队员账本：保留四主体读权限，未 committed 输入不可见', async () => {
+    const activity = await createActivity();
+    const pending = await createActivity();
+    for (const [activityId, batchStatus] of [
+      [activity.id, 'committed'],
+      [pending.id, 'preparing'],
+    ] as const) {
+      await seedParticipationReadState(prisma, {
+        activityId,
+        actorUserId: creatorUserId,
+        batchStatus,
+        participants: [
+          {
+            memberId,
+            resultCode: 'present',
+            serviceHours: '1',
+            creditedPoints: '1',
+          },
+        ],
+      });
+    }
+    for (const path of [
+      `/api/admin/v1/activities/${activity.id}/participation-ledger`,
+      `/api/admin/v1/members/${memberId}/participation-ledger`,
+    ]) {
+      for (const auth of [saAuth, admBizAuth]) {
+        const response = await request(httpServer(app)).get(path).set('Authorization', auth);
+        expect(response.status).toBe(200);
+        expect(response.body.data.total).toBe(2);
+        expect(response.body.data.items).toEqual([
+          expect.objectContaining({ activityId: activity.id, memberId }),
+          expect.objectContaining({ activityId: activity.id, memberId }),
+        ]);
+      }
+      for (const auth of [admDefaultAuth, userAuth]) {
+        expectBizError(
+          await request(httpServer(app)).get(path).set('Authorization', auth),
+          BizCode.RBAC_FORBIDDEN,
+        );
+      }
+    }
   });
 
-  describe('Resource:approve / reject / final-approve / final-reject(独立码)', () => {
-    it('approve:②③④ 30100(pending,records contributionPoints 已填)', async () => {
-      const sheetId = await createSheetAt('pending');
+  it.each([
+    ['first', 'approve', 'pending_final_review'],
+    ['first', 'return', 'drafting'],
+    ['final', 'approve', 'posting'],
+    ['final', 'return', 'drafting'],
+  ] as const)('%s-%s：三类普通主体零写，独立 SA 通过', async (stage, action, statusCode) => {
+    const fixture = await createSubmittedSettlement();
+    if (stage === 'final') {
+      await request(httpServer(app))
+        .post(`${reviewBase}/${fixture.versionId}/first-approve`)
+        .set('Authorization', saAuth)
+        .send({ operationKey: `first-${fixture.versionId}`, ...fixture.expectation })
+        .expect(200);
+    }
+    const before = await reviewState(fixture.versionId);
+    const payload = {
+      operationKey: `${stage}-${action}-${fixture.versionId}`,
+      ...fixture.expectation,
+      ...(action === 'return' ? { note: '补充现场证据' } : {}),
+    };
+    const path = `${reviewBase}/${fixture.versionId}/${stage}-${action}`;
+    for (const auth of [admBizAuth, admDefaultAuth, userAuth]) {
       expectBizError(
-        await request(httpServer(app))
-          .patch(`${resBase()}/${sheetId}/approve`)
-          .set('Authorization', admDefaultAuth)
-          .send({}),
+        await request(httpServer(app)).post(path).set('Authorization', auth).send(payload),
         BizCode.RBAC_FORBIDDEN,
       );
-      expectBizError(
-        await request(httpServer(app))
-          .patch(`${resBase()}/${sheetId}/approve`)
-          .set('Authorization', userAuth)
-          .send({}),
-        BizCode.RBAC_FORBIDDEN,
-      );
-      expectBizError(
-        await request(httpServer(app))
-          .patch(`${resBase()}/${sheetId}/approve`)
-          .set('Authorization', admBizAuth)
-          .send({}),
-        BizCode.RBAC_FORBIDDEN,
-      );
+      expect(await reviewState(fixture.versionId)).toEqual(before);
+    }
+    const response = await request(httpServer(app))
+      .post(path)
+      .set('Authorization', stage === 'first' ? saAuth : finalSaAuth)
+      .send(payload);
+    expect(response.status).toBe(200);
+    expect(response.body.data).toMatchObject({
+      stageCode: stage,
+      actionCode: action,
+      runStatusAfter: statusCode,
     });
-    it('reject:②③④ 30100(pending)', async () => {
-      const sheetId = await createSheetAt('pending');
-      expectBizError(
-        await request(httpServer(app))
-          .patch(`${resBase()}/${sheetId}/reject`)
-          .set('Authorization', admDefaultAuth)
-          .send({ reviewNote: 'X' }),
-        BizCode.RBAC_FORBIDDEN,
-      );
-      expectBizError(
-        await request(httpServer(app))
-          .patch(`${resBase()}/${sheetId}/reject`)
-          .set('Authorization', userAuth)
-          .send({ reviewNote: 'X' }),
-        BizCode.RBAC_FORBIDDEN,
-      );
-      expectBizError(
-        await request(httpServer(app))
-          .patch(`${resBase()}/${sheetId}/reject`)
-          .set('Authorization', admBizAuth)
-          .send({ reviewNote: '边界驳回' }),
-        BizCode.RBAC_FORBIDDEN,
-      );
-    });
-    it('final-approve:②③④ 30100(② 摘码翻面)/ ① 200(SA 兜底;pending_final_review)', async () => {
-      const sheetId = await createSheetAt('pending_final_review');
-      expectBizError(
-        await request(httpServer(app))
-          .patch(`${resBase()}/${sheetId}/final-approve`)
-          .set('Authorization', admDefaultAuth)
-          .send({}),
-        BizCode.RBAC_FORBIDDEN,
-      );
-      expectBizError(
-        await request(httpServer(app))
-          .patch(`${resBase()}/${sheetId}/final-approve`)
-          .set('Authorization', userAuth)
-          .send({}),
-        BizCode.RBAC_FORBIDDEN,
-      );
-      // 摘码微刀(2026-07-03):② ADMIN+biz-admin 原 200 翻 30100(终审两码已摘)
-      expectBizError(
-        await request(httpServer(app))
-          .patch(`${resBase()}/${sheetId}/final-approve`)
-          .set('Authorization', admBizAuth)
-          .send({}),
-        BizCode.RBAC_FORBIDDEN,
-      );
-      // PR9:s2 换 admBiz 提交(默认 submitter 是 SA 本人 —— 自审约束 22074 对 SA 亦拒;
-      // ① 短路语义仍被锁:SA 终审**他人**提交的单 200 = 摘码后唯一 GLOBAL 兜底)
-      const s2 = await createSheetAt('pending_final_review', admBizUserId);
-      expect(
-        (
-          await request(httpServer(app))
-            .patch(`${resBase()}/${s2}/final-approve`)
-            .set('Authorization', saAuth)
-            .send({})
-        ).status,
-      ).toBe(200);
-    });
-    it('final-reject:②③④ 30100(② 摘码翻面)/ ① 200(SA;finalReviewNote 必填)', async () => {
-      const sheetId = await createSheetAt('pending_final_review', admBizUserId);
-      expectBizError(
-        await request(httpServer(app))
-          .patch(`${resBase()}/${sheetId}/final-reject`)
-          .set('Authorization', admDefaultAuth)
-          .send({ finalReviewNote: 'X' }),
-        BizCode.RBAC_FORBIDDEN,
-      );
-      expectBizError(
-        await request(httpServer(app))
-          .patch(`${resBase()}/${sheetId}/final-reject`)
-          .set('Authorization', userAuth)
-          .send({ finalReviewNote: 'X' }),
-        BizCode.RBAC_FORBIDDEN,
-      );
-      // 摘码微刀(2026-07-03):② ADMIN+biz-admin 原 200 翻 30100
-      expectBizError(
-        await request(httpServer(app))
-          .patch(`${resBase()}/${sheetId}/final-reject`)
-          .set('Authorization', admBizAuth)
-          .send({ finalReviewNote: 'X' }),
-        BizCode.RBAC_FORBIDDEN,
-      );
-      // ① SA 兜底 200（单据由他人提交；自审 / 同人约束仍对 SA 生效）
-      expect(
-        (
-          await request(httpServer(app))
-            .patch(`${resBase()}/${sheetId}/final-reject`)
-            .set('Authorization', saAuth)
-            .send({ finalReviewNote: '边界终审驳回' })
-        ).status,
-      ).toBe(200);
-    });
+    const after = await reviewState(fixture.versionId);
+    expect(after.run.statusCode).toBe(statusCode);
+    expect(after.actions).toHaveLength(before.actions.length + 1);
+    expect(after.actions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ stageCode: stage, actionCode: action })]),
+    );
+    expect(after.version.statusCode).toBe(
+      action === 'return' ? 'returned' : stage === 'final' ? 'approved' : 'submitted',
+    );
+    expect(after.batches).toHaveLength(stage === 'final' && action === 'approve' ? 1 : 0);
+    expect(after.auditCount).toBeGreaterThan(before.auditCount);
+  });
+
+  it('SA 不能自审，拒绝不产生状态、审核、批次、审计或通知变化', async () => {
+    const fixture = await createSubmittedSettlement(saUserId);
+    const before = await reviewState(fixture.versionId);
+    expectBizError(
+      await request(httpServer(app))
+        .post(`${reviewBase}/${fixture.versionId}/first-approve`)
+        .set('Authorization', saAuth)
+        .send({ operationKey: `self-${fixture.versionId}`, ...fixture.expectation }),
+      BizCode.SETTLEMENT_SELF_FIRST_REVIEW_FORBIDDEN,
+    );
+    expect(await reviewState(fixture.versionId)).toEqual(before);
+  });
+
+  it('SA 不能兼任两级审核，已有一审事实整行保留', async () => {
+    const fixture = await createSubmittedSettlement();
+    await request(httpServer(app))
+      .post(`${reviewBase}/${fixture.versionId}/first-approve`)
+      .set('Authorization', saAuth)
+      .send({ operationKey: `first-${fixture.versionId}`, ...fixture.expectation })
+      .expect(200);
+    const before = await reviewState(fixture.versionId);
+    expectBizError(
+      await request(httpServer(app))
+        .post(`${reviewBase}/${fixture.versionId}/final-approve`)
+        .set('Authorization', saAuth)
+        .send({ operationKey: `same-${fixture.versionId}`, ...fixture.expectation }),
+      BizCode.SETTLEMENT_SAME_REVIEWER_FORBIDDEN,
+    );
+    expect(await reviewState(fixture.versionId)).toEqual(before);
   });
 });
