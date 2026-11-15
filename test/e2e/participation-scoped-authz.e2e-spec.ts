@@ -69,6 +69,7 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
 
   // HTTP 身份
   let teamLeaderAuth: string;
+  let teamLeaderUserId: string;
   let groupLeaderAuth: string;
   let supervisorAuth: string;
   let bizAdminAuth: string;
@@ -221,6 +222,7 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
       data: { memberId: teamLeaderMember.id },
     });
     teamLeaderAuth = (await loginAs(app, 'psa-team-leader')).authHeader;
+    teamLeaderUserId = teamLeaderUser.id;
 
     const groupLeaderUser = await createTestUser(app, {
       username: 'psa-group-leader',
@@ -570,7 +572,7 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
       );
     });
 
-    it('旧建单入口退役；新版一审本树 ALLOW、树外 DENY 且零写', async () => {
+    it('旧建单退役；职务不隐含新版一审，显式绑定后本树允许、树外零写', async () => {
       for (const activityId of [smrtActivity2Id, swrtActivity2Id]) {
         await request(httpServer(app))
           .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
@@ -579,6 +581,43 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
           .expect(404);
       }
 
+      const beforeGrant = await prisma.attendanceSettlementRun.findUniqueOrThrow({
+        where: { activityId: smrtSettlement.activityId },
+      });
+      expectBizError(
+        await request(httpServer(app))
+          .post(`/api/admin/v1/attendance-settlements/${smrtSettlement.versionId}/first-approve`)
+          .set('Authorization', teamLeaderAuth)
+          .send({ operationKey: 'psa-team-first', ...smrtSettlement.expectation }),
+        BizCode.RBAC_FORBIDDEN,
+      );
+      await expect(
+        prisma.attendanceSettlementRun.findUniqueOrThrow({
+          where: { activityId: smrtSettlement.activityId },
+        }),
+      ).resolves.toEqual(beforeGrant);
+      expect(
+        await prisma.settlementReviewAction.count({
+          where: { settlementVersionId: smrtSettlement.versionId },
+        }),
+      ).toBe(0);
+      // 原职务/旧动作 grant 不授予新结算一审。只在夹具中明确绑定既有角色，
+      // 继续使用同一登录凭据，验证授权下一请求生效且不扩到其他组织。
+      const reviewerRole = await prisma.rbacRole.findFirstOrThrow({
+        where: { code: 'attendance-first-reviewer', deletedAt: null },
+        select: { id: true },
+      });
+      await prisma.roleBinding.create({
+        data: {
+          principalType: PrincipalType.USER,
+          principalId: teamLeaderUserId,
+          roleId: reviewerRole.id,
+          scopeType: BindingScopeType.ORGANIZATION_TREE,
+          scopeOrgId: smrtId,
+          status: 'ACTIVE',
+          startedAt: PAST_START,
+        },
+      });
       const approveOwn = await request(httpServer(app))
         .post(`/api/admin/v1/attendance-settlements/${smrtSettlement.versionId}/first-approve`)
         .set('Authorization', teamLeaderAuth)
