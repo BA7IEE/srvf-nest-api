@@ -104,7 +104,7 @@ describe('D6 classified ledger through real preparation and commit', () => {
         try {
           const engine = Reflect.get(f.db, '_engine') as object;
           transactions = observeTestEngineTransactions(engine);
-          waits = new E4EngineRequestWaitDiagnostic(engine);
+          waits = new E4EngineRequestWaitDiagnostic(engine, undefined, 'D6_MODELS');
           waits.begin();
         } catch {
           observationUnknown = true;

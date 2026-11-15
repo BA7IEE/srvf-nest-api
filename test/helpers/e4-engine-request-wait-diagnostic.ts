@@ -1,4 +1,5 @@
 import { performance } from 'node:perf_hooks';
+import { types } from 'node:util';
 
 // Immutable protocol key; mutable ownership lives only on the actual engine.
 const boundaryOwner = Symbol('E4 native boundary owner');
@@ -9,6 +10,19 @@ export type E4NativeBoundaryComposition = {
 
 const categories = ['READ', 'WRITE', 'MODEL', 'BATCH', 'BARRIER', 'UNKNOWN'] as const;
 type Category = (typeof categories)[number];
+const modelFamilies = [
+  'ACTOR_READ',
+  'ACTIVITY_READ',
+  'ORGANIZATION_READ',
+  'PERMISSION_READ',
+  'RESPONSIBILITY_READ',
+  'RECEIPT_READ',
+  'RECEIPT_CREATE',
+  'AUDIT_CREATE',
+  'OTHER_MODEL',
+] as const;
+type ModelFamily = (typeof modelFamilies)[number];
+type WaitProfile = 'E4' | 'D6_MODELS';
 type Counter = {
   calls: number;
   pending: number;
@@ -18,6 +32,63 @@ type Counter = {
   firstStartedMs: number | null;
   lastSettledMs: number | null;
 };
+type ModelCounter = Counter & { family: ModelFamily; largestMs: number };
+
+function d6Metadata(query: unknown): { action: string; modelName?: string } | undefined {
+  // Only protocol data properties are eligible. Never evaluate accessors or opaque proxies.
+  if (!query || typeof query !== 'object' || types.isProxy(query)) return undefined;
+  const prototype: unknown = Object.getPrototypeOf(query);
+  if (prototype !== Object.prototype && prototype !== null) return undefined;
+  const action = Object.getOwnPropertyDescriptor(query, 'action');
+  const model = Object.getOwnPropertyDescriptor(query, 'modelName');
+  if (
+    !action ||
+    !('value' in action) ||
+    typeof action.value !== 'string' ||
+    (model &&
+      (!('value' in model) || (model.value !== undefined && typeof model.value !== 'string')))
+  )
+    return undefined;
+  return { action: action.value, modelName: model?.value as string | undefined };
+}
+
+function d6Family(action: string, modelName?: string): ModelFamily {
+  if (
+    [
+      'findUnique',
+      'findUniqueOrThrow',
+      'findFirst',
+      'findFirstOrThrow',
+      'findMany',
+      'aggregate',
+      'groupBy',
+    ].includes(action)
+  ) {
+    switch (modelName) {
+      case 'User':
+      case 'Member':
+        return 'ACTOR_READ';
+      case 'Activity':
+        return 'ACTIVITY_READ';
+      case 'Organization':
+        return 'ORGANIZATION_READ';
+      case 'RoleBinding':
+      case 'RolePermission':
+      case 'Permission':
+      case 'RbacRole':
+        return 'PERMISSION_READ';
+      case 'ActivityResponsibilityAssignment':
+        return 'RESPONSIBILITY_READ';
+      case 'ActivitySettlementTimeCommandReceipt':
+        return 'RECEIPT_READ';
+    }
+  }
+  if (action === 'createOne') {
+    if (modelName === 'ActivitySettlementTimeCommandReceipt') return 'RECEIPT_CREATE';
+    if (modelName === 'AuditLog') return 'AUDIT_CREATE';
+  }
+  return 'OTHER_MODEL';
+}
 const barrier =
   'SET CONSTRAINTS public.astr_parent_complete_guard, public.e4_revision_complete_guard IMMEDIATE';
 function member(value: unknown, key: string): unknown {
@@ -41,6 +112,7 @@ function classify(query: unknown, batch: boolean): Category {
 }
 /** Observes existing engine request promises only; no query, parameters or result is retained. */
 export class E4EngineRequestWaitDiagnostic {
+  private readonly modelCounters = new Map<ModelFamily, ModelCounter>();
   private readonly counters = new Map<Category, Counter>(
     categories.map((category) => [
       category,
@@ -79,8 +151,10 @@ export class E4EngineRequestWaitDiagnostic {
   constructor(
     private readonly engine: object,
     private readonly clock = () => performance.now(),
+    private readonly profile: WaitProfile = 'E4',
   ) {
     try {
+      if (!['E4', 'D6_MODELS'].includes(profile)) throw new Error('Unknown wait profile');
       const prepared = ['request', 'requestBatch'].map((method) => {
         const original: unknown = Reflect.get(engine, method);
         const descriptor = Object.getOwnPropertyDescriptor(engine, method);
@@ -219,8 +293,20 @@ export class E4EngineRequestWaitDiagnostic {
     const started = this.tick();
     this.account(started, previous);
     let category: Category = 'UNKNOWN';
+    let modelFamily: ModelFamily | undefined;
     try {
-      category = classify(args[0], batch);
+      if (this.profile === 'D6_MODELS' && !batch) {
+        const data = d6Metadata(args[0]);
+        if (data) {
+          if (data.action === 'queryRaw') category = 'READ';
+          else if (data.action === 'executeRaw')
+            category = isBarrier(args[0]) ? 'BARRIER' : 'WRITE';
+          else {
+            category = 'MODEL';
+            modelFamily = d6Family(data.action, data.modelName);
+          }
+        }
+      } else category = classify(args[0], batch);
     } catch {
       this.unknown = true;
     }
@@ -230,6 +316,24 @@ export class E4EngineRequestWaitDiagnostic {
     counter.pending++;
     counter.firstStartedMs ??= started - this.started;
     this.pending++;
+    let modelCounter: ModelCounter | undefined;
+    if (modelFamily) {
+      modelCounter = this.modelCounters.get(modelFamily) ?? {
+        family: modelFamily,
+        calls: 0,
+        pending: 0,
+        ok: 0,
+        failed: 0,
+        wallMs: 0,
+        largestMs: 0,
+        firstStartedMs: null,
+        lastSettledMs: null,
+      };
+      modelCounter.calls++;
+      modelCounter.pending++;
+      modelCounter.firstStartedMs ??= started - this.started;
+      this.modelCounters.set(modelFamily, modelCounter);
+    }
     const settle = (ok: boolean) => {
       if (!this.active) {
         this.unknown = true;
@@ -244,6 +348,17 @@ export class E4EngineRequestWaitDiagnostic {
       else counter.failed++;
       counter.wallMs += now - started;
       counter.lastSettledMs = now - this.started;
+      if (modelCounter) {
+        modelCounter.pending--;
+        modelCounter[ok ? 'ok' : 'failed']++;
+        const elapsed = now - started;
+        if (!Number.isFinite(modelCounter.wallMs + elapsed)) this.unknown = true;
+        else {
+          modelCounter.wallMs += elapsed;
+          modelCounter.largestMs = Math.max(modelCounter.largestMs, elapsed);
+        }
+        modelCounter.lastSettledMs = now - this.started;
+      }
     };
     let result: unknown;
     try {
@@ -318,7 +433,12 @@ export class E4EngineRequestWaitDiagnostic {
     this.restored = true;
   }
   snapshot() {
-    return {
+    const modelRows = modelFamilies.flatMap((family) => {
+      const row = this.modelCounters.get(family);
+      return row ? [{ ...row }] : [];
+    });
+    const modelCalls = modelRows.reduce((sum, row) => sum + row.calls, 0);
+    const value = {
       status: this.unknown ? 'UNKNOWN' : 'COMPLETE',
       bridgeCalls: this.calls,
       pending: this.pending,
@@ -326,7 +446,34 @@ export class E4EngineRequestWaitDiagnostic {
       insideRequestMs: this.insideMs,
       outsideRequestMs: this.outsideMs,
       categories: categories.map((category) => ({ category, ...this.counters.get(category)! })),
+      ...(this.profile === 'D6_MODELS'
+        ? {
+            modelRequests: {
+              status: !this.unknown && modelCalls > 0 ? 'OBSERVED' : 'UNKNOWN',
+              classification:
+                this.unknown || modelCalls === 0
+                  ? 'UNKNOWN'
+                  : this.modelCounters.has('OTHER_MODEL')
+                    ? 'PARTIAL'
+                    : 'COMPLETE',
+              semantics:
+                'RECEIVED_ENGINE_MODEL_PROMISES_NOT_DATABASE_EXECUTION_OR_TRANSACTION_OWNERSHIP',
+              intervals: 'INCLUSIVE_PER_CALL_DO_NOT_SUM_FOR_UNION',
+              calls: modelCalls,
+              families: modelRows,
+            },
+          }
+        : {}),
     };
+    if (this.profile === 'D6_MODELS' && Buffer.byteLength(JSON.stringify(value), 'utf8') > 4096) {
+      this.unknown = true;
+      value.status = 'UNKNOWN';
+      if (value.modelRequests) {
+        value.modelRequests.status = value.modelRequests.classification = 'UNKNOWN';
+        value.modelRequests.families = [];
+      }
+    }
+    return value;
   }
 }
 
