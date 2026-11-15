@@ -3,6 +3,11 @@
 Sheet状态只经attendance-sheet-state-machine，submit只建pending Sheet，
 不直写Activity.completed；活动完结归activities.complete。不顺手大拆service或移动既有surface。
 
+新版单轨方向（2026-11-11）：Sheet/Record/CheckIn 是尚未退役的旧链，gate 关闭时仍可能使用。
+目标链为 PunchEvent → 服务段 → 结算 → 账本 → 关账；旧链测试不等于新版验收。
+共享的 contribution-calculator 等能力不能因目录名一并删除；
+先替换依赖并完成合同、客户端和端到端验证，再退出旧入口。
+
 ## 旧考勤写链与并发
 
 - submit/edit/softDelete/resubmit的Activity锁覆盖Admin/managed每条surface，
