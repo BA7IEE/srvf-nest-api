@@ -1,95 +1,118 @@
-# activity-registrations — 本地铁律
+# activity-registrations — 报名、身份与容量
 
-> 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);上下文边界读 [`/docs/participation-bounded-context.md`](../../../docs/participation-bounded-context.md);架构边界读 [`/docs/architecture-boundary.md`](../../../docs/architecture-boundary.md);API surface 边界读 [`/docs/api-surface-policy.md`](../../../docs/api-surface-policy.md)。本文件**只**记录在本目录工作时容易踩雷的本地铁律。
+活动生命周期归activities，考勤归attendances；本模块不主动维护AttendanceRecord。
+状态只走activity-registration-state-machine：pending→pass/reject、legacy waitlisted→pending、
+pending/waitlisted→reject、pending/pass/waitlisted→cancelled、reject→pending。
+仅pass占容量。allocation已committed/first_come的候补可由取消链在原session+position转pass，
+不开放手动/跨岗waitlisted→pass或reject→pass，不把新链套给legacy writer。
 
-## Scope
+## 永久头与命令
 
-- **活动报名记录**:create / approve / reject / cancel / reopen + 内部 promote，5 态闭集
-- **状态机 5 态**:`pending → pass|reject`;legacy `waitlisted → pending`(仅自动递补，不开手动端点)；`pending|waitlisted → reject`；`pending|pass|waitlisted → cancelled`；`reject → pending`(reopen)。allocation 专属的已 committed/first_come 候补可只在原 session+position 由取消链 `waitlisted → pass`，追加 revision，不改写候选结果；**不开**手动或跨岗位 `waitlisted → pass`，也不开 `reject → pass` 直通；只 pass 占 capacity。
-- **三 surface**:Admin 代报名 + 审核 + CSV 导出(`admin/v1/activities/:activityId/registrations`);App 本人报名 / 查询 / 取消，以及本人邀请 accept/decline(`app/v1/my`);App 活动负责人/报名协办管理（含现场临时参加和 rank/lottery allocation batches）;历史 Legacy `/v2/users/me/*` 4 端点已于 Route B Phase 4d2 删除(队员流由 App surface 承载)
-- **不负责**:活动主资源生命周期(`activities/`)、考勤(`attendances/`)、贡献值预填(`contribution-rules/` + `attendances/contribution-calculator.ts`);`AttendanceRecord.registrationId` 由 attendances 反向引用,本模块**不**主动维护
+- (activityId,memberId)全历史只有一头，含cancelled/软删。
+  live cancelled/reject重报追加revision，软删不复活；legacy仅无永久identity时可重报，
+  有identity21038。canonical/onsite复用identity，从legacy切源时清旧position/extras、刷新registeredAt。
+  identity=0也按member/activity核active activity-person，foreign anchor20147。
+- canonical锁序：
+  Activity FOR UPDATE→永久head（含终态/软删）→member/activity全identities按id锁→
+  D-5 Member/User FOR SHARE→pointer/current revision对账→状态/profile/Form→session/position→
+  upload session→insurance source→append revision/answer/preference/evidence→附件consumed→CAS pointer→audit。
+  exact key+hash replay在锁内D-5后、Form/finality前，异hash21003，不以mutable状态破坏重放。
+  pending/waitlisted/cancelled/rejected不得有active session reservation；
+  coherent final状态交21030，投影漂移先20147。
+- 一次性附件session仅create/upload，CSPRNG token只首响应明文、DB只SHA-256、30分钟。
+  upload在Activity/Form/Session锁内复核身份/route/formVersion/status/expiry，
+  不匹配在provider/ledger/audit前13001；上传后仍active。
+  canonical复核AVAILABLE并先创建不可变FormAnswer，再转registration-form-answer owner、
+  回填attachmentId并consumed，全部同事务；provider/签名/内容校验在事务外。
+- legacy岗位可选activityPositionId，有live岗位未传21035，错活动/不存在/已删20002，
+  先活动gender再岗位gender，永久头unique不含岗位（第二岗仍21002）。
+  canonical任一live岗位要求preferences非空，所选场次有岗位要求positionIds非空，
+  按合法数组顺序产生从1开始的preferenceOrder。Admin可返岗位摘要，App读模型不扩大。
 
-## Local facts
+## 容量与状态收口
 
-- `activity-registrations.service.ts` 仍是 god-service（实时行数看 CODEMAP）；状态机/audit/app query 已抽离，永久头个人取消另由 `activity-registration-lifecycle.service.ts` 协调；候补仍以 promotion engine + QueryService 隔离
-- **读侧查询构造归 `activity-registration-query.service.ts`**(Phase 6-B 第三域第一刀,架构边界 §3.2):四条列表 surface 的 where / 分页 / orderBy / 读侧 select(`registrationListSelect` / `registrationAdminListSelect` / `registrationCsvSelect`)+ `memberExists` + CSV 的 `buildCsvWhere` / `streamCsvRows` 都在那里,**新增读侧查询请加到该类,别加回 service**。
-  - **判权腿不下放**:`assertCanOrThrow` / `assertManagedRegistrationAccess` / `resolveVisibleOrganizationIds`(含 `getVisibleOrganizationScope` 与 30100 抛出)仍在 service;`ActivityRegistrationQueryService` **不注入 rbac / authz**,module 里也**不 exports** —— 否则就多出一条绕过判权腿的读路径。它只收算好的 `visibleOrganizationIds`(§3.2 "read-scope filters explicitly passed in" 那条豁免)。
-  - **刻意留在 service 的**:`registrationSafeSelect` 与 `RegistrationFullRow`(五条写路径回读 + §4 装载聚合根)、回调式事务内的读、BizCode 映射(`MEMBER_NOT_FOUND` / `ACTIVITY_REGISTRATION_NOT_FOUND` 的抛出)、`expand` 投影与候补位次拼装。
-- **响应序列化归 `activity-registration-presenter.ts`**(Phase 6-B 第三域第二刀,架构边界 §3.1):详情 / 列表项 / 跨轴列表项(含 `expand` 投影)的字段映射、`extras` 的 Json 收敛、`REGISTRATION_EXPAND_WHITELIST` 与 `parseExpand`,以及 CSV 的 `csvHeaderChunks`(BOM + 表头)与 `formatCsvRow` 都在那里,**新增响应字段请加到该类,别加回 service**。
-  - **它不碰 DB**:文件名带 `presenter` ⇒ 落入 harness lint 的 Presenter 规则,import `PrismaService` 会当场 lint 红。入参用最小结构性类型(不反向依赖 service 的 GetPayload 派生类型),避免 import 环。
-  - **CSV 表头与行格式化必须同处该类**:两者分居时「加一列忘了改表头」不会有任何东西报错;现在 spec 有一条列数对拍(`formatCsvRow` 的列数 == `REGISTRATION_CSV_HEADERS.length`)。
-  - `expand` 白名单**外**的键由 `parseExpandQuery` 抛 `BAD_REQUEST`,**不是**静默丢弃(易误记,spec 有正对照)。
-- **判权(终态 scoped-authz PR12 + v0.49 部门范围)**:管理端点动作走 `assertCanOrThrow` → `authz.explain`;`list`/`exportCsv`(嵌套 `:activityId`)带 `{type:'activity', id: activityId}` 父 ref;`approve`/`reject`/`cancelAdmin` 带 `{type:'activity_registration', id}`;`listForMemberAdmin` 带 `{type:'member', id: memberId}`;`listAllForAdmin` 通过 `getVisibleOrganizationScope` 按 `activity.organizationId` 下推并与用户组织筛选取交集；仅 `create`(代报名)保持无 ref(GLOBAL-only)。`resource_not_found` 回退 `rbac.can` 全局码判定,持码者交回既有 NOT_FOUND,无码者 30100。App 自助端点不受影响,self-scope 不变。e2e 见 `test/e2e/participation-scoped-authz.e2e-spec.ts`。
-- **CSV 导出(v0.44.0 finding #13)**:`exportCsv` 必须保持 500 行游标分页 async generator + BOM 首 chunk,controller 用 `Readable.from`;禁止恢复全量 `findMany` / `string[]` / 整串 Buffer。
-- Admin Controller:`activity-registrations.controller.ts` `@Controller('admin/v1/activities/:activityId/registrations')` `@ApiTags('Admin - Registrations')`
-- App Controller:`controllers/app-my-registrations.controller.ts` `@Controller('app/v1/my')` `@ApiTags('Mobile - My Registrations')`;**方法级**追加 `@ApiTags('Mobile - My Activities')` 于 `GET /my/activities`(刻意保留)
-- Managed App Controller:`controllers/app-managed-activity-registrations.controller.ts`，7 路 list/approve/reject/cancel/reopen/bulk-approve/bulk-reject；薄 application service 只做 App safe projection，动作仍复用本模块单条 service 与 bulk wrapper，禁止复制第二套状态机/容量/候补/audit
-- **一次性报名附件会话**:`controllers/app-registration-upload-sessions.controller.ts` 只暴露 create/upload 两路；token 用 CSPRNG 生成、库内仅 SHA-256，创建响应明文只一次、固定 30 分钟。每次 upload 都在 Activity/Form/Session 根锁内复校 member/route/activity/formVersion/status/expiry，任一失配在 Provider/ledger/audit 前统一 `ATTACHMENT_NOT_FOUND=13001`；session 上传后仍为 active。只有 canonical 报名提交在同一根事务完成 Form/session/AVAILABLE 复核、创建 `RegistrationFormAnswer` 后，才把附件转为最终 `registration-form-answer` owner、回填 `RegistrationFormAnswer.attachmentId` 并将 session 标为 consumed。
-- DTO 隔离:Admin DTO 在 `activity-registrations.dto.ts`;App DTO 在 `dto/app/`(6 文件)，managed 出参刻意不含 `reviewedBy` / `cancelledByUserId`
-- **永久报名头 runtime**：`activity_registrations_activity_member_permanent_unique` 保证同一 (activityId,memberId) 跨 cancelled/soft-deleted 全历史仅一头。legacy/canonical/onsite 对 live cancelled/reject 头只追加 immutable revision；soft-deleted 不复活。legacy 仅在没有永久 identity 时可同头重报，已有 identity 返回 21038；canonical/onsite 复用永久 identity，并在从 legacy 头切源时清旧 `activityPositionId/extras`、刷新 `registeredAt`。容量对账即使 identity=0 也按 member/activity 查 active activity-person，foreign anchor 统一 20147。旧 operationKey+hash replay 始终优先于 mutable finality，异 hash 仍 21003。
-- **D-INSURANCE v3 + 第 82 migration runtime**:single gate=true 且 requiresInsurance=true 时，各报名/重报入口复用 `InsuranceRequirementService` 判定 source，并在创建 RegistrationRevision 后写 `activityRegistrationId + activityRegistrationRevisionId` evidence；旧 header-only evidence 零回填。approval 对 currentRevision>0 只认该 revision evidence，currentRevision=0 才兼容唯一 revisionId=NULL evidence；不得 fallback 或重选来源。取消 revision 不产 evidence，gate=false 仍 0 evidence。
-- **canonical v1.1 command 锁序**:`Activity FOR UPDATE → 永久 ActivityRegistration（含 cancelled/reject/soft-delete）FOR UPDATE → member/activity 全 identities(id ASC) FOR UPDATE → D-5 Member/User FOR SHARE → pointer/current revision exact reconciliation → 状态/profile/Form → session/position → upload session → insurance source → append revisions/answers/preferences/evidence → attachment consumed → CAS current pointers → audit`。精确 replay 在锁内 D-5 复读后、Form/finality 前。pending/waitlisted/cancelled/rejected identity 必须无 active session reservation；pass 等正确 final projection由状态机 21030，锚点/shortcut 漂移先 20147。任一 live 岗位仍要求 top-level `preferences` 非空，已选场次有 live 岗位仍要求 `positionIds` 非空。
-- **CapacityReservation 内核（第 4 批⑥ #965 已合 main）**:`CapacityReservationService` 只接 caller 已开启的 transaction，固定 `Activity → 该 member/activity 全量 identity(id ASC) → [reserve 目标 ActivitySession(id ASC) 重读且仅 scheduled+未软删] → bucket(scopeTypeCode,scopeId,id) → active reservation(id ASC)`；请求 identities 只是全量对账上下文的子集，所有会影响“最后一个 active session”判断的 session bucket 都先锁定/对账，再做 DML；release 仍可清理历史/取消场次。只写 `CapacityReservation` 与 `ActivityCapacityBucket.occupied/version`，零写 Registration/Identity 指针与状态、revision、audit/outbox。`capacity_unavailable` 是确定性结果；第 4 批 allocation caller 决定 first_come/batch 的 waitlist 结果并在同一外层事务写其余事实，禁止重写第二套 occupied 算法。新 activity-person 以本批稳定排序最小 identityId 作锚，已有锚保留至最后一个 active session 释放。
-- **保险生命周期 PR-A + Member 生命周期 PR-E**:approve 固定 `Activity FOR UPDATE → Registration claim/currentRevision → Member/source/evidence → capacity/registration/audit/outbox write`。所有活动都锁后重读目标 Member：不存在/软删→15001，inactive→17030；currentRevision>0 必须恰一份对应 revision evidence，0 才读 legacy NULL evidence，来源失配/缺失均 26030。self 后段为 Member→MemberInsurance，team 为 Policy→Coverage→Member；bulk 继续逐条调用 single approve。
-- Capacity:`Activity.capacity` 永远先作为全局硬上限，有岗位时再叠加 `(activityId,activityPositionId)` 的 passCount + 岗位子上限；create/approve 均先锁 Activity，再同时重读全活动 passCount、岗位 passCount 与两层 capacity。取消 pass **只**递补同岗位 1 人(**B-D2 拍板 2026-08-01:跨岗 fallback 已删除**，同岗无人就空着)；岗位已软删/已满则一个都不递补；岗位扩容递补同岗 delta 仍受全局剩余量裁剪。
-- Audit events(2 个):`registration.create` / `registration.review`(approve / reject / cancel / reopen / **promote** / export 共用；promote 固定 `extra.action='promote'`;export 固定 `extra.operation='export'`,在返回 generator 前 fail-closed 落库)
-- 状态机错误码:wrong state 统一抛 `BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID`
-- **受保护状态写(2026-07-21)**:`approve`/`reject`/`cancelAdmin`/`reopen`/`cancelMy` 在真实写前统一调用 [`/src/common/prisma/claim-at-status.util.ts`](../../common/prisma/claim-at-status.util.ts)；helper 以静态物理表/列执行条件 `SELECT ... FOR NO KEY UPDATE`，不再写 no-op tuple。获锁后必须重读安全行，并让 current-row guard、子表写、真实更新与 audit before 只使用锁后行；并发败者复用 `ACTIVITY_REGISTRATION_STATUS_INVALID`，合法矩阵仍只在 `activity-registration-state-machine.ts`。
-- **候补并发锁序与整单取消**:`promoteActivityWaitlist` 仍由调用方透传 tx，固定 Activity→Member→Registration；它只处理无永久 identity 的 legacy header，禁止借此改成 allocation。`ActivitiesService.cancel` 在既有 Activity 根事务中调用纯 lifecycle helper：canonical pending/waitlisted 追加 admin Registration/Participation revision 并 CAS 投影；无 identity 的 legacy pending/waitlisted 也沿已有或新建 RegistrationRevision 链关闭，pass/active reservation 保留；任何 current revision/status/pointer/population/active reservation 漂移为 20147 整笔零写。两者都不能复制 `CapacityReservation` DML。
-- **durable intent 的 payload 必须取锁后行(并发审计 K4,2026-07-31)**:`cancelMy` 的活动标题 / 发布人在 claim + 证据守卫**之后**才读。放在锁前时,并发改名先提交,本事务仍会用旧标题落 intent —— intent 一旦落库 worker 无法自行恢复正确快照,同一次取消甚至会同时产出「旧标题的取消通知」与「新标题的候补递补通知」(递补 helper 本就是锁后复读的)。执行位:`test/e2e/registration-cancel-my-locked-snapshot-concurrency.e2e-spec.ts`
-- **报名通知 durable outbox**:approve/reject 审批结果、取消后的候补递补、自助取消告知均在业务 update + `registration.review` audit 的同一事务内 enqueue `notification.targeted@1`;**自助取消告知只在取消 `pass` 报名时发(B-D3,维护者 2026-08-01 拍板)** —— pending/waitlisted 的取消对负责人没有要做的事,名额本就没被占住,全发是噪音;取消 pass 的 intent 形状(eventKey/aggregate/收件人解析)逐字不变,只是不再为另两个状态多发;enqueue 失败整体回滚，worker 仅在 commit 后执行 Effect。review eventKey 绑定 registration + reviewedAt + review audit 序号，递补/取消绑定对应状态写时间。自助取消正文只使用同事务快照 `displayName（memberNo）`，任一标签不可用即用固定匿名提示，绝不暴露 `Member.id`。责任制 gate=true 仍只通知当前 ACTIVE owner，缺 owner fail-closed，绝不回退 `publishedBy`；gate=false 才显式沿用 publisher；eventKey / aggregate / destination 语义不变。
-- **managed 报名判权与锁序(PR-7)**:单条写先走既有 `authz.explain`，再在同一事务的 Activity 根锁后重读 active responsibility 的 `canManageRegistrations=true`；因此 owner/报名协办可管理，global 旧角色、考勤协办不可旁路，协办 end/owner transfer 与在途写串行。默认 `authorization='authz'` 保持 Admin 调用逐字行为，managed 路径显式传 `'managed'`
-- **邀请/访客 runtime（第 4 批⑦/⑯）**:managed invitations/visitors 先 D-5、既有 `activity-registration.*.record` 权限，再在 Activity 锁后重读 active `canManageRegistrations=true`；GLOBAL 码不旁路。邀请 create/list/revoke 与本人 decline 固定 Activity→Invitation，pending 过期只投影/转 expired，decline 的 operationKey+canonical SHA-256 同 key 同载荷重放、异 hash `20151`。本人 accept 固定 `Activity → Invitation → canonical registration`，复用 Form、资格、保险、永久 identity、容量及 allocation mode，不能绕过链路；访客 writer 只写 `ActivityVisitor` + 同事务 `visitor.create` audit，新行 `attendanceCode=null`，禁止触报名/参与/预留/考勤/结算/账本/贡献/进度。
-- **allocation runtime（第 4 批⑯）**:负责人 rank/lottery 批次只有 prepare/commit/void/get 四个路径，均先 D-5、既有报名责任权限和 Activity 根锁复读。first_come 不建 batch，按每个场次独立处理；rank 用 `qualificationScore DESC → acceptedAt ASC → UTF-8 identity ASC`，lottery 只在 commit 公开可核验 seed。prepare 冻结 candidate/revision/资格 payload hash，commit 一次性写容量、pointer、population、revision、audit/outbox，void 只在 D86 全量 live facts 精确一致时释放，否则 20147 零写；same key+hash 重放原安全视图，异 hash 冲突。
-- **活动开始 expiry（第 4 批⑱）**:`RegistrationReconciliationService` 只由两个既有 worker context 注入，不暴露 HTTP caller、不开 cron。到点 job 先锁 Activity 再核 job lease fence，锁住受影响 header/identity/current revision 后只处理 canonical `pending → review_expired` 与 `waitlisted → waitlist_expired`；无 live session 才回退 Activity.startAt。每个 target 必须 current revision/status、pointer、population 与 active reservation 全量一致，任何漂移 `20147` 使 canonical revision/header/invitation/audit 整事务零写；不释放、不重算 CapacityReservation/bucket，pass 不动。pending invitation 同一事务转 expired 并复用 `invitation.change/expire`；header 是 immutable identity 状态的兼容投影。
-- **现场临时参加（第 4 批⑧/⑪+永久头 runtime）**:`OnsiteParticipationCommandService` 仅服务 managed route；D-5/权限后在 Activity 根锁内复读责任。锁序为 Activity→全部历史 head→member/activity 全 identities→session/position/Form/RuleSet/保险→三层容量→immutable revision/evidence/current pointers→population→audit。live cancelled/reject head/identity 可复用，soft-deleted 新 key 21030；精确 replay 位于 D-5/责任后、mutable finality 前。合法 RuleSet 必须交统一 evaluator：block `21040` 零写，warn 可继续并追加 submit snapshot；空/重复/错配 active RuleSet 为 `21041`。只有 Form 有字段仍 `21039`。成功 pointer 必须等于该 identity 的 active session reservation ID；对全部 identities 先核 bucket activity/session 锚、pointer 与当前 immutable revision，任一漂移 20147。
-- **个人取消 lifecycle**:`cancelAdmin`/`cancelMy` 在 Activity→永久 head→member/activity identities(id ASC) 后，先核 pointer↔active session reservation 与 current ParticipationRevision，再只对 pending/waitlisted/pass identity 释放 position/session/最后 activity-person；cancelled/rejected/not_selected 只能在 pointer/position/population 均空时 noop，attended/settled/cancellation_requested/未知状态 20147。随后追加 Registration/Participation cancel revision、CAS 清 pointer/currentPosition/populationIncluded；人口真变化时同 tx 只 bump 一次 populationRevision。
-- **拒绝/重开 participation lifecycle**:`reject` 在同一 Activity 根事务把 pending/waitlisted identity 追加 rejected；pass 先经容量内核释放三层占位，再追加 rejected 并清 pointer/position/population，人口只 bump 一次，header `statusSummaryCode=not_selected`。`reopen` 只把 coherent rejected identity 追加 pending并恢复 header summary=`active`；cancelled/not_selected 空投影 noop。两者都不新增 RegistrationRevision/evidence，未知状态、active reservation 或任何投影漂移统一 20147 并回滚 header/audit/outbox。
-- **approve 保险锁序**:先 `Activity→Registration claim/currentRevision`，再按 evidence 类型分支：self=`Member lifecycle FOR UPDATE→MemberInsurance`，team=`Policy→Coverage→Member lifecycle FOR UPDATE`，无保险分支=`Member lifecycle FOR UPDATE`；最后才 capacity/registration/audit/outbox 写。审核失败会回滚 Registration 行锁但不会产生 update/audit/notification。
-- **create / approve Member ACTIVE**:Admin create 与 App core createMy 都先做无锁 live+ACTIVE snapshot 以稳定 15001/17030 优先级，保险 source 选择后再 `assertActiveMemberLifecycle()` 排他锁并重读；approve 同样先 snapshot，再由保险 service 在既有 source 锁位最终加锁。reopen 刻意不查 ACTIVE，只恢复 pending，后续 approve 必须重验。
-- **候补排位**:`activity-registration-waitlist-query.service.ts` 批量按 `(activityId,activityPositionId)` 计算，`null` 是无岗位旧队列，列表禁止 N+1；非 waitlisted 返 null
-- **岗位报名**:Admin / self / App 三路 legacy create DTO 均只接受可选 `activityPositionId`；有 live 岗位未传→21035，跨活动/已删/不存在→20002；活动 gender 后叠加岗位 gender；一人一活动永久报名头 unique 不含岗位，报第二岗继续 21002。canonical v1.1 则在提交事务内按 live `ActivitySessionPosition` 重查：任一 live 岗位时 `preferences:[]`→21035；已选场次有 live 岗位时空 `positionIds` 也→21035，合法数组顺序才派生从 1 开始的 `preferenceOrder`。Admin 报名列表 additive 返回 `activityPosition{activityPositionId,name}`，App 报名读模型不扩岗位对象
-- **参与域生命周期收口(v0.40.0)**:① **approve 活动状态闸** —— approve 事务内 `findActivityOrThrow` 后校验活动 `statusCode ∈ {cancelled, completed}` → `ACTIVITY_ENDED_OR_CANCELLED_APPROVE_FORBIDDEN`(20124);**reject / cancelAdmin / cancelMy 刻意不加此闸**(留作清理已取消/已完结活动残留待审队列的手段)。② **reopen 边** —— `reject → pending`,新端点 `POST admin/v1/activities/:activityId/registrations/:id/reopen`,新码 `activity-registration.reopen.record`(判权带 ref `{type:'activity_registration', id}`);置 pending 同时清空 `reviewedBy/reviewedAt/reviewNote`;audit 复用 `registration.review` 事件、`extra.action='reopen'`;**不发通知**。⑦ **cancel 参与证据守卫** —— cancelAdmin + cancelMy 状态机放行后、写库前经共同 `assertNoParticipationEvidence`，依次直连 `tx.attendanceRecord.count` 与 `tx.activityCheckIn.count` 查询同 `registrationId` 的 live 证据（**不引 attendances service** 防环）；任一 > 0 → `ACTIVITY_REGISTRATION_HAS_ATTENDANCE`(21033)。pass 路径仍固定 Activity → Registration 锁序，因此并发签到/取消只能串行收敛；不删历史、不做贡献值回滚(贡献值属考勤域)
-- CSV 导出:`GET admin/v1/activities/:activityId/registrations/export` 手写 `escapeCsvField`,**不**引 `csv-stringify`;**不**写 `export_logs` / **不**生成 `AttendanceRecord`(Q-A6 三禁);返回 generator 前必须完成 `registration.review` 审计,不得把审计移回 generator 尾部
-- **报名截止**(活动闭环硬化 2026-06-21):`assertActivityRegistrable`(create 代报名 + createMy 自助 + App `createMyForApp` 共用闸)在 isPublicRegistration 之后判 `registrationDeadline !== null && now > deadline` → `ACTIVITY_REGISTRATION_DEADLINE_PASSED=20123`(精确时刻,不做北京日归一);**approve 不加此闸**(截止只管报名动作,截止前已报 pending 仍可批)
-- E2E:`activity-registration-waitlist.e2e-spec.ts` + 既有 `activity-registrations*.e2e-spec.ts` / `app-my-registrations-*.e2e-spec.ts`
+CapacityReservationService只消费caller tx：Activity→member/activity全identities按id→
+reserve目标scheduled live Session按id→bucket(scopeTypeCode,scopeId,id)→active reservation按id。
+先锁/对账所有影响“最后active session”的bucket再DML；release可清历史/取消session。
+它只写reservation与bucket.occupied/version，不写identity/header/revision/audit/outbox。
+capacity_unavailable是确定性结果，caller在同一外层事务决定waitlist及其余事实，
+不复制occupied算法。新activity-person以本批稳定最小identityId锚，旧锚保留到最后session释放。
 
-- **资格 runtime（第 83 migration）**：`ActivityQualificationEvaluatorService` 严格消费 D83 wire，活动/场次/岗位逐层 AND、同规则数组 OR，结果 `fail > warn > pass`。它只经 member-profiles/certificates/insurances 的窄 service 取事实；不得复制查询或另造保险算法。canonical submit、onsite、legacy（仅活动级）与 approve 都在锁内重评；approve 的目标必须从 current RegistrationRevision preferences/identities 重建，不得信旧 snapshot。block `21040` 整笔零写，配置漂移 `21041`；pass/warn 才追加不可变 display/submit/review snapshot。legacy 遇 active 场次/岗位 RuleSet 必须 `21038`，绝不猜场次。
+legacy create/approve先锁Activity复核全活动passCount与岗位passCount/上限，父capacity永为硬上限；
+不恢复“create满员直接报错”。取消pass仅同岗递补1人，软删/满岗不补；
+扩容delta受父余量裁剪，null历史队列隔离，不跨岗位fallback。
+promoteActivityWaitlist只处理无永久identity的legacy head，caller tx锁Activity→Member→Registration。
 
-## Risk points (不要做)
+cancelAdmin/cancelMy固定Activity→永久head→全identities，先核current revision/pointer/reservation；
+pending/waitlisted/pass才释放position/session/最后activity-person，再追加cancel revisions并CAS清投影。
+cancelled/rejected/not_selected仅空pointer/position/population时noop，
+attended/settled/cancellation_requested/未知20147；人口真变同tx只bump一次populationRevision。
+拒绝同核：pending/waitlisted追加rejected，pass先释放三层；header summary=not_selected。
+reopen只coherent rejected→pending/summary=active，cancelled/not_selected空投影noop；
+reject/reopen不追加RegistrationRevision/evidence，漂移整体回滚。
 
-- ❌ **不**绕过 `activity-registration-state-machine.ts` 在 service 内裸写态迁移
-- ❌ **不**绕过永久报名头 unique 直接 `prisma.activityRegistration.create`；live cancelled/reject 必须走同头追加，soft-deleted 不复活，legacy 不得吞掉已有 permanent identity。
-- ❌ **不**恢复 create 满员报错；**不**移除 approve 内对 `Activity` 行的 `FOR UPDATE` + capacity 复核
-- ❌ **不**改 audit event 名 `registration.create` / `registration.review`(characterization 已锁)
-- ❌ 不拆 `INSURANCE_ENFORCEMENT_ENABLED` 单 gate，不在 Activity 锁前查/选 source，不把 evidence/audit 移出根事务；仅 single gate=true 且活动 `requiresInsurance=true` 时，每次成功报名/重报必须写当次 revision evidence，gate=false 或活动不要求保险时保持 0 evidence，取消不得写 evidence。approve 不得回退 header-wide、重选来源或绕过 `InsuranceRequirementService`。
-- ❌ **不**把 `cancelAdmin` / `cancelMy` 路径区分挪进 StateMachine(只通过 `extra.cancelledByPath` 在 audit 记录)
-- ❌ **不**改 Admin Controller path `admin/v1/activities/:activityId/registrations`(`export` 字面段必须**先**于 `:id/<action>` 路由声明,Q-A6 锁定;调换顺序会被 Nest 路由解析为 `:id=export`)
-- ❌ **不**把 Admin DTO 用 `extends` / `Pick` / `Omit` / `IntersectionType` / `PartialType` / `OmitType` 派生为 App DTO(沿 [`api-client-boundary` D-6](../../../docs/reference/api-client-boundary.md));App `dto/app/`字段集**刻意删除**`memberId`/`memberNo`/`memberDisplayName`(沿 §16.B.2)
-- ❌ App self 视角 where 子句**永远**用 `currentUser.memberId` 锁本人；managed 视角只认当前活动 active responsibility capability；两者都**禁止** role 短路 / `scope=all`
-- ❌ **不**主动拆 `activity-registrations.service.ts`(沿 [`/docs/current-state.md §4 P2`](../../../docs/current-state.md))
-- ❌ **不**在 CSV 导出路径引入 `csv-stringify` 等新依赖(沿 Q-A6 + [`/AGENTS.md §3`](../../../AGENTS.md))
-- ❌ **不**把 legacy 递补改成 `waitlisted → pass`，也不得让旧 writer 命中有永久 identity；腾出 legacy 名额只自动进 pending，仍必须走 approve。allocation 的 `waitlisted → pass` 只允许取消链读本 batch 的原 session+position 队列，不能复制给旧 writer 或变成跨岗位自动换岗。
-- ❌ **不**把报名通知改回 commit 后 best-effort 直调 dispatcher；不得在业务事务内调用 provider，且 gate=true 不得用 `publishedBy` 冒充当前 owner
-- ❌ **不**把 upload session 当作报名答案、RegistrationRevision 或永久报名身份；不得在 Form/session/AVAILABLE 全部复核和不可变答案行创建之前提前 consumed/转绑。最终转为 `registration-form-answer` owner 与 consumed 只能由 canonical command 通过 trusted facade 在同一事务完成；不得把 Provider/签名/文件内容校验放进数据库事务。
-- ❌ 现场临时参加不得复活 soft-deleted 头、不得新建第二 identity、不得把 `pass` 当新请求重放；不得接 Form 答案/上传、邀请 accept、allocation 或 waitlist。Form 未接通时保留 21039；合法 RuleSet 不得以“现场”理由跳过 evaluator 或一律 21039。
+活动整单取消同根事务：canonical pending/waitlisted追加admin revisions并CAS，
+legacy同样沿revision链关闭；pass/active reservation保留，不复制容量DML。
+approve对cancelled/completed拒20124；reject/cancel刻意可清理残留，不加此闸。
+reopen清reviewedBy/At/Note、不发通知、不要求Member ACTIVE，后续approve必须重验。
+取消经共同assertNoParticipationEvidence依次查live AttendanceRecord/ActivityCheckIn，
+任一有证据21033；不引attendances service、不删历史、不回滚贡献。
+截止闸在isPublicRegistration之后，now>deadline才20123，不按北京日取整，不限制approve。
 
-## Before editing
+## 资格、保险与现场
 
-- 状态机:[`activity-registration-state-machine.ts`](activity-registration-state-machine.ts)
-- audit:[`activity-registration-audit-recorder.ts`](activity-registration-audit-recorder.ts)
-- App service(scope / 字段集 / canUseApp 准入):[`app-my-registrations.service.ts`](app-my-registrations.service.ts) 文件顶部注释
-- 跨模块边界:[`/docs/participation-bounded-context.md §4 / §5 / §6`](../../../docs/participation-bounded-context.md)(永久报名头及取消/拒绝后同头重报 runtime 已落；剩余旁路债务见台账)
-- 永久报名头 migration:在 `prisma/migrations/` 内查 `20260809120000_activity_v11_batch4_registration_head_permanent_unique`
+- create先live/ACTIVE快照保持15001/17030优先级，source选择后Member lifecycle锁复读。
+  approve先Activity→Registration claim/currentRevision，再Member/source/evidence，最后业务写；
+  self为Member→Insurance，team为Policy→Coverage→Member，无保险也锁Member；bulk仍逐条single approve。
+- 单保险gate且requiresInsurance才写当次registrationRevision evidence；
+  revision>0只认恰一对应evidence，revision=0只兼容唯一NULL legacy证据，不fallback/重选source；
+  source失配26030，取消不产evidence，gate关/无需保险零evidence。
+- evaluator只消费D83规则与member-profiles/certificates/insurances窄事实口；
+  活动/场次/岗位AND，同规则数组OR，fail>warn>pass。
+  submit/onsite/legacy/approve锁内重评，approve目标从current revision preferences/identities重建；
+  block21040零写，配置漂移21041，pass/warn才append snapshot。
+  legacy遇场次/岗位RuleSet21038，不猜场次。
+- onsite只managed，Activity锁后复核责任；历史head→全identities→session/position/Form/RuleSet/保险→
+  三层容量→revisions/evidence/pointer→population→audit。
+  不复活软删、不造第二identity，精确replay在D-5/责任后、mutable finality前；
+  有Form字段仍21039，不接答案/上传、邀请accept、allocation/waitlist，但合法RuleSet须评价。
+  成功pointer必须等于本identity active session reservation，全部锚/投影先对账，漂移20147。
 
-## Validation
+## 邀请、分配与到点任务
 
-- `pnpm lint` + `pnpm typecheck`
-- 改业务行为 → `pnpm test:e2e -- activity-registrations app-my-registrations`(覆盖 6 spec)
-- 改 audit event / extra → 必须跑 `activity-registrations-audit-characterization.e2e-spec.ts`
-- 改状态机 → 必须跑 `activity-registrations-state-transition.e2e-spec.ts`
-- 改 DTO 字段 / endpoint path / Swagger schema / 错误码 → 必须再跑 `pnpm test:contract`
-- 改现场临时参加或资格 runtime → `pnpm test:e2e -- activity-batch4-onsite-participation.e2e-spec.ts` 与 `activity-batch4-qualification-runtime.e2e-spec.ts`（含 Form=21039、RuleSet evaluator、block 零写与 snapshot 锚点）
-- 改邀请 accept、allocation、容量 caller 或候补递补 → `pnpm exec jest --config test/jest-e2e.config.ts --runInBand test/e2e/activity-batch4-allocation-runtime.e2e-spec.ts`；不在本机跑全量 E2E。
-- 改整单活动取消或 legacy waitlist writer → `pnpm test:e2e -- activity-batch4-cancel-waitlist-lifecycle.e2e-spec.ts`，并回归 `activity-registration-waitlist.e2e-spec.ts`；不在本机跑全量 E2E。
-- 改 reconciliation / activity-start expiry → `pnpm test:e2e -- activity-batch4-expiry.e2e-spec.ts`，并回归 `activity-batch2-8a-auto-commit.e2e-spec.ts`；不在本机跑全量 E2E。
+managed写除既有authz还须Activity锁后active canManageRegistrations；
+owner/报名协办可，global旧角色/考勤协办不旁路。App self锁currentUser.memberId，无role/scope=all。
+邀请create/list/revoke/本人decline为Activity→Invitation；decline同key/hash重放，异hash20151。
+accept为Activity→Invitation→canonical，完整复用Form/资格/保险/身份/容量/mode；
+visitor只写Visitor+visitor.create audit、attendanceCode=null，不写参与/预留/考勤/账本。
+
+rank/lottery仅prepare/commit/void/get，同Activity根锁；first_come不建batch、各session独立。
+rank=qualificationScore DESC→acceptedAt ASC→UTF-8 identity ASC，lottery只在commit公开seed。
+prepare冻结candidate/revision/资格hash，commit一次写全部事实；void必须D86 live facts精确一致，
+否则20147零写。同key/hash返原安全视图。
+reconciliation仅既有两个worker，无HTTP/新cron；Activity→job lease/fence→headers/identities/revisions，
+最早live session start（无session才Activity.startAt）到点将canonical pending/waitlisted追加expired，
+同事务expire pending invitation；不动pass、不释放/重算capacity，任何漂移整笔零写。
+
+## 边界、通知与验证
+
+QueryService只构造读查询并接scope，不判权、不exports；presenter负责字段/expand/CSV，
+不碰DB，不反依赖service；expand未知键400。
+CSV保留500行cursor async generator、BOM首chunk、Readable.from、手写escape，
+不全量内存、不加库、不写export_logs/AttendanceRecord。
+registration.create/review事件名保持，promote用action=promote，
+export在返generator前fail-closed audit operation=export，不移到尾部。
+
+管理嵌套list/export带activity ref，单项带registration ref，队员轴member ref，
+总表按activity组织scope求交；代报名create保持no-ref/GLOBAL-only。
+资源缺失仅GLOBAL持码者回旧NOT_FOUND，否则30100。
+App DTO物理独立，self不收memberId/memberNo/memberDisplayName，managed不返reviewedBy/cancelledByUserId；
+export静态路由在:id前，现有MyActivities方法级tag例外保留。
+
+通知与业务写/audit同事务，provider在commit后。
+cancelMy标题/收件人快照在claim+证据守卫后读取；仅取消pass通知owner，
+pending/waitlisted取消零通知。正文仅displayName/memberNo，缺任一匿名，不用内部ID。
+gate=true只当前ACTIVE owner，缺失fail-closed；gate=false才显式publisher。
+review key绑定registration/reviewedAt/audit序号，其他绑定状态时刻，enqueue失败全回滚。
+按改动跑state/audit、永久头、capacity/allocation、资格/onsite、取消/候补和expiry定向E2E，
+不在本机跑全量；契约改动再跑contract。

@@ -1,87 +1,63 @@
-# members — 本地铁律
+# members — 队员范围与生命周期
 
-> 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);权限保护读 [`/src/modules/permissions/CLAUDE.md`](../permissions/CLAUDE.md);架构边界读 [`/docs/architecture-boundary.md`](../../../docs/architecture-boundary.md)。本文件只记录队员模块容易踩雷的本地铁律。
+队员轴仅管理role=USER关联账号，其他Role先返MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE、回用户轴处理。
+正式等级唯一谓词isFormalMemberGradeCode仅认精确level-1…level-7，不复制Set/正则或用归属推导。
 
-## Scope
+## 读取与边界
 
-- 队员 CRUD、账号开通/绑定/解绑/退号重开/启停/批量开号，以及一键离队编排。
-- 队员轴直接写关联 `User` 的既有路径只承接 `role=USER` 账号；管理员或 SUPER_ADMIN 账号必须回用户轴处理。
+- list/options取member.read.record的visible scope，与organizationId/includeDescendants求交；
+  只active PRIMARY扩大范围，其他归属类型不算。持码但scope空返空列表，无码30100。
+  除create无ref/GLOBAL-only外，详情/单项写用member ref，bulk每项独立判。
+  certificate用certificate ref，档案/联系人/保险用member ref。
+  resource_not_found仅旧GLOBAL持码者回既有NOT_FOUND，scoped统一30100。
+- sensitive权限也带member ref，基础read允许不等于sensitive允许；未获敏感授权继续掩码。
+  副职只读投影不含read.sensitive。
+- MembersQueryService只接算好的scope做where/closure/投影，不注入rbac/authz、不export；
+  跨模块复用MembersService.options，不开绕判权的第二入口。
+  presenter/policy自由函数显式依赖；AuditRecorder仅AuditLogsService+调用方tx，不持PrismaService/自开事务。
+- audience-tags按revokedAt保留历史、live pair partial unique。
+  Member lifecycle锁内全量替换，仅ACTIVE未删member_audience_tag；空数组撤标不硬删；
+  同事务member.audience-tags.update。GET/PUT先member authz后HTTP gate，已授权但gate关503。
 
-## Local facts
+## 账号、离队与锁
 
-- **正式等级唯一真值**:`isFormalMemberGradeCode()` 只对精确 `level-1`…`level-7` 返回 true；函数归本模块 `member-grade.ts`，其他模块不得复制正则/Set，也不得用组织归属推导正式等级。
+updateAccountStatus(DISABLED)、offboard/updateStatus(INACTIVE)、reopen旧号软删
+共用LastAdminProtectionPolicy，保当前有效ops-admin及endedAt=null常驻holder，任一归零30101。
+顺序固定invariant advisory→Member→User，锁后重算，不复制count/任期/锁键；
+role护栏仍优先。bind/unbind只改memberId、账号仍live，不接last-admin守卫。
+拒绝时账号/角色/成员所有腿/refresh/新号全不变；
+放行沿既有refresh reason、username探测、先软删旧号后建新号和幂等skip。
 
-- **部门数据范围(v0.49)**:`list/options` 先取 `AuthzService.getVisibleOrganizationScope('member.read.record')`，再与用户 `organizationId/includeDescendants` 过滤取交集；成员归属只认 active PRIMARY，SECONDARY/TEMPORARY/SUPPORT 不扩大可见范围。有效持码但组织集合为空返回空列表，无码才返 30100。
-- **B7 会员受众标签**:`MemberAudienceTagAssignment` 用 `revokedAt` 保留赋标/撤标历史，live `(memberId,dictItemId)` 由 partial unique 约束；`PUT :id/audience-tags` 在 Member lifecycle 锁事务内全量替换，只接受 ACTIVE、未软删的 `member_audience_tag` 字典项，空数组只写撤标不硬删，并同事务记录 `member.audience-tags.update` audit。GET/PUT 都先走既有 member resource authz，再检查 `ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED`；已授权调用且 gate 关闭才返回 503。
-- **point auth**:除 `create` 保持 no-ref/GLOBAL-only 外，成员详情及全部单项写操作都用 `{type:'member', id}`；bulk grant 每项独立 point auth。证书点动作按 certificate ref，档案/联系人/保险按 member ref；`resource_not_found` 仅对旧 GLOBAL 持码者回退既有业务 NOT_FOUND，scoped 调用者统一 30100。
-- **敏感二次授权**:`member-profile.read.sensitive` 与 `emergency-contact.read.sensitive` 也必须带 member ref；基础 read 通过但 sensitive 未通过时继续掩码。副职只读投影明确不含任何 `*.read.sensitive`。
-- **最后 ops-admin 保护(v0.61.0 PR-C)**:`MembersService` 注入 permissions 模块导出的 `LastAdminProtectionPolicy`。会让关联账号退出当前有效 holder 集合的入口，均在原事务内、实际停用/软删前调用 `assertCanDeactivateOpsAdminUser(tx, userId)`：`updateAccountStatus` 仅 `status=DISABLED`；`updateStatus(INACTIVE)` 与显式 `offboard` 共用 `offboardCore`；`reopenAccount` 软删 `oldLink` 前。若当前有效或当前 `endedAt=null` 常驻 holder 任一归零，统一返 `30101`；当前临时 backup 不可替代常驻兜底。
-- **跨轴同锁**:上述调用复用 policy 内唯一锁键 `role-bindings:last-ops-admin`，与 users disable/soft-delete、role-bindings、user-roles 削权路径串行；削权事务须先经 policy 取得该 invariant lock，再按 Member → User 取 lifecycle 行锁，锁后调用 assert 重算，避免 audit actor 外键与 advisory lock 形成死锁；禁止在 members 内复制 count、任期谓词、advisory-lock SQL 或另造锁键。
-- **事务与副作用顺序不变**:守卫拒绝时账号、ops-admin 绑定、member/offboard 其它腿、refresh token 与 reopen 新号均不得变化；放行后仍沿既有顺序执行 refresh 撤销、探测式 username、先软删旧号再建新号及 audit。
-- **非削权路径不接守卫**:`bindAccount` 只写 `memberId`；`unbindAccount` 只置 `memberId=null`，账号仍 live，二者不调用最后管理员策略。
-- **role 护栏优先**:三条削权路径继续先拒 `role!==USER` 的关联账号；SUPER_ADMIN 不进入 last-ops-admin 检查，沿既有 `MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE` 行为。
-- **账号启停审计(2026-07-14 第七刀)**:`updateAccountStatus` 的 user status 写、禁用时 refresh token 撤销与 `member.account.status-change` 必须在同一事务；before/after 只含 status，extra 只含 linkedUserId/refreshTokensRevoked，禁止 phone/openid/secret。
-- **企业微信绑定的两种待遇(T4,2026-08-02,D-WC-10)**:`reopenAccount` = 旧 User **代际终止**,在同事务、`lockAuthSessionUser` 之后、refresh 撤销之前调 [`users/wecom-identity-revoke.ts`](../users/wecom-identity-revoke.ts) 的 `revokeActiveWecomIdentityInTx` 撤销旧号全部 active 身份,计数写进既有 `member.account-reopened` 的 `extra.wecomIdentitiesRevoked`(恒写含 0);**新号不继承任何 `WecomIdentity`**(身份只能由本人重走绑定,不随账号迁移)。反过来 `offboard` 与 `updateAccountStatus`(disable / enable)是**临时停用**,`WecomIdentity` **一列都不许动** —— 这条由 `test/e2e/wecom-user-lifecycle.e2e-spec.ts` 的整行快照相等(含 `updatedAt`)钉住。撤销动作**禁止**在本模块复制,只能调那一个原语。
-- **offboard/reopen 已覆盖**:`offboard` 用伞事件 `member.offboard` 记录账号停用腿与撤销计数；`reopenAccount` 用 `member.account-reopened` 记录旧号软删/新号创建结果，两者原本即与业务写同事务，第七刀不新增重复事件。
-- **Member lifecycle 线性化**:offboard、linked 账号启用/绑定/重开、任职/分管创建、活动责任移交、报名 create/approve/候补递补、USER/MEMBER/POSITION_ASSIGNMENT direct binding 创建或恢复都复用 `member-lifecycle-lock.ts` 的同一 Member 排他锁；`lockAndReadLiveMemberLifecycle()` 区分软删，`assertActiveMemberLifecycle()` 统一 15001/17030。跨资源通常固定 Member→User；报名的 team insurance 分支为既有 Policy→Coverage→Member，禁止反转。offboard 同事务结束全部授权来源，INACTIVE Member 不得被重新引入当前参与或授权资格。
-- **活动责任摘权**:offboard 在 Member 锁事务内将该队员所有 active `ActivityResponsibilityAssignment` 置 revoked，并由既有 MEMBER RoleBinding 批量结束腿同步摘除 system-managed 活动角色；audit extra 记录 `activityResponsibilitiesEnded`，不得另开异步补偿。
-- **Membership offboard 收口**:Member 行锁下逐条调用 Membership 状态机做 ACTIVE→ENDED；ACTIVE 任期按不变式必已开始且 `endedAt=null`，因此 offboard 统一以当前时刻结束，不得恢复批量盲写时间。
-- **关联账号 session 锁(2026-07-22 D-PR1)**：`reopenAccount` / `updateAccountStatus` / `offboard` 在 Member 行锁后按 linked userId 调 `lockAuthSessionUser()`，锁后复读 memberId/role/status，再做软删或禁用、refresh 全撤销与 audit；禁止恢复旧的 `memberId` 裸 User 行锁作为 session 第二轨。
+Member生命周期统一member-lifecycle-lock：软删15001、inactive17030。
+离队、linked账号启用/绑定/重开、任职/分管、活动责任、报名/递补、direct binding创建恢复共用Member排他锁；
+通常Member→User，报名team保险保持Policy→Coverage→Member。
+reopen/status/offboard在Member之后按linked userId调用lockAuthSessionUser，
+锁后复读memberId/role/status再mutation/revoke/audit，不恢复第二套裸User锁。
 
-- **入队身份闸(M2,2026-08-01)**:`update`(改 `gradeCode`)与 `updateStatus(INACTIVE)`/`offboard` 都会把
-  「未入队志愿者」翻 false,让该队员名下的 live 入队申请变成 frozen 行。两处均调
-  [`team-join/team-join-enrollment-invariant.ts`](../team-join/team-join-enrollment-invariant.ts) 的
-  `assertEnrollmentIdentityChangeAllowed`,有 live 申请即返 **28211**(拍板:不自动终结、不静默放行;
-  管理员先一键入队或综合评估淘汰)。**闸内先取 member 键**,故必须排在 `lockMemberLifecycle` 之前
-  (offboard 里紧跟在 ops-admin 全局 invariant 锁之后);反序会与 final join 的「键 → Member 行锁」互等。
-- **事务开法(M3)**:上述两条路径改走 `runMemberLinearizedTransaction`(显式 `ReadCommitted` + 有界锁等待),
-  与 team-join / attendances 同一口径。
+offboard同事务终结授权来源、revoked活动责任并同步结束MEMBER system-managed binding，
+audit记activityResponsibilitiesEnded，不异步补偿。
+归属逐条走状态机ACTIVE→ENDED，以当前时刻结束，不盲批改任期。
+改gradeCode与INACTIVE/offboard先过assertEnrollmentIdentityChangeAllowed，
+有live入队申请28211，不开离队例外；member键在lifecycle前、offboard中在ops invariant之后。
+这两类路径用runMemberLinearizedTransaction（ReadCommitted+有界锁等待）。
 
-## 已抽出的职责边界(Phase 6-B,2026-08-15)
+账号status写/refresh撤销/audit同事务，status-change仅before/after.status及
+linkedUserId/refreshTokensRevoked。offboard/reopen复用既有umbrella事件，不多记一腿。
+reopen的旧User代际终止：User锁后、refresh前复用revokeActiveWecomIdentityInTx，
+extra.wecomIdentitiesRevoked恒写含0，新号不继承身份。
+offboard/disable/enable是可恢复停用，WecomIdentity整行（含updatedAt）不动。
+不注入UsersService或制造模块环。
 
-- **`members-query.service.ts`(第一刀,§3.2 QueryService)**:`list` / `options` 的 where 构造、
-  组织范围交集与 closure 展开、分页、`memberSafeSelect` 投影、关联 live User 的批量/单条读。
-  **判权腿不在其中** —— `AuthzService.getVisibleOrganizationScope()` 与 `RBAC_FORBIDDEN` 抛出留在
-  `MembersService.resolveMemberReadScope()`,算好的 `VisibleOrganizationScope` 作为**入参**传入
-  (§3.2 只豁免「显式传入的 read-scope filter」)。该类**禁止**注入 rbac / authz,也不 exports —— 跨模块
-  复用仍走 `MembersService.options()` 那一个入口,避免出现绕过判权腿的第二条读路径。
+## 标准照
 
-- **`member-audit-recorder.ts`(第二刀,§3.5 AuditRecorder)**:6 个事件(`member.account-granted` /
-  `-bound` / `-unbound` / `-reopened` / `member.account.status-change` / `member.offboard`)的
-  `before`/`after`/`extra` payload 组装与手机号掩码。只注入 `AuditLogsService`,**不持有 `PrismaService`**;
-  `tx` 由调用方在事务内透传,**事务边界与调用顺序仍归 `MembersService`**,recorder 不自开事务。
-  上面第 4、6 两条 audit 语义(`wecomIdentitiesRevoked` 恒写含 0;status-change 的 before/after 只含
-  status、extra 只含 linkedUserId/refreshTokensRevoked)由 `member-audit-recorder.spec.ts` 用**完整字段集
-  相等**(非 objectContaining)钉住 —— 多写一个字段同样红。
+member-official-portrait独立service，multipart由AttachmentVisualIdentityUploadService规范化。
+Member FOR UPDATE→锁后重读ACTIVE→同事务旧SUPERSEDED+新ACTIVE→DB one-active partial unique，
+P2002映射15040；provider阶段锁已释放，不能沿用锁前pointer。
+旧endedAt与新activatedAt同一时刻，版本max(version)+1（作废也占号），被替代二进制保留作历史，
+清理另走purge。scoped权限须再检目标在范围，复用buildOrganizationScopeFilter；
+范围外/不存在同15001，不以hasPermission代替范围判定。
+Swagger鉴权后缀严格`[rbac: <码>]`，范围说明放正文。
 
-- **`members.presenter.ts` / `members.policy.ts`(第三刀,§3.1 / §3.3)**:`attachAccountInfo`(对外 DTO
-  的 hasAccount / accountStatus / userId 三字段)与 `normalizeMemberNo`、`assertGradeCodeValid`。
-  两者都是**自由函数、入参即全部依赖**:不 import `prisma.service`、不注入 service、不开事务、不判权;
-  `assertGradeCodeValid` 的 client 由调用方(事务内即 `tx`)传入。
-  **刻意留在 service 未搬**:`assertCanOrThrow`(判权)、`runWithUniqueConstraintGuard`(P2002 错误映射,
-  包着调用方回调属编排)、`assertMemberNoUnique`(与 `assertGradeCodeValid` 同型,goal 只点名搬后者)。
-
-- **队员标准照(issue #1055 T4,2026-08-20)**:`member-official-portrait.service.ts` 独立成文件,承载 `GET/POST/DELETE :id/official-portrait` 与 `GET :id/official-portraits`;**不进** `members.service.ts`。形状是 **multipart 直传服务端**(与 T3 头像同一理由:服务端要规范化就必须看见字节)。本模块**只依赖 attachments 的一个面**(`AttachmentVisualIdentityUploadService`)。
-  - **one-active 三道防线**:`Member` 行 `FOR UPDATE` 串行 → 同事务「旧行转 SUPERSEDED + 新行 ACTIVE」→ **DB partial unique** `member_official_portrait_one_active_per_member`。第三道不是冗余:锁保证串行,不保证后来者重读到最新状态,而「忘了重读」不会让任何东西报错;P2002 映射成 `15040`。
-  - **锁内必须重读当前 ACTIVE** —— 阶段 ③(Provider put+HEAD)期间锁是放开的,锁外读到的值可能已经过期。
-  - **旧版 `endedAt` 与新版 `activatedAt` 取同一瞬间**(同一个 `new Date()`),版本历史不留缝也不重叠。T1 特意拿掉 `activatedAt` 的 `@default(now())` 就是为了让这件事可能。
-  - **版本号取 `max(version)+1` 不是 `count+1`** —— 作废过的行也占号,`count` 会给出已被占用的号并撞 `@@unique([memberId, version])`。
-  - **被顶替的那一版不清二进制**(与 T3 头像相反):它是历史事实,正式材料可能还引着它;合规清理走 issue §5.2 的 purge 流程。
-- ❌ **scoped 判权不能只验「有没有码」**:必须 `getVisibleOrganizationScope(user, code)` 取范围后,**再验目标 memberId 在不在范围内**。只验前半截的话,A 部门的队长拿着 org-scoped 绑定就能改 B 部门队员的标准照,而 `hasPermission` 照样为 true。范围→where 复用 `MembersQueryService.buildOrganizationScopeFilter`,不另写一份。范围外与不存在**返回同一个错误**(`15001`),区分开来等于给出一个成员枚举口。
-- ❌ **`@ApiOperation` 的鉴权后缀必须是严格的 `[rbac: <码>]`**:`docs:rbacmap` 按这个形状精确解析并回查 seed 事实闭包,写成 `[rbac: x + 组织范围]` 会被整串当成码名而报「不在闭包中」(本刀实测)。范围说明写进括号里的正文。
-
-## Risk points
-
-- ❌ 不复用 `UsersService`、不引入模块环，也不把 policy 调用移到事务外。
-- ❌ 不把入队身份闸挪到 `lockMemberLifecycle` **之后**,也不为「离队场景不方便」给它开例外 ——
-  例外就是这条不变量唯一的漏点。
-- ❌ 不因本保护改 endpoint、DTO、OpenAPI、Permission、Role、BizCode、schema 或 migration。
-- ❌ 不改变 offboard 幂等 skip、refresh 撤销 reason、reopen username 探测与软删/建号先后序。
-- ❌ 不绕开 `member-lifecycle-lock.ts` 另造生命周期锁，也不采用 User → Member 的反向锁序。
-- ❌ 不在关联账号 session mutation 里先改 User/refresh 再补锁，也不基于锁前 linked role/status 快照提交。
-
-## Validation
-
-- `pnpm test:e2e -- department-data-scope-members.e2e-spec.ts`
-- `pnpm test:e2e -- members-last-ops-admin members-account-lifecycle members-offboard users-last-super-admin control-plane-audit-characterization`
-- 依赖 permissions policy 的安全改动必须跑 `pnpm agent:check:full`，并确认 contract snapshot 零漂移。
+验证department-data-scope-members、last-ops-admin/account-lifecycle/offboard、
+control-plane-audit、wecom整行生命周期与标准照并发/越权；
+audit形状用完整字段集相等，不能多泄露字段。

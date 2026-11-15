@@ -1,80 +1,82 @@
-# permissions — 本地铁律
+# permissions — 判权与权限写入
 
-## C1 D2a 增量边界
+负责权限/角色配置、legacy GLOBAL 判权及 System raw permission 出口。
+登录归 auth，App capability 出口归 users。事实以 permission-catalog、seed、service 和行为测试为准；
+历史 PR 进度从 `harness-v3-final` 取回，不在此重复累计计数。
 
-`RbacService.can/judge` 第四参数及 `getUserPermissionCodes` 第三参数可显式传 `Prisma.TransactionClient`；
-未传仍使用原 PrismaService，不改变 GLOBAL/任期/软删 role/SUPER_ADMIN/.self 规则，不批迁旧调用。
-新增 `activity-metric.read.catalog`、`activity-metric.manage.definition`、`activity-metric.manage.set`：
-仅 Human GLOBAL，机器/委托 eligibility 均 false；可人工授予自定义角色，不自动给内建角色。
-三码在 permission-code-holders 的精确人工授码清单登记，不豁免其他 CUSTOM_ROLE_ALLOWED 权限。
+## 读取与身份
 
-## C1 D2b 增量边界
+- RbacService 的 can/judge/getUserPermissionCodes/getEffectiveRoles 只读当前有效
+  USER+GLOBAL+ACTIVE、未删 RoleBinding 和未删角色；startedAt/endedAt 两端含边界，
+  共用 `role-binding-validity.ts`。不查询已 DROP 的 UserRole 表、不接 scoped 绑定判权。
+  scoped 三源解析归 AuthzService；两套语义不能合并。
+- SUPER_ADMIN 在 judge 短路；ADMIN 的 USER 权限来自 seed，不在 service 特判。
+  每请求读 PG，无 Map/TTL、Redis/pub-sub 或提交后 invalidate 正确性链。
+  显式 tx 参数必须贯穿本次查询；未传保持原 PrismaService，不批量改写无关调用。
+- `.self`：user owner 对 user.id，member owner 对 user.memberId；
+  缺 member/resource 或未知 ownerType fail-closed。
+- System me/permissions 返回 raw code/角色摘要，SA 返回 Permission.code 全集，不返 `["*"]`；
+  App capabilities 不是后端授权证明，不新增管理员查别人 permissions 的端点。
+  `/reload` 只保留 all/user/role 参数校验和 `{ reloaded:true }`，缺必填拒绝、不存在对象静默成功。
 
-`getRoleIdsWithPermission(roleIds, code, tx?)` 可在第三参数消费调用者事务，未传仍用原客户端；
-仅改变查询所属事务，不改变“角色含码”及软删过滤。新增 `activity-template.read.catalog` 与
-`activity-template.manage.version` 两码，读写互不隐含，仅 Human GLOBAL、可人工授予自定义角色，
-机器/委托 eligibility 均 false，seed 不自动给内建角色、绑定或职务策略授码。
-与 D2a 三码合计五条属于 permission-code-holders 的精确人工授码清单；不得扩大成整族豁免。
-模板管理权不授予活动创建/修改权；草稿选择沿活动 scope 的 `activity.update.record` 与既有属主规则。
-维护者已精确授权补充该既有权限的指标选择 businessDescription，并同步 6→8 管辖面及
-两条新模板码的派生基线；仅更新说明，不改该权限的 seed 描述、授码策略或角色映射。
+## 委派、末位管理员与生命周期
 
-> 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);架构边界读 [`/docs/architecture-boundary.md`](../../../docs/architecture-boundary.md);API surface 边界读 [`/docs/api-surface-policy.md`](../../../docs/api-surface-policy.md);相关安全章节读 [`/docs/security.md`](../../../docs/security.md)。本文件**只**记录在本目录工作时容易踩雷的本地铁律。
+- RoleDelegationPolicy 是 binding create/preview、兼容 user-role assign/revoke 的唯一委派闸；
+  update/remove 也须先检查 system-managed。非 SA actor 先验证 ACTIVE/未删 User
+  与当前 GLOBAL ops-admin，写路径先取 `role-bindings:last-ops-admin` advisory，
+  锁后复核 actor，再读取/锁 target，持锁到 audit 提交；preview 只读但同样 actor-first。
+- 末位 SA 用 `users:last-super-admin`；ops-admin 同时保留至少一个当前有效 holder
+  和至少一个 endedAt=null 的当前常驻 holder。共用 LastAdminProtectionPolicy，
+  任期、User/role/binding 状态过滤不能缺；失效 binding 清理放行，归零统一30101。
+  lifecycle 削权锁序固定 advisory invariant → Member → User，锁后重读重算，不另造锁键/计数。
+- legacy UserRolesService 实际读写 GLOBAL RoleBinding，契约不变；
+  linked 账号恢复授权按 Member→User 行锁并复核 ACTIVE。
+  revoke 是 ENDED+endedAt+deletedAt 软撤销，audit 记 role-binding.* + viaPath=user-role；
+  直写 auditLog 避免模块环，不引 forwardRef。
+- system-managed 三个活动责任角色只由 ActivityResponsibilityGrantProjector 业务事务写入，
+  人工入口含 SA 均拒34006；非 SA 不得委派特权角色（30102）。
+- Role 删除与 SERVICE_PRINCIPAL binding 创建/恢复共用 lockRbacRoleLifecycle。
+  锁后只要有未软删服务主体 binding 即30113，含 SUSPENDED、未来或过期未撤销行；
+  不隐式撤销。先显式撤销才可删角色，不扩大到其他主体删除语义。
 
-## Scope
+## 唯一权限集写原语
 
-- **RBAC 配置中心**:`Permission` / `RbacRole` / `RolePermission` / `UserRole` CRUD + **判权核心** `RbacService`
-- **端点**:RBAC CRUD(Permission / Role / RolePermission / UserRole)+ `GET /api/system/v1/rbac/me/permissions` + `POST /api/system/v1/rbac/reload` + `PUT /api/system/v1/roles/:id/permissions`(P1-32 PR 4a 整集替换)+ `GET /api/system/v1/permissions/catalog`(PR 2)+ 角色权限集 `GET` 与 `POST …/preview` 读预览面(PR 4b)。⚠️ **P1-32 PR 8(2026-08-24)退役两条**:`POST /roles/:id/permissions`(assign)与 `DELETE /roles/:id/permissions/:permissionId`(revoke)—— 角色权限的写面只剩 `PUT`。⚠️ **本行不再写累计端点数** —— 它历史上就漏记过 PR 2 / PR 4b 三条;真值恒以 `test/contract` 的 `EXPECTED_ROUTES` 与 `docs/ai-harness/ROUTE_AUTHZ.md` 为准(全仓 552)。
-- **判权优先级**(沿 D7 v1.1 §7.1):SUPER_ADMIN 短路 → ADMIN 经 seed 继承 USER 权限(本身不特判)→ **global RoleBinding**(终态 scoped-authz PR6 起,判权读源从 `user_roles` 重指向 `RoleBinding(principalType=USER, scopeType=GLOBAL, status=ACTIVE)`)→ role_permissions 聚合 → `.self` 后缀做 ownership
-- **不负责**:登录 / refresh / 改密(在 [`/src/modules/auth/`](../auth/));capability map 出口在 [`/src/modules/users/app-capability.service.ts`](../users/app-capability.service.ts) — **不是**本模块
+- 写入口仅 PUT replace；previewReplace 复用同一判定但零写。
+  `replaceRolePermissionSet()` 是唯一 role_permissions writer；所有可达写路径必须可达 step-up。
+  不复活旧 POST assign/DELETE revoke，不新增旁路。
+- 同事务锁 roles 行 FOR UPDATE → 重读角色三态/permissionRevision →
+  expectedRevision 比对（30111）→ 锁内集合差分 → grant/revoke 各自控制面闸 →
+  删增、revision+1、audit。相同集合不写、不加版本、不审计；不能按计数判断相同。
+  updatedAt 不代替 permissionRevision。若重引增量操作必须传意图、锁内解算，
+  不用锁外读取现状拼 targetCodes，否则会丢并发更新。
+- 入口仍检查目标全集的控制面码，且早于 Permission 存在性查询；不改成只检查差集。
+  非 SA 对含控制面码的目标集合保持拒绝。撤码的 step-up（30112）先于事务内控制面闸（30103），
+  测后者必须先提供真 proof，不能以为只收到上层错误就是下层已验证。
 
-## Local facts
+## 目录与控制面
 
-- **Activity OS R2 / B6 D2**：三种 App managed 创建入口都在 Service 校验 `activity.create.record`，紧急模式叠加 `activity.create.emergency.record`；后者的 `SUPER_ADMIN_ONLY`、角色不可授予和默认绑定不变。跨组织及代设发起人仍复用现有策略；本刀只同步四条受影响权限的 `businessDescription` 与派生管辖面，不改 seed 描述、权限集合或 grantPolicy。
+- `isControlPlanePermissionCode()` 覆盖 rbac.*、role-binding.* 和 SA-only 保留码；
+  grant/revoke 共用 assertControlPlaneCodesOrThrow，非 SA 两方向均30103。
+  保留码是控制面真子集，不能合并两谓词：SA 可以给角色授普通 RBAC 只读码，
+  但任何身份都不能授 SA-only 保留码（30109）。撤除历史保留码刻意允许，不能补成对称禁令。
+  凭证 reset 家族必须被 reserved-super-admin-permission-codes 的动态检查覆盖。
+- 内建角色清单唯一来源 protected-role-codes/isProtectedRoleCode；
+  含 SA 的运行时删/更新/改权限分别30104/30107/30108。派生只读角色随 seed 生成，
+  不在 service/测试/文档复制角色或权限清单。
+- Permission 写入共用 seed-permission-codes 谓词：闭包内删30105、闭包外造30106、
+  闭包内改30110（含 SA）。闭包外历史惰性码的删除仍保留；不要扩大为全禁。
+  Permission 物理删可经 FK Cascade 清除自定义角色映射，不将它当成可无损恢复。
+- 权限定义在 permission-catalog.ts，角色映射在 prisma/seed.ts；两者职责分开。
+  seed-permission-codes 是运行时唯一允许的闭包副本，源码 AST/桶并集和 seed 后 DB 分别验证。
+  RbacPermissionSeed.description 才是 DB 描述权威源，metadata.businessDescription 是另一个字段，
+  不互相比较或覆写。运行时 PATCH 被禁不证明既有库已同步，seed 的描述同步另按现行实现和测试核对。
+- 指标目录三权限与模板目录两权限只认 Human GLOBAL，machine/delegation eligibility=false，
+  可人工授自定义角色但不自动授内建角色；read/manage 不隐含，精确人工授码例外不扩成整族。
+  模板管理不授活动创建/修改权；选择仍遵守活动 scope/属主。
+  紧急创建权限维持 SUPER_ADMIN_ONLY、角色不可授，不能因创建入口接入而扩大授权。
 
-- **入口模式当前现状(2026-06-11 Slow-4 收口,单轨)**:全仓 controller 一律"入口仅 `JwtAuthGuard`,**不**挂 `@Roles(...)`,Service 内 `rbac.can()` 判权 + 失败抛 `RBAC_FORBIDDEN(30100)`"(活跃 `@Roles` = 0;`RolesGuard` 机制保留 Guard 链作防御性兜底;activities 列表/详情等 `[auth]` 端点无码仅登录)。业务面 ADMIN 权限由内置角色 `biz-admin`(v0.61.0 PR-11 contract 后绑 68)承载,seed 幂等补挂每个非软删 ADMIN；`org-admin` 47、`group-manager` 20，活动/报名/考勤动作改由 owner/collaborator/reviewer 显式角色承载。修改权限边界时仍必须说明 controller guard、service-level `rbac.can()`、数据范围(where 子句 / `.self`)三者关系
-- **`RbacService` 是唯一 legacy GLOBAL 判权出口**:`can()` / `judge()` / `getMyPermissions()` / `reload()`;`getUserPermissionCodes()` 每次直读 PostgreSQL 当前事实,无跨请求 Map/TTL;`SUPER_ADMIN` 短路在 `judge()` 内实现;`ADMIN` 继承 USER 由 **seed 给 ADMIN 内置角色配 USER 级权限点**实现,Service 本身**不**对 `ADMIN` 特判
-- **🔴 判权唯一读源 = 当前在期 global RoleBinding(终态 scoped-authz PR6;冻结稿 §8.2 行为锁)**:`getUserPermissionCodes`〔判权聚合〕/`getEffectiveRoles`〔角色摘要〕**只读** `RoleBinding(principalType=USER, scopeType=GLOBAL, status=ACTIVE, startedAt<=now, endedAt=null|>=now, deletedAt=null)`;任期边界与 `AuthzService` 共用 [`role-binding-validity.ts`](role-binding-validity.ts) 单一谓词/where 构造(起止时刻均含边界),未来/过期 GLOBAL 绑定不再产权限或角色摘要。**旧 UserRole 表已 DROP**(每条 UserRole 已由第 37 migration 回填为该形态 RoleBinding;第 39 migration 冻结表 cleanup 物理删除)。**只读 GLOBAL,绝不判 scoped**——经 `role-bindings/` CRUD 建的 ORGANIZATION/TREE/ACTIVITY/RESOURCE/SELF 绑定入库即止,判权忽略(scoped 判权是 PR8 AuthzService)。改判权/读源必跑 characterization(rbac.service.spec 判权矩阵 + user-roles/role-bindings e2e + `authz-rbac-equivalence` 任期矩阵)
-- **`UserRolesService` 内部换存储、对外契约零变(PR6)**:assign/list/revoke **读写 global RoleBinding**;端点路径 + 码(`rbac.user-role.{read,create,delete}`)+ 请求/响应 DTO 逐字不变;**撤销 = 软删**(status=ENDED + endedAt + deletedAt,非物理删);建/撤写 audit(`role-binding.{create,revoke}` + extra.viaPath='user-role';**直写 auditLog** 规避 PermissionsModule↔AuditLogsModule 模块环,本仓 forwardRef 零使用)
-- **legacy user-role 授权恢复锁**:`UserRolesService.assign` 是 USER GLOBAL RoleBinding 的兼容写入口，linked 账号必须按 Member → User 取 lifecycle 行锁、锁后重读 User/Member ACTIVE 后才建绑定；不得仅修 `role-bindings/` 新面而漏掉此入口。
-- **角色委派单一闸(2026-07-13 第一档安全收口 + v0.61.0 PR-2/PR-C)**:`RoleDelegationPolicy` 是 role-bindings create/preview + user-roles assign/revoke 的唯一委派入口；update/remove 另在加载现存角色后先调用同 policy 的 system-managed 守卫。SUPER_ADMIN 短路不变；非 SUPER_ADMIN actor 必须是 ACTIVE/未删 User，且持有**当前有效** global `ops-admin`（任期沿 [`role-binding-validity.ts`](role-binding-validity.ts)，当前临时 holder 可委派普通角色，future/expired 不可）。所有非 SA 写委派先取 `role-bindings:last-ops-admin` advisory、锁内复核 actor，之后才读取/锁定 target 并持锁至 audit/事务提交；preview 纯只读不取锁但同样 actor-first，避免撤权/停用后的在途落写及 target 枚举。`isControlPlanePermissionCode()` 是控制面权限单一谓词(`rbac.*` ∪ `role-binding.*` ∪ 7 条 [`reserved-super-admin-permission-codes.ts`](reserved-super-admin-permission-codes.ts) 保留码；其中 `*.reset.credentials` 家族由该文件同目录 spec 的动态扫描判据强制「全员登记」，新增 provider 凭证重置码漏登记即红)。[`system-managed-role-codes.ts`](system-managed-role-codes.ts) 三角色(`activity-owner` + 两类 collaborator)对任何人工入口含 SUPER_ADMIN 均拒 `34006`，只有 `ActivityResponsibilityGrantProjector` 可在业务事务直写；其余角色非 SUPER_ADMIN 不得授予/撤销特权角色(统一 `30102`)。
-- **末位管理员单一策略(v0.61.0 PR-C)**:[`LastAdminProtectionPolicy`](last-admin-protection.policy.ts) 承接两条不变量及唯一 advisory-lock helper:最后活跃 `SUPER_ADMIN` 使用锁键 `users:last-super-admin`;ops-admin 同时保持 ≥1 个**当前有效 holder**与 ≥1 个当前有效且 `endedAt=null` 的**常驻 holder**，均要求 USER/non-null/GLOBAL/ACTIVE/未删 binding + 未删 role + ACTIVE/未删 User，任期沿同一 validity helper 且起止边界均包含。后者统一覆盖 role-bindings status/start/end/remove、旧 user-roles revoke、users disable/soft-delete、members status/offboard/reopen；任一归零统一返既有 `30101`，清理 future/expired 等无效 binding 放行。涉及 lifecycle 行锁的削权路径固定 advisory invariant → Member → User；锁后重读并重算，禁止另造 count/lock、换锁键或让 User 行锁先于 invariant lock；上线前仅运行只读 [`preflight SQL`](../../../docs/ops/ops-admin-term-invariant-preflight.sql)
-- **控制面授码 + 内置角色只读**:role-permissions 的**增、减两个方向**在写原语内**共用同一个** `assertControlPlaneCodesOrThrow()`,**禁止只给一侧挂闸**(E-B2:已退役的 `revoke()` 曾一个控制面判定都没有,ops-admin 授不了却撤得掉,可把某角色的 `rbac.*` 撤空)。**两层口径,别混成一层(P1-32 PR 3a,2026-08-23)**:第 1 层 —— 非 SUPER_ADMIN 碰控制面码一律 `30103`,授撤同口径,语义自 E-B2 收口后一字未变;第 2 层 —— 那 **7 条 SA-only 保留码在授码侧连 SUPER_ADMIN 也拒**(`30109`,沿拍板②「一条都不该进任何角色」),因为把保留码写进 `role_permissions` 就是让**持有该角色的非 SA** 永久拥有 SA-only 能力,由谁按下按钮不改变结果(SA 仍能用 SA 身份直接做那些操作,他走身份短路根本不查 `role_permissions`)。⚠️ **第 2 层只覆盖保留码,不覆盖 `rbac.*` / `role-binding.*` 前缀族** —— 前缀族里有 `rbac.permission.read` / `role-binding.read.record` 这类纯只读码,拦住 SA 会当场取消「SA 建一个 RBAC 只读观察员角色」这个合法能力,且没有任何拍板支持;两条谓词 `isControlPlanePermissionCode` 与 `isReservedSuperAdminOnlyPermissionCode` 是真子集关系,**禁止合并**。⚠️ 撤码侧**刻意没有第 2 层**,给**历史脏数据**留唯一清理路(seed 角色本就不含保留码,PR 0 实测交集为 0);两侧不同**不是漏改**,别顺手补成对称。入口收的就是 codes,故能在 Permission 存在性查询前拦(未 seed 的保留码也返 `30103`);⚠️ 已退役的 `revoke()` 收的是 permissionId,必须先查库取 code 再判 —— 那是签名决定的唯一次序差,不是漏拦,P1-32 PR 8 之后这条差异不复存在。⚠️ **PR 8 带来一条新的次序事实,写测试时别踩**:`PUT` 的 step-up 闸(`runReplaceSet()` 第 2.5 步)排在**撤码方向**的控制面闸(写原语第 8 步,事务内)**之前** ⇒ 非 SUPER_ADMIN 撤控制面码时**先**拿 `30112` 而不是 `30103`。要断言 `30103` 必须**先铸一把真 proof** 越过上层那道闸,否则测到的不是同一件事(上层边界遮蔽下层边界)
-- **[`protected-role-codes.ts`](protected-role-codes.ts) 是 15 个内建角色的唯一清单**（9 个既有角色 + v0.61.0 六个活动责任角色），**运行时只读**,任何身份含 SUPER_ADMIN:删返 `30104`、改名/改描述返 `30107`、加/减权限返 `30108`;自定义角色的增删改查一字不变。⚠️ **对 SA 也关的理由不是「权限过宽」而是「运行时可改本身是设计错误」**:`org-readonly`(副队长/副部长)与 `group-readonly`(副组长)的码集是从正职角色**过滤派生**的(`isReadonlyProjectionCode`),手改必被下次 seed 覆盖,或造出与派生链打架的第二份真相。四道闸一律锚在共享谓词 `isProtectedRoleCode()` 上,**禁止**各处自己 `PROTECTED_ROLE_CODE_SET.has(...)`。seed-rbac e2e 是 protected/system-managed/固定权限映射的漂移哨兵;**禁止**在 service / 测试 / 文档另造代码清单
-- **C2.1 Role 删除与服务主体绑定闭环**:Role 删除、SERVICE_PRINCIPAL Binding 的创建与恢复共用 `lockRbacRoleLifecycle()`；删除路径须锁后重读未删 Role，再检查全部未软删服务主体 Binding。只要存在任一 `principalType=SERVICE_PRINCIPAL` 且 `deletedAt=null` 的 Binding，就返 `30113`；`SUSPENDED`、未来生效、已过期但未撤销的 Binding 都算，后端不隐式撤销。先显式撤销 Binding 后才可删除 Role；USER 等既有主体的删除语义不变。
-- **🔴 role_permissions 只有一条写原语(P1-32 PR 4a,2026-08-23;PR 8 后成为唯一)**:`RolePermissionsService.replaceRolePermissionSet()` 是全类**唯一**会改写 `role_permissions` 的地方。4a 时有三条公开写路径经它落库(`assign` / `revoke` / `replace`);**P1-32 PR 8(2026-08-24)退役了前两条**,现在只剩 `replace()`(真写)与 `previewReplace()`(同一段判定的 dry-run)。**禁止**再开第二条写路径 —— 留两条就是「一侧有闸、另一侧裸奔」,E-B1(#1115)、E-B2 授撤不对称都是这个形态。⭐ **执行位是禁止型判据**(`scripts/check-role-permission-impact.ts` 的 `stepup-bypass`):凡能到达写原语的方法**都必须**能到达 step-up 闸,扫描面 AST 动态发现、不写死名单,新增写入口自动纳管。⚠️ **入参形状随 PR 8 收窄**:原语此前收的是**意图**(`add` / `remove` / `set` 三态),因为旧 POST/DELETE 是增量语义 —— 若在锁**外**先读现状算出目标全集再交进去,那份快照会在锁等待期间过期,「减掉 x」会顺手抹掉别人刚加的 y。两条增量端点退役后三态收成单一 `targetCodes: string[]`。🔴 **若将来再加回增量语义,必须把「意图」这个形状一起加回来**,别在调用方先读现状算目标集 —— 那正是当年要避开的丢更新窗口(service 头注留了同款警告)。原语内做六件事且**全在同一事务**:`SELECT … FROM "roles" … FOR UPDATE` 锁**角色行**(不是权限行 —— 整集替换的临界区是「这个角色的权限集」)→ **锁后复读**角色行三态与 `permissionRevision`(锁前读的值在锁等待期间可能已被 +1,`wecom-settings` S1 就是这么破的)→ `expectedRevision` 比对(不符 `30111`)→ 锁内算差集(**比集合不比计数**;相同即 no-op:不写、不 +1、不留痕)→ 按**方向**过控制面闸(增走 grant / 减走 revoke)→ 删增写 + `permissionRevision + 1` + audit。⚠️ `permissionRevision` 与 `updatedAt` 不是一回事,别拿后者替代:改显示名动 `updatedAt` 不动它。⚠️ 空转不留痕**对旧 POST 也生效** —— 重复授权从此不写 audit 行(响应仍 201 + detail),这是刻意的,已被 e2e 正面钉住。⚠️ `replace()` 入口另有一道**判目标全集**的前置闸(与 `assign()` 逐字同一句,为保住 PR 3a「早于 Permission 存在性查询拦下」的 fail-close),代价是**非 SA 对已含控制面码的自定义角色用不了 PUT**,得退回 POST/DELETE —— 那是刻意的保守选择,**不是 bug,别改成判差集**(判差集是放宽)
-- **三道闸的可达性判据(缺陷类执行位)**:**新增任何会改写角色行、角色权限映射或 `Permission` 行的公开方法(如 RBAC 终态方案 PR 4 的原子 `PUT`)必须同样挂闸**,由 [`role-permissions-control-plane-gate.spec.ts`](role-permissions-control-plane-gate.spec.ts) 强制(文件名略窄于职责,**刻意不改名**:它被 9 处引用,且守的是「缺陷类」不是「角色」这个主题)—— 该判据按 AST **动态现取** `RolePermissionsService` + `RbacRolesService` + `PermissionsService` 里所有会写 `rolePermission` / 会改既有 `rbacRole` 行 / 会写 `permission` 行的公开方法(含把写操作或闸藏进私有 helper 的形态:发现侧与满足侧走**同一个** `this.<x>()` 传递闭包),逐个要求能到达该写面的**全部**闸,漏一个即红并点名。**刻意不写死方法名** —— 写死名单时新方法与它漏掉的闸会一起不在名单里,判据当场变摆设且全绿。两个写面口径**刻意不同**:`rolePermission` 认全部写方法,`rbacRole` 只认改既有行的(`create` 撞内建 code 会先被 unique 预检查判成 `30004`,结构上不可能改到内建角色,拉进来只产生恒定误红)—— 判据里有一条**专门钉住这个区分是活的**(`create` 必须出现在「任意写」探针面、且不出现在受闸名单里),否则口径退化成「认所有写方法」时全套照样绿。第三个写面 `permission` 认**全部**写方法(含 `create` 家族),与 `rbacRole` 面相反:`permission.create` 恰恰只对闭包内的码有意义,必须查同一谓词才知道该拒哪边,现网三条腿(create/update/delete)确实都查它。另有一条自证钉住表名正则 `\bPermission\b|\bpermissions\b` **不**匹配 `RolePermission` / `role_permissions`(词内相邻,`\b` 不成立)—— 写成 `/Permission|permissions/i` 会把映射面的 raw SQL 误算成本面写点,产出恒定误红。**P1-32 PR 4a 起传递闭包是发现侧的唯一机制**:三条公开写路径身上一个直接写点都没有(全落在私有原语上),判据靠 `this.<x>()` 闭包才点得到它们 —— 为此新增一条常驻自证钉住「三者直接写点恒为 0、却仍被发现」,闭包一旦退化成「只看字面量」,发现侧会空掉而主断言在空集上循环全绿,那条自证是唯一会先红的东西
-- **`RbacService.getRoleIdsWithPermission(roleIds, code)` 是 PR8 additive**(终态 scoped-authz;冻结稿 §5.2「roleHasPermission」批量形态):仅供 `authz/` 模块三源虚拟 grant 的"角色含码"过滤;排除软删角色;与 legacy GLOBAL 聚合一样每次直读 DB。`can()/judge()` 仅在 GLOBAL 绑定任期维度收紧为当前在期,其余语义不变 —— 改此方法或任期谓词必跑 authz 等价矩阵 e2e(`authz-rbac-equivalence`)
-- **多实例一致性终态(D-RBAC)**:权限/角色/role-permission/user-role/role-binding 写路径不维护本地失效链；提交后其他 Nest 实例下一请求通过共享 PostgreSQL 立即看到 grant/revoke/角色软删。`reload` 仅保留兼容契约与输入校验,不再清内部状态；不引 Redis/pub-sub/替代 cache。
-- **raw permission ≠ app capability**(沿 D-5.3 + Phase 0.7 §3.2):
-  - `GET /api/system/v1/rbac/me/permissions`(本模块,raw `Permission.code` 集合 + 业务角色摘要;SUPER_ADMIN 返 Permission.code 全集而**非** `["*"]`)
-  - `GET /api/app/v1/me/capabilities`(在 `users/` 模块,product-level capability map,经四维降权;**不是**授权证明,后端写端点必须重新做四维校验)
-- **`/reload` 三档 scope**:`all` / `user(+userId)` / `role(+roleId)`;缺字段抛 `BAD_REQUEST`;userId / roleId 不存在静默成功;出参恒为 `{ reloaded: true }`
-- **`.self` ownership**:`ownerType='user'` → `ownerId === user.id`;`ownerType='member'` → `ownerId === user.memberId`(未绑定 memberId 时 fail-close);未知 ownerType / 缺 resource → fail-close(沿 [`rbac.service.ts`](rbac.service.ts) 第 216–228 行)
-- **错误码段位**:`PERMISSION_NOT_FOUND/30001` / `RBAC_ROLE_NOT_FOUND/30003` / `INVALID_PERMISSION_CODE_FORMAT/30008` / `PERMISSION_CODE_ALREADY_EXISTS/30009` / `LAST_OPS_ADMIN_PROTECTED/30101`(含 role-binding/user-role 撤权及禁用/软删最后 ops-admin 持有人) / `CANNOT_ASSIGN_HIGHER_ROLE/30102` / `PERMISSION_RESERVED_SUPER_ADMIN_ONLY/30103` / `PROTECTED_ROLE_DELETE_FORBIDDEN/30104` / `SEED_PERMISSION_DELETE_FORBIDDEN/30105` / `PERMISSION_CODE_NOT_IN_SEED_CATALOG/30106` / `PROTECTED_ROLE_UPDATE_FORBIDDEN/30107` / `PROTECTED_ROLE_PERMISSION_CHANGE_FORBIDDEN/30108` / `RESERVED_PERMISSION_NOT_ROLE_GRANTABLE/30109` / `SEED_PERMISSION_UPDATE_FORBIDDEN/30110` / `ROLE_PERMISSION_REVISION_CONFLICT/30111`(PUT 整集替换的乐观并发冲突) / `ROLE_PERMISSION_STEP_UP_REQUIRED/30112` / `ROLE_HAS_SERVICE_PRINCIPAL_BINDINGS/30113`(未撤销服务主体 Binding 阻止 Role 删除);`RBAC_FORBIDDEN=30100` 是判权失败统一码
-- **Permission 物理删**(D4 v1.0);`RolePermission` FK Cascade 自动联级清理
-- **🔴 权限目录护栏(P1-32 PR1,2026-08-22)**:`Permission` 三条写路径按 [`seed-permission-codes.ts`](seed-permission-codes.ts) 这**一个**谓词分流 —— 闭包内的码**删返 `30105`**(任何身份含 SUPER_ADMIN)、闭包外的码**造返 `30106`**、闭包内的码**改返 `30110`**(P1-32 PR 3b,2026-08-23;含 SUPER_ADMIN)。立项事实:`RolePermission.permission` 是 `onDelete: Cascade`,删一个码 = 一次性撤销所有角色对它的授权 —— 实测删 `member.read.record` 打掉 4 个角色(`role_permissions` 337→333),重跑 seed 只补得回内置角色那部分,**自定义角色那条永久丢失**。⚠️ 三条路径**必须共用同一个谓词**,各判各的会出现「删挡住了、造没挡住」这种半边闸;⚠️ 护栏**只**管闭包内的码,闭包外的历史惰性码删除行为一字不变(顺手全禁会把唯一清理入口也堵死);⚠️ 结果上 `POST /permissions` 与 `PATCH /permissions/:id` **都不再存在成功路径**(POST:闭包内已存在→`30002`,闭包外→`30106`;PATCH:237 条码全在闭包内→`30110`),这是**刻意的** —— 权限码与它的 `description` 都只能改代码并发版。⚠️ **PR 3b 是推翻一条刻意设计,不是补漏接的闸**:`prisma/seed.ts` 的 `update: {}` 当年逐字写着「防止运营运行时调整被 seed 回退」,即「运行时可改 description」是**故意**的;PR 0 之后 `description` 有了代码侧权威源(`permission-catalog.ts` 各 `*_PERMISSION_SEED` 的 `description` 字段),DB 行与代码常量成了同一件事的两份副本且**无人比对**,才改的立场。⚠️ 权威源是 `RbacPermissionSeed.description`,**不是** `PERMISSION_CATALOG_METADATA.businessDescription` —— 后者是**另一个字段**(面向后台编辑器的长句业务说明),从不写进 DB,两者内容本就不同,**别拿它们对比**(实测 115 条零条相等;照它建判据会红在几乎每一条上)。⚠️ 🔴 **PR 3b 只关了漂移的两条路里的一条**:V1「运行时 PATCH 改 DB」已关;**V2「改代码里的 description 字符串,`update: {}` 让既有库永远收不到」仍开着**,与 PATCH 无关,本刀对它零作用。别把「PATCH 关了」读成「漂移问题解决了」。堵 V2 要让 seed 变成权威写者(`update: { description }`),该做法此前被否的理由(「会静默改写运营手工调过的文案」)在 PR 3b 之后已不成立 —— 两者是**先后**不是二选一,待维护者另行拍板
-- **闭包清单为什么在 `src/` 又存了一份**:`src/` 够不到 seed 事实闭包(`prisma/seed.ts` 不进 `dist/`,且它自己 import [`permission-catalog.ts`](permission-catalog.ts) ⇒ 反向 import 是循环)。[`seed-permission-codes.ts`](seed-permission-codes.ts) 是**唯一**允许的那份副本,与 [`protected-role-codes.ts`](protected-role-codes.ts) 同范式,靠三段链钉死:清单 == 桶并集 == typed-AST 全集([`seed-permission-codes.spec.ts`](seed-permission-codes.spec.ts),薄跑红区判据 `scripts/check-permission-catalog-closure.ts`)、清单 == seed 后的 DB 行(`test/e2e/seed-permission-catalog-runtime.e2e-spec.ts`,**连 DB**;源码侧闭包判据对运行时漂移结构性失明)。**禁止**在 service / 测试 / 文档再造第三份权限码清单
-- **权限定义**(P1-32 PR 1 起)全部在 [`permission-catalog.ts`](permission-catalog.ts):`RBAC_PERMISSION_SEED` / `DICT_PERMISSION_SEED` / `ORG_PERMISSION_SEED` 等 58 个声明,与已删除的 `rbac-seed-facts.ts` 内容合并于此;**角色映射**(`OPS_ADMIN_/BIZ_ADMIN_/ORG_ADMIN_PERMISSION_SEED`、各 `*_PERMISSION_CODES`、`RBAC_SEED_CATALOG`)仍在 [`/prisma/seed.ts`](../../../prisma/seed.ts)。分界线是「定义一条码」与「把码发给谁」。**RolePermission 映射 + Permission code 集合属于高风险变更**
-
-## Risk points (不要做)
-
-- ❌ **不**给任何端点重新挂 `@Roles(...)` 入口判权(Slow-4 已收口单轨;新管理面 endpoint 默认 R 模式,权限事实变更一律 D 档)
-- ❌ **不**把 `/api/system/v1/rbac/me/permissions` 与 `/api/app/v1/me/capabilities` 混为一谈;raw code 不出 App;capability 不替代后端判权
-- ❌ **不**在本"docs-only / 局部 PR"中改 seed `Permission.code` 集合 / `RolePermission` 映射 / `RbacRole` 内置角色 — 任何 Permission code 改名 / 增删 / 角色权限重映射都按 D 档降速,先与维护者对齐
-- ❌ **不**给 `RbacService.can()` 加 `ADMIN` 内置短路(`ADMIN` 继承 USER 由 seed 实现;Service 不特判,沿 [`rbac.service.ts`](rbac.service.ts) 第 116–124 行)
-- ❌ **不**给 `SUPER_ADMIN` 的 `me/permissions` 返 `["*"]` 或空数组(返 `Permission.code` 全集是显式拍板)
-- ❌ **不**新增 `GET /api/system/v1/users/:userId/permissions`(管理员查他人;非 D7 §5.1 端点;沿用户拍板留 PR 边界)
-- ❌ **不**批量给所有业务 controller 接 `rbac.can()`;新增 / 改判权要说明三层关系:controller 入口 Guard、Service 内 `rbac.can()`、数据范围(where 子句 / `.self`)
-- ❌ **不**改 `RBAC_FORBIDDEN=30100` / `LAST_OPS_ADMIN_PROTECTED=30101` 等错误码语义 / 段位;新增段位前先与维护者对齐
-- ❌ **不**弱化 `SUPER_ADMIN > ADMIN > USER` 三档身份边界;**不**让 RBAC 业务角色拿到等同 `SUPER_ADMIN` 的短路语义
-- ❌ **不**引入 CASL / 完整动态权限平台 / 新权限 DSL(无设计决议)
-- ❌ **不**为判权重新引入跨请求 Map/TTL、no-op cache、Redis/pub-sub 或提交后 invalidate 正确性链；当前事实必须由 PostgreSQL 每请求解析
-
-## Validation
-
-- `pnpm lint` + `pnpm typecheck`
-- `pnpm test` — 覆盖 `rbac.service.spec.ts`(判权矩阵)
-- `pnpm test:e2e` — 至少覆盖 RBAC CRUD + `me/permissions` + `/reload` 相关 e2e
-- 改任一业务模块判权 → 还需跑该业务模块对应 e2e + characterization
-- 改 DTO 字段 / endpoint path / Swagger schema / 错误码 → 必须再跑 `pnpm test:contract`
+新增角色、映射或 Permission writer 须满足 `role-permissions-control-plane-gate.spec.ts`
+的动态可达性检查；映射面覆盖全部写，角色面覆盖修改既有行，Permission 面覆盖全部写含 create，
+不把发现面退化成固定方法名单。保留错误码和身份三层边界，不引 CASL/新权限 DSL。
+改判权跑 rbac.service、authz-rbac-equivalence 及受影响业务 E2E；
+改写面跑角色控制面、impact/step-up、生命周期与 seed runtime 用例；契约变化再跑 contract。

@@ -1,38 +1,31 @@
-# announcement-import — 本地铁律
+# announcement-import — 解析与事务编排
 
-> 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);架构边界读 [`/docs/architecture-boundary.md`](../../../docs/architecture-boundary.md);权限地图读 [`/docs/ai-harness/RBAC_MAP.md`](../../../docs/ai-harness/RBAC_MAP.md)。**设计权威源 = T0 冻结评审稿 [`/docs/archive/reviews/org-position-scoped-authz-terminal-design-review.md`](../../../docs/archive/reviews/org-position-scoped-authz-terminal-design-review.md) §8.4 / §11 PR11**。本文件只记录在本目录工作时容易踩雷的本地铁律。
+preview/execute分别用announcement-import.preview/execute.record，仅编排锚定解析与逐行结果。
+任命/分管校验、closure与audit只在Organizations/PositionAssignments/SupervisionAssignments
+各自create中实现；透传meta，不在本模块复制规则、直写audit或新增事件。
 
-## Scope
+- 两端共用request-wide transaction，使用三个create的`{transaction}`入口，
+  与单行`{dryRun}`互斥。组织/closure/audit对后续行真实可见；
+  每行固定SAVEPOINT保留blocked/already-exists聚合。
+  preview计算完整结果后PreviewAbort整批回滚（含audit），execute提交；
+  未声明异常整请求回滚。DryRunAbort保持各service私有，不抽公共沙箱工具。
+- 第一条Organization/closure查询（包括parentCode/orgCode解析）前取组织固定topology xact lock，
+  后续create在同事务重入，不后移或换锁。
+- organizations按声明顺序处理，父先于子；orgCodeMap先查、再查tx。
+  只建nodeType=group；provisional用establishmentStatusCode，不支持导入队/部/总队节点。
+- execute只接受memberNo+orgCode双锚，缺失blocked，不按姓名自动写。
+  preview唯一姓名命中也仅suggestedMemberNo+needs-manual，不升级ok。
+  批内seen*集合用于稳定重复诊断，不代替service防重。
+- organization已存在时只比group类型+已解析parentId，不比名称/设立状态/功能；
+  锚一致才already-exists并供后续引用。锚不一致blocked，并加入毒丸集，
+  后续positions/supervisions不得绕map经DB解析到错误组织。
+  position/supervision的already-exists沿被复用service真实BizCode。
+- 仅status的四值闭集是契约；真实BizException原样携code/message，
+  合成诊断bizCode=null且message自由文本，不把reasons伪装成稳定枚举。
+- establishmentStatusCode/groupFunctionCode可输入，但不自动扩展组织响应字段。
+  appointmentSource缺省announcement-2026，仅position行可覆盖，supervision无该字段。
+- 导入不自动挂终审RoleBinding，运营另经role-bindings配置POSITION_ASSIGNMENT；
+  不在导入里调整权限映射。真实公告姓名/memberNo不得进seed/fixture/测试/文档。
 
-- **终态 scoped-authz PR11(2026-07-02)**:公告导入两段式端点 —— `POST admin/v1/announcement-import/preview`(零写入诊断)+ `POST admin/v1/announcement-import/execute`(幂等落库);2 码 `announcement-import.{preview,execute}.record` 绑 ops-admin
-- **本模块只做锚定解析 + 编排 + 逐行结果聚合**:任命 5 校验 / 分管校验 / closure 维护 / audit 写入,全部只存在于 `OrganizationsService.create()` / `PositionAssignmentsService.create()` / `SupervisionAssignmentsService.create()`——本模块**绝不**重新实现这些校验(自证方法:grep 本目录不应出现"职务适配" / "requireMembership" / "closure 维护" / "任命 5 校验" 这类校验注释,这些只应出现在被复用的三个 service 文件里)
-- **preview / execute 共用 request-wide 事务编排,不是两套校验**:三个被复用 service 的 `create()` 保留既有 `{ dryRun }` 单行兼容入口,并新增与其互斥的 `{ transaction }` 内部编排入口。announcement-import 只用后者:同请求组织 / closure / audit 写入在一个 transaction client 内对后续任命/分管真实可见;每行固定 SAVEPOINT 保留 `blocked`/`already-exists` best-effort 聚合;preview 生成完整结果后抛 `PreviewAbort` 回滚整批,execute 提交整批。未声明异常会回滚整个请求,不留下半成品
-- **拓扑锁取得时机**:request-wide transaction 进入编排后立即取固定 advisory xact lock,严格早于 parentCode/orgCode 解析的第一条 Organization/OrganizationClosure SQL;`OrganizationsService.create()` 后续在同一 transaction 内重入同一把锁不改变锁归属
-- **组织行 `nodeType` 恒为 `'group'`**:本工具只用于批量建组级节点(冻结稿 R1;筹备组用 `establishmentStatusCode='provisional'`),不支持通过导入建队/部/总队级节点
-- **双锚铁律(R7)**:execute 只接受带 `memberNo` + `orgCode` 的行,缺任一即整行 `blocked`,不做任何姓名匹配;preview 对仅 `displayName` 的行做辅助解析(唯一命中 active 队员 → 回显 `suggestedMemberNo`,仍标 `needs-manual`,**从不自动升级为 `ok`**)
-
-## Local facts
-
-- **组织行处理顺序 = 请求内声明顺序,父必须先于子**:`orgCodeMap`(`code → {id, nodeTypeCode}`)在处理 `organizations[]` 时逐行建立;request-wide transaction 内真实写入尚未提交但对同请求后续查询可见。`positions[]` / `supervisions[]` 的 `orgCode` 解析先查 `orgCodeMap` 再查 transaction,因此可引用同请求内更早声明的组织行,也可引用早已存在的组织
-- **批内重复检测(`seenOrgCodes`/`seenPositionKeys`/`seenSupervisionKeys`)保留稳定逐行诊断,不是重复业务校验**:它在进入被复用 service 前给出确定的本批重复原因,避免依赖数据库约束错误时序;真实业务校验仍只在三个被复用 service 内
-- **`already-exists` 双语义**:对 position/supervision 行 = 命中被复用 service 的防重 BizCode(`POSITION_ASSIGNMENT_ALREADY_EXISTS`/`SUPERVISION_ALREADY_EXISTS`);对 organization 行 = 命中 `ORGANIZATION_CODE_ALREADY_EXISTS` 时**先核对锚点一致性**(`nodeTypeCode=group` 且 `parentId` 与本行已解析的 parent 一致)**才**当作"就是这个组"处理(名称/设立状态/组功能差异不纳入比对,仅锚 = 类型 + 父级),取现有行 id 供后续行引用 —— 决断⑤幂等可重跑的直接体现,重复执行同一批不应重复报错(**收窄见 review #484 G8,2026-07-03**:锚点不一致 → 改判 `blocked` 并把 code 计入本请求的毒丸集,阻断同请求内 `positions[]`/`supervisions[]` 引用该 code 的行静默挂错;`resolveOrg` 是"先查 map 再查库",不写 `orgCodeMap` 挡不住后续行经 DB 直查命中同一个错误组织,必须显式毒丸传播)
-- **`reasons[]` 不是 OpenAPI 契约锁定的稳定枚举**(区别于 authz/explain 的 `reason`):`bizCode` 字段在命中被复用 service 抛出的真实 `BizException` 时原样携带其 `code`/`message`;纯本模块合成的诊断(缺字段 / 双锚缺失 / 姓名多义 / 批内重复)`bizCode: null`,`message` 是自由文本。只有 `status` 是锁定的 4 值枚举(`IMPORT_ROW_STATUS_VALUES`)
-- **组织行两个 additive 字段本刀首次接入 Create DTO**:`establishmentStatusCode?`/`groupFunctionCode?` 由 PR1(2026-07-01)加列但标注"本刀 schema-only,不进 Create/Update DTO"——PR11 是这两列第一次被写入(`organizations.dto.ts`/`organizations.service.ts` 改动仅此;不影响既有 5 个字段的校验/行为,`organizationSelect`/`OrganizationResponseDto` 未动,响应体不回显这两列)
-- **BD-2 终审中枢绑定不进本模块代码**:导入只落 `PositionAssignment`,不自动挂 `RoleBinding`;运营需在导入完成后另行经 `POST admin/v1/role-bindings` 手工挂 `attendance-final-reviewer` 绑定(参数样例见 `docs/ai-harness/RBAC_MAP.md` §5 / `docs/current-state.md` §1)
-- **`appointmentSource` 默认 `'announcement-2026'`**:行内可显式覆盖(`ImportPositionRowDto.appointmentSource`),分管行无此字段(`SupervisionAssignment` 无 `appointmentSource` 列)
-
-## Risk points(不要做)
-
-- ❌ **不**在本模块重新实现职务适配 / `requireMembership` / 单人独占 / 兼任 / 分管防重等任何校验逻辑——一律通过调用被复用 service 的 `create()` 触发,本模块只捕获其抛出的 `BizException` 并转译成行结果
-- ❌ **不**按姓名自动落库(execute 对缺 `memberNo` 的行直接 `blocked`,即便 `displayName` 唯一命中)
-- ❌ **不**给 `dryRun` 沙箱哨兵机制加共享工具类(`DryRunAbort` 在三个被复用 service 文件内各自私有声明,不抽 `common/utils`,沿 [`naming-dto-validation`](../../../docs/reference/naming-dto-validation.md) 铁律)
-- ❌ **不**在本模块写自己的 `AuditLogEvent`/直接调用 `AuditLogsService`——audit 全部由被复用 service 内部完成(**组织行 audit 已随 NEXT_TASKS P1-16〔review #484 G18,2026-07-03〕补齐**:`OrganizationsService.create()` 内部写 `organization.create`,详见 [`../organizations/CLAUDE.md`](../organizations/CLAUDE.md);本模块只需把已在作用域的 `meta` 参数透传给 `create()`,不新增任何 audit 逻辑)
-- ❌ **不**把真实公告数据(姓名 / memberNo 对照)写进本仓任何位置(seed / fixture / e2e / 文档示例)——R13 红线;测试与文档一律用假数据(如 `T0001`/`张三` 类占位)
-- ❌ **不**摘 biz-admin 终审两码(留 PR12 显式项)
-
-## Validation
-
-- `pnpm lint` + `pnpm typecheck`
-- `pnpm test` —— `announcement-import.service.spec.ts` + 三个被复用 service 各自新增的 dry-run 单测用例
-- `pnpm test:e2e` —— `announcement-import.e2e-spec.ts`(preview 全标记族 + 零写入断言 / execute 混合三类行落库 + 幂等重跑 + 权限门);改动三个被复用 service 后必须连跑 `position-assignments.e2e-spec.ts` / `supervision-assignments.e2e-spec.ts` / `organizations.e2e-spec.ts` 确认逐字行为锁
-- `pnpm test:contract` —— `EXPECTED_ROUTES` 新增 2 行 + snapshot 更新
+验证preview零写、混合执行、锚冲突毒丸传播、幂等与audit回滚；
+改被复用service时连同其组织/任命/分管E2E验证，接口变化再跑contract。

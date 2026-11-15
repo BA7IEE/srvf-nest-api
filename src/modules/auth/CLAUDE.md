@@ -1,68 +1,85 @@
-# auth — 本地铁律
+# auth — 认证与会话冻结语义
 
-> 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);架构边界读 [`/docs/architecture-boundary.md`](../../../docs/architecture-boundary.md);安全相关读 [`/docs/security.md`](../../../docs/security.md)。本文件**只**记录在本目录工作时容易踩雷的本地铁律。
+负责密码/SMS/微信/企业微信登录、refresh/logout、短信重置与 identity step-up。
+本人资料/改密归 users，RBAC归 permissions；UsersModule 可消费 AuthModule，禁止反向模块依赖。
+详细契约见 `docs/reference/auth-jwt-refresh.md`，不据本文件的压缩措辞重新设计认证行为。
 
-## Scope
+## 会话与防枚举
 
-- **登录 / 刷新 / 注销 / token 安全链路**:`POST /api/auth/v1/login` / `/refresh` / `/logout` / `/logout-all`(Route B 终态前缀 `auth/v1`)
-- **找回密码(pre-auth)**:`POST /api/auth/v1/password-reset/send-code` + `POST /api/auth/v1/password-reset`(2026-06-11;[`password-reset.service.ts`](password-reset.service.ts),冻结评审稿 [`password-reset-by-sms-review.md`](../../../docs/archive/reviews/password-reset-by-sms-review.md);验证码签发/校验在 [`/src/modules/sms/`](../sms/)`SmsCodeService`)
-- **OTP(验证码)登录(pre-auth,密码登录的并行方式)**:`POST /api/auth/v1/login-sms/send-code` + `POST /api/auth/v1/login-sms`(2026-06-11;[`login-sms.service.ts`](login-sms.service.ts),冻结评审稿 [`queue-b-otp-birthday-infra-review.md §5`](../../../docs/archive/reviews/queue-b-otp-birthday-infra-review.md);[`auth-jwt-refresh`](../../../docs/reference/auth-jwt-refresh.md) 登录契约行已解锁改写,密码登录契约零变化)
-- **微信小程序登录 + 绑定(pre-auth,第三个独立认证端点)**:`POST /api/auth/v1/login-wechat` + `POST /api/auth/v1/wechat-bind{,/send-code}`(2026-06-12;[`login-wechat.service.ts`](login-wechat.service.ts),冻结评审稿 [`wechat-mini-login-review.md`](../../../docs/archive/reviews/wechat-mini-login-review.md);code2session 在 [`/src/modules/wechat/`](../wechat/)`WechatService`,绑定锚点 = 手机短信 `SmsPurpose.WECHAT_BIND`;authed 换绑/查询在 users 模块 `me/wechat`)
-- **企业微信 OAuth 登录 + 首次绑定(pre-auth,第四个独立认证端点族)**:`POST /api/auth/v1/login-wecom{,/authorize}` + `POST /api/auth/v1/wecom-bind{,/send-code,/authorize}`(2026-08-02;[`login-wecom.service.ts`](login-wecom.service.ts),冻结稿 [`wecom-integration-t0-terminal-review.md`](../../../docs/archive/reviews/wecom-integration-t0-terminal-review.md) §6.2;通道层与 state/ticket 台账在 [`/src/modules/wecom/`](../wecom/),绑定锚点 = 手机短信 `SmsPurpose.WECOM_BIND`;authed 换绑/查询在 users 模块 `me/wecom`,admin 清除在 users 模块 `DELETE admin/v1/users/:id/wecom`)
-- **身份绑定 step-up(identity session P0 PR1)**:`POST /api/auth/v1/step-up/password` / `step-up/sms/send-code` / `step-up/sms` / `step-up/wechat`(默认 JWT-protected；[`identity-step-up.service.ts`](identity-step-up.service.ts) 只负责当前因子验证、proof 签发/验证与 `auth.step-up` audit；UsersModule 单向 import AuthModule 消费，AuthModule 禁止反向 import UsersModule)
-- **JwtStrategy** 是 v1 唯一鉴权阶段查库点(沿 [`strategies/jwt.strategy.ts`](strategies/jwt.strategy.ts));JwtAuthGuard 不应再写一份查库逻辑
-- **不负责**:本人改密(在 [`/src/modules/users/`](../users/)`changeMyPassword`;但改密会**主动撤销**该 user 全部未过期 refresh,沿 P0-E PR-3)、RBAC 判权(在 [`/src/modules/permissions/`](../permissions/))、capabilities 出口(在 `users/app-capability.service.ts`)
+- JwtPayload 严格 `{sub,username}`；JwtStrategy 是鉴权阶段唯一 User 查库点，
+  每请求验证 ACTIVE且未软删。不在 Guard 重查、不加 role/tokenVersion、缓存或其他 passport strategy。
+- 密码登录：不存在用户名、错密码、禁用、软删统一10004与相同响应体/状态；
+  每条路径一次 bcrypt.compare，未命中使用模块级固定 TIMING_DUMMY_HASH。
+- refresh 仅存 sha256(raw).hex，明文仅登录/刷新响应一次。
+  rotation always、family绝对有效期不延长；判定顺序 rotatedAt→revokedAt→user inactive，
+  复用触发 family revoke 和 replayDetected/familyRevoked audit。
+  失败统一10007，不存在 token 不写 audit；正常并发 refresh 锁等待输家不误判 replay。
+- createSession 为四种登录唯一签发点；调用方传已验因子 snapshot，锁后复验才签发。
+  会话写统一 lockAuthSessionUser 的参数化 User FOR UPDATE：
+  上层 invariant/Member → User → refresh mutation → audit，锁后重读身份/token。
+  不先锁 refresh、不另建进程/advisory/Redis session锁。
+- wecom-identity 因子为独立表，User锁后再 FOR SHARE 检查
+  id/userId/corpId/wecomUserId/status/revokedAt，失败36010。
+- logout 用可识别未过期 row（含 rotated ancestor）定位 family，撤全部活跃未过期后继。
+  未知/过期/已全撤200且零audit；只在 revokedCount>0 记 auth.logout，
+  extra 恰 familyId/revokedCount；不接 reuse detection，不扩大 user-wide，不加限流。
+  logout-all 撤本用户活跃未过期 refresh，沿 PasswordChangeThrottle。
+- access 不主动吊销，沿自然到期和每请求用户状态校验；不加 blacklist/tokenVersion。
+  本人改密同事务撤 refresh（self-password-change），旧 access 语义不变。
 
-## Local facts
+## SMS 与微信顺序
 
-- **JwtPayload 最小化**:`{ sub, username }`(沿 [`strategies/jwt.strategy.ts`](strategies/jwt.strategy.ts) 第 14–17 行);**不**塞 role / 完整用户对象 / tokenVersion
-- **JwtStrategy.validate** 每请求按 `payload.sub` 查库,校验 `deletedAt === null && status === ACTIVE`,失败抛 `UNAUTHORIZED`(沿 [`strategies/jwt.strategy.ts`](strategies/jwt.strategy.ts) 第 41 行起)
-- **refresh token 入库只存 hash**:`sha256(raw).hex`(64 字符),DB 字段 `refresh_tokens.tokenHash @unique`;明文只在 login / refresh 响应的 `data.refreshToken` 出现一次(沿 [`refresh-token.util.ts`](refresh-token.util.ts) 第 23–25 行)
-- **refresh rotation always + family revoke + reuse detection**:`rotatedAt !== null` 命中视为重放 → family revoke + audit `replayDetected/familyRevoked`(沿 [`auth.service.ts`](auth.service.ts) 第 281–320 行)
-- **refresh expiresAt absolute**:rotation 后继承原 family 首个 token 的 `expiresAt`,**不**延长(沿 [`auth.service.ts`](auth.service.ts) 第 360–366 行)
-- **login 失败统一** `BizCode.LOGIN_FAILED = 10004`,4 类失败场景同响应体(防账号枚举);任一路径**必跑**一次 `bcrypt.compare`(命中走真 hash / 未命中走 `TIMING_DUMMY_HASH`)(沿 [`auth.service.ts`](auth.service.ts) 第 100–105 行)
-- **refresh 失败统一** `BizCode.REFRESH_TOKEN_INVALID = 10007`,4 子原因(不存在 / 已撤销 / 已过期 / 重放)不区分;token 不存在时**不写 audit**
-- **logout family 幂等 / 限流当前事实**:`/auth/logout` 用任一可识别且未过期 row(含 rotated ancestor)定位 `familyId`,同事务 `updateMany` 撤销该 family 全部活跃未过期 token;未知 / row 已过期 / family 已全撤均返 200 且零 audit;仅 `revokedCount>0` 写 `auth.logout`,extra 恰好 `familyId/revokedCount`;当前**未挂限流装饰器**,其他 family 与 access 不动
-- **logout-all** 撤销该 user 全部未过期且未撤销的 refresh;当前复用 `@PasswordChangeThrottle()`
-- **access token 当前不主动吊销**(沿 D-4):由 `JWT_EXPIRES_IN` 自然过期 + JwtStrategy 每请求查库阻断 DISABLED / 软删用户;保持当前策略,如需引入 blacklist / Redis / tokenVersion 必须走设计决议
-- **password change**:本人改密在 [`users.service.ts`](../users/users.service.ts) 第 317–325 行主动撤销该 user 全部未过期 refresh(`revokedReason='self-password-change'`);旧 access 仍可调直至自然过期(e2e 反向锁定)
-- **password reset by SMS(pre-auth,2026-06-11)**:校验顺序**冻结**(评审稿 E-5)= 解析用户 → 码预检不消费 → 10006 不烧码 → 原子消费 → 事务(改密 + 撤销全部未撤销未过期 refresh `'self-password-reset'`〔联动撤销第 5 场景,[`auth-jwt-refresh`](../../../docs/reference/auth-jwt-refresh.md)〕+ audit);**防枚举** = 四种无效号码场景(不存在 / 未绑定 / 禁用 / 软删)send-code 返回与有效号完全相同泛化 200 且零留痕,reset 一切失败统一 `SMS_CODE_INVALID=24010`;成功 `data:null` 不自动登录;旧 access 沿 D-4 不吊销(e2e 正向断言)
-- **OTP 登录(pre-auth,2026-06-11)**:校验顺序**冻结**(评审稿 E-O5)= 解析用户(四无效场景 → 24010)→ `verifyAndConsume(LOGIN)` 原子消费 → `AuthService.createSession`(与密码登录**同一签发路径**,E-O6:同 `LoginResponseDto` / 同 refresh family / lastLoginAt 同步 / audit `auth.login.sms`);**防枚举** = send-code 四无效场景泛化 200 零留痕,登录一切失败统一 `SMS_CODE_INVALID=24010`(**不用 10004**,两套防枚举体系各自闭合);不更新 `phoneVerifiedAt`;号码无账号不自动注册
-- **`createSession` 是唯一会话签发点**(login / login-sms / login-wechat / login-wecom 四种登录方式共用；D-PR1 起调用方传锁外已验证 factor snapshot，锁后复验后才签发):改签发逻辑 = 同时改四种登录方式,按 D 档降速。**第四 expectation `wecom-identity` 与前三种形状不同**:前三种的事实在 User 行本身(passwordHash / phone / openid 是 User 的列),锁后重读一次即可;企业微信身份是 `wecom_identities` 的独立行,必须在 User 锁**之后**再 `SELECT … FOR SHARE` 复验(id / userId / corpId / wecomUserId / status / revokedAt 六条判据),失败统一 36010
-- **会话全链线性化(2026-07-22 D-PR1)**：唯一 primitive 为 `auth-session-lock.ts` 的 parameterized `User FOR UPDATE`；密码/SMS/微信签发在锁后重读 ACTIVE/未软删与 passwordHash/phone/openid snapshot，refresh/replay/logout/logout-all 同锁后再读 token。正常双 refresh 的锁等待输家仍只返 10007，不误判 replay；锁序固定上层 invariant/Member → User → refresh mutation → audit。
-- **微信登录(pre-auth,2026-06-12)**:login-wechat = code2session → 已绑 `createSession` / 未绑 `{bindingRequired:true, session:null}`(非枚举面);命中但账号 DISABLED/软删 → 统一 25010(防侧写);wechat-bind **七步校验顺序冻结**(评审稿 §4.3)= code2session 最前(失败不烧 SMS 码)→ 解析手机号(四无效 → 24010)→ 码预检不消费 → openid 占用(他人 → 25002,仅对已证手机控制权者可达)→ 原子消费 → 绑定事务 + audit → createSession;openid 占用**含软删**;wx code / session_key / 完整 openid 三不入日志响应 audit
-- **企业微信登录(pre-auth,2026-08-02)**:`login-wecom/authorize` 签 `purpose=login` 的 state(64 字符 hex,DB 只存 SHA-256)→ `login-wecom` CAS 消费 state → 事务外换身份 → 已绑 `createSession` / 未绑返 `{bindingRequired:true, bindingTicket}`;**七步校验顺序冻结**(§6.2)= ① ticket 有效且 binding_required ② 解析手机号(四无效 → 24010)③ 码预检不消费 ④ 身份占用预检(他人 → 36002,仅对已证手机控制权者可达)⑤ 原子消费 ⑥ 绑定事务 ⑦ createSession。**锁序 §9.1 固定** `WecomSettings(FOR SHARE) → User(FOR UPDATE) → WecomIdentity → WecomAuthAttempt → RefreshToken/Audit`;绑定事务内**必须**锁后复判 `enabled`/`loginEnabled`(bind 路径不调 `resolveLoginContext`,少这一判则开关关不掉握票用户)。防枚举:state/code 无效、外部成员、跨企业 userid、账号停用/软删统一 36010 逐字段同形;`wecom-bind/send-code` 五种无效号码泛化 200 零留痕。code / 原始 state / 原始 ticket 三不入库日志 Audit
-- **企业微信 OAuth state 绑定发起浏览器(P1-27 第一刀 B1,2026-08-03)**:`authorize` 另发 `__Host-` 前缀 Cookie(`__Host-srvf_wecom_login` / `__Host-srvf_wecom_bind`,`HttpOnly + Secure + SameSite=Lax + Path=/`,与 state 同寿),`state = sha256(browserNonce)` —— **不新增列**,派生绑定;`login-wecom` / `PUT me/wecom` 必须同时出示 state(body)与 nonce(Cookie),`consumeState` 先核派生再走原 CAS。⚠️ **浏览器不匹配时不得发出那条 UPDATE**(否则拿到 state 即可作废他人流程 = 把接管换成 DoS);⚠️ nonce 原值只进 `Set-Cookie`,**不进** DTO / 日志 / Audit / DB(`IssuedWecomAuthorize` 把 DTO 与 nonce 拆开就是这条的执行位)。前端契约变更(需 `credentials:'include'`)见 [`docs/handoff/miniapp.md` §1.3.1](../../../docs/handoff/miniapp.md)
-- **`36010` 耗时归一(P1-27 第一刀 B3)**:`LoginWecomService.login` 用 try/catch 把**全部** 36010 收进 `WecomLoginFailureGate.reject(startedAt)` 单一出口(有界最小时长 150ms + 0–50ms 扰动,计时从**请求起点**算)。做成 choke point 而非逐分支调用:新增分支自动收进来,且深层 `WecomService.exchangeOAuthCode` 抛的同码也走同一出口。36030 / 36031 **不**归一(本就是可区分的码)。判据是 `login-wecom.service.spec.ts` 的**分支 instrumentation**(逐分支 spy 断言),**不写**毫秒阈值 e2e。⚠️ 已知残余:真实上游下"上游拒绝 code"可能超过 floor 仍可分 —— 不打上游就消除不了,已接受并留痕
-- **identity step-up proof**:action 恰好 `PHONE_BIND/WECHAT_BIND/WECOM_BIND`、factor 恰好 `PASSWORD/SMS/WECHAT`(**刻意不新增 WECOM 因子** —— 正要绑的东西不能同时充当"我已经是这个人"的证据)；`WECOM_BIND` 的 snapshot 在既有 credential snapshot 之外**额外拌入 `User.wecomIdentityVersion` 代际 + 当前 active 企业微信身份指纹**(`identityId/corpId/wecomUserId/status/updatedAt`,原值不进 token),用于挡"管理员刚清除绑定、旧 proof 5 分钟内又绑回来";**代际是 P1-27 第一刀 B2 补的**——只有身份指纹时"无绑定"档恒为字面 `null`,`null→bind→clear→null` 走完指纹回到起点、旧 proof 复活(修前 e2e 实测 200);代际单调递增故回不去。第四参是 `{identityVersion, identity}` **必填对象**(`WECOM_BIND` 传 null 一律 10008)——漏传即编译错误,而漏传恰好等于把这个洞重新打开;**其余 action 算法逐字节不变**(`computeActionSnapshot` 的早返回就是这条的执行位,删掉它既有 proof 会在部署瞬间全部失效)；JWT secret 经 HKDF-SHA256 派生 `signing.v1` / `snapshot.v1` 两把 32-byte key，audience 固定 `srvf.identity-step-up`、TTL 固定 300s；snapshot HMAC 输入固定覆盖 `id/passwordHash/phone/phoneVerifiedAt/openid/status/deletedAt`。签名/过期/audience/sub/action/snapshot 失败统一 10008，不细分；无当前 phone/openid 返 10009；`JwtPayload` 仍严格 `{sub,username}`。
-- **pre-auth 微信真实 bind/rebind 的会话顺序**:`user.update` + 旧 refresh 全撤销(`self-wechat-identity-change`) + bind/rebind audit 同一 transaction；提交后才 `createSession` 新 family。already-bound-to-self 仍 no-op，不撤旧 family、不写变更 audit。
-- **audit events 10 个**(本模块写路径,全部经 `AuditLogsService`):`auth.login` / `auth.login.sms`(extra `familyId` + `phone` 掩码 + `codeId`)/ `auth.login.wechat`(extra `familyId` + `openid` 掩码)/ `auth.refresh` / `auth.logout`(仅真实 family 撤销;extra 恰好 `familyId/revokedCount`)/ `auth.logout-all` / `password.reset.by-sms`(actor=本人;extra `refreshTokensRevoked` + `phone` 掩码 + `codeId`)/ `wechat.bind.self` / `wechat.rebind.self`(bind 路径,extra `viaPath:'pre-auth'` + `phone` 掩码 + `codeId`;users 模块 me/wechat 路径同名事件 `viaPath:'me'`)/ `auth.step-up`(仅成功签发；extra 恰好 `action/factor`);extra 字段**禁止**任何 proof、snapshot、明文 / hash / 完整号码 / 完整 openid
-- **限流复用**:step-up password/SMS send/SMS verify/WeChat 分别复用 `password-change` / `sms-send` / `sms-verify` / `login-wechat` 既有实例；不新增 throttler、不改限额/storage/header。企业微信五端点走**新增的第 11 个**实例 `login-wecom`(IP 5/60);`wecom-bind/send-code` 另叠 `sms-send`、`wecom-bind` 另叠 `sms-verify`。⚠️ throttler 实例注册(`bootstrap/throttle-options.ts`)与 `ThrottlerBizGuard` 的 name 分派**必须成对改动** —— guard 靠逐 throttler 的 name 判断跳过,只注册不接 guard 会让新实例对**所有已挂其他限流装饰器的端点**多计一道数。命中抛 `TOO_MANY_REQUESTS`，**不**返 `X-RateLimit-*` / `Retry-After` 头。
-- **AuthModule 唯一 strategy** 是 `JwtStrategy`;**无** LocalStrategy(沿 [`auth.module.ts`](auth.module.ts) 第 47–54 行)
+- 短信重置：解析用户→码预检不消费→10006检查且不烧码→原子消费→
+  同事务改密、撤活跃未过期refresh（self-password-reset）、audit。
+  不把10006移到预检前形成密码oracle。无效号 send-code 泛化200且零留痕；
+  其余 reset 无效身份/验证码失败统一24010。成功 data:null、不自动登录。
+- OTP：解析用户→verifyAndConsume(LOGIN)→createSession，复用 LoginResponseDto、
+  family/lastLoginAt/auth.login.sms；无效号 send-code 泛化200零留痕，
+  登录失败24010，不混10004，不改 phoneVerifiedAt、不自动注册、不混入密码登录DTO。
+- 微信：code2session先行；未绑返 bindingRequired/session:null，禁用/软删25010。
+  bind 冻结顺序：code2session→解析手机号→码预检→openid占用（含软删，他人25002）→
+  原子消费→绑定事务+audit→createSession。占用错误仅对已证手机控制权者可达。
+  真实 bind/rebind 同事务写User、撤旧refresh（self-wechat-identity-change）、audit，
+  提交后签新family；已绑本人no-op。无自动注册、unionid/session_key存储或本人裸解绑。
 
-## Risk points (不要做)
+## 企业微信 OAuth 与 proof
 
-- ❌ **不**给 `JwtPayload` 加 role / tokenVersion / 完整用户对象等任何额外字段(沿 [`docs/reference/auth-jwt-refresh.md §8`](../../../docs/reference/auth-jwt-refresh.md) + P0-E v1 D-4)
-- ❌ **不**在 JwtAuthGuard 再写一份用户有效性查库(每请求查库的唯一点是 `JwtStrategy.validate`)
-- ❌ **不**在本 PR / 普通改动里引入 access token blacklist / Redis 撤销 / tokenVersion 强一致;当前 access 不主动吊销是显式策略,如需变更必须走设计决议
-- ❌ **不**把 refresh token 明文写入 DB / 日志 / audit / OpenAPI 示例 / e2e fixture / 文档示例(沿评审稿 §5.1)
-- ❌ **不**把 `stepUpToken` / proof payload / snapshot / password / SMS 或 wx code 写入日志、audit、示例或 App 响应；logger redaction 必须同时覆盖精确与通配字段
-- ❌ **不**弱化 refresh rotation / family revoke / reuse detection 语义;判断顺序 `rotatedAt → revokedAt → user inactive` 不可调换
-- ❌ **不**让 login 失败响应在 4 类场景间出现可区分 timing / message / status — 防账号枚举
-- ❌ **不**绕过 `TIMING_DUMMY_HASH`;命中或未命中都必须跑一次 `bcrypt.compare`
-- ❌ **不**把 `/auth/logout` 改回 row-only 或扩大为 user-wide;不把 rotated ancestor 显式 logout 接入 refresh reuse detection;幂等 / 无限流 / access 不主动吊销均为冻结语义
-- ❌ **不**引入 LocalStrategy / OAuth / passport-\* 其他策略(无设计决议)
-- ❌ **不**改 `AuditMeta` 构造方式为隐式(cls-rs / AsyncLocalStorage);沿 controller `buildAuditMeta(req)` 显式传(沿 D6 v1.1 §11.2 / D8)
-- ❌ **不**破坏 password-reset 防枚举一致性:不为"号码不存在 / 禁用 / 软删"开任何可区分响应(字段 / message / 错误码细分);不在 send-code 写无效号侧痕;不把 10006 检查挪到码预检之前(密码 oracle);不让 reset 返回 token / 用户字段
-- ❌ **不**破坏 login-sms 防枚举一致性(同上范式):登录失败永远统一 24010,**不**细分、不混用 10004/10005;不在密码登录端点混入手机号/验证码入参([`auth-jwt-refresh`](../../../docs/reference/auth-jwt-refresh.md) 改写后契约);不给 OTP 登录加"自动注册"或"OTP+密码二要素"(goal 禁止域)
-- ❌ **不**破坏微信登录防侧写一致性:login-wechat 对"账号禁用/软删"不开可区分响应(统一 25010);wechat-bind 七步顺序不可调换(25002 必须在码预检后;code2session 必须最前);不给微信登录加"自动注册"/ unionid·session_key 存储 / 本人裸解绑(评审稿 §12 本期不做)
-- ❌ **不**在 session mutation 另造进程锁/advisory lock/Redis，也不先锁 refresh row 再锁 User；新增签发或 broad revoke 路径必须复用 `lockAuthSessionUser()` 并锁后重读。
-- ❌ 本目录任何"普通 docs-only"以外的改动都**非低风险**;改 token 链路 / payload / 错误码 / 限流均按 D 档降速,并跑安全相关 e2e
+authorize 发 purpose绑定的 state，DB只存hash；CAS消费后事务外换身份，
+未绑返回 bindingRequired/bindingTicket。bind顺序：
+有效binding_required ticket→手机号→码预检→占用预检（他人36002）→消费码→绑定事务→createSession。
+锁序 `WecomSettings FOR SHARE → User FOR UPDATE → WecomIdentity → WecomAuthAttempt → RefreshToken/Audit`；
+锁后重验 enabled/loginEnabled，不能仅靠锁外 resolveLoginContext。
+无效state/code、外部成员、跨企业userid、停用/软删逐字段同形36010；
+send-code无效号泛化200零留痕。
 
-## Validation
+state=sha256(browserNonce)，nonce只进 __Host-srvf_wecom_login/bind Cookie，
+HttpOnly/Secure/SameSite=Lax/Path=/，与state同寿。消费同时要求body state与Cookie nonce，
+先验证派生再CAS；浏览器不匹配不发UPDATE，防作废他人流程。
+原始code/state/ticket不进DB/日志/audit，nonce不进DTO。
+全部36010经 WecomLoginFailureGate 单出口，自请求起点150ms+0–50ms扰动；
+36030/36031不归一。真实上游墙钟仍有已接受的残余差异，DEV_STUB不证明真机时序；
+用分支instrumentation测出口，不用毫秒阈值E2E。
 
-- `pnpm lint` + `pnpm typecheck`
-- `pnpm test` — 覆盖 `auth.service` / `refresh-token.util` 单测
-- `pnpm test:e2e -- auth` — 覆盖登录 / 刷新 / 注销 / logout-all e2e
-- 改 audit event / extra → 必须跑 auth characterization e2e(若存在)
-- 改 DTO 字段 / endpoint path / Swagger schema / 错误码 → 必须再跑 `pnpm test:contract`
+step-up action仅 PHONE_BIND/WECHAT_BIND/WECOM_BIND，factor仅 PASSWORD/SMS/WECHAT，
+不以待绑定WECOM作当前身份因子。JWT secret以HKDF派生 signing.v1/snapshot.v1 两把32-byte key，
+audience=srvf.identity-step-up、TTL=300s；snapshot覆盖
+id/passwordHash/phone/phoneVerifiedAt/openid/status/deletedAt。
+WECOM_BIND额外含单调wecomIdentityVersion与active身份指纹；
+第四参数 `{identityVersion,identity}` 必填，null拒10008，防 null→bind→clear→null 旧proof复活。
+其他action算法逐字节兼容，不移除computeActionSnapshot早返回。
+签名/过期/audience/sub/action/snapshot统一10008，无当前phone/openid10009。
+
+## 审计与限流
+
+AuditMeta由controller buildAuditMeta(req)显式传，不改隐式上下文。
+成功step-up仅记action/factor；登录/重置/绑定沿既有事件与掩码extra；
+pre-auth bind的viaPath=pre-auth，本人面viaPath=me。
+proof/snapshot/password/SMS或wx code、refresh明文/hash、完整phone/openid均不入日志/audit/示例；
+redaction同时覆盖精确与通配字段。
+
+step-up复用password-change/sms-send/sms-verify/login-wechat；
+wecom族沿login-wecom IP5/60，send-code叠sms-send、bind叠sms-verify。
+throttler注册与ThrottlerBizGuard按name分派须成对修改，不改变其他端点计数；
+命中TOO_MANY_REQUESTS，不返X-RateLimit或Retry-After。
+改签发/撤销覆盖四种登录与session并发，防枚举覆盖四场景；
+改绑定覆盖step-up/占用/Cookie CAS，接口变化再跑contract。

@@ -53,3 +53,13 @@ archive/plans/handoff 材料保留，并按需读取。原模块规则的全文�
 四个 required check 名保持不变。本 PR 合并前仍走 main 上的旧审批流程；
 新 trusted 工作流只 checkout base SHA，不安装 PR 依赖、不执行 PR 脚本，
 文件清单来自分页 API，缺失、截断或版本竞争均失败关闭，rename 检查新旧两条路径。
+
+## 模块规则
+
+模块/Prisma 共 24 份本地规则：18 份移除历史流水与重复流程，另 6 份已较短且主要是业务约束，
+保留其内容。全局规则由根 AGENTS 承载，本地规则聚焦属主边界、锁序、状态与安全语义。
+迁移、模型、端点与测试数量不再复制进模块说明；当前状态按需读取 current-state、代码和运维证据。
+旧版可用 `git show harness-v3-final:src/modules/<模块>/CLAUDE.md` 取回。
+
+本轮不修改业务实现、测试断言、API、schema 或 seed。
+模块规则压缩不等于重新设计权限、审核分离、保险/报名证据、会话撤销、消息投递或生产切换。

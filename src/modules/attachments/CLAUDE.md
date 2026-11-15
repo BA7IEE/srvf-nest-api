@@ -1,32 +1,46 @@
-# attachments — 本地铁律
+# attachments — 文件与内部 owner 边界
 
-> 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);配置三表边界读 [`/docs/attachment-config-boundary.md`](../../../docs/attachment-config-boundary.md);Provider / storage 见 [`/src/modules/storage/`](../storage/) 与 [`/docs/security.md`](../../../docs/security.md)。本文件**只**记录在本目录工作时容易踩雷的本地铁律。
+配置三表归 attachment-configs，保留 override-with-default 和独立读点，不合并或另抽配置 facade。
+规格见 `docs/attachment-config-boundary.md`；provider 归 storage。不顺手大拆 attachments.service。
 
-## 本地事实
+- AttachmentContentValidator 是对象/buffer 内容校验唯一入口，复用 attachment-validation 黑名单
+  和 attachment-signature。对象链核对存在、实际大小、黑名单及最多12字节魔数；
+  buffer 链同样覆盖证件照/签名/证书/OCR裁剪和转发。JPG/PNG/WEBP/GIF/PDF 不符13016，
+  黑名单13033，表外 Office MIME 维持契约；不信 COS Content-Type，不把 readObjectPrefix 当全量下载。
+- 所有写路径经过校验与 attachment-audit-recorder。key 唯一，访问先检查 expireAt，
+  expireAt<=now 不签发 URL，公开 content 列表也过滤过期附件。
+- 注册表新 owner 必须同时核对 INTERNAL_ONLY_ATTACHMENT_OWNER_TYPES 与 lockActiveUploadOwner switch，
+  后者漏项可能只在 finalize 以“owner不存在”报错，编译检查不够。
+- certificate owner scope 一次 collect IDs/findMany/Map，不能退化为逐行查询；
+  list/listByOwner 的 ownership 全量过滤后内存分页是当前接受的边界，不顺手重构。
 
-- `attachments.service.ts` 仍是 **god-service**,不得顺手大拆;`attachment-audit-recorder.ts` / `attachment-validation.ts` / `mime-to-ext.ts` / `attachment-content-validator.ts` 已按职责抽离。
-- 多态附件主模块;`@unique key` 已加。
-- **首个业务模块接入 `rbac.can()`**(管理面 rbac / config / users / audit-logs 已于 P0-F / v0.15.0 收紧;业务面除本模块外细粒度 RBAC 仍归 Slow-4;接入边界以 [`/docs/current-state.md`](../../../docs/current-state.md) §3 / §4 为准)。
-- 配置三表在独立模块 `attachment-configs/`:`AttachmentTypeConfig` / `AttachmentMimeConfig` / `AttachmentSizeLimitConfig`。
-- **上传内容校验(findings 9/10)**:`AttachmentContentValidator` 是唯一可注入内容校验入口,由 `AttachmentsModule` 导出并复用 `attachment-validation.ts` 黑名单 + `attachment-signature.ts` 签名表。对象链(`confirm-upload` / legacy create)核对对象存在、实际大小、黑名单与最多 12 字节签名;buffer 链覆盖招新证件照/签名图/证书图/OCR 裁剪图及 realname OCR 转发。JPG/PNG/WEBP/GIF/PDF 不符统一返既有 `13016`,黑名单返既有 `13033`;签名表外 Office MIME 保持原契约。
-- **registration-upload-session trusted facade**:内部 owner 只接受经过 branded handle 的四阶段调用：事务外配置/MIME/size/PII/魔数与 key，调用方锁内复校/准备 intent，事务外 Provider put+HEAD，调用方第二次锁内原子完成 Attachment + AVAILABLE ledger + `attachment.upload` audit。复用 `attachment_legacy`，固定 JPEG/PNG/WebP/PDF、10 MiB；不新增 storage source 或 audit event。
-- **报名提交终态**:上传完成只使 `registration-upload-session` 保持 active；canonical command 在同一事务重新核验 activity/member/Form/session/AVAILABLE 与唯一附件，先创建不可变 `RegistrationFormAnswer`，再把附件转为最终 `registration-form-answer` owner、绑定 answer 的 `attachmentId` 并把 upload session 改为 consumed。提交失败必须整体回滚，不得留半转绑或已 consumed 的会话。
-- **视觉身份 trusted facade(issue #1055 T2)**:`user-avatar` / `member-official-portrait` 两个 internal-only owner 只能走 `AttachmentVisualIdentityUploadService`,四阶段 branded 句柄(事务外校验+规范化 → 锁内备 intent → 事务外 put+HEAD → 锁内原子落库),句柄一次性、跨阶段不可复用。**落库的是服务端规范化产物**(恒 `image/jpeg`、元数据已清、尺寸由 profile 决定),不是用户上传的字节;客户端声明的 mime/size 只用于闸控入口。图片内容校验由 `attachment-image-normalizer.ts`(sharp)承担:解码 / 多帧拒收 / EXIF 方向修正 / 只缩不放 / 宽高比 / 像素上限 / 白底压平 / **回读复核元数据已清空**(13035–13039)。
-- **两份手写清单,新增 owner type 时都要改**(漏改都不会编译失败、也不会测试变红):① `attachment-validation.ts` 的 `INTERNAL_ONLY_ATTACHMENT_OWNER_TYPES`(带 `satisfies`,拼错会编译错误);② `attachment-upload.service.ts` 的 `lockActiveUploadOwner` switch —— **不在列的 ownerType 只在 finalize 那一步失败**,且错误信息说「owner 不存在」(而 owner 明明存在)。#1055 T2 就是被第 ② 条咬了一次才发现它。
-- **过期访问(findings 11)**:签名 URL 解析统一先检查 `Attachment.expireAt`;`expireAt <= now` 时不签发 URL。公开 content owner 列表还必须过滤过期附件行;未来时间/null 的行为不变。
-- **列表性能边界(v0.44.0 findings #10/#11/#12)**:certificate owner 的 scope 映射必须先 collect ownerId、一次 `certificate.findMany in` 后走 Map,K 张证书附件只查 1 次 Certificate;`list`/`listByOwner` 的全量 ownership 过滤后内存分页暂接受(#10/#12,现规模理论问题),不得把 #11 优化误写回逐行 `findFirst`。
+## 内部上传
 
-## 不要做(踩雷区)
+四阶段统一边界：事务外校验/规范化与 key → 调用方锁内复核/prepare intent →
+事务外 provider put+HEAD → 第二次锁内原子 Attachment+AVAILABLE ledger+attachment.upload audit。
+只接受 branded 句柄，阶段间不可复用；不让通用接口绕过调用方领域不变量。
 
-- ❌ **不**合并配置三表 / **不**抽 facade 层(沿 [`/docs/attachment-config-boundary.md`](../../../docs/attachment-config-boundary.md));三表保留 **override-with-default** 模式,运行时各自读点已锁定。
-- ❌ **永不返回** L3 字段:`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*` / **完整 signed URL**(`accessUrl`);App API 任何路径都不许暴露。
-  - ⚠️ **范围例外(a)——CMS 内容发布模块**(2026-06-21 维护者拍板;理由见 [`/docs/archive/reviews/content-module-review.md`](../../../docs/archive/reviews/content-module-review.md) §5.7):owner 为 `content-image` / `content-file` 两类的 `accessUrl`(签名下载 URL)**允许**在 `open/v1/contents/*`(公开)与 `app/v1/contents/*`(会员)内容读取面返回,但**仅在调用者已通过该文章的可见级校验之后**(public 档 = published+public;member / formal_member / department / management 档 = 对应可见级);短 TTL、随文章可见级。**理由**:content-\* 附件是「随文章展示的素材」(封面 / 正文图 / 公开附件),其访问由**文章可见级**闸控,而非 member / certificate 那类 owner-scoped 敏感 PII 的附件自身 RBAC。**其余 owner 类型(member / certificate / activity)维持本铁律不变**;content **写**路径(上传 / 删附件)仍走 attachments `rbac.can()`(α 决议:`attachment.{upload,delete}.content-image|content-file` coarse 码),只有**读**路径自签且仅在可见级通过后。
-- ❌ **不**主动拆 `attachments.service.ts`(沿 [`/docs/current-state.md §3`](../../../docs/current-state.md))。
-- ❌ **不**绕过 `attachment-validation.ts` 写入(mime / size / type 校验必经路径)。
-- ❌ **不**绕过 `AttachmentContentValidator` 接入新的对象/buffer 文件入口,也不新建第二套签名表或 MIME 黑名单。
-- ❌ **不**把 `StorageProvider.readObjectPrefix` 用作文件下载/全量读取,也不因 COS `Content-Type` 声明正确而跳过 confirm-upload 魔数校验。
-- ❌ **不**新增 Mixed Controller(class-level + 方法级双 `@ApiTags`)。历史 mobile-like `GET /me/uploaded`(原 `Mobile - Attachments`)已于 Route B Phase 4e 删除,未建 App 替代;`listMyUploaded` service 保留为未来 `app/v1/my/attachments` building block(沿 [`/docs/api-surface-migration-plan.md §3.3`](../../../docs/api-surface-migration-plan.md))。
-- ❌ **不**把 attachment 写路径绕过 `attachment-audit-recorder.ts`。
-- ❌ **不**为 `user-avatar` / `member-official-portrait` 开任何通用端点路径:两者的领域不变量(必须是本人 / 一个 Member 至多一张 ACTIVE / 替换要版本化)通用接口证明不了。通用 create/list/detail/update/delete/upload-url/confirm 一律 fail-closed 返 `ATTACHMENT_NOT_FOUND`(**连 owner type 是否存在都不确认**,返 400「类型非法」等于告诉调用方"有这么个类型只是你不能用")。负面用例在 `test/e2e/visual-identity-generic-api-fail-closed.e2e-spec.ts`。
-- ❌ **不**绕开 `AttachmentImageNormalizer` 把用户上传的字节直接落库;也**不**在别处再造第二套图片规格常量 —— `ACCOUNT_AVATAR_PROFILE` / `UNIFORM_PORTRAIT_V1_PROFILE` 各只有一处定义。改标准照规格 = **新增 `uniform-portrait-v2`**,不是改 v1 的数(DB 侧 `member_official_portraits_spec_version_check` 是执行位)。
-- ❌ `registration-upload-session`（中间 owner）与 `registration-form-answer`（最终 owner）都是内部 owner：所有通用 Admin list/detail/create/upload-url/confirm/delete 都必须 fail-closed（列表也不泄露 total），绝不签 URL 或暴露 key/owner/tokenHash/locator。
+- registration-upload-session 使用 attachment_legacy，固定 JPEG/PNG/WebP/PDF、10MiB。
+  完成上传仅保持 active；canonical command 同事务复核 activity/member/Form/session/AVAILABLE/唯一附件，
+  先建不可变 RegistrationFormAnswer，再转为 registration-form-answer owner、绑定 attachmentId、
+  session consumed。失败整体回滚，不留半转绑/已 consumed。
+- user-avatar/member-official-portrait 只走 AttachmentVisualIdentityUploadService。
+  落库服务端规范化 JPEG，不是原始上传字节；入口声明 MIME/size 仅作闸控。
+  AttachmentImageNormalizer 负责解码、多帧拒收、EXIF方向、只缩不放、宽高比/像素上限、
+  白底压平并回读确认元数据清空。规格常量单一来源；改标准照用新 uniform-portrait-v2，
+  不修改 v1 数值或绕过 DB spec_version 约束。
+- 视觉身份两个 owner 的通用 create/list/detail/update/delete/upload-url/confirm 一律
+  ATTACHMENT_NOT_FOUND，不以“类型非法”泄露存在性。
+  registration-upload-session/form-answer 同样拒绝通用 Admin 路径，列表不泄露 total，
+  不签 URL，不暴露 key/owner/tokenHash/locator。
+
+## 读取例外
+
+默认不返回完整 signed URL 或其他 L3 字段。唯一既定内容例外：
+content-image/content-file 可在 open/app contents 读面返回短 TTL accessUrl，
+但必须先通过文章对应可见级（公开还须 published+public）。
+这不扩展到 member/certificate/activity；内容写路径仍检查 attachment 粗粒度权限。
+历史 GET /me/uploaded 已删除，listMyUploaded 只是未来 App building block，不自行恢复端点。
+
+改内部 owner 跑对应 generic-api-fail-closed 和上传阶段测试；
+改签名/过期/读取范围覆盖 content validator、对象确认与对应 owner 的越权用例。
