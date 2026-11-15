@@ -861,13 +861,6 @@ export function runCriteria(
 // 「读文件 / 写正则 / 造 overrides」的能力。
 // ============================================================================
 
-/** C3 当前读面文件 —— 变异必须全部摘掉才会红；实际发现仍由 C8 动态扫描。 */
-export const READ_FACE_SUMMARY = 'src/modules/attendances/participation-summary-query.service.ts';
-export const READ_FACE_ACTIVITY_PARTICIPATION =
-  'src/modules/activities/activity-participation-query.service.ts';
-export const READ_FACE_META_OVERVIEW = 'src/modules/meta/participation-overview-query.service.ts';
-export const READ_FACE_TEAM_JOIN = 'src/modules/team-join/team-join-progress.ts';
-
 /** 按仓库相对路径读源码。spec 侧唯一被允许的读取入口。 */
 export function readSource(relPath: string): string {
   return readFileSync(join(REPO_ROOT, relPath), 'utf8');
@@ -880,31 +873,24 @@ export interface WorkflowMutationControl {
 }
 
 /**
- * C3 正对照:**当前四处读面文件全部脱闸** ⇒ C3 必红。
- *
- * ⚠️ 2026-08-21(第六轮评审 B-01)起,这条变异必须**摘掉全部三处读面的闸**才会红。
- *    原因正是 C3 的粒度:它只断言「全仓至少有一个文件调过闸的读面方法」,
- *    **一处接了就绿**。当年只有一处读面接闸时,摘掉那一处就红;如今有三处,
- *    摘掉一处剩下两处仍然 >0。⇒ **C3 对「第二、第三处漏进来」结构性失明**,
- *    这正是 C8 存在的理由。两条判据粒度不同、都要留着。
- *    R5 新增 team-join 贡献核文件后，变异同步覆盖四处；以上三处是当年的历史数量。
+ * C3 只要求至少一个读面接闸，因此正对照必须摘掉所有读源调用。
+ * 与 C3 使用同一生产文件发现范围，不为新增读面维护第二份文件清单。
+ * C8 仍独立检查每个结算量读面；这里不改变判据，只构造内存变异。
  */
 export function controlAllReadFacesDetached(): WorkflowMutationControl {
-  let changed = true;
+  let changed = false;
   const overrides: Record<string, string> = {};
-  for (const target of [
-    READ_FACE_SUMMARY,
-    READ_FACE_ACTIVITY_PARTICIPATION,
-    READ_FACE_META_OVERVIEW,
-    READ_FACE_TEAM_JOIN,
-  ]) {
+  for (const file of collectProdFiles()) {
+    const target = rel(file);
+    if (target === GATE_FILE) continue;
     const original = readSource(target);
     const next = original
       .split(`this.activityWorkflowGate.${READ_SOURCE}()`)
       .join("('approved-attendance' as const)")
       .split(`activityWorkflowGate.${READ_SOURCE}()`)
       .join("('approved-attendance' as const)");
-    if (next === original) changed = false;
+    if (next === original) continue;
+    changed = true;
     overrides[target] = next;
   }
   return { changed, findings: runCriteria(overrides).findings };
