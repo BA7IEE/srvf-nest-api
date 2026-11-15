@@ -51,7 +51,12 @@ jobs:
               ['git', 'diff', '--name-only', '--no-renames', '-z', os.environ['BASE'], 'HEAD']
           ).split(b'\0')
           files = [f for f in files if f]
-          print('true' if files and all(f.endswith(b'.md') for f in files) else 'false')
+          evidence_types = (b'.json', b'.jpg', b'.jpeg', b'.png', b'.webp', b'.patch')
+          def documentation(f):
+              return f.endswith(b'.md') or (
+                  f.startswith(b'docs/plans/evidence/') and f.endswith(evidence_types)
+              )
+          print('true' if files and all(documentation(f) for f in files) else 'false')
           PY
           )
           fi
@@ -286,7 +291,12 @@ jobs:
     name: Docker image build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: changeset
     steps:
       - uses: actions/checkout@v4
       - name: Build Docker image
+        if: needs.changeset.outputs.docs_only != 'true'
         run: docker build -t u-nest-api-starter:ci .
+      - name: Documentation-only change
+        if: needs.changeset.outputs.docs_only == 'true'
+        run: echo 'Documentation/evidence-only change; no runtime image inputs changed.'

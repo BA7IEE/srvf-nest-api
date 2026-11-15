@@ -9,6 +9,8 @@
 5. CI 的四个 required check 名保留：
    `Lint / Typecheck / E2E`、`Docker image build`、`Diff guards`、`Red-zone (trusted)`。
    最小红区由 base 上的裁判检查，维护者人工批准。不要代点审批或把待审批写成已通过。
+   Draft 转 Ready 不重复审批同一提交；修改 PR 基底时先把目标分支同步进 head，
+   触发新扫描与验证，不复用旧基底的绿灯。模块 `CLAUDE.md` 本身不触发运行时代码审批。
 
 ## 发布
 
