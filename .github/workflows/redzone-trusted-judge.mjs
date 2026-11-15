@@ -16,7 +16,14 @@ export function protectedPaths(files, registry) {
         !['added', 'modified', 'removed', 'renamed', 'copied', 'changed', 'unchanged'].includes(f.status) ||
         (f.status === 'renamed' && !f.previous_filename)) throw new Error('Invalid changed file');
     return [f.filename, f.previous_filename].filter(Boolean);
-  }))].filter((file) => globs.some((glob) => path.matchesGlob(file, glob)));
+  }))].filter((file) => {
+    // Local guidance is covered by documentation/consumer checks. Keep both
+    // rename paths: renaming auth code to a guidance filename still hits the
+    // original protected source path.
+    if (file === 'prisma/CLAUDE.md' ||
+        path.matchesGlob(file, 'src/modules/*/CLAUDE.md')) return false;
+    return globs.some((glob) => path.matchesGlob(file, glob));
+  });
 }
 
 function git(...args) {
