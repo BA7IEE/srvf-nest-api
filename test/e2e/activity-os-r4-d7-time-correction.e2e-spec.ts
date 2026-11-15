@@ -25,6 +25,8 @@ import { CorrectionAuditRecorder } from '../../src/modules/activities/correction
 import { CorrectionTimeAllocationService } from '../../src/modules/activities/correction-time-allocation.service';
 import { AttendanceCorrectionWriteService } from '../../src/modules/attendances/attendance-correction-write.service';
 import { ParticipationTimeCorrectionService } from '../../src/modules/activities/participation-time-correction.service';
+import { ParticipationTimeTruthQueryService } from '../../src/modules/activities/participation-time-truth-query.service';
+import { ACTIVITY_TIME_CUTOVER_RECEIPT_ID } from '../../src/modules/activities/activity-time-cutover-command';
 import { LedgerPreparationService } from '../../src/modules/activities/ledger-preparation.service';
 import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
 import { LedgerReadyBatchCommitter } from '../../src/modules/activities/ledger-ready-batch-committer.service';
@@ -2853,6 +2855,421 @@ describe('D7-1 recognition correction real transaction', () => {
     if (!allocation) throw new Error('creator source allocation required');
     return { p, timeRevision, root, roots, source, allocation, sources, allocations };
   }
+
+  it('accepts and replays Human V2 corrections with nonempty result amounts', async () => {
+    const { p, timeRevision, root, roots, source } = await createCommittedFactCorrectionBase();
+    const baseResult = await f.db.participantSettlementResultRevision.findFirstOrThrow({
+      where: {
+        settlementVersionId: timeRevision.settlementVersionId,
+        participationIdentityId: source.participationIdentityId,
+      },
+    });
+    const result = {
+      participationIdentityId: source.participationIdentityId,
+      resultCode: baseResult.resultCode,
+      recognizedServiceHours: baseResult.recognizedServiceHours.toFixed(2),
+      recognizedContributionPoints: baseResult.recognizedContributionPoints.toFixed(2),
+      adjustmentReason: baseResult.adjustmentReason,
+      lateFlag: baseResult.lateFlag,
+      earlyLeaveFlag: baseResult.earlyLeaveFlag,
+    };
+    const correctionUrl = `${D13_APP}/${p.activityId}/time-corrections`;
+    const body = {
+      participationIdentityId: source.participationIdentityId,
+      requestTypeCode: 'time',
+      requestedChangeJson: {
+        schemaVersion: 2,
+        results: [result],
+        segments: [],
+        timeCorrection: {
+          baseSettlementVersionId: timeRevision.settlementVersionId,
+          baseTimeLedgerHash: root.contentHash,
+          reason: '复核分类认定',
+          items: roots.map((entry) => ({
+            rootEntryId: entry.id,
+            recognizedSeconds:
+              entry.categoryCode === 'volunteer_service' ? 3540 : entry.recognizedSeconds,
+          })),
+        },
+      },
+      reason: '复核时长和人员结果',
+      operationKey: f.key('human_v2_submit'),
+    };
+
+    for (const invalid of [1.2, '1.005']) {
+      const response = await request(httpServer(humanCorrectionTestApp(f)))
+        .post(correctionUrl)
+        .set('Authorization', f.creator.auth)
+        .send({
+          ...body,
+          requestedChangeJson: {
+            ...body.requestedChangeJson,
+            results: [{ ...result, recognizedServiceHours: invalid }],
+          },
+        });
+      expect({ status: response.status, code: response.body.code }).toEqual({
+        status: BizCode.CORRECTION_CHANGE_SET_INVALID.httpStatus,
+        code: BizCode.CORRECTION_CHANGE_SET_INVALID.code,
+      });
+    }
+
+    const submitted = await request(httpServer(humanCorrectionTestApp(f)))
+      .post(correctionUrl)
+      .set('Authorization', f.creator.auth)
+      .send(body)
+      .expect(201);
+    const first = submitted.body.data as { requestId: string; requestVersion: number };
+    expect(submitted.body.data).toMatchObject({ statusCode: 'pending', replayed: false });
+    const submitReplay = await request(httpServer(humanCorrectionTestApp(f)))
+      .post(correctionUrl)
+      .set('Authorization', f.creator.auth)
+      .send(body)
+      .expect(201);
+    expect(submitReplay.body.data).toMatchObject({ requestId: first.requestId, replayed: true });
+    const submitConflict = await request(httpServer(humanCorrectionTestApp(f)))
+      .post(correctionUrl)
+      .set('Authorization', f.creator.auth)
+      .send({ ...body, reason: '同标识的不同申请' });
+    expect({ status: submitConflict.status, code: submitConflict.body.code }).toEqual({
+      status: BizCode.CORRECTION_OPERATION_KEY_CONFLICT.httpStatus,
+      code: BizCode.CORRECTION_OPERATION_KEY_CONFLICT.code,
+    });
+
+    await request(httpServer(humanCorrectionTestApp(f)))
+      .post(`${correctionUrl}/${first.requestId}/review`)
+      .set('Authorization', f.reviewer.auth)
+      .send({
+        actionCode: 'return',
+        expectedRequestVersion: first.requestVersion,
+        note: '补充说明',
+      })
+      .expect(200);
+    const resubmitBody = {
+      ...body,
+      operationKey: f.key('human_v2_resubmit'),
+      reason: '已补充说明',
+    };
+    const resubmitted = await request(httpServer(humanCorrectionTestApp(f)))
+      .post(`${correctionUrl}/${first.requestId}/resubmit`)
+      .set('Authorization', f.creator.auth)
+      .send(resubmitBody)
+      .expect(201);
+    const next = resubmitted.body.data as { requestId: string };
+    expect(resubmitted.body.data).toMatchObject({ outcome: 'resubmitted', replayed: false });
+    const resubmitReplay = await request(httpServer(humanCorrectionTestApp(f)))
+      .post(`${correctionUrl}/${first.requestId}/resubmit`)
+      .set('Authorization', f.creator.auth)
+      .send(resubmitBody)
+      .expect(201);
+    expect(resubmitReplay.body.data).toMatchObject({ requestId: next.requestId, replayed: true });
+    const resubmitConflict = await request(httpServer(humanCorrectionTestApp(f)))
+      .post(`${correctionUrl}/${first.requestId}/resubmit`)
+      .set('Authorization', f.creator.auth)
+      .send({ ...resubmitBody, reason: '同标识的不同重提' });
+    expect({ status: resubmitConflict.status, code: resubmitConflict.body.code }).toEqual({
+      status: BizCode.CORRECTION_OPERATION_KEY_CONFLICT.httpStatus,
+      code: BizCode.CORRECTION_OPERATION_KEY_CONFLICT.code,
+    });
+    const persisted = await f.db.attendanceCorrectionRequest.findUniqueOrThrow({
+      where: { id: next.requestId },
+    });
+    expect(persisted).toMatchObject({
+      resubmittedFromRequestId: first.requestId,
+      requestedChangeJson: { schemaVersion: 2, results: [result] },
+    });
+  }, 120000);
+
+  it('applies and replays Human V2 nonempty result corrections through commit', async () => {
+    const { p, timeRevision, root, roots, source } = await createCommittedFactCorrectionBase();
+    const baseResult = await f.db.participantSettlementResultRevision.findFirstOrThrow({
+      where: {
+        settlementVersionId: timeRevision.settlementVersionId,
+        participationIdentityId: source.participationIdentityId,
+      },
+    });
+    expect(baseResult.resultCode).toBe('present');
+    expect(baseResult.recognizedServiceHours.toFixed(2)).toBe('1.00');
+    const originalServiceCredit = await f.db.participationLedgerEntry.findFirstOrThrow({
+      where: { resultRevisionId: baseResult.id, entryTypeCode: 'service_credit' },
+    });
+    expect(originalServiceCredit.serviceHoursDelta.toFixed(2)).toBe('1.00');
+    const url = `${D13_APP}/${p.activityId}/time-corrections`;
+    const body = {
+      participationIdentityId: source.participationIdentityId,
+      requestTypeCode: 'time',
+      requestedChangeJson: {
+        schemaVersion: 2,
+        results: [
+          {
+            participationIdentityId: source.participationIdentityId,
+            resultCode: baseResult.resultCode,
+            recognizedServiceHours: '0.98',
+            recognizedContributionPoints: baseResult.recognizedContributionPoints.toFixed(2),
+            adjustmentReason: '复核服务时长',
+            lateFlag: baseResult.lateFlag,
+            earlyLeaveFlag: baseResult.earlyLeaveFlag,
+          },
+        ],
+        segments: [],
+        timeCorrection: {
+          baseSettlementVersionId: timeRevision.settlementVersionId,
+          baseTimeLedgerHash: root.contentHash,
+          reason: '复核服务时长',
+          items: roots.map((entry) => ({
+            rootEntryId: entry.id,
+            recognizedSeconds:
+              entry.categoryCode === 'volunteer_service' ? 3540 : entry.recognizedSeconds,
+          })),
+        },
+      },
+      reason: '复核服务时长和人员结果',
+      operationKey: f.key('v2_commit_submit'),
+    };
+    const submitted = await request(httpServer(humanCorrectionTestApp(f)))
+      .post(url)
+      .set('Authorization', f.creator.auth)
+      .send(body)
+      .expect(201);
+    const first = submitted.body.data as { requestId: string; requestVersion: number };
+    await request(httpServer(humanCorrectionTestApp(f)))
+      .post(`${url}/${first.requestId}/review`)
+      .set('Authorization', f.reviewer.auth)
+      .send({
+        actionCode: 'return',
+        expectedRequestVersion: first.requestVersion,
+        note: '补充说明',
+      })
+      .expect(200);
+    const resubmitted = await request(httpServer(humanCorrectionTestApp(f)))
+      .post(`${url}/${first.requestId}/resubmit`)
+      .set('Authorization', f.creator.auth)
+      .send({ ...body, reason: '已补充说明', operationKey: f.key('v2_commit_resubmit') })
+      .expect(201);
+    const next = resubmitted.body.data as { requestId: string; requestVersion: number };
+    await request(httpServer(humanCorrectionTestApp(f)))
+      .post(`${url}/${next.requestId}/review`)
+      .set('Authorization', f.reviewer.auth)
+      .send({ actionCode: 'approve', expectedRequestVersion: next.requestVersion })
+      .expect(200);
+
+    const prepareBody = {
+      expectedBaseSettlementVersionId: timeRevision.settlementVersionId,
+      operationKey: f.key('v2_commit_prepare'),
+    };
+    const prepared = await request(httpServer(humanCorrectionTestApp(f)))
+      .post(`${url}/${next.requestId}/prepare`)
+      .set('Authorization', f.reviewer.auth)
+      .send(prepareBody)
+      .expect(200);
+    const target = prepared.body.data as {
+      applicationId: string;
+      postingBatchId: string;
+      settlementVersionId: string;
+    };
+    expect(prepared.body.data).toMatchObject({ requestId: next.requestId, replayed: false });
+    const prepareReplay = await request(httpServer(humanCorrectionTestApp(f)))
+      .post(`${url}/${next.requestId}/prepare`)
+      .set('Authorization', f.reviewer.auth)
+      .send(prepareBody)
+      .expect(200);
+    expect(prepareReplay.body.data).toMatchObject({ ...target, replayed: true });
+
+    const result = await f.db.participantSettlementResultRevision.findFirstOrThrow({
+      where: {
+        settlementVersionId: target.settlementVersionId,
+        participationIdentityId: source.participationIdentityId,
+      },
+    });
+    expect(result).toMatchObject({
+      baseResultRevisionId: baseResult.id,
+      correctionRequestId: next.requestId,
+      adjustmentReason: '复核服务时长',
+    });
+    expect(result.recognizedServiceHours.toFixed(2)).toBe('0.98');
+    expect(result.recognizedContributionPoints.toFixed(2)).toBe(
+      baseResult.recognizedContributionPoints.toFixed(2),
+    );
+
+    const commitBody = {
+      expectedBaseSettlementVersionId: timeRevision.settlementVersionId,
+      correctionApplicationId: target.applicationId,
+      postingBatchId: target.postingBatchId,
+      operationKey: f.key('v2_commit_apply'),
+    };
+    const committed = await request(httpServer(humanCorrectionTestApp(f)))
+      .post(`${url}/${next.requestId}/commit`)
+      .set('Authorization', f.reviewer.auth)
+      .send(commitBody)
+      .expect(200);
+    expect(committed.body.data).toMatchObject({
+      applicationId: target.applicationId,
+      postingBatchId: target.postingBatchId,
+      settlementVersionId: target.settlementVersionId,
+      applicationStatus: 'committed',
+      replayed: false,
+    });
+    const ledgerWhere = {
+      postingBatchId: target.postingBatchId,
+      participationIdentityId: source.participationIdentityId,
+    };
+    const ledger = await f.db.participationLedgerEntry.findMany({ where: ledgerWhere });
+    const reversal = ledger.find((entry) => entry.entryTypeCode === 'service_reversal');
+    const credit = ledger.find((entry) => entry.entryTypeCode === 'service_credit');
+    expect(reversal).toMatchObject({ reversesEntryId: originalServiceCredit.id });
+    expect(reversal?.serviceHoursDelta.toFixed(2)).toBe('-1.00');
+    expect(credit).toMatchObject({ resultRevisionId: result.id, reversesEntryId: null });
+    expect(credit?.serviceHoursDelta.toFixed(2)).toBe('0.98');
+    expect(
+      await f.db.participantSettlementResultRevision.findUniqueOrThrow({
+        where: { id: result.id },
+      }),
+    ).toMatchObject({ statusCode: 'committed' });
+    const commitReplay = await request(httpServer(humanCorrectionTestApp(f)))
+      .post(`${url}/${next.requestId}/commit`)
+      .set('Authorization', f.reviewer.auth)
+      .send(commitBody)
+      .expect(200);
+    expect(commitReplay.body.data).toMatchObject({
+      applicationId: target.applicationId,
+      postingBatchId: target.postingBatchId,
+      settlementVersionId: target.settlementVersionId,
+      replayed: true,
+    });
+    expect(await f.db.participationLedgerEntry.count({ where: ledgerWhere })).toBe(ledger.length);
+  }, 120_000);
+
+  it('keeps member proofs and totals correct across shared-manifest corrections', async () => {
+    // The cutover receipt must exist before the real root batch is committed.
+    await f.db.$executeRaw`
+      INSERT INTO "ActivityTimeCutoverReceipt" (
+        id, "operationKey", "requestHash", "deployedMainSha",
+        "evidenceBundleHash", "actorUserId", "contentHash"
+      ) VALUES (
+        ${ACTIVITY_TIME_CUTOVER_RECEIPT_ID}, ${f.key('cutover')}, ${'5'.repeat(64)},
+        ${'6'.repeat(40)}, ${'7'.repeat(64)}, ${actor.id}, ${'0'.repeat(64)}
+      )
+    `;
+    const { p, timeRevision, root, roots } = await createCommittedFactCorrectionBase(2);
+    const identities = await f.db.activityParticipationIdentity.findMany({
+      where: { id: { in: [...new Set(roots.map((row) => row.participationIdentityId))] } },
+      select: { id: true, memberId: true },
+    });
+    expect(identities).toHaveLength(2);
+    const memberA = identities.find((row) => row.id === p.identityId);
+    const memberB = identities.find((row) => row.id !== p.identityId);
+    if (!memberA || !memberB) throw new Error('two distinct members required');
+    const changedRoot = roots.find(
+      (row) =>
+        row.participationIdentityId === memberA.id && row.categoryCode === 'volunteer_service',
+    );
+    if (!changedRoot || changedRoot.recognizedSeconds <= 120) {
+      throw new Error('positive volunteer root required');
+    }
+    const truth = f.app.get(ParticipationTimeTruthQueryService);
+    const read = async (memberId: string) =>
+      f.db.$transaction(async (tx) => ({
+        proof: await truth.readMemberTruthInTx(tx, {
+          memberId,
+          dateFrom: '2020-01-01',
+          dateTo: '2020-12-31',
+        }),
+        totals: await truth.readOfficialTotalsInTx(tx, {
+          memberIds: [memberId],
+          activityIds: [p.activityId],
+        }),
+      }));
+    let baseVersionId = timeRevision.settlementVersionId;
+    let baseHash = root.contentHash;
+    for (const reduction of [60, 120]) {
+      const url = `${D13_APP}/${p.activityId}/time-corrections`;
+      const submitted = await request(httpServer(humanCorrectionTestApp(f)))
+        .post(url)
+        .set('Authorization', f.creator.auth)
+        .send({
+          participationIdentityId: memberA.id,
+          requestTypeCode: 'time',
+          requestedChangeJson: {
+            schemaVersion: 2,
+            results: [],
+            segments: [],
+            timeCorrection: {
+              baseSettlementVersionId: baseVersionId,
+              baseTimeLedgerHash: baseHash,
+              reason: 'member truth correction regression',
+              items: roots.map((entry) => ({
+                rootEntryId: entry.id,
+                recognizedSeconds:
+                  entry.id === changedRoot.id
+                    ? entry.recognizedSeconds - reduction
+                    : entry.recognizedSeconds,
+              })),
+            },
+          },
+          reason: 'member truth correction regression',
+          operationKey: f.key('truth_submit'),
+        })
+        .expect(201);
+      const submittedData = submitted.body.data as { requestId: string; requestVersion: number };
+      await request(httpServer(humanCorrectionTestApp(f)))
+        .post(`${url}/${submittedData.requestId}/review`)
+        .set('Authorization', f.reviewer.auth)
+        .send({ actionCode: 'approve', expectedRequestVersion: submittedData.requestVersion })
+        .expect(200);
+      const prepared = await request(httpServer(humanCorrectionTestApp(f)))
+        .post(`${url}/${submittedData.requestId}/prepare`)
+        .set('Authorization', f.reviewer.auth)
+        .send({
+          expectedBaseSettlementVersionId: baseVersionId,
+          operationKey: f.key('truth_prepare'),
+        })
+        .expect(200);
+      const preparedData = prepared.body.data as {
+        applicationId: string;
+        postingBatchId: string;
+        settlementVersionId: string;
+      };
+      await request(httpServer(humanCorrectionTestApp(f)))
+        .post(`${url}/${submittedData.requestId}/commit`)
+        .set('Authorization', f.reviewer.auth)
+        .send({
+          expectedBaseSettlementVersionId: baseVersionId,
+          correctionApplicationId: preparedData.applicationId,
+          postingBatchId: preparedData.postingBatchId,
+          operationKey: f.key('truth_commit'),
+        })
+        .expect(200);
+      const manifest = await f.db.participationTimeCorrectionManifest.findUniqueOrThrow({
+        where: { postingBatchId: preparedData.postingBatchId },
+      });
+      for (const member of [memberA, memberB]) {
+        const result = await read(member.memberId);
+        const expected =
+          roots
+            .filter(
+              (entry) =>
+                entry.participationIdentityId === member.id &&
+                entry.categoryCode === 'volunteer_service',
+            )
+            .reduce((sum, entry) => sum + entry.recognizedSeconds, 0) -
+          (member.id === memberA.id ? reduction : 0);
+        const volunteer = result.proof.items.filter(
+          (item) => item.sourceCategoryCode === 'volunteer_service',
+        );
+        expect(volunteer.reduce((sum, item) => sum + item.recognizedSeconds, 0)).toBe(expected);
+        expect(result.proof.items.every((item) => item.participationIdentityId === member.id)).toBe(
+          true,
+        );
+        expect(volunteer.every((item) => item.latestCorrectionManifestId === manifest.id)).toBe(
+          true,
+        );
+        expect(result.totals?.totals).toEqual([
+          { activityId: p.activityId, memberId: member.memberId, eligibleSeconds: expected },
+        ]);
+      }
+      baseVersionId = preparedData.settlementVersionId;
+      baseHash = manifest.contentHash;
+    }
+  }, 120_000);
 
   it('runs the Human V3 submit, returned-resubmit, review, prepare and commit chain', async () => {
     const { p, timeRevision, root, roots, source, allocation } =
