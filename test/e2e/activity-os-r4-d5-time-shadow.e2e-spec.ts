@@ -14,6 +14,10 @@ import { ParticipationSegmentFacade } from '../../src/modules/attendances/partic
 import { assertConnectedTestDatabase } from '../setup/test-db';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 import {
+  createD5HttpFailureDiagnostic,
+  type D5RequestContext,
+} from '../helpers/d5-http-failure-diagnostic';
+import {
   buildActivityTimeAllocationManifest,
   type ActivityTimeAllocationSliceInput,
 } from '../../src/modules/activities/activity-time-allocation-command';
@@ -68,10 +72,14 @@ describe('D5 shadow: real submitted version through App HTTP', () => {
   let actor: CurrentUserPayload;
   const meta = { requestId: 'd5-e2e', ip: null, ua: null };
   const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+  const diagnostic = createD5HttpFailureDiagnostic((record) =>
+    console.error('D5 HTTP failure (redacted)', record),
+  );
   beforeAll(async () => {
     // Test-process configuration only. Never changes an application instance or deployment Gate.
     process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     f = await createD13Fixture();
+    f.app.useLogger(diagnostic.logger);
     actor = {
       id: f.creator.id,
       memberId: f.creator.memberId,
@@ -375,11 +383,10 @@ describe('D5 shadow: real submitted version through App HTTP', () => {
     };
   }
 
-  async function post(url: string, payload: object) {
-    const response = await request(httpServer(f.app))
-      .post(url)
-      .set('Authorization', f.creator.auth)
-      .send(payload);
+  async function post(url: string, payload: object, context?: D5RequestContext) {
+    const send = async () =>
+      request(httpServer(f.app)).post(url).set('Authorization', f.creator.auth).send(payload);
+    const response = await (context ? diagnostic.capture(context, send) : send());
     expect({
       status: response.status,
       code: response.body.code,
@@ -710,16 +717,23 @@ describe('D5 shadow: real submitted version through App HTTP', () => {
         f.app.get(ActivityTimeSettlementAccessService),
         f.app.get(ParticipationSegmentFacade),
       );
-      for (const population of [1, 100, 2000]) {
+      for (const population of [1, 100, 2000] as const) {
         const p = await createCapacitySource(population);
-        const prepared = await post(p.url + '/prepare', prepareCommand(p));
-        const submitted = await post(p.url + '/submit', {
-          operationKey: f.key('scale_submit'),
-          expectedDraftVersion: p.proof.expectedDraftVersion,
-          expectedEvidenceSealId: p.proof.expectedEvidenceSealId,
-          timeRevisionId: prepared.timeRevisionId,
-          expectedBucketContentHash: prepared.bucketContentHash,
+        const prepared = await post(p.url + '/prepare', prepareCommand(p), {
+          phase: 'prepare',
+          population,
         });
+        const submitted = await post(
+          p.url + '/submit',
+          {
+            operationKey: f.key('scale_submit'),
+            expectedDraftVersion: p.proof.expectedDraftVersion,
+            expectedEvidenceSealId: p.proof.expectedEvidenceSealId,
+            timeRevisionId: prepared.timeRevisionId,
+            expectedBucketContentHash: prepared.bucketContentHash,
+          },
+          { phase: 'submit', population },
+        );
         const timeRevisionId = submitted.timeRevisionId as string;
         expect(
           await f.db.participantSettlementTimeBucket.count({ where: { timeRevisionId } }),
