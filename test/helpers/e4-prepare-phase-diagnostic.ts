@@ -60,8 +60,9 @@ export function classifyC3SourceReadQuery(query: unknown): C3SourceQueryFamily {
     sql.includes('"populationIncluded"')
   )
     return 'POPULATION';
+  // Prisma prepends the model's primary ID; accept only that fixed extra column.
   if (
-    /^SELECT (?:"public"\."ParticipantSettlementResultRevision"|"ParticipantSettlementResultRevision"|"t\d+")\."participationIdentityId", (?:"public"\."ParticipantSettlementResultRevision"|"ParticipantSettlementResultRevision"|"t\d+")\."exceptionFlagsJson" FROM (?:"public"\.)?"ParticipantSettlementResultRevision"(?: AS "t\d+")? WHERE /u.test(
+    /^SELECT (?:(?:"public"\."ParticipantSettlementResultRevision"|"ParticipantSettlementResultRevision"|"t\d+")\."id", )?(?:"public"\."ParticipantSettlementResultRevision"|"ParticipantSettlementResultRevision"|"t\d+")\."participationIdentityId", (?:"public"\."ParticipantSettlementResultRevision"|"ParticipantSettlementResultRevision"|"t\d+")\."exceptionFlagsJson" FROM (?:"public"\.)?"ParticipantSettlementResultRevision"(?: AS "t\d+")? WHERE /u.test(
       sql,
     ) &&
     sql.includes('"settlementVersionId"')

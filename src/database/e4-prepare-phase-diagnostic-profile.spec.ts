@@ -381,11 +381,21 @@ describe('C3 source query classification', () => {
     expect(classify(sql)).toBe(family);
   });
 
+  // Engine c2990dca prepends the primary ID in collect_selected_fields / FieldSelection::merge.
+  it.each([
+    'SELECT "public"."ParticipantSettlementResultRevision"."id", "public"."ParticipantSettlementResultRevision"."participationIdentityId", "public"."ParticipantSettlementResultRevision"."exceptionFlagsJson" FROM "public"."ParticipantSettlementResultRevision" WHERE "public"."ParticipantSettlementResultRevision"."settlementVersionId" = $1 LIMIT $2',
+    'SELECT "t0"."id", "t0"."participationIdentityId", "t0"."exceptionFlagsJson" FROM "public"."ParticipantSettlementResultRevision" AS "t0" WHERE "t0"."settlementVersionId" = $1 LIMIT $2',
+  ])('recognizes the engine-added result primary ID %#', (sql) => {
+    expect(classify(sql)).toBe('SETTLEMENT_RESULTS');
+  });
+
   it.each([
     'SELECT id FROM "User" WHERE id = $1',
     'SELECT id FROM "ActivityParticipationIdentity" WHERE id = $1',
     'SELECT \'FROM "ActivityParticipationIdentity" "populationIncluded"\' AS text',
     'SELECT \'FROM "ParticipantSettlementResultRevision" "settlementVersionId"\' AS text',
+    'SELECT "t0"."otherId", "t0"."participationIdentityId", "t0"."exceptionFlagsJson" FROM "public"."ParticipantSettlementResultRevision" AS "t0" WHERE "t0"."settlementVersionId" = $1',
+    'SELECT "t0"."id", "t0"."exceptionFlagsJson", "t0"."participationIdentityId" FROM "public"."ParticipantSettlementResultRevision" AS "t0" WHERE "t0"."settlementVersionId" = $1',
     '/* private SQL */ SELECT id FROM "ActivityRuleSnapshot" ORDER BY id FOR SHARE',
     'SELECT id FROM "ActivityRuleSnapshot" ORDER BY id FOR SHARE; SELECT 1',
     'x'.repeat(32769),
