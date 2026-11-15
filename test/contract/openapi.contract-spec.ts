@@ -5,6 +5,10 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { httpServer } from '../helpers/http-server';
 import { createTestApp } from '../setup/test-app';
+import {
+  RETIRED_ATTENDANCE_ROUTES,
+  RETIRED_ATTENDANCE_SCHEMAS,
+} from '../fixtures/retired-attendance-contract';
 
 // V1.3-3 OpenAPI 契约快照。
 //
@@ -508,15 +512,6 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/app/v1/my/managed-activities/{activityId}/registrations/{registrationId}/reopen'],
   ['patch', '/api/app/v1/my/managed-activities/{activityId}/registrations/bulk-approve'],
   ['patch', '/api/app/v1/my/managed-activities/{activityId}/registrations/bulk-reject'],
-  // 活动责任闭环 PR-8:负责人/考勤协办 App 考勤管理薄壳；App DTO 与 Admin 物理隔离。
-  ['get', '/api/app/v1/my/managed-activities/{activityId}/check-ins'],
-  ['get', '/api/app/v1/my/managed-activities/{activityId}/attendance-sheet-draft'],
-  ['get', '/api/app/v1/my/managed-activities/{activityId}/attendance-sheets'],
-  ['post', '/api/app/v1/my/managed-activities/{activityId}/attendance-sheets'],
-  ['get', '/api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}'],
-  ['patch', '/api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}'],
-  ['delete', '/api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}'],
-  ['post', '/api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}/resubmit'],
 
   // Phase 2 P2-5b(2026-05-20):App /api/app/v1/my/registrations 2 写 endpoint
   // 沿 docs/app-api-p2-5-registrations-review.md §13.7 + D-P2-5-5 / D-P2-5-8 / D-P2-5-9 /
@@ -527,26 +522,12 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/app/v1/my/registrations'],
   ['patch', '/api/app/v1/my/registrations/{id}/cancel'],
 
-  // Phase 2 P2-6(2026-05-20):App /api/app/v1/my/attendance-records 1 endpoint
-  // 沿 docs/app-api-p2-6-attendance-records-review.md §4 endpoint 契约 + §5 字段集恰好 14;
-  // 复用 attendances.service.listMyRecords(沿 D-P2-6-2 thin-wrap;0 service diff);
-  // AppMy service 内 2 次 IN 批量查 AttendanceSheet + Activity(沿 D-P2-6-6 + §7.4 默认方案);
-  // 0 新 BizCode / 0 schema / 0 migration / 0 新依赖;
-  // 行为契约沿 D-P2-6-15 + §11.1 path stability 锁定。
-  ['get', '/api/app/v1/my/attendance-records'],
-  // 审计刀 5 F4：App self-scope 个人参与累计，只返正向 approved 时长/次数/封顶贡献。
+  // 旧记录入口由退休负向契约锁定；本人参与累计沿新链读取。
   ['get', '/api/app/v1/my/participation-summary'],
   // 活动业务改造 v1.1 第 2 批第 ⑨b 刀：本人已生效账本；只经 LedgerQueryService 查询 committed 批次。
   ['get', '/api/app/v1/my/participation-ledger'],
   // Activity OS R4 D8-1：本人正式时长证明；切换收据不存在时 fail-closed 503。
   ['get', '/api/app/v1/my/participation-time-proof'],
-
-  // 活动自助 GPS 签到 F2 + D-GPS fail-closed：canonical App self surface；当前 pass
-  // registration 锚定，首次 POST 仅合法范围内位置写入，合法 winner 重试仍 200；GET 只读本人
-  // 当前报名证据。无 legacy alias / raw GPS 回显。
-  ['post', '/api/app/v1/my/activities/{activityId}/check-in'],
-  ['post', '/api/app/v1/my/activities/{activityId}/check-out'],
-  ['get', '/api/app/v1/my/activities/{activityId}/check-in'],
 
   // 活动评价 F2：本人 PUT/GET；GET 无评价恒 200/null，PUT 只认 completed + 窗口 + approved 到场。
   ['put', '/api/app/v1/my/activities/{activityId}/feedback'],
@@ -880,24 +861,6 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/admin/v1/activities/{activityId}/registrations/{id}/reject'],
   ['patch', '/api/admin/v1/activities/{activityId}/registrations/{id}/cancel'],
   ['post', '/api/admin/v1/activities/{activityId}/registrations/{id}/reopen'],
-  // 活动自助 GPS 签到 F3：Admin 证据分页 + 只读考勤提交草稿；两路复用
-  // attendance.read.sheet，并以 activity ref 支持 GLOBAL / scoped 判权。
-  ['get', '/api/admin/v1/activities/{activityId}/check-ins'],
-  ['get', '/api/admin/v1/activities/{activityId}/attendance-sheet-draft'],
-  ['post', '/api/admin/v1/activities/{activityId}/attendance-sheets'],
-  ['get', '/api/admin/v1/activities/{activityId}/attendance-sheets'],
-  ['get', '/api/admin/v1/attendance-sheets/{id}/review-detail'],
-  ['get', '/api/admin/v1/attendance-sheets/{id}'],
-  ['patch', '/api/admin/v1/attendance-sheets/{id}'],
-  ['delete', '/api/admin/v1/attendance-sheets/{id}'],
-  ['patch', '/api/admin/v1/attendance-sheets/{id}/approve'],
-  ['patch', '/api/admin/v1/attendance-sheets/{id}/reject'],
-  ['post', '/api/admin/v1/attendance-sheets/{id}/return'],
-  ['patch', '/api/admin/v1/attendance-sheets/{id}/final-approve'],
-  ['patch', '/api/admin/v1/attendance-sheets/{id}/final-reject'],
-  ['post', '/api/admin/v1/attendance-sheets/{id}/final-return'],
-  ['post', '/api/admin/v1/attendance-sheets/{id}/resubmit'],
-  ['post', '/api/admin/v1/attendance-sheets/{id}/reopen'],
   // 活动业务改造 v1.1 第 2 批第 ⑧b/⑨b 刀：审核 action + 跨活动工作台、详情、账本批次读面。
   ['get', '/api/admin/v1/attendance-settlements'],
   ['get', '/api/admin/v1/attendance-settlements/{settlementVersionId}/review-detail'],
@@ -912,9 +875,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   //   AttendanceSheetsResourceController);Tier3 队员 360:members/:memberId/{registrations,
   //   attendance-records,contribution-summary}(贡献值实时算复用 team-join 封顶核,生涯累计 3/北京日)。
   ['get', '/api/admin/v1/registrations'],
-  ['get', '/api/admin/v1/attendance-sheets'],
   ['get', '/api/admin/v1/members/{memberId}/registrations'],
-  ['get', '/api/admin/v1/members/{memberId}/attendance-records'],
   ['get', '/api/admin/v1/members/{memberId}/contribution-summary'],
   // 审计刀 5 F3：队员 360 个人参与累计，既有 contribution-summary 原样保留。
   ['get', '/api/admin/v1/members/{memberId}/participation-summary'],
@@ -1382,7 +1343,12 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'AppManagedMyResponsibilityDto',
   'AppManagedPublishReviewSummaryDto',
   'AppManagedActivityCountsDto',
-  'AppManagedActivityClosureDto',
+  'AppManagedActivityWorkflowDto',
+  'AppManagedSettlementSummaryDto',
+  'AppManagedActiveClosureDto',
+  'ActivityListSettlementStatsDto',
+  'ActivityReconciliationParticipantDto',
+  'ActivityReconciliationSessionResultDto',
   'AppSubmitActivityChangeReviewDto',
   'AppActivityChangePositionDto',
   'CreateAppManagedActivityPositionDto',
@@ -1415,36 +1381,10 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'AppManagedRegistrationBulkFailureDto',
   'AppManagedRegistrationBulkResponseDto',
 
-  // V2 第一阶段批次 3B attendances
-  // 注:ListAttendanceSheetsQueryDto / MyAttendanceRecordsQueryDto / ActivityIdParamDto
-  //   均为 @Query / @Param DTO,被内联为 parameters,不进 components.schemas。
-  //   AttendanceMemberSummaryDto / AttendanceSheetActivitySummaryDto 仅作为嵌套字段类型,
-  //   Swagger 内联为父 DTO 的 property 而不注册为 named schema(沿 batch 1 / 2 嵌套范式)。
-  'AttendanceRecordInputDto',
-  'CreateAttendanceSheetDto',
-  'UpdateAttendanceSheetDto',
-  'ApproveAttendanceSheetDto',
-  'RejectAttendanceSheetDto',
-  'AttendanceSheetResponseDto',
-  'AttendanceSheetListItemDto',
-  'AttendanceRecordResponseDto',
-  'AttendanceSheetReviewDetailDto',
-
-  // 队员/审批跨轴只读查询(2026-06-23;GAP-001 Tier2 / GAP-002 Tier3):4 个 admin 出参 DTO,
-  // 独立 admin-surface class(**不** extends / Pick / Omit 既有 list-item;沿 §2.1 / §0)。
-  //   AdminRegistrationListItemDto(activity-registrations 模块)= 既有列表项 + activityTitle;
-  //   AdminAttendanceSheetListItemDto / AdminMemberAttendanceRecordDto = 既有 + activity 上下文;
-  //   MemberContributionSummaryDto = { memberId, contributionPoints }(生涯累计 capped 总分)。
-  // 注:ListRegistrationsQueryDto / ListAttendanceSheetsQueryDto / PaginationQueryDto 复用既有
-  //   @Query DTO,被内联为 parameters,不进 components.schemas;:memberId 为 raw @Param 同理。
+  // 跨轴报名查询与新链贡献汇总；退休 Sheet/records schema 由负向契约锁定。
   'AdminRegistrationListItemDto',
-  'AdminAttendanceSheetListItemDto',
-  'AdminMemberAttendanceRecordDto',
   'MemberContributionSummaryDto',
 
-  // V2 第一阶段批次 4-B(APD 部门部长 / 副部长终审)
-  'FinalApproveAttendanceSheetDto',
-  'FinalRejectAttendanceSheetDto',
   // 活动业务改造 v1.1 第 2 批第 ⑧b 刀:Admin 结算审核写面；Params DTO 内联为 path parameter。
   'AdminSettlementApproveCommandDto',
   'AdminSettlementReturnCommandDto',
@@ -1641,18 +1581,6 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'CreateAppMyRegistrationDto',
   'CancelAppMyRegistrationDto',
 
-  // Phase 2 P2-6(2026-05-20):App /my/attendance-records 出参 DTO
-  // 字段集严格沿 §5.1 v0.1 锁定 14 项;独立 class,**禁止**继承 / Pick / Omit / Mapped Types
-  // admin AttendanceRecordResponseDto(沿 D-P2-6-4 + Phase 0.7 §2.2)。
-  // 注:ListAppMyAttendanceRecordsQueryDto 是 @Query() DTO,被 NestJS Swagger 内联为
-  // parameters,**不**注册到 components.schemas(沿 P2-5a query DTO 同范式)。
-  'AppMyAttendanceRecordDto',
-
-  // 活动自助 GPS 签到 F2：独立 App location 入参 + 精确 11 字段安全响应。
-  // activityId path DTO 被 Swagger 内联为 parameter，不注册 component schema。
-  'ActivityCheckInLocationDto',
-  'AppActivityCheckInDto',
-
   // 第 5 批：自助 QR/现场事实 DTO；path params 被 Swagger 内联，故不列。
   'AppActivityPunchDto',
   'AppActivityPunchReceiptDto',
@@ -1662,15 +1590,6 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'RevokeAppManagedAttendanceQrDto',
   'EarlyDepartureCloseAppManagedOnsitePunchDto',
   'CorrectAppManagedOnsitePunchDto',
-
-  // 活动自助 GPS 签到 F3：Admin 证据列表与只读考勤草稿 6 个显式 schema。
-  // ListActivityCheckInsQueryDto 继承 PaginationQueryDto，仅内联为 query parameters。
-  'AdminActivityCheckInMemberDto',
-  'AdminActivityCheckInListItemDto',
-  'AttendanceSheetDraftRecordDto',
-  'AttendanceSheetDraftFlagDto',
-  'AttendanceSheetDraftAbsentRegistrationDto',
-  'AttendanceSheetDraftDto',
 
   // Phase 2 P2-7(2026-05-20):App /my/certificates 出参 DTO
   // 字段集严格沿 docs/app-api-p2-7-my-certificates-review.md §5.1 v0.1 锁定 12 项;
@@ -1894,7 +1813,7 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   // 物理隔离子 DTO(镜像 RecruitmentCycleStatsDto 嵌套子 DTO 的既有惯例)。
   'DashboardSummaryResponseDto',
   'DashboardRegistrationsSummaryDto',
-  'DashboardAttendanceSheetsSummaryDto',
+  'DashboardSettlementReviewsSummaryDto',
   'DashboardActivitiesSummaryDto',
 
   // 审计刀 5 F1–F6：活动/个人/总览度量与逐条批量审批。
@@ -2043,6 +1962,11 @@ describe('OpenAPI 契约快照', () => {
     expect(Object.keys(item[method]?.responses ?? {}).length).toBeGreaterThan(0);
   });
 
+  it.each(RETIRED_ATTENDANCE_ROUTES)('退休路由不得重新暴露: %s %s', (method, path) => {
+    expect(doc.paths[path]?.[method]).toBeUndefined();
+    expect(EXPECTED_ROUTES).not.toContainEqual([method, path]);
+  });
+
   // 证书标准库 PR-3(2026-07-30):+13(证书标准 7 + 队内认定规则 6)→ 429。
   // 证书标准库 PR-4a-1(2026-07-30):+6(招新证书申报管理端 5 + 公开标准选项 1)→ 435。
   // 证书标准库 PR-4a-2(2026-07-30):+3 公开申报 −1 旧公开上传 −2 旧 admin category 端点
@@ -2144,10 +2068,13 @@ describe('OpenAPI 契约快照', () => {
       const documentedSuccess = Object.keys(operation?.responses ?? {})
         .filter((status) => /^2\d\d$/.test(status))
         .sort();
-      if (
-        effectiveStatus === undefined ||
-        documentedSuccess.join(',') !== String(effectiveStatus)
-      ) {
+      // This retained migration hint always throws after admission/owner checks.
+      // Its complete error-only contract is asserted separately below.
+      const expectedSuccess =
+        operationId === 'AppManagedActivitiesController_declareAttendanceComplete'
+          ? ''
+          : String(effectiveStatus);
+      if (effectiveStatus === undefined || documentedSuccess.join(',') !== expectedSuccess) {
         mismatches.push(
           `${method.toUpperCase()} ${path}: operationId=${operationId ?? '<missing>'}, ` +
             `effective=${effectiveStatus ?? '<missing>'}, documented=${documentedSuccess.join(',')}`,
@@ -2157,6 +2084,30 @@ describe('OpenAPI 契约快照', () => {
 
     expect(mismatches).toEqual([]);
     expect(effectiveStatusByOperationId.size).toBeGreaterThanOrEqual(EXPECTED_ROUTES.length);
+  });
+
+  it('退休声明入口保留鉴权并只声明错误响应，不伪造成功能力', () => {
+    const operation =
+      doc.paths['/api/app/v1/my/managed-activities/{activityId}/declare-attendance-complete']?.post;
+    expect(operation?.operationId).toBe('AppManagedActivitiesController_declareAttendanceComplete');
+    expect(operation?.deprecated).toBe(true);
+    expect(operation?.security).toEqual([{ bearer: [] }]);
+    expect(Object.keys(operation?.responses ?? {}).sort()).toEqual([
+      '400',
+      '401',
+      '403',
+      '404',
+      '410',
+      '503',
+    ]);
+    expect(documented4xxCodes(operation)).toEqual(
+      expect.arrayContaining([
+        BizCode.UNAUTHORIZED.code,
+        BizCode.FORBIDDEN.code,
+        BizCode.ACTIVITY_NOT_FOUND.code,
+        BizCode.ACTIVITY_LEGACY_ATTENDANCE_WRITE_CLOSED.code,
+      ]),
+    );
   });
 
   it.each(NULLABLE_SETTINGS_ROUTES)('settings GET 明确声明 nullable data: %s', (path) => {
@@ -2181,6 +2132,11 @@ describe('OpenAPI 契约快照', () => {
 
   it.each(EXPECTED_SCHEMAS)('Schema 仍存在: %s', (schemaName) => {
     expect(doc.components?.schemas?.[schemaName]).toBeDefined();
+  });
+
+  it.each(RETIRED_ATTENDANCE_SCHEMAS)('退休 schema 不得重新发布: %s', (schemaName) => {
+    expect(doc.components?.schemas?.[schemaName]).toBeUndefined();
+    expect(EXPECTED_SCHEMAS).not.toContain(schemaName);
   });
 
   it.each([
@@ -2609,47 +2565,63 @@ describe('OpenAPI 契约快照', () => {
     expect(JSON.stringify(dataSchema)).not.toContain('LogoutAllResponseDto');
   });
 
-  it('managed activity closure enum additive 支持 cancelled 且列表维持扁平契约', () => {
-    const closureSchema = doc.components?.schemas?.AppManagedActivityClosureDto as OpenApiSchema;
+  it('managed activity 分离生命周期与结算可用性，列表维持扁平契约', () => {
+    const workflowSchema = doc.components?.schemas?.AppManagedActivityWorkflowDto as OpenApiSchema;
+    const settlementSchema = doc.components?.schemas
+      ?.AppManagedSettlementSummaryDto as OpenApiSchema;
+    const countsSchema = doc.components?.schemas?.AppManagedActivityCountsDto as OpenApiSchema;
     const listItemSchema = doc.components?.schemas?.AppManagedActivityListItemDto as OpenApiSchema;
     const detailSchema = doc.components?.schemas?.AppManagedActivityDetailDto as OpenApiSchema;
 
-    // 2026-08-25 归档拍板:第 10 值 `archived` 追加在**末尾**(additive,既有 9 值顺序一格未动)——
-    // 老客户端读到未知枚举值时的降级由它自己负责,而把新值插在中间会让按下标读的实现整体错位。
-    expect(closureSchema?.properties?.status?.enum).toEqual([
+    expect(workflowSchema?.properties?.status?.enum).toEqual([
       'draft',
       'publish-review-pending',
       'published',
+      'completed',
+      'terminated',
       'cancelled',
-      'waiting-attendance-declaration',
-      'attendance-first-review',
-      'attendance-returned',
-      'attendance-final-review',
-      'closed',
       'archived',
+      'unknown',
     ]);
-    expect(closureSchema?.properties?.nextAction).toEqual({
+    expect(workflowSchema?.properties?.nextAction).toMatchObject({
       type: 'string',
       nullable: true,
     });
+    expect(settlementSchema?.properties?.availability?.enum).toEqual([
+      'available',
+      'workflow-disabled',
+      'forbidden',
+      'not-requested',
+    ]);
+    expect(settlementSchema?.required).toEqual(['availability']);
+    expect(settlementSchema?.properties?.runStatus).toMatchObject({
+      type: 'string',
+      nullable: true,
+    });
+    expect(Object.keys(countsSchema?.properties ?? {}).sort()).toEqual([
+      'pendingRegistrations',
+      'waitlistedRegistrations',
+    ]);
     expect(listItemSchema?.properties?.closure).toBeUndefined();
+    expect(listItemSchema?.properties?.unresolvedAttendanceSheets).toBeUndefined();
     expect(listItemSchema?.properties?.statusCode).toEqual({ type: 'string' });
-    expect(listItemSchema?.properties?.nextAction).toEqual({
+    expect(listItemSchema?.properties?.nextAction).toMatchObject({
       type: 'string',
       nullable: true,
     });
     // AC-004「长期未处理草稿在工作台提示」的后端半格:列表行上的纯布尔事实位,
     // 契约仍是扁平的(不塞嵌套对象)。
-    // ⚠️ 用 objectContaining 而不是精确对象:本字段带 `@ApiProperty({ description })`,
-    //    精确对象会把**说明文案**也钉成契约 —— 那不是本条要守的东西(要守的是「它是布尔、
-    //    且没有变成嵌套结构」)。相邻两条 statusCode / nextAction 没有 description,
-    //    所以它们写精确对象是等价的,不是两套口径。
+    // 带 description 的字段锁定类型与 nullable 语义，不锁说明文案。
     expect(listItemSchema?.properties?.staleDraft).toEqual(
       expect.objectContaining({ type: 'boolean' }),
     );
     expect(listItemSchema?.properties?.staleDraft?.$ref).toBeUndefined();
-    expect(detailSchema?.properties?.closure).toEqual({
-      $ref: '#/components/schemas/AppManagedActivityClosureDto',
+    expect(detailSchema?.properties?.closure).toBeUndefined();
+    expect(detailSchema?.properties?.workflow).toEqual({
+      $ref: '#/components/schemas/AppManagedActivityWorkflowDto',
+    });
+    expect(detailSchema?.properties?.settlement).toEqual({
+      $ref: '#/components/schemas/AppManagedSettlementSummaryDto',
     });
   });
 

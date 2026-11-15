@@ -4,6 +4,7 @@ import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-wo
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AppConfig } from '../../config/app.config';
 import { AttendancePunchCommandService } from './attendance-punch-command.service';
+import { AttendanceReadService } from './attendance-read.service';
 import { AdminMemberAttendanceController } from './controllers/admin-member-attendance.controller';
 
 const actor = {
@@ -46,6 +47,28 @@ function setup(enabled: boolean, readonlyMaintenance: boolean) {
 }
 
 describe('retired attendance entry boundaries', () => {
+  it('retired contribution reader rejects a disabled source before starting parallel ledger reads', async () => {
+    const ledgerRead = jest.fn().mockResolvedValue({});
+    const gate = new ActivityWorkflowGate({
+      activityV11Workflow: { enabled: false, readonlyMaintenance: false },
+    } as AppConfig);
+    const reader = new AttendanceReadService(
+      {} as never,
+      { assertCanOrThrow: jest.fn().mockResolvedValue(undefined) } as never,
+      {} as never,
+      {} as never,
+      { memberExists: jest.fn().mockResolvedValue(true) } as never,
+      {} as never,
+      {} as never,
+      { loadMemberLedgerTotals: ledgerRead } as never,
+      gate,
+    );
+    await expect(reader.getMemberContributionSummary('member-1', actor)).rejects.toMatchObject({
+      biz: BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
+    });
+    expect(ledgerRead).not.toHaveBeenCalled();
+  });
+
   it('disabled v1.1 rejects a new punch with 20153/503 before token or transaction', async () => {
     const { command, input, transaction, verifyToken } = setup(false, false);
     await expect(command.selfPunch(input)).rejects.toMatchObject({

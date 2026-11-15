@@ -16,9 +16,9 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.1.0 |
-| inputDigest | sha256:d826e8a4cf4e28a65b7b5574e51a7449ec7abee49b59fc718e6a6f06521ae2d0 |
-| endpoint count | 673 |
-| legacy [auth] count | 187 |
+| inputDigest | sha256:eaeece19504511f90c1acf8040f0773d4949db2c57727046143098466b35603f |
+| endpoint count | 643 |
+| legacy [auth] count | 175 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
 | per-route truth source | code |
@@ -29,8 +29,8 @@
 
 | surface | routes | declared in code | undeclared |
 |---|---:|---:|---:|
-| admin | 323 | 323 | 0 |
-| app | 208 | 208 | 0 |
+| admin | 305 | 305 | 0 |
+| app | 196 | 196 | 0 |
 | system | 102 | 102 | 0 |
 | auth | 22 | 22 | 0 |
 | open | 16 | 16 | 0 |
@@ -41,8 +41,8 @@
 | marker | count |
 |---|---:|
 | public | 33 |
-| rbac | 453 |
-| auth | 187 |
+| rbac | 435 |
+| auth | 175 |
 | unclassified | 0 |
 
 ## Phase 0 decision record
@@ -52,10 +52,10 @@
 | review scope | endpoint or family | declared policy | status | evidence |
 |---|---|---|---|---|
 | admin individual | GET /api/admin/v1/activities | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/activities.controller.ts:81; src/modules/activities/activities.controller.ts:93 |
-| admin individual | GET /api/admin/v1/activities/:activityId/participation-summary | RBAC; admission=-; codes=activity-registration.read.record,attendance.read.sheet; require=all; scopes=-; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-participation.controller.ts:79; src/modules/activities/controllers/admin-activity-participation.controller.ts:99 |
+| admin individual | GET /api/admin/v1/activities/:activityId/participation-summary | RBAC; admission=-; codes=activity-registration.read.record,attendance.read.sheet; require=all; scopes=-; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-participation.controller.ts:80; src/modules/activities/controllers/admin-activity-participation.controller.ts:101 |
 | admin individual | GET /api/admin/v1/activities/:activityId/positions | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-positions.controller.ts:58; src/modules/activities/controllers/admin-activity-positions.controller.ts:66 |
 | admin individual | GET /api/admin/v1/activities/:activityId/positions/:activityPositionId | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-positions.controller.ts:69; src/modules/activities/controllers/admin-activity-positions.controller.ts:80 |
-| admin individual | GET /api/admin/v1/activities/:activityId/reconciliation | RBAC; admission=-; codes=activity-registration.read.record,attendance.read.sheet; require=all; scopes=-; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-participation.controller.ts:55; src/modules/activities/controllers/admin-activity-participation.controller.ts:76 |
+| admin individual | GET /api/admin/v1/activities/:activityId/reconciliation | RBAC; admission=-; codes=activity-registration.read.record,attendance.read.sheet; require=all; scopes=-; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-participation.controller.ts:55; src/modules/activities/controllers/admin-activity-participation.controller.ts:77 |
 | admin individual | GET /api/admin/v1/activities/:id | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/activities.controller.ts:141; src/modules/activities/activities.controller.ts:152 |
 | admin individual | GET /api/admin/v1/activities/:id/metric-selection | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-metric-selection.controller.ts:31; src/modules/activities/controllers/admin-activity-metric-selection.controller.ts:42 |
 | admin individual | GET /api/admin/v1/activities/:id/simple-draft | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-simple-activities.controller.ts:136; src/modules/activities/controllers/admin-simple-activities.controller.ts:160 |
@@ -63,8 +63,8 @@
 | admin individual | GET /api/admin/v1/activities/organization-options | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-simple-activities.controller.ts:54; src/modules/activities/controllers/admin-simple-activities.controller.ts:69 |
 | admin individual | GET /api/admin/v1/activities/template-version-options | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-simple-activities.controller.ts:72; src/modules/activities/controllers/admin-simple-activities.controller.ts:96 |
 | admin individual | GET /api/admin/v1/me | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/users/controllers/admin-me.controller.ts:34; src/modules/users/controllers/admin-me.controller.ts:43 |
-| admin individual | GET /api/admin/v1/meta/dashboard-summary | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=org-scope; engine=authz-scoped | code | src/modules/meta/meta.controller.ts:59; src/modules/meta/meta.controller.ts:68 |
-| admin individual | GET /api/admin/v1/meta/participation-overview | RBAC; admission=-; codes=activity-registration.read.record,attendance.read.sheet; require=all; scopes=-; engine=authz-scoped | code | src/modules/meta/meta.controller.ts:71; src/modules/meta/meta.controller.ts:86 |
+| admin individual | GET /api/admin/v1/meta/dashboard-summary | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=org-scope; engine=authz-scoped | code | src/modules/meta/meta.controller.ts:59; src/modules/meta/meta.controller.ts:67 |
+| admin individual | GET /api/admin/v1/meta/participation-overview | RBAC; admission=-; codes=activity-registration.read.record,attendance.read.sheet; require=all; scopes=-; engine=authz-scoped | code | src/modules/meta/meta.controller.ts:70; src/modules/meta/meta.controller.ts:90 |
 | admin individual | POST /api/admin/v1/activities/:id/publish-reviews | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-simple-activities.controller.ts:201; src/modules/activities/controllers/admin-simple-activities.controller.ts:233 |
 | admin individual | POST /api/admin/v1/contents/:id/attachments/confirm | RBAC; admission=-; codes=attachment.upload.content-file,attachment.upload.content-image; require=any; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:248; src/modules/content/content-admin.controller.ts:274 |
 | app tag family | Mobile - Activities (4) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=visibility:app-activity-catalog; engine=authz-scoped | code | src/modules/activities/controllers/app-activities.controller.ts:47 |
@@ -74,7 +74,6 @@
 | app tag family | Mobile - Managed Activities (39) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1293 |
 | app tag family | Mobile - Managed Activity Allocation Batches (4) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-allocation-batches.controller.ts:135 |
 | app tag family | Mobile - Managed Activity Attendance QR (4) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendance-qr.controller.ts:52 |
-| app tag family | Mobile - Managed Activity Attendances (8) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:213 |
 | app tag family | Mobile - Managed Activity Guests (5) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:57 |
 | app tag family | Mobile - Managed Activity Metrics (3) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-metrics.controller.ts:91 |
 | app tag family | Mobile - Managed Activity Onsite Operations (13) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-onsite-operations.controller.ts:651 |
@@ -85,17 +84,16 @@
 | app tag family | Mobile - Managed Activity Responsibilities (6) | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts:141 |
 | app tag family | Mobile - Me (15) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:361 |
 | app tag family | Mobile - My Activity Batch Jobs (5) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:47 |
-| app tag family | Mobile - My Activity Check-ins (3) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-activity-check-ins.controller.ts:90 |
 | app tag family | Mobile - My Activity Feedback (2) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-feedbacks/controllers/app-activity-feedbacks.controller.ts:55 |
 | app tag family | Mobile - My Activity Invitations (2) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-my-activity-invitations.controller.ts:36 |
 | app tag family | Mobile - My Activity Punches (3) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-activity-punches.controller.ts:122 |
-| app tag family | Mobile - My Attendance (2) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-my-attendance-records.controller.ts:48 |
+| app tag family | Mobile - My Attendance (1) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-my-participation-summary.controller.ts:22 |
 | app tag family | Mobile - My Attendance Member Credential (1) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-my-attendance-member-credential.controller.ts:25 |
 | app tag family | Mobile - My Certificates (1) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/certificates/controllers/app-my-certificates.controller.ts:44 |
 | app tag family | Mobile - My Insurances (4) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/insurances/controllers/app-me-insurances.controller.ts:124 |
 | app tag family | Mobile - My Participation Ledger (2) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activities/controllers/app-my-participation-ledger.controller.ts:38 |
 | app tag family | Mobile - My Registrations (5) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:110 |
-| app tag family | Mobile - My Team Join (3) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/team-join/team-join-applications.app.controller.ts:75 |
+| app tag family | Mobile - My Team Join (3) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/team-join/team-join-applications.app.controller.ts:76 |
 | app tag family | Mobile - Notifications (6) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:52 |
 | auth/system/integration individual | GET /api/integration/v1/me | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=-; principals=SERVICE,DELEGATED | code | src/modules/integration-api/integration-api.controller.ts:22; src/modules/integration-api/integration-api.controller.ts:33 |
 | auth/system/integration individual | GET /api/system/v1/authz/me/effective-permissions | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/authz/effective-permissions.controller.ts:22; src/modules/authz/effective-permissions.controller.ts:33 |
@@ -117,7 +115,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.1.0",
-  "inputDigest": "sha256:d826e8a4cf4e28a65b7b5574e51a7449ec7abee49b59fc718e6a6f06521ae2d0",
+  "inputDigest": "sha256:eaeece19504511f90c1acf8040f0773d4949db2c57727046143098466b35603f",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -187,25 +185,6 @@
         "codes": [
           {
             "code": "attachment.delete.*",
-            "scope": null
-          }
-        ],
-        "require": "all",
-        "scopes": [],
-        "engine": "rbac-global"
-      }
-    },
-    {
-      "routeKey": "DELETE /api/admin/v1/attendance-sheets/:id",
-      "controller": "AttendanceSheetsResourceController",
-      "handler": "softDelete",
-      "legacy": "rbac",
-      "policy": {
-        "admission": null,
-        "mode": "RBAC",
-        "codes": [
-          {
-            "code": "attendance.delete.sheet",
             "scope": null
           }
         ],
@@ -662,22 +641,6 @@
       }
     },
     {
-      "routeKey": "DELETE /api/app/v1/my/managed-activities/:activityId/attendance-sheets/:sheetId",
-      "controller": "AppManagedActivityAttendancesController",
-      "handler": "softDelete",
-      "legacy": "auth",
-      "policy": {
-        "admission": "app-member",
-        "mode": "LOGIN_SCOPED",
-        "codes": [],
-        "require": "all",
-        "scopes": [
-          "responsibility"
-        ],
-        "engine": "authz-scoped"
-      }
-    },
-    {
       "routeKey": "DELETE /api/app/v1/my/managed-activities/:activityId/collaborators/:assignmentId",
       "controller": "AppManagedActivityResponsibilitiesController",
       "handler": "endCollaborator",
@@ -936,63 +899,6 @@
           "visibility:activity-visibility"
         ],
         "engine": "authz-scoped"
-      }
-    },
-    {
-      "routeKey": "GET /api/admin/v1/activities/:activityId/attendance-sheet-draft",
-      "controller": "AdminActivityCheckInsController",
-      "handler": "attendanceSheetDraft",
-      "legacy": "rbac",
-      "policy": {
-        "admission": null,
-        "mode": "RBAC",
-        "codes": [
-          {
-            "code": "attendance.read.sheet",
-            "scope": null
-          }
-        ],
-        "require": "all",
-        "scopes": [],
-        "engine": "rbac-global"
-      }
-    },
-    {
-      "routeKey": "GET /api/admin/v1/activities/:activityId/attendance-sheets",
-      "controller": "AttendanceSheetsCollectionController",
-      "handler": "list",
-      "legacy": "rbac",
-      "policy": {
-        "admission": null,
-        "mode": "RBAC",
-        "codes": [
-          {
-            "code": "attendance.read.sheet",
-            "scope": null
-          }
-        ],
-        "require": "all",
-        "scopes": [],
-        "engine": "rbac-global"
-      }
-    },
-    {
-      "routeKey": "GET /api/admin/v1/activities/:activityId/check-ins",
-      "controller": "AdminActivityCheckInsController",
-      "handler": "list",
-      "legacy": "rbac",
-      "policy": {
-        "admission": null,
-        "mode": "RBAC",
-        "codes": [
-          {
-            "code": "attendance.read.sheet",
-            "scope": null
-          }
-        ],
-        "require": "all",
-        "scopes": [],
-        "engine": "rbac-global"
       }
     },
     {
@@ -1702,63 +1608,6 @@
       }
     },
     {
-      "routeKey": "GET /api/admin/v1/attendance-sheets",
-      "controller": "AttendanceSheetsResourceController",
-      "handler": "listAll",
-      "legacy": "rbac",
-      "policy": {
-        "admission": null,
-        "mode": "RBAC",
-        "codes": [
-          {
-            "code": "attendance.read.sheet",
-            "scope": null
-          }
-        ],
-        "require": "all",
-        "scopes": [],
-        "engine": "rbac-global"
-      }
-    },
-    {
-      "routeKey": "GET /api/admin/v1/attendance-sheets/:id",
-      "controller": "AttendanceSheetsResourceController",
-      "handler": "findOne",
-      "legacy": "rbac",
-      "policy": {
-        "admission": null,
-        "mode": "RBAC",
-        "codes": [
-          {
-            "code": "attendance.read.sheet",
-            "scope": null
-          }
-        ],
-        "require": "all",
-        "scopes": [],
-        "engine": "rbac-global"
-      }
-    },
-    {
-      "routeKey": "GET /api/admin/v1/attendance-sheets/:id/review-detail",
-      "controller": "AttendanceSheetsResourceController",
-      "handler": "reviewDetail",
-      "legacy": "rbac",
-      "policy": {
-        "admission": null,
-        "mode": "RBAC",
-        "codes": [
-          {
-            "code": "attendance.read.sheet",
-            "scope": null
-          }
-        ],
-        "require": "all",
-        "scopes": [],
-        "engine": "rbac-global"
-      }
-    },
-    {
       "routeKey": "GET /api/admin/v1/certificate-recognition-policies/:id",
       "controller": "CertificateRecognitionPoliciesController",
       "handler": "findOne",
@@ -2080,25 +1929,6 @@
         "codes": [
           {
             "code": "member-portrait.read.history",
-            "scope": null
-          }
-        ],
-        "require": "all",
-        "scopes": [],
-        "engine": "rbac-global"
-      }
-    },
-    {
-      "routeKey": "GET /api/admin/v1/members/:memberId/attendance-records",
-      "controller": "AdminMemberAttendanceController",
-      "handler": "attendanceRecords",
-      "legacy": "rbac",
-      "policy": {
-        "admission": null,
-        "mode": "RBAC",
-        "codes": [
-          {
-            "code": "attendance.read.sheet",
             "scope": null
           }
         ],
@@ -3759,22 +3589,6 @@
       }
     },
     {
-      "routeKey": "GET /api/app/v1/my/activities/:activityId/check-in",
-      "controller": "AppActivityCheckInsController",
-      "handler": "getCurrent",
-      "legacy": "auth",
-      "policy": {
-        "admission": "app-member",
-        "mode": "LOGIN_SCOPED",
-        "codes": [],
-        "require": "all",
-        "scopes": [
-          "self"
-        ],
-        "engine": "authz-scoped"
-      }
-    },
-    {
       "routeKey": "GET /api/app/v1/my/activities/:activityId/feedback",
       "controller": "AppActivityFeedbacksController",
       "handler": "getMine",
@@ -3839,22 +3653,6 @@
       }
     },
     {
-      "routeKey": "GET /api/app/v1/my/attendance-records",
-      "controller": "AppMyAttendanceRecordsController",
-      "handler": "listMyAttendanceRecords",
-      "legacy": "auth",
-      "policy": {
-        "admission": "app-member",
-        "mode": "LOGIN_SCOPED",
-        "codes": [],
-        "require": "all",
-        "scopes": [
-          "self"
-        ],
-        "engine": "authz-scoped"
-      }
-    },
-    {
       "routeKey": "GET /api/app/v1/my/certificates",
       "controller": "AppMyCertificatesController",
       "handler": "listMyCertificates",
@@ -3906,70 +3704,6 @@
       "routeKey": "GET /api/app/v1/my/managed-activities/:activityId/allocation-batches/:batchId",
       "controller": "AppManagedActivityAllocationBatchesController",
       "handler": "get",
-      "legacy": "auth",
-      "policy": {
-        "admission": "app-member",
-        "mode": "LOGIN_SCOPED",
-        "codes": [],
-        "require": "all",
-        "scopes": [
-          "responsibility"
-        ],
-        "engine": "authz-scoped"
-      }
-    },
-    {
-      "routeKey": "GET /api/app/v1/my/managed-activities/:activityId/attendance-sheet-draft",
-      "controller": "AppManagedActivityAttendancesController",
-      "handler": "draft",
-      "legacy": "auth",
-      "policy": {
-        "admission": "app-member",
-        "mode": "LOGIN_SCOPED",
-        "codes": [],
-        "require": "all",
-        "scopes": [
-          "responsibility"
-        ],
-        "engine": "authz-scoped"
-      }
-    },
-    {
-      "routeKey": "GET /api/app/v1/my/managed-activities/:activityId/attendance-sheets",
-      "controller": "AppManagedActivityAttendancesController",
-      "handler": "listSheets",
-      "legacy": "auth",
-      "policy": {
-        "admission": "app-member",
-        "mode": "LOGIN_SCOPED",
-        "codes": [],
-        "require": "all",
-        "scopes": [
-          "responsibility"
-        ],
-        "engine": "authz-scoped"
-      }
-    },
-    {
-      "routeKey": "GET /api/app/v1/my/managed-activities/:activityId/attendance-sheets/:sheetId",
-      "controller": "AppManagedActivityAttendancesController",
-      "handler": "detail",
-      "legacy": "auth",
-      "policy": {
-        "admission": "app-member",
-        "mode": "LOGIN_SCOPED",
-        "codes": [],
-        "require": "all",
-        "scopes": [
-          "responsibility"
-        ],
-        "engine": "authz-scoped"
-      }
-    },
-    {
-      "routeKey": "GET /api/app/v1/my/managed-activities/:activityId/check-ins",
-      "controller": "AppManagedActivityAttendancesController",
-      "handler": "listCheckIns",
       "legacy": "auth",
       "policy": {
         "admission": "app-member",
@@ -6164,101 +5898,6 @@
       }
     },
     {
-      "routeKey": "PATCH /api/admin/v1/attendance-sheets/:id",
-      "controller": "AttendanceSheetsResourceController",
-      "handler": "edit",
-      "legacy": "rbac",
-      "policy": {
-        "admission": null,
-        "mode": "RBAC",
-        "codes": [
-          {
-            "code": "attendance.update.sheet",
-            "scope": null
-          }
-        ],
-        "require": "all",
-        "scopes": [],
-        "engine": "rbac-global"
-      }
-    },
-    {
-      "routeKey": "PATCH /api/admin/v1/attendance-sheets/:id/approve",
-      "controller": "AttendanceSheetsResourceController",
-      "handler": "approve",
-      "legacy": "rbac",
-      "policy": {
-        "admission": null,
-        "mode": "RBAC",
-        "codes": [
-          {
-            "code": "attendance.approve.sheet",
-            "scope": null
-          }
-        ],
-        "require": "all",
-        "scopes": [],
-        "engine": "rbac-global"
-      }
-    },
-    {
-      "routeKey": "PATCH /api/admin/v1/attendance-sheets/:id/final-approve",
-      "controller": "AttendanceSheetsResourceController",
-      "handler": "finalApprove",
-      "legacy": "rbac",
-      "policy": {
-        "admission": null,
-        "mode": "RBAC",
-        "codes": [
-          {
-            "code": "attendance.final-approve.sheet",
-            "scope": null
-          }
-        ],
-        "require": "all",
-        "scopes": [],
-        "engine": "rbac-global"
-      }
-    },
-    {
-      "routeKey": "PATCH /api/admin/v1/attendance-sheets/:id/final-reject",
-      "controller": "AttendanceSheetsResourceController",
-      "handler": "finalReject",
-      "legacy": "rbac",
-      "policy": {
-        "admission": null,
-        "mode": "RBAC",
-        "codes": [
-          {
-            "code": "attendance.final-reject.sheet",
-            "scope": null
-          }
-        ],
-        "require": "all",
-        "scopes": [],
-        "engine": "rbac-global"
-      }
-    },
-    {
-      "routeKey": "PATCH /api/admin/v1/attendance-sheets/:id/reject",
-      "controller": "AttendanceSheetsResourceController",
-      "handler": "reject",
-      "legacy": "rbac",
-      "policy": {
-        "admission": null,
-        "mode": "RBAC",
-        "codes": [
-          {
-            "code": "attendance.reject.sheet",
-            "scope": null
-          }
-        ],
-        "require": "all",
-        "scopes": [],
-        "engine": "rbac-global"
-      }
-    },
-    {
       "routeKey": "PATCH /api/admin/v1/certificate-recognition-policies/:id",
       "controller": "CertificateRecognitionPoliciesController",
       "handler": "update",
@@ -6898,22 +6537,6 @@
       }
     },
     {
-      "routeKey": "PATCH /api/app/v1/my/managed-activities/:activityId/attendance-sheets/:sheetId",
-      "controller": "AppManagedActivityAttendancesController",
-      "handler": "edit",
-      "legacy": "auth",
-      "policy": {
-        "admission": "app-member",
-        "mode": "LOGIN_SCOPED",
-        "codes": [],
-        "require": "all",
-        "scopes": [
-          "responsibility"
-        ],
-        "engine": "authz-scoped"
-      }
-    },
-    {
       "routeKey": "PATCH /api/app/v1/my/managed-activities/:activityId/contribution-policy-selection",
       "controller": "AppManagedActivityContributionPolicySelectionController",
       "handler": "patch",
@@ -7495,25 +7118,6 @@
         "codes": [
           {
             "code": "activity.create.record",
-            "scope": null
-          }
-        ],
-        "require": "all",
-        "scopes": [],
-        "engine": "rbac-global"
-      }
-    },
-    {
-      "routeKey": "POST /api/admin/v1/activities/:activityId/attendance-sheets",
-      "controller": "AttendanceSheetsCollectionController",
-      "handler": "submit",
-      "legacy": "rbac",
-      "policy": {
-        "admission": null,
-        "mode": "RBAC",
-        "codes": [
-          {
-            "code": "attendance.create.sheet",
             "scope": null
           }
         ],
@@ -8178,82 +7782,6 @@
         "codes": [
           {
             "code": "activity.settlement-first-review.record",
-            "scope": null
-          }
-        ],
-        "require": "all",
-        "scopes": [],
-        "engine": "rbac-global"
-      }
-    },
-    {
-      "routeKey": "POST /api/admin/v1/attendance-sheets/:id/final-return",
-      "controller": "AttendanceSheetsResourceController",
-      "handler": "finalReturn",
-      "legacy": "rbac",
-      "policy": {
-        "admission": null,
-        "mode": "RBAC",
-        "codes": [
-          {
-            "code": "attendance.final-return.sheet",
-            "scope": null
-          }
-        ],
-        "require": "all",
-        "scopes": [],
-        "engine": "rbac-global"
-      }
-    },
-    {
-      "routeKey": "POST /api/admin/v1/attendance-sheets/:id/reopen",
-      "controller": "AttendanceSheetsResourceController",
-      "handler": "reopen",
-      "legacy": "rbac",
-      "policy": {
-        "admission": null,
-        "mode": "RBAC",
-        "codes": [
-          {
-            "code": "attendance.reopen.sheet",
-            "scope": null
-          }
-        ],
-        "require": "all",
-        "scopes": [],
-        "engine": "rbac-global"
-      }
-    },
-    {
-      "routeKey": "POST /api/admin/v1/attendance-sheets/:id/resubmit",
-      "controller": "AttendanceSheetsResourceController",
-      "handler": "resubmit",
-      "legacy": "rbac",
-      "policy": {
-        "admission": null,
-        "mode": "RBAC",
-        "codes": [
-          {
-            "code": "attendance.update.sheet",
-            "scope": null
-          }
-        ],
-        "require": "all",
-        "scopes": [],
-        "engine": "rbac-global"
-      }
-    },
-    {
-      "routeKey": "POST /api/admin/v1/attendance-sheets/:id/return",
-      "controller": "AttendanceSheetsResourceController",
-      "handler": "firstReturn",
-      "legacy": "rbac",
-      "policy": {
-        "admission": null,
-        "mode": "RBAC",
-        "codes": [
-          {
-            "code": "attendance.return.sheet",
             "scope": null
           }
         ],
@@ -9570,38 +9098,6 @@
       }
     },
     {
-      "routeKey": "POST /api/app/v1/my/activities/:activityId/check-in",
-      "controller": "AppActivityCheckInsController",
-      "handler": "checkIn",
-      "legacy": "auth",
-      "policy": {
-        "admission": "app-member",
-        "mode": "LOGIN_SCOPED",
-        "codes": [],
-        "require": "all",
-        "scopes": [
-          "self"
-        ],
-        "engine": "authz-scoped"
-      }
-    },
-    {
-      "routeKey": "POST /api/app/v1/my/activities/:activityId/check-out",
-      "controller": "AppActivityCheckInsController",
-      "handler": "checkOut",
-      "legacy": "auth",
-      "policy": {
-        "admission": "app-member",
-        "mode": "LOGIN_SCOPED",
-        "codes": [],
-        "require": "all",
-        "scopes": [
-          "self"
-        ],
-        "engine": "authz-scoped"
-      }
-    },
-    {
       "routeKey": "POST /api/app/v1/my/activity-batch-jobs/:jobId/cancel",
       "controller": "AppMyActivityBatchJobsController",
       "handler": "cancel",
@@ -9768,38 +9264,6 @@
             "scope": null
           }
         ],
-        "require": "all",
-        "scopes": [
-          "responsibility"
-        ],
-        "engine": "authz-scoped"
-      }
-    },
-    {
-      "routeKey": "POST /api/app/v1/my/managed-activities/:activityId/attendance-sheets",
-      "controller": "AppManagedActivityAttendancesController",
-      "handler": "submit",
-      "legacy": "auth",
-      "policy": {
-        "admission": "app-member",
-        "mode": "LOGIN_SCOPED",
-        "codes": [],
-        "require": "all",
-        "scopes": [
-          "responsibility"
-        ],
-        "engine": "authz-scoped"
-      }
-    },
-    {
-      "routeKey": "POST /api/app/v1/my/managed-activities/:activityId/attendance-sheets/:sheetId/resubmit",
-      "controller": "AppManagedActivityAttendancesController",
-      "handler": "resubmit",
-      "legacy": "auth",
-      "policy": {
-        "admission": "app-member",
-        "mode": "LOGIN_SCOPED",
-        "codes": [],
         "require": "all",
         "scopes": [
           "responsibility"
@@ -12477,7 +11941,7 @@
 
 ## Permission code surface
 
-> 每条权限码守着哪些端点。**251 条码有端点;其中 95 条守多于一个端点。**
+> 每条权限码守着哪些端点。**241 条码有端点;其中 94 条守多于一个端点。**
 >
 > ⚠️ **本节只做归因,不做检测。** 权限码总数不变**不能**证明权限说明没过期 —— 已有的码会
 > 长出新的消费入口而总数不动(B7 受众标签即实例:3 个新端点、0 个新码)。但「码长出新端点」
@@ -12490,7 +11954,7 @@
 | 权限码 | 端点数 | 端点 |
 |---|---:|---|
 | `activity-responsibility.override.record` | 23 | DELETE /api/admin/v1/activities/:activityId/responsibilities/collaborators/:assignmentId · DELETE /api/app/v1/my/managed-activities/:activityId/collaborators/:assignmentId · DELETE /api/app/v1/my/managed-activities/:activityId/positions/:activityPositionId · GET /api/admin/v1/activities/:activityId/responsibilities · PATCH /api/app/v1/my/managed-activities/:activityId/positions/:activityPositionId · POST /api/admin/v1/activities/:activityId/responsibilities/assign-initiator · POST /api/admin/v1/activities/:activityId/responsibilities/claim · POST /api/admin/v1/activities/:activityId/responsibilities/collaborators · POST /api/admin/v1/activities/:activityId/responsibilities/transfer · POST /api/app/v1/my/managed-activities · POST /api/app/v1/my/managed-activities/:activityId/archive · POST /api/app/v1/my/managed-activities/:activityId/cancel · POST /api/app/v1/my/managed-activities/:activityId/clone · POST /api/app/v1/my/managed-activities/:activityId/collaborators · POST /api/app/v1/my/managed-activities/:activityId/evidence-seals · POST /api/app/v1/my/managed-activities/:activityId/positions · POST /api/app/v1/my/managed-activities/:activityId/terminate · POST /api/app/v1/my/managed-activities/:activityId/transfer-initiator · POST /api/app/v1/my/managed-activities/:activityId/transfer-owner · POST /api/app/v1/my/managed-activities/:activityId/unarchive · POST /api/app/v1/my/managed-activities/emergency · POST /api/app/v1/my/managed-activities/from-template · POST /api/app/v1/my/managed-activities/professional |
-| `attendance.read.sheet` | 20 | GET /api/admin/v1/activities/:activityId/attendance-sheet-draft · GET /api/admin/v1/activities/:activityId/attendance-sheets · GET /api/admin/v1/activities/:activityId/check-ins · GET /api/admin/v1/activities/:activityId/feedback-summary · GET /api/admin/v1/activities/:activityId/feedbacks · GET /api/admin/v1/activities/:activityId/participation-ledger · GET /api/admin/v1/activities/:activityId/participation-summary · GET /api/admin/v1/activities/:activityId/reconciliation · GET /api/admin/v1/attendance-settlements · GET /api/admin/v1/attendance-settlements/:id/posting-batch · GET /api/admin/v1/attendance-settlements/:settlementVersionId/review-detail · GET /api/admin/v1/attendance-sheets · GET /api/admin/v1/attendance-sheets/:id · GET /api/admin/v1/attendance-sheets/:id/review-detail · GET /api/admin/v1/members/:memberId/attendance-records · GET /api/admin/v1/members/:memberId/contribution-summary · GET /api/admin/v1/members/:memberId/participation-ledger · GET /api/admin/v1/members/:memberId/participation-summary · GET /api/admin/v1/members/:memberId/participation-time-proof · GET /api/admin/v1/meta/participation-overview |
+| `attendance.read.sheet` | 13 | GET /api/admin/v1/activities/:activityId/feedback-summary · GET /api/admin/v1/activities/:activityId/feedbacks · GET /api/admin/v1/activities/:activityId/participation-ledger · GET /api/admin/v1/activities/:activityId/participation-summary · GET /api/admin/v1/activities/:activityId/reconciliation · GET /api/admin/v1/attendance-settlements · GET /api/admin/v1/attendance-settlements/:id/posting-batch · GET /api/admin/v1/attendance-settlements/:settlementVersionId/review-detail · GET /api/admin/v1/members/:memberId/contribution-summary · GET /api/admin/v1/members/:memberId/participation-ledger · GET /api/admin/v1/members/:memberId/participation-summary · GET /api/admin/v1/members/:memberId/participation-time-proof · GET /api/admin/v1/meta/participation-overview |
 | `activity.time-settlement.read` | 10 | GET /api/app/v1/my/managed-activities/:activityId/time-corrections · GET /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId · GET /api/app/v1/my/managed-activities/:activityId/time-settlement · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/allocations/:allocationRevisionId · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/buckets · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/ledger · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/shadow · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/sources · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/sources · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/versions/:settlementVersionId/correction-ledger |
 | `activity.update.record` | 9 | DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId · PATCH /api/admin/v1/activities/:activityId/positions/:activityPositionId · PATCH /api/admin/v1/activities/:id · POST /api/admin/v1/activities/:activityId/positions · PUT /api/admin/v1/activities/:id/cover · PUT /api/admin/v1/activities/:id/gallery · PUT /api/admin/v1/activities/:id/metric-selection · PUT /api/admin/v1/activities/:id/simple-draft · PUT /api/app/v1/my/managed-activities/:activityId/metric-selection |
 | `activity.settlement-final-review.record` | 8 | GET /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId/commit-jobs/:jobId · POST /api/admin/v1/attendance-settlements/:id/final-approve · POST /api/admin/v1/attendance-settlements/:id/final-return · POST /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId/commit · POST /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId/commit-jobs · POST /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId/commit-jobs/:jobId/retry · POST /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId/prepare · POST /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId/review |
@@ -12552,7 +12016,6 @@
 | `attachment-config.update.mime` | 2 | PATCH /api/system/v1/attachment-mime-configs/:id · PATCH /api/system/v1/attachment-mime-configs/:id/status |
 | `attachment-config.update.type` | 2 | PATCH /api/system/v1/attachment-type-configs/:id · PATCH /api/system/v1/attachment-type-configs/:id/status |
 | `attachment.delete.*` | 2 | DELETE /api/admin/v1/attachments/:id · DELETE /api/admin/v1/contents/:id/attachments/:attachmentId |
-| `attendance.update.sheet` | 2 | PATCH /api/admin/v1/attendance-sheets/:id · POST /api/admin/v1/attendance-sheets/:id/resubmit |
 | `audit-log.read.entry` | 2 | GET /api/system/v1/audit-logs · GET /api/system/v1/audit-logs/:id |
 | `certificate-recognition-policy.read.record` | 2 | GET /api/admin/v1/certificate-recognition-policies/:id · GET /api/admin/v1/certificate-standards/:standardId/recognition-policies |
 | `certificate-recognition-policy.update.record` | 2 | PATCH /api/admin/v1/certificate-recognition-policies/:id · PATCH /api/admin/v1/certificate-recognition-policies/:id/status |
@@ -12610,15 +12073,6 @@
 | `attachment.update.*` | 1 | PATCH /api/admin/v1/attachments/:id |
 | `attachment.upload.content-file` | 1 | POST /api/admin/v1/contents/:id/attachments/confirm |
 | `attachment.upload.content-image` | 1 | POST /api/admin/v1/contents/:id/attachments/confirm |
-| `attendance.approve.sheet` | 1 | PATCH /api/admin/v1/attendance-sheets/:id/approve |
-| `attendance.create.sheet` | 1 | POST /api/admin/v1/activities/:activityId/attendance-sheets |
-| `attendance.delete.sheet` | 1 | DELETE /api/admin/v1/attendance-sheets/:id |
-| `attendance.final-approve.sheet` | 1 | PATCH /api/admin/v1/attendance-sheets/:id/final-approve |
-| `attendance.final-reject.sheet` | 1 | PATCH /api/admin/v1/attendance-sheets/:id/final-reject |
-| `attendance.final-return.sheet` | 1 | POST /api/admin/v1/attendance-sheets/:id/final-return |
-| `attendance.reject.sheet` | 1 | PATCH /api/admin/v1/attendance-sheets/:id/reject |
-| `attendance.reopen.sheet` | 1 | POST /api/admin/v1/attendance-sheets/:id/reopen |
-| `attendance.return.sheet` | 1 | POST /api/admin/v1/attendance-sheets/:id/return |
 | `authz.action-state.decision` | 1 | POST /api/admin/v1/authz/action-state/batch |
 | `authz.explain-batch.decision` | 1 | POST /api/admin/v1/authz/explain-batch |
 | `authz.explain.decision` | 1 | POST /api/admin/v1/authz/explain |
@@ -12749,7 +12203,6 @@
 | DELETE | /api/admin/v1/activities/:activityId/responsibilities/collaborators/:assignmentId | Admin - Activity Responsibilities | rbac | RBAC; admission=-; codes=activity-responsibility.override.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-responsibilities.controller.ts:101; src/modules/activities/controllers/admin-activity-responsibilities.controller.ts:124 |
 | DELETE | /api/admin/v1/activities/:id | Admin - Activities | rbac | RBAC; admission=-; codes=activity.delete.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/activities.controller.ts:255; src/modules/activities/activities.controller.ts:274 |
 | DELETE | /api/admin/v1/attachments/:id | Admin - Attachments | rbac | RBAC; admission=-; codes=attachment.delete.*; require=all; scopes=-; engine=rbac-global | code | src/modules/attachments/attachments.controller.ts:237; src/modules/attachments/attachments.controller.ts:258 |
-| DELETE | /api/admin/v1/attendance-sheets/:id | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.delete.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/attendances.controller.ts:255; src/modules/attendances/attendances.controller.ts:277 |
 | DELETE | /api/admin/v1/certificate-recognition-policies/:id | Admin - Certificate Recognition Policies | rbac | RBAC; admission=-; codes=certificate-recognition-policy.delete.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificate-recognition-policies.controller.ts:197; src/modules/certificates/certificate-recognition-policies.controller.ts:220 |
 | DELETE | /api/admin/v1/certificate-standards/:id | Admin - Certificate Standards | rbac | RBAC; admission=-; codes=certificate-standard.delete.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificate-standards.controller.ts:205; src/modules/certificates/certificate-standards.controller.ts:228 |
 | DELETE | /api/admin/v1/contents/:id | Admin - Content | rbac | RBAC; admission=-; codes=content.delete.record; require=all; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:143; src/modules/content/content-admin.controller.ts:154 |
@@ -12774,7 +12227,6 @@
 | DELETE | /api/app/v1/me/avatar | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:361; src/modules/users/controllers/app-me.controller.ts:378 |
 | DELETE | /api/app/v1/me/insurances/:id | Mobile - My Insurances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/insurances/controllers/app-me-insurances.controller.ts:124; src/modules/insurances/controllers/app-me-insurances.controller.ts:148 |
 | DELETE | /api/app/v1/my/managed-activities/:activityId | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1293; src/modules/activities/controllers/app-managed-activities.controller.ts:1316 |
-| DELETE | /api/app/v1/my/managed-activities/:activityId/attendance-sheets/:sheetId | Mobile - Managed Activity Attendances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:213; src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:236 |
 | DELETE | /api/app/v1/my/managed-activities/:activityId/collaborators/:assignmentId | Mobile - Managed Activity Responsibilities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts:141; src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts:164 |
 | DELETE | /api/app/v1/my/managed-activities/:activityId/positions/:activityPositionId | Mobile - Managed Activity Positions | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-positions.controller.ts:139; src/modules/activities/controllers/app-managed-activity-positions.controller.ts:163 |
 | DELETE | /api/app/v1/my/managed-activities/:activityId/sessions/:sessionId | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:754; src/modules/activities/controllers/app-managed-activities.controller.ts:779 |
@@ -12789,16 +12241,13 @@
 | DELETE | /api/system/v1/roles/:id | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:156; src/modules/permissions/rbac-roles.controller.ts:176 |
 | DELETE | /api/system/v1/users/:userId/roles/:roleId | Ops - User Roles | rbac | RBAC; admission=-; codes=rbac.user-role.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/user-roles.controller.ts:100; src/modules/permissions/user-roles.controller.ts:124 |
 | GET | /api/admin/v1/activities | Admin - Activities | auth | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/activities.controller.ts:81; src/modules/activities/activities.controller.ts:93 |
-| GET | /api/admin/v1/activities/:activityId/attendance-sheet-draft | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/controllers/admin-activity-check-ins.controller.ts:49; src/modules/attendances/controllers/admin-activity-check-ins.controller.ts:65 |
-| GET | /api/admin/v1/activities/:activityId/attendance-sheets | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/attendances.controller.ts:125; src/modules/attendances/attendances.controller.ts:143 |
-| GET | /api/admin/v1/activities/:activityId/check-ins | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/controllers/admin-activity-check-ins.controller.ts:29; src/modules/attendances/controllers/admin-activity-check-ins.controller.ts:46 |
-| GET | /api/admin/v1/activities/:activityId/feedback-summary | Admin - Activities | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/activity-feedbacks/controllers/admin-activity-feedbacks.controller.ts:49; src/modules/activity-feedbacks/controllers/admin-activity-feedbacks.controller.ts:65 |
+| GET | /api/admin/v1/activities/:activityId/feedback-summary | Admin - Activities | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/activity-feedbacks/controllers/admin-activity-feedbacks.controller.ts:49; src/modules/activity-feedbacks/controllers/admin-activity-feedbacks.controller.ts:66 |
 | GET | /api/admin/v1/activities/:activityId/feedbacks | Admin - Activities | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/activity-feedbacks/controllers/admin-activity-feedbacks.controller.ts:29; src/modules/activity-feedbacks/controllers/admin-activity-feedbacks.controller.ts:46 |
 | GET | /api/admin/v1/activities/:activityId/participation-ledger | Admin - Activities | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-participation.controller.ts:37; src/modules/activities/controllers/admin-activity-participation.controller.ts:52 |
-| GET | /api/admin/v1/activities/:activityId/participation-summary | Admin - Activities | auth | RBAC; admission=-; codes=activity-registration.read.record,attendance.read.sheet; require=all; scopes=-; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-participation.controller.ts:79; src/modules/activities/controllers/admin-activity-participation.controller.ts:99 |
+| GET | /api/admin/v1/activities/:activityId/participation-summary | Admin - Activities | auth | RBAC; admission=-; codes=activity-registration.read.record,attendance.read.sheet; require=all; scopes=-; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-participation.controller.ts:80; src/modules/activities/controllers/admin-activity-participation.controller.ts:101 |
 | GET | /api/admin/v1/activities/:activityId/positions | Admin - Activity Positions | auth | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-positions.controller.ts:58; src/modules/activities/controllers/admin-activity-positions.controller.ts:66 |
 | GET | /api/admin/v1/activities/:activityId/positions/:activityPositionId | Admin - Activity Positions | auth | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-positions.controller.ts:69; src/modules/activities/controllers/admin-activity-positions.controller.ts:80 |
-| GET | /api/admin/v1/activities/:activityId/reconciliation | Admin - Activities | auth | RBAC; admission=-; codes=activity-registration.read.record,attendance.read.sheet; require=all; scopes=-; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-participation.controller.ts:55; src/modules/activities/controllers/admin-activity-participation.controller.ts:76 |
+| GET | /api/admin/v1/activities/:activityId/reconciliation | Admin - Activities | auth | RBAC; admission=-; codes=activity-registration.read.record,attendance.read.sheet; require=all; scopes=-; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-participation.controller.ts:55; src/modules/activities/controllers/admin-activity-participation.controller.ts:77 |
 | GET | /api/admin/v1/activities/:activityId/registrations | Admin - Registrations | rbac | RBAC; admission=-; codes=activity-registration.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activity-registrations/activity-registrations.controller.ts:99; src/modules/activity-registrations/activity-registrations.controller.ts:119 |
 | GET | /api/admin/v1/activities/:activityId/registrations/export | Admin - Registrations | rbac | RBAC; admission=-; codes=activity-registration.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activity-registrations/activity-registrations.controller.ts:161; src/modules/activity-registrations/activity-registrations.controller.ts:185 |
 | GET | /api/admin/v1/activities/:activityId/responsibilities | Admin - Activity Responsibilities | rbac | RBAC; admission=-; codes=activity-responsibility.override.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-responsibilities.controller.ts:52; src/modules/activities/controllers/admin-activity-responsibilities.controller.ts:71 |
@@ -12830,9 +12279,6 @@
 | GET | /api/admin/v1/attendance-settlements | Admin - Attendance Settlements | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-attendance-settlements.controller.ts:53; src/modules/activities/controllers/admin-attendance-settlements.controller.ts:62 |
 | GET | /api/admin/v1/attendance-settlements/:id/posting-batch | Admin - Attendance Settlements | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-attendance-settlements.controller.ts:84; src/modules/activities/controllers/admin-attendance-settlements.controller.ts:98 |
 | GET | /api/admin/v1/attendance-settlements/:settlementVersionId/review-detail | Admin - Attendance Settlements | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-attendance-settlements.controller.ts:65; src/modules/activities/controllers/admin-attendance-settlements.controller.ts:81 |
-| GET | /api/admin/v1/attendance-sheets | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/attendances.controller.ts:158; src/modules/attendances/attendances.controller.ts:170 |
-| GET | /api/admin/v1/attendance-sheets/:id | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/attendances.controller.ts:196; src/modules/attendances/attendances.controller.ts:214 |
-| GET | /api/admin/v1/attendance-sheets/:id/review-detail | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/attendances.controller.ts:174; src/modules/attendances/attendances.controller.ts:193 |
 | GET | /api/admin/v1/certificate-recognition-policies/:id | Admin - Certificate Recognition Policies | rbac | RBAC; admission=-; codes=certificate-recognition-policy.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificate-recognition-policies.controller.ts:115; src/modules/certificates/certificate-recognition-policies.controller.ts:134 |
 | GET | /api/admin/v1/certificate-standards | Admin - Certificate Standards | rbac | RBAC; admission=-; codes=certificate-standard.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificate-standards.controller.ts:60; src/modules/certificates/certificate-standards.controller.ts:72 |
 | GET | /api/admin/v1/certificate-standards/:id | Admin - Certificate Standards | rbac | RBAC; admission=-; codes=certificate-standard.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificate-standards.controller.ts:133; src/modules/certificates/certificate-standards.controller.ts:147 |
@@ -12850,19 +12296,18 @@
 | GET | /api/admin/v1/members/:id/offboard-impact | Admin - Members | rbac | RBAC; admission=-; codes=member.offboard.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:613; src/modules/members/members.controller.ts:630 |
 | GET | /api/admin/v1/members/:id/official-portrait | Admin - Members | rbac | RBAC; admission=-; codes=member.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:206; src/modules/members/members.controller.ts:218 |
 | GET | /api/admin/v1/members/:id/official-portraits | Admin - Members | rbac | RBAC; admission=-; codes=member-portrait.read.history; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:221; src/modules/members/members.controller.ts:233 |
-| GET | /api/admin/v1/members/:memberId/attendance-records | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/controllers/admin-member-attendance.controller.ts:42; src/modules/attendances/controllers/admin-member-attendance.controller.ts:60 |
 | GET | /api/admin/v1/members/:memberId/certificates | Admin - Certificates | rbac | RBAC; admission=-; codes=certificate.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificates.controller.ts:75; src/modules/certificates/certificates.controller.ts:93 |
 | GET | /api/admin/v1/members/:memberId/certificates/:id | Admin - Certificates | rbac | RBAC; admission=-; codes=certificate.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificates.controller.ts:157; src/modules/certificates/certificates.controller.ts:177 |
 | GET | /api/admin/v1/members/:memberId/certificates/:id/evidence-urls | Admin - Certificates | rbac | RBAC; admission=-; codes=certificate.read.sensitive; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificates.controller.ts:289; src/modules/certificates/certificates.controller.ts:309 |
 | GET | /api/admin/v1/members/:memberId/certificates/qualification-flag | Admin - Certificates | rbac | RBAC; admission=-; codes=certificate.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificates.controller.ts:127; src/modules/certificates/certificates.controller.ts:148 |
-| GET | /api/admin/v1/members/:memberId/contribution-summary | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/controllers/admin-member-attendance.controller.ts:63; src/modules/attendances/controllers/admin-member-attendance.controller.ts:80 |
+| GET | /api/admin/v1/members/:memberId/contribution-summary | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/controllers/admin-member-attendance.controller.ts:26; src/modules/attendances/controllers/admin-member-attendance.controller.ts:44 |
 | GET | /api/admin/v1/members/:memberId/department | Admin - Member Departments | rbac | RBAC; admission=-; codes=member-department.read.current; require=all; scopes=-; engine=rbac-global | code | src/modules/member-departments/member-departments.controller.ts:55; src/modules/member-departments/member-departments.controller.ts:71 |
 | GET | /api/admin/v1/members/:memberId/emergency-contacts | Admin - Emergency Contacts | rbac | RBAC; admission=-; codes=emergency-contact.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/emergency-contacts/emergency-contacts.controller.ts:47; src/modules/emergency-contacts/emergency-contacts.controller.ts:65 |
 | GET | /api/admin/v1/members/:memberId/insurances | Admin - Member Insurances | rbac | RBAC; admission=-; codes=member-insurance.read.other; require=all; scopes=-; engine=rbac-global | code | src/modules/insurances/admin-member-insurances.controller.ts:43; src/modules/insurances/admin-member-insurances.controller.ts:61 |
 | GET | /api/admin/v1/members/:memberId/insurances/overview | Admin - Member Insurances | rbac | RBAC; admission=-; codes=member-insurance.read.other; require=all; scopes=-; engine=rbac-global | code | src/modules/insurances/admin-member-insurances.controller.ts:65; src/modules/insurances/admin-member-insurances.controller.ts:83 |
 | GET | /api/admin/v1/members/:memberId/memberships | Admin - Member Memberships | rbac | RBAC; admission=-; codes=membership.list.record; require=all; scopes=-; engine=rbac-global | code | src/modules/member-departments/memberships.controller.ts:40; src/modules/member-departments/memberships.controller.ts:56 |
 | GET | /api/admin/v1/members/:memberId/participation-ledger | Admin - Participation Ledger | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-member-participation-ledger.controller.ts:39; src/modules/activities/controllers/admin-member-participation-ledger.controller.ts:56 |
-| GET | /api/admin/v1/members/:memberId/participation-summary | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/controllers/admin-member-attendance.controller.ts:83; src/modules/attendances/controllers/admin-member-attendance.controller.ts:100 |
+| GET | /api/admin/v1/members/:memberId/participation-summary | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/controllers/admin-member-attendance.controller.ts:47; src/modules/attendances/controllers/admin-member-attendance.controller.ts:65 |
 | GET | /api/admin/v1/members/:memberId/participation-time-proof | Admin - Participation Ledger | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-member-participation-ledger.controller.ts:59; src/modules/activities/controllers/admin-member-participation-ledger.controller.ts:80 |
 | GET | /api/admin/v1/members/:memberId/position-assignments | Admin - Position Assignments | rbac | RBAC; admission=-; codes=position-assignment.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/position-assignments/position-assignments.controller.ts:113; src/modules/position-assignments/position-assignments.controller.ts:129 |
 | GET | /api/admin/v1/members/:memberId/profile | Admin - Member Profiles | rbac | RBAC; admission=-; codes=member-profile.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/member-profiles/member-profiles.controller.ts:47; src/modules/member-profiles/member-profiles.controller.ts:65 |
@@ -12872,8 +12317,8 @@
 | GET | /api/admin/v1/memberships | Admin - Memberships | rbac | RBAC; admission=-; codes=membership.list.record; require=all; scopes=-; engine=rbac-global | code | src/modules/member-departments/memberships-admin.controller.ts:60; src/modules/member-departments/memberships-admin.controller.ts:72 |
 | GET | /api/admin/v1/memberships/:id | Admin - Memberships | rbac | RBAC; admission=-; codes=membership.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/member-departments/memberships-admin.controller.ts:118; src/modules/member-departments/memberships-admin.controller.ts:134 |
 | GET | /api/admin/v1/memberships/conflicts | Admin - Memberships | rbac | RBAC; admission=-; codes=membership.list.record; require=all; scopes=-; engine=rbac-global | code | src/modules/member-departments/memberships-admin.controller.ts:75; src/modules/member-departments/memberships-admin.controller.ts:87 |
-| GET | /api/admin/v1/meta/dashboard-summary | Admin - Meta | auth | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=org-scope; engine=authz-scoped | code | src/modules/meta/meta.controller.ts:59; src/modules/meta/meta.controller.ts:68 |
-| GET | /api/admin/v1/meta/participation-overview | Admin - Meta | auth | RBAC; admission=-; codes=activity-registration.read.record,attendance.read.sheet; require=all; scopes=-; engine=authz-scoped | code | src/modules/meta/meta.controller.ts:71; src/modules/meta/meta.controller.ts:86 |
+| GET | /api/admin/v1/meta/dashboard-summary | Admin - Meta | auth | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=org-scope; engine=authz-scoped | code | src/modules/meta/meta.controller.ts:59; src/modules/meta/meta.controller.ts:67 |
+| GET | /api/admin/v1/meta/participation-overview | Admin - Meta | auth | RBAC; admission=-; codes=activity-registration.read.record,attendance.read.sheet; require=all; scopes=-; engine=authz-scoped | code | src/modules/meta/meta.controller.ts:70; src/modules/meta/meta.controller.ts:90 |
 | GET | /api/admin/v1/notification-wechat-templates | Admin - Notifications | rbac | RBAC; admission=-; codes=notification.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/notifications/notification-wechat-template.admin.controller.ts:29; src/modules/notifications/notification-wechat-template.admin.controller.ts:38 |
 | GET | /api/admin/v1/notifications | Admin - Notifications | rbac | RBAC; admission=-; codes=notification.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/notifications/notification-admin.controller.ts:91; src/modules/notifications/notification-admin.controller.ts:100 |
 | GET | /api/admin/v1/notifications/:id | Admin - Notifications | rbac | RBAC; admission=-; codes=notification.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/notifications/notification-admin.controller.ts:103; src/modules/notifications/notification-admin.controller.ts:114 |
@@ -12917,7 +12362,7 @@
 | GET | /api/admin/v1/team-insurance-policies/:id | Admin - Team Insurance Policies | rbac | RBAC; admission=-; codes=team-insurance-policy.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/insurances/team-insurance-policies.controller.ts:116; src/modules/insurances/team-insurance-policies.controller.ts:136 |
 | GET | /api/admin/v1/team-insurance-policies/:id/members | Admin - Team Insurance Policies | rbac | RBAC; admission=-; codes=team-insurance-policy.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/insurances/team-insurance-policies.controller.ts:189; src/modules/insurances/team-insurance-policies.controller.ts:209 |
 | GET | /api/admin/v1/team-join/applications | Admin - Team Join Applications | rbac | RBAC; admission=-; codes=team-join-application.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/team-join/team-join-applications.admin.controller.ts:61; src/modules/team-join/team-join-applications.admin.controller.ts:73 |
-| GET | /api/admin/v1/team-join/applications/:id | Admin - Team Join Applications | rbac | RBAC; admission=-; codes=team-join-application.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/team-join/team-join-applications.admin.controller.ts:80; src/modules/team-join/team-join-applications.admin.controller.ts:99 |
+| GET | /api/admin/v1/team-join/applications/:id | Admin - Team Join Applications | rbac | RBAC; admission=-; codes=team-join-application.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/team-join/team-join-applications.admin.controller.ts:80; src/modules/team-join/team-join-applications.admin.controller.ts:100 |
 | GET | /api/admin/v1/team-join/cycles | Admin - Team Join Cycles | rbac | RBAC; admission=-; codes=team-join-cycle.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/team-join/team-join-cycles.controller.ts:67; src/modules/team-join/team-join-cycles.controller.ts:73 |
 | GET | /api/admin/v1/team-join/cycles/:id | Admin - Team Join Cycles | rbac | RBAC; admission=-; codes=team-join-cycle.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/team-join/team-join-cycles.controller.ts:76; src/modules/team-join/team-join-cycles.controller.ts:91 |
 | GET | /api/admin/v1/users | Admin - Users | rbac | RBAC; admission=-; codes=user.read.account; require=all; scopes=-; engine=rbac-global | code | src/modules/users/users.controller.ts:64; src/modules/users/users.controller.ts:73 |
@@ -12936,24 +12381,18 @@
 | GET | /api/app/v1/me/capabilities | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:217; src/modules/users/controllers/app-me.controller.ts:231 |
 | GET | /api/app/v1/me/insurances | Mobile - My Insurances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/insurances/controllers/app-me-insurances.controller.ts:50; src/modules/insurances/controllers/app-me-insurances.controller.ts:66 |
 | GET | /api/app/v1/me/profile | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:236; src/modules/users/controllers/app-me.controller.ts:250 |
-| GET | /api/app/v1/me/team-join/applications/current | Mobile - My Team Join | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/team-join/team-join-applications.app.controller.ts:75; src/modules/team-join/team-join-applications.app.controller.ts:92 |
+| GET | /api/app/v1/me/team-join/applications/current | Mobile - My Team Join | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/team-join/team-join-applications.app.controller.ts:76; src/modules/team-join/team-join-applications.app.controller.ts:94 |
 | GET | /api/app/v1/me/wechat | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:507; src/modules/users/controllers/app-me.controller.ts:520 |
 | GET | /api/app/v1/me/wecom | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:563; src/modules/users/controllers/app-me.controller.ts:576 |
 | GET | /api/app/v1/my/activities | Mobile - My Registrations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:110; src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:128 |
-| GET | /api/app/v1/my/activities/:activityId/check-in | Mobile - My Activity Check-ins | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-activity-check-ins.controller.ts:90; src/modules/attendances/controllers/app-activity-check-ins.controller.ts:110 |
 | GET | /api/app/v1/my/activities/:activityId/feedback | Mobile - My Activity Feedback | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-feedbacks/controllers/app-activity-feedbacks.controller.ts:55; src/modules/activity-feedbacks/controllers/app-activity-feedbacks.controller.ts:74 |
 | GET | /api/app/v1/my/activity-batch-jobs | Mobile - My Activity Batch Jobs | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:47; src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:61 |
 | GET | /api/app/v1/my/activity-batch-jobs/:jobId | Mobile - My Activity Batch Jobs | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:64; src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:83 |
 | GET | /api/app/v1/my/activity-batch-jobs/:jobId/items | Mobile - My Activity Batch Jobs | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:86; src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:106 |
-| GET | /api/app/v1/my/attendance-records | Mobile - My Attendance | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-my-attendance-records.controller.ts:48; src/modules/attendances/controllers/app-my-attendance-records.controller.ts:65 |
 | GET | /api/app/v1/my/certificates | Mobile - My Certificates | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/certificates/controllers/app-my-certificates.controller.ts:44; src/modules/certificates/controllers/app-my-certificates.controller.ts:66 |
 | GET | /api/app/v1/my/managed-activities | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:232; src/modules/activities/controllers/app-managed-activities.controller.ts:246 |
 | GET | /api/app/v1/my/managed-activities/:activityId | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1237; src/modules/activities/controllers/app-managed-activities.controller.ts:1256 |
 | GET | /api/app/v1/my/managed-activities/:activityId/allocation-batches/:batchId | Mobile - Managed Activity Allocation Batches | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-allocation-batches.controller.ts:135; src/modules/activity-registrations/controllers/app-managed-activity-allocation-batches.controller.ts:156 |
-| GET | /api/app/v1/my/managed-activities/:activityId/attendance-sheet-draft | Mobile - Managed Activity Attendances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:82; src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:103 |
-| GET | /api/app/v1/my/managed-activities/:activityId/attendance-sheets | Mobile - Managed Activity Attendances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:106; src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:129 |
-| GET | /api/app/v1/my/managed-activities/:activityId/attendance-sheets/:sheetId | Mobile - Managed Activity Attendances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:158; src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:180 |
-| GET | /api/app/v1/my/managed-activities/:activityId/check-ins | Mobile - Managed Activity Attendances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:57; src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:79 |
 | GET | /api/app/v1/my/managed-activities/:activityId/collaborator-options | Mobile - Managed Activity Responsibilities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts:73; src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts:96 |
 | GET | /api/app/v1/my/managed-activities/:activityId/contribution-policy-selection | Mobile - Managed Activity Contribution Policy Selection | rbac | RBAC; admission=app-member; codes=activity.contribution-policy.read; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-contribution-policy-selection.controller.ts:70; src/modules/activities/controllers/app-managed-activity-contribution-policy-selection.controller.ts:92 |
 | GET | /api/app/v1/my/managed-activities/:activityId/ending-workbench | Mobile - Managed Activities | rbac | RBAC; admission=app-member; codes=activity.outcome.read; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:189; src/modules/activities/controllers/app-managed-activities.controller.ts:208 |
@@ -12999,7 +12438,7 @@
 | GET | /api/app/v1/my/managed-activities/template-version-options | Mobile - Managed Activity Metrics | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-metrics.controller.ts:64; src/modules/activities/controllers/app-managed-activity-metrics.controller.ts:88 |
 | GET | /api/app/v1/my/managed-activities/time-policy-options | Mobile - Managed Activity Time Policy Selection | rbac | RBAC; admission=app-member; codes=activity.time-policy.read; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-policy-selection.controller.ts:38; src/modules/activities/controllers/app-managed-activity-time-policy-selection.controller.ts:59 |
 | GET | /api/app/v1/my/participation-ledger | Mobile - My Participation Ledger | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activities/controllers/app-my-participation-ledger.controller.ts:38; src/modules/activities/controllers/app-my-participation-ledger.controller.ts:52 |
-| GET | /api/app/v1/my/participation-summary | Mobile - My Attendance | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-my-participation-summary.controller.ts:22; src/modules/attendances/controllers/app-my-participation-summary.controller.ts:38 |
+| GET | /api/app/v1/my/participation-summary | Mobile - My Attendance | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-my-participation-summary.controller.ts:22; src/modules/attendances/controllers/app-my-participation-summary.controller.ts:42 |
 | GET | /api/app/v1/my/participation-time-proof | Mobile - My Participation Ledger | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activities/controllers/app-my-participation-ledger.controller.ts:55; src/modules/activities/controllers/app-my-participation-ledger.controller.ts:77 |
 | GET | /api/app/v1/my/registrations | Mobile - My Registrations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:62; src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:78 |
 | GET | /api/app/v1/my/registrations/:id | Mobile - My Registrations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:83; src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:105 |
@@ -13073,11 +12512,6 @@
 | PATCH | /api/admin/v1/activities/:id/publish-with-audience-tags | Admin - Activities | rbac | RBAC; admission=-; codes=activity.publish.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/activities.controller.ts:302; src/modules/activities/activities.controller.ts:325 |
 | PATCH | /api/admin/v1/activities/:id/time-policy-selection | Admin - Activity Time Policy Selection | rbac | RBAC; admission=-; codes=activity.time-policy.select; require=all; scopes=-; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-time-policy-selection.controller.ts:51; src/modules/activities/controllers/admin-activity-time-policy-selection.controller.ts:73 |
 | PATCH | /api/admin/v1/attachments/:id | Admin - Attachments | rbac | RBAC; admission=-; codes=attachment.update.*; require=all; scopes=-; engine=rbac-global | code | src/modules/attachments/attachments.controller.ts:215; src/modules/attachments/attachments.controller.ts:234 |
-| PATCH | /api/admin/v1/attendance-sheets/:id | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.update.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/attendances.controller.ts:217; src/modules/attendances/attendances.controller.ts:252 |
-| PATCH | /api/admin/v1/attendance-sheets/:id/approve | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.approve.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/attendances.controller.ts:280; src/modules/attendances/attendances.controller.ts:302 |
-| PATCH | /api/admin/v1/attendance-sheets/:id/final-approve | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.final-approve.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/attendances.controller.ts:359; src/modules/attendances/attendances.controller.ts:381 |
-| PATCH | /api/admin/v1/attendance-sheets/:id/final-reject | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.final-reject.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/attendances.controller.ts:384; src/modules/attendances/attendances.controller.ts:407 |
-| PATCH | /api/admin/v1/attendance-sheets/:id/reject | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.reject.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/attendances.controller.ts:305; src/modules/attendances/attendances.controller.ts:325 |
 | PATCH | /api/admin/v1/certificate-recognition-policies/:id | Admin - Certificate Recognition Policies | rbac | RBAC; admission=-; codes=certificate-recognition-policy.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificate-recognition-policies.controller.ts:137; src/modules/certificates/certificate-recognition-policies.controller.ts:162 |
 | PATCH | /api/admin/v1/certificate-recognition-policies/:id/status | Admin - Certificate Recognition Policies | rbac | RBAC; admission=-; codes=certificate-recognition-policy.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificate-recognition-policies.controller.ts:165; src/modules/certificates/certificate-recognition-policies.controller.ts:194 |
 | PATCH | /api/admin/v1/certificate-standards/:id | Admin - Certificate Standards | rbac | RBAC; admission=-; codes=certificate-standard.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificate-standards.controller.ts:150; src/modules/certificates/certificate-standards.controller.ts:172 |
@@ -13103,16 +12537,15 @@
 | PATCH | /api/admin/v1/role-bindings/:id | Admin - Role Bindings | rbac | RBAC; admission=-; codes=role-binding.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/role-bindings/role-bindings.controller.ts:181; src/modules/role-bindings/role-bindings.controller.ts:206 |
 | PATCH | /api/admin/v1/supervision-assignments/:id | Admin - Supervision Assignments | rbac | RBAC; admission=-; codes=supervision-assignment.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/supervision-assignments/supervision-assignments.controller.ts:226; src/modules/supervision-assignments/supervision-assignments.controller.ts:248 |
 | PATCH | /api/admin/v1/team-insurance-policies/:id | Admin - Team Insurance Policies | rbac | RBAC; admission=-; codes=team-insurance-policy.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/insurances/team-insurance-policies.controller.ts:139; src/modules/insurances/team-insurance-policies.controller.ts:162 |
-| PATCH | /api/admin/v1/team-join/applications/:id/gates | Admin - Team Join Applications | rbac | RBAC; admission=-; codes=team-join-application.mark.gate; require=all; scopes=-; engine=rbac-global | code | src/modules/team-join/team-join-applications.admin.controller.ts:102; src/modules/team-join/team-join-applications.admin.controller.ts:122 |
+| PATCH | /api/admin/v1/team-join/applications/:id/gates | Admin - Team Join Applications | rbac | RBAC; admission=-; codes=team-join-application.mark.gate; require=all; scopes=-; engine=rbac-global | code | src/modules/team-join/team-join-applications.admin.controller.ts:103; src/modules/team-join/team-join-applications.admin.controller.ts:124 |
 | PATCH | /api/admin/v1/team-join/cycles/:id | Admin - Team Join Cycles | rbac | RBAC; admission=-; codes=team-join-cycle.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/team-join/team-join-cycles.controller.ts:94; src/modules/team-join/team-join-cycles.controller.ts:113 |
 | PATCH | /api/admin/v1/users/:id | Admin - Users | rbac | RBAC; admission=-; codes=user.update.account; require=all; scopes=-; engine=rbac-global | code | src/modules/users/users.controller.ts:132; src/modules/users/users.controller.ts:151 |
 | PATCH | /api/admin/v1/users/:id/role | Admin - Users | rbac | RBAC; admission=-; codes=user.update.role; require=all; scopes=-; engine=rbac-global | code | src/modules/users/users.controller.ts:174; src/modules/users/users.controller.ts:196 |
 | PATCH | /api/admin/v1/users/:id/status | Admin - Users | rbac | RBAC; admission=-; codes=user.update.status; require=all; scopes=-; engine=rbac-global | code | src/modules/users/users.controller.ts:199; src/modules/users/users.controller.ts:218 |
 | PATCH | /api/app/v1/me/insurances/:id | Mobile - My Insurances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/insurances/controllers/app-me-insurances.controller.ts:95; src/modules/insurances/controllers/app-me-insurances.controller.ts:121 |
 | PATCH | /api/app/v1/me/profile | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:258; src/modules/users/controllers/app-me.controller.ts:272 |
-| PATCH | /api/app/v1/me/team-join/applications/:id/targets | Mobile - My Team Join | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/team-join/team-join-applications.app.controller.ts:95; src/modules/team-join/team-join-applications.app.controller.ts:123 |
+| PATCH | /api/app/v1/me/team-join/applications/:id/targets | Mobile - My Team Join | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/team-join/team-join-applications.app.controller.ts:97; src/modules/team-join/team-join-applications.app.controller.ts:126 |
 | PATCH | /api/app/v1/my/managed-activities/:activityId | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=activity.create.cross-org; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1259; src/modules/activities/controllers/app-managed-activities.controller.ts:1290 |
-| PATCH | /api/app/v1/my/managed-activities/:activityId/attendance-sheets/:sheetId | Mobile - Managed Activity Attendances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:183; src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:210 |
 | PATCH | /api/app/v1/my/managed-activities/:activityId/contribution-policy-selection | Mobile - Managed Activity Contribution Policy Selection | rbac | RBAC; admission=app-member; codes=activity.contribution-policy.select; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-contribution-policy-selection.controller.ts:95; src/modules/activities/controllers/app-managed-activity-contribution-policy-selection.controller.ts:125 |
 | PATCH | /api/app/v1/my/managed-activities/:activityId/positions/:activityPositionId | Mobile - Managed Activity Positions | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-positions.controller.ts:106; src/modules/activities/controllers/app-managed-activity-positions.controller.ts:130 |
 | PATCH | /api/app/v1/my/managed-activities/:activityId/registrations/:registrationId/approve | Mobile - Managed Activity Registrations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-registrations.controller.ts:118; src/modules/activity-registrations/controllers/app-managed-activity-registrations.controller.ts:150 |
@@ -13145,7 +12578,6 @@
 | PATCH | /api/system/v1/wechat-settings | Ops - WeChat Settings | rbac | RBAC; admission=-; codes=wechat-setting.update.singleton; require=all; scopes=-; engine=rbac-global | code | src/modules/wechat/wechat-settings.controller.ts:57; src/modules/wechat/wechat-settings.controller.ts:70 |
 | PATCH | /api/system/v1/wecom-settings | Ops - WeCom Settings | rbac | RBAC; admission=-; codes=wecom-setting.update.singleton; require=all; scopes=-; engine=rbac-global | code | src/modules/wecom/wecom-settings.controller.ts:65; src/modules/wecom/wecom-settings.controller.ts:83 |
 | POST | /api/admin/v1/activities | Admin - Activities | rbac | RBAC; admission=-; codes=activity.create.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/activities.controller.ts:112; src/modules/activities/activities.controller.ts:138 |
-| POST | /api/admin/v1/activities/:activityId/attendance-sheets | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.create.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/attendances.controller.ts:92; src/modules/attendances/attendances.controller.ts:122 |
 | POST | /api/admin/v1/activities/:activityId/positions | Admin - Activity Positions | rbac | RBAC; admission=-; codes=activity.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-positions.controller.ts:32; src/modules/activities/controllers/admin-activity-positions.controller.ts:55 |
 | POST | /api/admin/v1/activities/:activityId/registrations | Admin - Registrations | rbac | RBAC; admission=-; codes=activity-registration.create.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activity-registrations/activity-registrations.controller.ts:122; src/modules/activity-registrations/activity-registrations.controller.ts:157 |
 | POST | /api/admin/v1/activities/:activityId/registrations/:id/reopen | Admin - Registrations | rbac | RBAC; admission=-; codes=activity-registration.reopen.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activity-registrations/activity-registrations.controller.ts:343; src/modules/activity-registrations/activity-registrations.controller.ts:367 |
@@ -13181,10 +12613,6 @@
 | POST | /api/admin/v1/attendance-settlements/:id/final-return | Admin - Attendance Settlements | rbac | RBAC; admission=-; codes=activity.settlement-final-review.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-attendance-settlements.controller.ts:225; src/modules/activities/controllers/admin-attendance-settlements.controller.ts:258 |
 | POST | /api/admin/v1/attendance-settlements/:id/first-approve | Admin - Attendance Settlements | rbac | RBAC; admission=-; codes=activity.settlement-first-review.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-attendance-settlements.controller.ts:101; src/modules/activities/controllers/admin-attendance-settlements.controller.ts:131 |
 | POST | /api/admin/v1/attendance-settlements/:id/first-return | Admin - Attendance Settlements | rbac | RBAC; admission=-; codes=activity.settlement-first-review.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-attendance-settlements.controller.ts:141; src/modules/activities/controllers/admin-attendance-settlements.controller.ts:172 |
-| POST | /api/admin/v1/attendance-sheets/:id/final-return | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.final-return.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/attendances.controller.ts:410; src/modules/attendances/attendances.controller.ts:434 |
-| POST | /api/admin/v1/attendance-sheets/:id/reopen | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.reopen.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/attendances.controller.ts:461; src/modules/attendances/attendances.controller.ts:482 |
-| POST | /api/admin/v1/attendance-sheets/:id/resubmit | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.update.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/attendances.controller.ts:437; src/modules/attendances/attendances.controller.ts:458 |
-| POST | /api/admin/v1/attendance-sheets/:id/return | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.return.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/attendances.controller.ts:328; src/modules/attendances/attendances.controller.ts:351 |
 | POST | /api/admin/v1/authz/action-state/batch | Admin - Authz | rbac | RBAC; admission=-; codes=authz.action-state.decision; require=all; scopes=-; engine=rbac-global | code | src/modules/authz/action-state.controller.ts:26; src/modules/authz/action-state.controller.ts:39 |
 | POST | /api/admin/v1/authz/explain | Admin - Authz | rbac | RBAC; admission=-; codes=authz.explain.decision; require=all; scopes=-; engine=rbac-global | code | src/modules/authz/authz.controller.ts:31; src/modules/authz/authz.controller.ts:49 |
 | POST | /api/admin/v1/authz/explain-batch | Admin - Authz | rbac | RBAC; admission=-; codes=authz.explain-batch.decision; require=all; scopes=-; engine=rbac-global | code | src/modules/authz/authz.controller.ts:54; src/modules/authz/authz.controller.ts:72 |
@@ -13242,8 +12670,8 @@
 | POST | /api/admin/v1/team-insurance-policies | Admin - Team Insurance Policies | rbac | RBAC; admission=-; codes=team-insurance-policy.create.record; require=all; scopes=-; engine=rbac-global | code | src/modules/insurances/team-insurance-policies.controller.ts:92; src/modules/insurances/team-insurance-policies.controller.ts:113 |
 | POST | /api/admin/v1/team-insurance-policies/:id/members | Admin - Team Insurance Policies | rbac | RBAC; admission=-; codes=team-insurance-policy.add.member; require=all; scopes=-; engine=rbac-global | code | src/modules/insurances/team-insurance-policies.controller.ts:212; src/modules/insurances/team-insurance-policies.controller.ts:233 |
 | POST | /api/admin/v1/team-insurance-policies/:id/members/add-all-active | Admin - Team Insurance Policies | rbac | RBAC; admission=-; codes=team-insurance-policy.add.member; require=all; scopes=-; engine=rbac-global | code | src/modules/insurances/team-insurance-policies.controller.ts:236; src/modules/insurances/team-insurance-policies.controller.ts:255 |
-| POST | /api/admin/v1/team-join/applications/:id/evaluate | Admin - Team Join Applications | rbac | RBAC; admission=-; codes=team-join-application.evaluate.assessment; require=all; scopes=-; engine=rbac-global | code | src/modules/team-join/team-join-applications.admin.controller.ts:125; src/modules/team-join/team-join-applications.admin.controller.ts:149 |
-| POST | /api/admin/v1/team-join/applications/:id/join | Admin - Team Join Applications | rbac | RBAC; admission=-; codes=team-join-application.join.member; require=all; scopes=-; engine=rbac-global | code | src/modules/team-join/team-join-applications.admin.controller.ts:152; src/modules/team-join/team-join-applications.admin.controller.ts:185 |
+| POST | /api/admin/v1/team-join/applications/:id/evaluate | Admin - Team Join Applications | rbac | RBAC; admission=-; codes=team-join-application.evaluate.assessment; require=all; scopes=-; engine=rbac-global | code | src/modules/team-join/team-join-applications.admin.controller.ts:127; src/modules/team-join/team-join-applications.admin.controller.ts:152 |
+| POST | /api/admin/v1/team-join/applications/:id/join | Admin - Team Join Applications | rbac | RBAC; admission=-; codes=team-join-application.join.member; require=all; scopes=-; engine=rbac-global | code | src/modules/team-join/team-join-applications.admin.controller.ts:155; src/modules/team-join/team-join-applications.admin.controller.ts:189 |
 | POST | /api/admin/v1/team-join/cycles | Admin - Team Join Cycles | rbac | RBAC; admission=-; codes=team-join-cycle.create.record; require=all; scopes=-; engine=rbac-global | code | src/modules/team-join/team-join-cycles.controller.ts:45; src/modules/team-join/team-join-cycles.controller.ts:64 |
 | POST | /api/admin/v1/users | Admin - Users | rbac | RBAC; admission=-; codes=user.create.account; require=all; scopes=-; engine=rbac-global | code | src/modules/users/users.controller.ts:92; src/modules/users/users.controller.ts:111 |
 | POST | /api/app/v1/activities/:activityId/registration-upload-sessions | Mobile - Activity Registration Upload Sessions | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-registration-upload-sessions.controller.ts:78; src/modules/activity-registrations/controllers/app-registration-upload-sessions.controller.ts:106 |
@@ -13254,9 +12682,7 @@
 | POST | /api/app/v1/me/avatar | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:302; src/modules/users/controllers/app-me.controller.ts:349 |
 | POST | /api/app/v1/me/insurances | Mobile - My Insurances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/insurances/controllers/app-me-insurances.controller.ts:69; src/modules/insurances/controllers/app-me-insurances.controller.ts:92 |
 | POST | /api/app/v1/me/phone/send-code | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:430; src/modules/users/controllers/app-me.controller.ts:461 |
-| POST | /api/app/v1/me/team-join/applications | Mobile - My Team Join | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/team-join/team-join-applications.app.controller.ts:44; src/modules/team-join/team-join-applications.app.controller.ts:72 |
-| POST | /api/app/v1/my/activities/:activityId/check-in | Mobile - My Activity Check-ins | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-activity-check-ins.controller.ts:28; src/modules/attendances/controllers/app-activity-check-ins.controller.ts:55 |
-| POST | /api/app/v1/my/activities/:activityId/check-out | Mobile - My Activity Check-ins | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-activity-check-ins.controller.ts:58; src/modules/attendances/controllers/app-activity-check-ins.controller.ts:87 |
+| POST | /api/app/v1/me/team-join/applications | Mobile - My Team Join | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/team-join/team-join-applications.app.controller.ts:44; src/modules/team-join/team-join-applications.app.controller.ts:73 |
 | POST | /api/app/v1/my/activity-batch-jobs/:jobId/cancel | Mobile - My Activity Batch Jobs | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:132; src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:152 |
 | POST | /api/app/v1/my/activity-batch-jobs/:jobId/retry-failed | Mobile - My Activity Batch Jobs | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:109; src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:129 |
 | POST | /api/app/v1/my/activity-invitations/:invitationId/accept | Mobile - My Activity Invitations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-my-activity-invitations.controller.ts:36; src/modules/activity-registrations/controllers/app-my-activity-invitations.controller.ts:64 |
@@ -13267,13 +12693,11 @@
 | POST | /api/app/v1/my/managed-activities/:activityId/allocation-batches/:batchId/commit | Mobile - Managed Activity Allocation Batches | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-allocation-batches.controller.ts:70; src/modules/activity-registrations/controllers/app-managed-activity-allocation-batches.controller.ts:97 |
 | POST | /api/app/v1/my/managed-activities/:activityId/allocation-batches/:batchId/void | Mobile - Managed Activity Allocation Batches | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-allocation-batches.controller.ts:106; src/modules/activity-registrations/controllers/app-managed-activity-allocation-batches.controller.ts:132 |
 | POST | /api/app/v1/my/managed-activities/:activityId/archive | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:343; src/modules/activities/controllers/app-managed-activities.controller.ts:375 |
-| POST | /api/app/v1/my/managed-activities/:activityId/attendance-sheets | Mobile - Managed Activity Attendances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:132; src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:155 |
-| POST | /api/app/v1/my/managed-activities/:activityId/attendance-sheets/:sheetId/resubmit | Mobile - Managed Activity Attendances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:239; src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:264 |
 | POST | /api/app/v1/my/managed-activities/:activityId/cancel | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:279; src/modules/activities/controllers/app-managed-activities.controller.ts:306 |
 | POST | /api/app/v1/my/managed-activities/:activityId/change-reviews | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1350; src/modules/activities/controllers/app-managed-activities.controller.ts:1386 |
 | POST | /api/app/v1/my/managed-activities/:activityId/clone | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record,activity.create.cross-org; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:408; src/modules/activities/controllers/app-managed-activities.controller.ts:437 |
 | POST | /api/app/v1/my/managed-activities/:activityId/collaborators | Mobile - Managed Activity Responsibilities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts:103; src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts:128 |
-| POST | /api/app/v1/my/managed-activities/:activityId/declare-attendance-complete | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1533; src/modules/activities/controllers/app-managed-activities.controller.ts:1556 |
+| POST | /api/app/v1/my/managed-activities/:activityId/declare-attendance-complete | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1533; src/modules/activities/controllers/app-managed-activities.controller.ts:1560 |
 | POST | /api/app/v1/my/managed-activities/:activityId/direct-publish | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1442; src/modules/activities/controllers/app-managed-activities.controller.ts:1467 |
 | POST | /api/app/v1/my/managed-activities/:activityId/evidence-seals | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:626; src/modules/activities/controllers/app-managed-activities.controller.ts:656 |
 | POST | /api/app/v1/my/managed-activities/:activityId/invitations | Mobile - Managed Activity Guests | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:82; src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:109 |

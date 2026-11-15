@@ -1,7 +1,7 @@
 ### Changed
 
 - 旧考勤 HTTP 入口及相关响应已迁移至新版参与、结算和账本模型。以下逐操作记录破坏性差异、调用方影响、迁移方向与实际回退条件；旧、新对象和权限并非一一对应。具体路径和字段见 `docs/handoff/v11-legacy-attendance-retired-routes.md` 与 `docs/handoff/v11-participation-projection.md`。
-- 这些记录供维护者和消费者审阅；申报不是批准，不授权合并、部署或数据迁移。独立 Admin 前端已有本地适配，但真实联调、其他消费者和回退方案尚未验证。
+- 本轮维护者已明确批准按本候选完成退役及契约/验收迁移，并选择取消报名、活动软删只认新链证据。此范围授权不代表批准合并、部署或数据迁移。独立 Admin 前端已有本地适配，但真实联调、其他消费者和回退方案尚未验证。
 
 <!-- contract-breaking
 operation: GET /api/admin/v1/activities

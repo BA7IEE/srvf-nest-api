@@ -279,6 +279,9 @@ export class AttendanceReadService {
     // 第 7 批第 ②-a 刀最初仅并排增加账本轴；R5 的 contributionPoints 已随单闸选源。
     // ledgerTotals 的四个数仍走 loadMemberLedgerTotals 唯一入口，
     // 与 participation-summary 两个端点同值；不再叠加到 contributionPoints。
+    if (this.activityWorkflowGate.participationReadSource() !== 'committed-ledger') {
+      throw new BizException(BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED);
+    }
     const [points, ledgerTotals] = await Promise.all([
       computeCappedContribution(
         this.prisma,
