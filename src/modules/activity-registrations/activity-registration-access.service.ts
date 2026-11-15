@@ -10,6 +10,7 @@ import { RbacService } from '../permissions/rbac.service';
 import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
 import { type ActivityQualificationTarget } from './activity-qualification-evaluator.service';
+import { hasV11ParticipationEvidenceInTx } from './registration-participation-evidence';
 import {} from './activity-registrations.dto';
 
 export const REGISTRATION_STATUS_PENDING = 'pending';
@@ -233,22 +234,10 @@ export class ActivityRegistrationAccessService {
     }
   }
 
-  // 参与域生命周期收口⑦(v0.40.0):已有参与证据的报名禁取消守卫。cancelAdmin + cancelMy 两路共用。
-  // 直连 prisma 查 AttendanceRecord / ActivityCheckIn 的 registrationId 反向引用(未软删)
-  // ——**不引 attendances service**(防跨模块环:attendances → activity-registration 是既有单向依赖,
-  // 反向会成环)。任一存在即拒;
-  // 不做贡献值回滚(贡献值属考勤域;撤销参与先走考勤面处理记录,报名取消自然解锁)。
+  // 所有取消入口在 Activity 根锁后共用新版事实检查。原始打卡操作与已生效结果
+  // 均阻止取消；不回滚账本，也不回读已退休的旧 Sheet/GPS 表。
   async assertNoParticipationEvidence(registrationId: string, tx: PrismaTx): Promise<void> {
-    const attendanceCount = await tx.attendanceRecord.count({
-      where: { registrationId, deletedAt: null },
-    });
-    if (attendanceCount > 0) {
-      throw new BizException(BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE);
-    }
-    const checkInCount = await tx.activityCheckIn.count({
-      where: { registrationId, deletedAt: null },
-    });
-    if (checkInCount > 0) {
+    if (await hasV11ParticipationEvidenceInTx(tx, registrationId)) {
       throw new BizException(BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE);
     }
   }

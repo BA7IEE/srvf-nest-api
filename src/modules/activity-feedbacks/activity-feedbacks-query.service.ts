@@ -7,7 +7,6 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { AuthzService } from '../authz/authz.service';
-import { ATTENDANCE_SHEET_STATUS } from '../attendances/attendances.dto';
 import { RbacService } from '../permissions/rbac.service';
 import { toMemberLabelFields } from '../../common/identity/member-label.util';
 import { feedbackEligibleMemberIdsSql } from './feedback-eligibility';
@@ -76,51 +75,10 @@ export class ActivityFeedbacksQueryService {
     await this.assertCanReadActivity(activityId, currentUser);
     await this.findActivityOrThrow(activityId);
 
-    if (this.activityWorkflowGate.participationReadSource() === 'committed-ledger') {
-      return this.summaryV11(activityId);
+    if (this.activityWorkflowGate.participationReadSource() !== 'committed-ledger') {
+      throw new BizException(BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED);
     }
-
-    // 正常路径固定 4 次业务读：Activity exists + aggregate + 1 次 groupBy + 分母 member 并集 count。
-    // 分母实时计算为「当前 approved distinct member ∪ 已提交 live feedback member」，使 reopen 后
-    // 历史评价仍同时留在分子和分母，feedbackRate 恒不超过 1；不落库、不改评价资格写侧。
-    const [aggregate, grouped, denominator] = await Promise.all([
-      this.aggregateForActivity(activityId),
-      this.prisma.activityFeedback.groupBy({
-        by: ['rating'],
-        where: { activityId, deletedAt: null },
-        _count: { _all: true },
-        orderBy: { rating: 'asc' },
-      }),
-      this.prisma.member.count({
-        where: {
-          OR: [
-            {
-              attendanceRecords: {
-                some: {
-                  deletedAt: null,
-                  sheet: {
-                    activityId,
-                    deletedAt: null,
-                    statusCode: ATTENDANCE_SHEET_STATUS.APPROVED,
-                  },
-                },
-              },
-            },
-            { activityFeedbacks: { some: { activityId, deletedAt: null } } },
-          ],
-        },
-      }),
-    ]);
-    const counts = new Map(grouped.map((row) => [row.rating, row._count._all]));
-
-    return {
-      ...aggregate,
-      ratingDistribution: [1, 2, 3, 4, 5].map((rating) => ({
-        rating,
-        count: counts.get(rating) ?? 0,
-      })),
-      feedbackRate: denominator === 0 ? 0 : this.round(aggregate.count / denominator, 4),
-    };
+    return this.summaryV11(activityId);
   }
 
   /** Current eligibility and live feedback must be read in the same correction snapshot. */

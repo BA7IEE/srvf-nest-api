@@ -72,7 +72,7 @@ export class AppTeamJoinApplicationDto {
   generalGatesSatisfied!: boolean;
   @ApiProperty({
     description:
-      '贡献值汇总（截至入队年 3-31；闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加）',
+      '贡献值汇总（截至入队年 3-31；只取 committed 账本 credited 净额；不叠加、不再封顶；闸关返回 20153/503）',
   })
   contributionPoints!: string;
   @ApiProperty({ description: '贡献值是否 ≥5' })

@@ -135,6 +135,82 @@ describe('NotificationOutboxService', () => {
     ).rejects.toBeInstanceOf(NotificationOutboxInvariantError);
   });
 
+  it('batch enqueue rejects a missing caller client before any writes, including empty batches', async () => {
+    const f = build();
+    await expect(f.service.enqueueMany([input()], undefined as never)).rejects.toBeInstanceOf(
+      NotificationOutboxInvariantError,
+    );
+    await expect(f.service.enqueueMany([], undefined as never)).rejects.toBeInstanceOf(
+      NotificationOutboxInvariantError,
+    );
+    expect(f.createMany).not.toHaveBeenCalled();
+    expect(f.findMany).not.toHaveBeenCalled();
+  });
+
+  it('batch enqueue deduplicates equal content using only the supplied client', async () => {
+    const f = build();
+    const tx = {
+      notificationOutboxIntent: {
+        createMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findMany: jest.fn().mockResolvedValue([row()]),
+      },
+    };
+    const reordered = input({
+      memberId: MEMBER_1,
+      publishGeneration: 1,
+      notificationId: NOTIFICATION_1,
+    });
+    await expect(f.service.enqueueMany([input(), reordered], tx as never)).resolves.toEqual([
+      row(),
+    ]);
+    expect(tx.notificationOutboxIntent.createMany).toHaveBeenCalledTimes(1);
+    expect(tx.notificationOutboxIntent.findMany).toHaveBeenCalledWith({
+      where: { eventKey: { in: [input().eventKey] } },
+    });
+    expect(f.createMany).not.toHaveBeenCalled();
+    expect(f.findMany).not.toHaveBeenCalled();
+  });
+
+  it('batch enqueue rejects conflicting duplicate keys before writing', async () => {
+    const f = build();
+    await expect(
+      f.service.enqueueMany(
+        [
+          input(),
+          input({ notificationId: NOTIFICATION_1, memberId: MEMBER_1, publishGeneration: 2 }),
+        ],
+        f.tx as never,
+      ),
+    ).rejects.toBeInstanceOf(NotificationOutboxInvariantError);
+    expect(f.createMany).not.toHaveBeenCalled();
+    expect(f.findMany).not.toHaveBeenCalled();
+  });
+
+  it.each(['missing', 'conflicting'])(
+    'batch enqueue rejects a %s row when checking the stored key',
+    async (kind) => {
+      const f = build();
+      f.findMany.mockResolvedValue(
+        kind === 'missing'
+          ? []
+          : [
+              row({
+                payload: {
+                  notificationId: NOTIFICATION_1,
+                  memberId: MEMBER_1,
+                  publishGeneration: 2,
+                },
+              }),
+            ],
+      );
+      await expect(f.service.enqueueMany([input()], f.tx as never)).rejects.toBeInstanceOf(
+        NotificationOutboxInvariantError,
+      );
+      expect(f.createMany).toHaveBeenCalledTimes(1);
+      expect(f.findMany).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('微信广播不同 generation 撞 active partial unique 时显式要求 root defer', async () => {
     const f = build();
     const firstGeneration = wechatInput('cm00000000000000000000007');

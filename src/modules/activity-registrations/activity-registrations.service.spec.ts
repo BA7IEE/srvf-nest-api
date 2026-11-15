@@ -9,6 +9,7 @@ import type { OrganizationsService } from '../organizations/organizations.servic
 import type { RbacService } from '../permissions/rbac.service';
 import type { AuthzService } from '../authz/authz.service';
 import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
+import { promoteActivityWaitlistWithinCapacity } from '../activities/activity-waitlist-promotion';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import type { ActivityAllocationService } from './activity-allocation.service';
@@ -205,13 +206,18 @@ function makePrismaMock() {
   };
   const memberProfile = { findFirst: jest.fn().mockResolvedValue({ genderCode: 'male' }) };
   const user = { findFirst: jest.fn<Promise<UserRow | null>, [unknown]>() };
-  // 参与域生命周期收口⑦:cancelAdmin / cancelMy 事务内查考勤记录与签到证据守卫。
-  // 默认 0(无参与证据 → 放行),既有 cancel characterization 用例断言零影响;守卫用例显式覆写返回 >0。
+  // 新版取消保护在同事务检查 punch 和 committed result；旧数据源被调用即失败。
   const attendanceRecord = {
-    count: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0),
+    count: jest.fn<Promise<number>, [unknown]>().mockRejectedValue(new Error('legacy record read')),
   };
   const activityCheckIn = {
-    count: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0),
+    count: jest.fn<Promise<number>, [unknown]>().mockRejectedValue(new Error('legacy GPS read')),
+  };
+  const attendancePunchEvent = {
+    findFirst: jest.fn<Promise<{ id: string } | null>, [unknown]>().mockResolvedValue(null),
+  };
+  const participantSettlementResultRevision = {
+    findFirst: jest.fn<Promise<{ id: string } | null>, [unknown]>().mockResolvedValue(null),
   };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
   // create / approve / pass cancel 的 Activity 聚合锁默认命中测试活动；不存在场景仍由
@@ -248,6 +254,8 @@ function makePrismaMock() {
     user,
     attendanceRecord,
     activityCheckIn,
+    attendancePunchEvent,
+    participantSettlementResultRevision,
     $transaction,
     $queryRaw,
   };
@@ -355,7 +363,7 @@ function makeRegistrationLifecycleMock() {
     reopenInTransactionTrusted: jest.fn().mockResolvedValue(undefined),
     cancelInTransactionTrusted: jest
       .fn<
-        Promise<void>,
+        Promise<{ cancelledPassIdentityIds: string[] }>,
         [
           PrismaMock,
           Parameters<ActivityRegistrationLifecycleService['cancelInTransactionTrusted']>[1],
@@ -372,6 +380,7 @@ function makeRegistrationLifecycleMock() {
           },
         });
         tx.activityRegistration.findFirst.mockResolvedValue(updated);
+        return { cancelledPassIdentityIds: [] };
       }),
     incrementPopulationRevisionInTransactionTrusted: jest.fn(),
   };
@@ -410,6 +419,10 @@ function makeService(
   organizations: OrganizationsMock = makeOrganizationsMock(),
   insuranceRequirement: InsuranceRequirementMock = makeInsuranceRequirementMock(),
   qualificationEvaluator: QualificationEvaluatorMock = makeQualificationEvaluatorMock(),
+  overrides?: {
+    lifecycle: ReturnType<typeof makeRegistrationLifecycleMock>;
+    allocations: { promoteAfterCancellationInTransactionTrusted: jest.Mock };
+  },
 ): ActivityRegistrationsService {
   // stateMachine mock 仅含 decide,结构上可直接赋给 ActivityRegistrationStateMachine,无需断言。
   // Phase 6-B 第三域第二刀:三个新类全部传**真实实例**并喂同一组 mock ——
@@ -421,15 +434,15 @@ function makeService(
   } as unknown as AuditLogsService;
   const participationPolicy = new ActivityParticipationPolicy();
   const presenterReal = new ActivityRegistrationPresenter();
-  const lifecycleMock =
-    makeRegistrationLifecycleMock() as unknown as ActivityRegistrationLifecycleService;
-  const allocationsMock = {
+  const lifecycleMock = (overrides?.lifecycle ??
+    makeRegistrationLifecycleMock()) as unknown as ActivityRegistrationLifecycleService;
+  const allocationsMock = (overrides?.allocations ?? {
     promoteAfterCancellationInTransactionTrusted: jest.fn().mockResolvedValue({
       handled: false,
       activityTitle: '活动',
       promoted: [],
     }),
-  } as unknown as ActivityAllocationService;
+  }) as unknown as ActivityAllocationService;
   const access = new ActivityRegistrationAccessService(
     prisma as unknown as PrismaService,
     rbacMock,
@@ -978,6 +991,9 @@ describe('ActivityRegistrationsService (characterization)', () => {
         META,
       );
       expect(result.statusCode).toBe('reject');
+      expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+      });
       expect(prisma.activityRegistration.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ statusSummaryCode: 'not_selected' }) as unknown,
@@ -1008,50 +1024,137 @@ describe('ActivityRegistrationsService (characterization)', () => {
   });
 
   describe('audit recorder wiring', () => {
-    it('cancelAdmin:已有 live AttendanceRecord → 21033,不再查询签到 / 不取消', async () => {
+    it.each([
+      ['admin', true, ['identity-new']],
+      ['admin', false, ['identity-new']],
+      ['admin', false, []],
+      ['self', true, ['identity-new']],
+      ['self', false, ['identity-new']],
+      ['self', false, []],
+    ] as const)(
+      'cancel via %s forwards released identities and preserves fallback (handled=%s, ids=%j)',
+      async (path, handled, releasedIds) => {
+        jest.mocked(promoteActivityWaitlistWithinCapacity).mockClear();
+        const prisma = makePrismaMock();
+        const recorder = makeAuditRecorderMock();
+        const notificationProducer = makeNotificationProducerMock();
+        const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'cancelled' });
+        prisma.user.findFirst.mockResolvedValue({ memberId: 'mem-1' });
+        prisma.activityRegistration.findFirst.mockResolvedValue(
+          makeRegRow({ statusCode: 'pass', activityId: 'act-1', memberId: 'mem-1' }),
+        );
+        prisma.activityRegistration.update.mockResolvedValue(
+          makeRegRow({ statusCode: 'cancelled', activityId: 'act-1', memberId: 'mem-1' }),
+        );
+        prisma.activity.findFirst.mockResolvedValue(makeActivityRow());
+        const lifecycle = makeRegistrationLifecycleMock();
+        const original = lifecycle.cancelInTransactionTrusted.getMockImplementation();
+        if (!original) throw new Error('missing cancellation fixture');
+        lifecycle.cancelInTransactionTrusted.mockImplementation(async (tx, input) => {
+          await original(tx, input);
+          return { cancelledPassIdentityIds: [...releasedIds] };
+        });
+        const allocations = {
+          promoteAfterCancellationInTransactionTrusted: jest.fn().mockResolvedValue({
+            handled,
+            activityTitle: '活动',
+            promoted: [],
+          }),
+        };
+        const service = makeService(
+          prisma,
+          recorder,
+          stateMachine,
+          notificationProducer,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          { lifecycle, allocations },
+        );
+        const actor = makeCurrentUser({ id: 'user-1', role: Role.USER });
+        if (path === 'admin') await service.cancelAdmin('act-1', 'reg-1', {}, actor, META);
+        else await service.cancelMy('reg-1', {}, actor, META);
+
+        expect(allocations.promoteAfterCancellationInTransactionTrusted).toHaveBeenCalledWith(
+          prisma,
+          expect.objectContaining({
+            activityId: 'act-1',
+            registrationId: 'reg-1',
+            releasedIdentityIds: [...releasedIds],
+          }) as unknown,
+        );
+        expect(recorder.logCancel).toHaveBeenCalledTimes(1);
+        if (handled) {
+          expect(promoteActivityWaitlistWithinCapacity).not.toHaveBeenCalled();
+        } else {
+          expect(promoteActivityWaitlistWithinCapacity).toHaveBeenCalledWith(
+            expect.objectContaining({
+              activityId: 'act-1',
+              maxPromotions: 1,
+              tx: prisma,
+            }) as unknown,
+          );
+        }
+        if (path === 'self') {
+          expect(notificationProducer.enqueueSelfCancellation).toHaveBeenCalledTimes(1);
+        }
+      },
+    );
+
+    it('cancelAdmin:已有新版 punch → 21033，不查询结果、不取消', async () => {
       const prisma = makePrismaMock();
       const recorder = makeAuditRecorderMock();
       const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'cancelled' });
       prisma.activityRegistration.findFirst.mockResolvedValue(
         makeRegRow({ statusCode: 'pass', activityId: 'act-1' }),
       );
-      prisma.attendanceRecord.count.mockResolvedValue(1);
+      prisma.attendancePunchEvent.findFirst.mockResolvedValue({ id: 'punch-1' });
       const service = makeService(prisma, recorder, stateMachine);
 
       await expect(
         service.cancelAdmin('act-1', 'reg-1', {}, makeCurrentUser({ id: 'admin-1' }), META),
       ).rejects.toEqual(new BizException(BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE));
 
+      expect(prisma.participantSettlementResultRevision.findFirst).not.toHaveBeenCalled();
+      expect(prisma.attendanceRecord.count).not.toHaveBeenCalled();
       expect(prisma.activityCheckIn.count).not.toHaveBeenCalled();
       expect(prisma.activityRegistration.update).not.toHaveBeenCalled();
       expect(recorder.logCancel).not.toHaveBeenCalled();
     });
 
-    it('cancelAdmin:已有 live ActivityCheckIn → 21033,不取消 / 不审计', async () => {
+    it('cancelAdmin:没有 punch 但已有 committed result → 21033，不取消 / 不审计', async () => {
       const prisma = makePrismaMock();
       const recorder = makeAuditRecorderMock();
       const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'cancelled' });
       prisma.activityRegistration.findFirst.mockResolvedValue(
         makeRegRow({ statusCode: 'pass', activityId: 'act-1' }),
       );
-      prisma.activityCheckIn.count.mockResolvedValue(1);
+      prisma.participantSettlementResultRevision.findFirst.mockResolvedValue({ id: 'result-zero' });
       const service = makeService(prisma, recorder, stateMachine);
 
       await expect(
         service.cancelAdmin('act-1', 'reg-1', {}, makeCurrentUser({ id: 'admin-1' }), META),
       ).rejects.toEqual(new BizException(BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE));
 
-      expect(prisma.attendanceRecord.count).toHaveBeenCalledWith({
-        where: { registrationId: 'reg-1', deletedAt: null },
+      expect(prisma.attendancePunchEvent.findFirst).toHaveBeenCalledWith({
+        where: { participationIdentity: { registrationId: 'reg-1' } },
+        select: { id: true },
       });
-      expect(prisma.activityCheckIn.count).toHaveBeenCalledWith({
-        where: { registrationId: 'reg-1', deletedAt: null },
+      expect(prisma.participantSettlementResultRevision.findFirst).toHaveBeenCalledWith({
+        where: {
+          identity: { registrationId: 'reg-1' },
+          statusCode: { in: ['committed', 'superseded'] },
+        },
+        select: { id: true },
       });
+      expect(prisma.attendanceRecord.count).not.toHaveBeenCalled();
+      expect(prisma.activityCheckIn.count).not.toHaveBeenCalled();
       expect(prisma.activityRegistration.update).not.toHaveBeenCalled();
       expect(recorder.logCancel).not.toHaveBeenCalled();
     });
 
-    it('cancelMy:已有 live ActivityCheckIn → 21033,不取消 / 不审计', async () => {
+    it('cancelMy:已有新版 punch → 21033，不取消 / 不审计', async () => {
       const prisma = makePrismaMock();
       const recorder = makeAuditRecorderMock();
       const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'cancelled' });
@@ -1060,16 +1163,18 @@ describe('ActivityRegistrationsService (characterization)', () => {
         makeRegRow({ statusCode: 'pass', activityId: 'act-1', memberId: 'mem-1' }),
       );
       prisma.activity.findFirst.mockResolvedValue(makeActivityRow());
-      prisma.activityCheckIn.count.mockResolvedValue(1);
+      prisma.attendancePunchEvent.findFirst.mockResolvedValue({ id: 'punch-1' });
       const service = makeService(prisma, recorder, stateMachine);
 
       await expect(
         service.cancelMy('reg-1', {}, makeCurrentUser({ id: 'user-1', role: Role.USER }), META),
       ).rejects.toEqual(new BizException(BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE));
 
-      expect(prisma.activityCheckIn.count).toHaveBeenCalledWith({
-        where: { registrationId: 'reg-1', deletedAt: null },
+      expect(prisma.attendancePunchEvent.findFirst).toHaveBeenCalledWith({
+        where: { participationIdentity: { registrationId: 'reg-1' } },
+        select: { id: true },
       });
+      expect(prisma.activityCheckIn.count).not.toHaveBeenCalled();
       expect(prisma.activityRegistration.update).not.toHaveBeenCalled();
       expect(recorder.logCancel).not.toHaveBeenCalled();
     });

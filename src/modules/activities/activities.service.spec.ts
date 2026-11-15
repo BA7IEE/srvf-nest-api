@@ -2,6 +2,7 @@ import { Prisma, Role, UserStatus } from '@prisma/client';
 import { validate } from 'class-validator';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import type { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { PrismaService } from '../../database/prisma.service';
@@ -251,6 +252,12 @@ function makePrismaMock() {
     count: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0),
   };
   const attendanceSheet = {
+    count: jest.fn<Promise<number>, [unknown]>().mockRejectedValue(new Error('legacy sheet read')),
+  };
+  const activityParticipationIdentity = {
+    count: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0),
+  };
+  const attendanceSettlementRun = {
     count: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0),
   };
   // 第 5 批整单取消会在已持有 Activity 根锁后读取有效 PunchEvent 链；默认空链保持
@@ -277,6 +284,8 @@ function makePrismaMock() {
     organization,
     activityRegistration,
     attendanceSheet,
+    activityParticipationIdentity,
+    attendanceSettlementRun,
     attendancePunchEvent,
     activityPublishReview,
     notificationOutboxIntent,
@@ -502,6 +511,7 @@ function makeService(
     initiationPolicy as unknown as ActivityInitiationPolicy,
     publishReviewMock,
     allocationModesMock,
+    { participationReadSource: () => 'committed-ledger' } as ActivityWorkflowGate,
     configMock,
   );
 }

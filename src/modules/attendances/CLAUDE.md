@@ -1,5 +1,9 @@
 # attendances — 考勤、贡献与现场事实
 
+本地退役候选，未部署：旧Sheet、GPS和记录控制器及旧写provider已注销；
+成员/参与汇总保留并先判权，对账/meta已切新版。离队和权限诊断仍有旧依赖，
+新版入队达标通知未接，PG/HTTP未验证。下述旧Sheet规则只约束存量代码，不代表入口仍可达。
+
 Sheet状态只经attendance-sheet-state-machine，submit只建pending Sheet，
 不直写Activity.completed；活动完结归activities.complete。不顺手大拆service或移动既有surface。
 

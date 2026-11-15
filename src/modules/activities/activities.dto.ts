@@ -223,6 +223,16 @@ export class ActivityResponseDto {
   updatedAt!: Date;
 }
 
+export class ActivityListSettlementStatsDto {
+  @ApiProperty({ description: '新版结算读面是否可用；关闭时不提供版本数量' })
+  available!: boolean;
+
+  @ApiPropertyOptional({
+    description: '曾提交且当前非 draft 的结算版本行数（含已退回、作废等历史；不是人数或待办数）',
+  })
+  submittedVersionCount?: number;
+}
+
 // 列表精简版:不返 content / galleryImageUrls / registrationSchema(评审稿 §5.1)。
 export class ActivityListItemDto {
   @ApiProperty({ description: '主键(cuid)' })
@@ -300,8 +310,11 @@ export class ActivityListItemDto {
   @ApiPropertyOptional({ description: '报名人数(仅 includeStats=true 时返回)' })
   registrationCount?: number;
 
-  @ApiPropertyOptional({ description: '考勤单数(仅 includeStats=true 时返回)' })
-  attendanceSheetCount?: number;
+  @ApiPropertyOptional({
+    type: ActivityListSettlementStatsDto,
+    description: '新版结算版本统计（仅 includeStats=true 且具备审核台读取权限及组织范围时提供）',
+  })
+  settlementStats?: ActivityListSettlementStatsDto;
 }
 
 // ============ 入参:Create ============
@@ -776,8 +789,7 @@ export class ListActivitiesQueryDto extends PaginationQueryDto {
 
   // F1/A6(路线图 §4;D1/D6/D7 拍板):新增可选 q(模糊命中 title)/ dateFrom+dateTo
   // (按 startAt 区间)/ includeDescendants(配合 organizationId 展开后代)/ includeStats
-  // (默认 false;true 时附带 registrationCount/attendanceSheetCount,批量聚合禁 N+1)。
-  // 旧字段/响应形状不变(additive)。
+  // (默认 false;true 时附带报名头统计和按权限裁剪的新版结算版本统计)。
   @ApiPropertyOptional({
     description: '模糊搜索(命中 title;contains + insensitive)',
     maxLength: 200,
@@ -807,7 +819,7 @@ export class ListActivitiesQueryDto extends PaginationQueryDto {
   includeDescendants?: boolean;
 
   @ApiPropertyOptional({
-    description: '是否附带每行统计(registrationCount/attendanceSheetCount;默认 false)',
+    description: '是否附带报名头数及授权范围内的新版结算版本统计(默认 false)',
     default: false,
   })
   @IsOptional()

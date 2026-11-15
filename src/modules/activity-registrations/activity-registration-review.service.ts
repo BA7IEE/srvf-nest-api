@@ -378,71 +378,74 @@ export class ActivityRegistrationReviewService {
       type: 'activity_registration',
       id,
     });
-    const result = await this.prisma.$transaction(async (tx) => {
-      await this.access.lockActivityForRegistrationCreate(activityId, tx);
-      if (authorization === 'managed') {
-        await this.access.assertManagedRegistrationAccess(activityId, currentUser, tx);
-      }
-      const reg = await this.access.findRegistrationOrThrow(activityId, id, tx);
+    const result = await this.prisma.$transaction(
+      async (tx) => {
+        await this.access.lockActivityForRegistrationCreate(activityId, tx);
+        if (authorization === 'managed') {
+          await this.access.assertManagedRegistrationAccess(activityId, currentUser, tx);
+        }
+        const reg = await this.access.findRegistrationOrThrow(activityId, id, tx);
 
-      const transition = this.registrationStateMachine.decide('reject', reg.statusCode);
-      if (!transition.allowed) {
-        throw new BizException(transition.biz);
-      }
+        const transition = this.registrationStateMachine.decide('reject', reg.statusCode);
+        if (!transition.allowed) {
+          throw new BizException(transition.biz);
+        }
 
-      await claimAtStatus(tx, {
-        target: 'activityRegistration',
-        id: reg.id,
-        expectedStatus: reg.statusCode,
-        invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
-      });
-      const lockedReg = await this.access.findRegistrationOrThrow(activityId, reg.id, tx);
-      const reviewedAt = new Date();
-      await this.registrationLifecycle.rejectInTransactionTrusted(tx, {
-        activityId,
-        registrationId: lockedReg.id,
-        memberId: lockedReg.memberId,
-        actorUserId: currentUser.id,
-        reviewNote: dto.reviewNote,
-        reviewedAt,
-      });
-      const updated = await tx.activityRegistration.update({
-        where: { id: lockedReg.id },
-        data: {
-          statusCode: transition.nextStatusCode,
-          statusSummaryCode: 'not_selected',
-          reviewedBy: currentUser.id,
-          reviewedAt,
+        await claimAtStatus(tx, {
+          target: 'activityRegistration',
+          id: reg.id,
+          expectedStatus: reg.statusCode,
+          invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
+        });
+        const lockedReg = await this.access.findRegistrationOrThrow(activityId, reg.id, tx);
+        const reviewedAt = new Date();
+        await this.registrationLifecycle.rejectInTransactionTrusted(tx, {
+          activityId,
+          registrationId: lockedReg.id,
+          memberId: lockedReg.memberId,
+          actorUserId: currentUser.id,
           reviewNote: dto.reviewNote,
-        },
-        select: registrationSafeSelect,
-      });
+          reviewedAt,
+        });
+        const updated = await tx.activityRegistration.update({
+          where: { id: lockedReg.id },
+          data: {
+            statusCode: transition.nextStatusCode,
+            statusSummaryCode: 'not_selected',
+            reviewedBy: currentUser.id,
+            reviewedAt,
+            reviewNote: dto.reviewNote,
+          },
+          select: registrationSafeSelect,
+        });
 
-      await this.registrationAuditRecorder.logReview({
-        registrationId: lockedReg.id,
-        before: lockedReg,
-        after: updated,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        action: 'reject',
-        priorStatusCode: lockedReg.statusCode,
-        nextStatusCode: transition.nextStatusCode,
-        activityId,
-        targetMemberId: lockedReg.memberId,
-        auditMeta,
-        tx,
-      });
+        await this.registrationAuditRecorder.logReview({
+          registrationId: lockedReg.id,
+          before: lockedReg,
+          after: updated,
+          actorUserId: currentUser.id,
+          actorRoleSnap: currentUser.role,
+          action: 'reject',
+          priorStatusCode: lockedReg.statusCode,
+          nextStatusCode: transition.nextStatusCode,
+          activityId,
+          targetMemberId: lockedReg.memberId,
+          auditMeta,
+          tx,
+        });
 
-      await this.notificationProducer.enqueueReview(tx, {
-        registrationId: updated.id,
-        activityId,
-        memberId: updated.memberId,
-        reviewedAt,
-        outcome: 'rejected',
-        reviewNote: dto.reviewNote,
-      });
-      return this.presenter.toResponseDto(updated);
-    });
+        await this.notificationProducer.enqueueReview(tx, {
+          registrationId: updated.id,
+          activityId,
+          memberId: updated.memberId,
+          reviewedAt,
+          outcome: 'rejected',
+          reviewNote: dto.reviewNote,
+        });
+        return this.presenter.toResponseDto(updated);
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+    );
 
     return result;
   }
@@ -478,11 +481,11 @@ export class ActivityRegistrationReviewService {
         invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
       });
       const lockedReg = await this.access.findRegistrationOrThrow(activityId, reg.id, tx);
-      // 参与域生命周期收口⑦:已有 live 考勤记录或签到证据的报名禁取消。
+      // Activity 根锁内已有新版打卡或已入账结果的报名禁取消。
       await this.access.assertNoParticipationEvidence(lockedReg.id, tx);
 
       const cancelledAt = new Date();
-      await this.registrationLifecycle.cancelInTransactionTrusted(tx, {
+      const cancellation = await this.registrationLifecycle.cancelInTransactionTrusted(tx, {
         activityId,
         registrationId: lockedReg.id,
         memberId: lockedReg.memberId,
@@ -514,6 +517,7 @@ export class ActivityRegistrationReviewService {
           ? await this.allocations.promoteAfterCancellationInTransactionTrusted(tx, {
               activityId,
               registrationId: lockedReg.id,
+              releasedIdentityIds: cancellation.cancelledPassIdentityIds,
               actorUser: currentUser,
               promotedAt: cancelledAt,
               auditMeta,

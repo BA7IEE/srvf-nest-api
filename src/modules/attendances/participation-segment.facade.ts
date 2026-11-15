@@ -5,7 +5,7 @@ import type {
   ParticipantServiceSegmentRevision,
   Prisma,
 } from '@prisma/client';
-import { AttendanceAccessService } from './attendance-access.service';
+import { lockActivityForAttendanceWrite } from './activity-attendance-lock';
 
 export const PARTICIPATION_SEGMENT_FACADE_LIMITS = Object.freeze({
   identities: 2000,
@@ -78,8 +78,6 @@ type CurrentSegmentRow = Pick<
  */
 @Injectable()
 export class ParticipationSegmentFacade {
-  constructor(private readonly access: AttendanceAccessService) {}
-
   /**
    * Narrow D3 bridge: consumers that already own their authorization may serialize their later
    * allocation write with the same Activity aggregate lock as attendance writers.  It deliberately
@@ -89,7 +87,7 @@ export class ParticipationSegmentFacade {
     tx: Prisma.TransactionClient,
     activityId: string,
   ): Promise<void> {
-    await this.access.lockActivityForAttendanceWrite(activityId, tx);
+    await lockActivityForAttendanceWrite(activityId, tx);
   }
 
   async readActivityCurrentSegmentsTrusted(

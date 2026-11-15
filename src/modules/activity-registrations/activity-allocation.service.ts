@@ -75,6 +75,7 @@ import type {
 type QualificationModeCode = AllocationModeCode | 'first_come';
 
 const ALLOCATION_ALGORITHM_VERSION = 'allocation-v1';
+const CANCELLATION_SLOT_QUERY_CHUNK = 500;
 
 type LockedActivity = {
   id: string;
@@ -507,6 +508,7 @@ export class ActivityAllocationService {
     input: {
       activityId: string;
       registrationId: string;
+      releasedIdentityIds: readonly string[];
       actorUser: CurrentUserPayload;
       promotedAt: Date;
       auditMeta: AuditMeta;
@@ -521,6 +523,7 @@ export class ActivityAllocationService {
       tx,
       input.activityId,
       input.registrationId,
+      input.releasedIdentityIds,
     );
     const allocationSlots = slots.filter(
       (slot) =>
@@ -1079,8 +1082,27 @@ export class ActivityAllocationService {
     tx: PrismaTx,
     activityId: string,
     registrationId: string,
+    releasedIdentityIds: readonly string[],
   ): Promise<FreedAllocationSlot[]> {
-    const rows = await tx.$queryRaw<FreedAllocationSlot[]>(Prisma.sql`
+    if (!Array.isArray(releasedIdentityIds)) {
+      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+    }
+    const ids = releasedIdentityIds.map((id: unknown) => {
+      if (typeof id !== 'string' || id.length === 0) {
+        throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+      }
+      return id;
+    });
+    const releasedIdSet = new Set(ids);
+    if (releasedIdSet.size !== ids.length) {
+      throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
+    }
+    if (ids.length === 0) return [];
+    ids.sort(compareUtf8);
+    const rows: FreedAllocationSlot[] = [];
+    for (let offset = 0; offset < ids.length; offset += CANCELLATION_SLOT_QUERY_CHUNK) {
+      const batchIds = ids.slice(offset, offset + CANCELLATION_SLOT_QUERY_CHUNK);
+      const batch = await tx.$queryRaw<FreedAllocationSlot[]>(Prisma.sql`
       SELECT
         i."id" AS "participationIdentityId", i."sessionId",
         prior."positionId", prior."allocationBatchId", prior."sourceCode" AS "priorSourceCode",
@@ -1096,15 +1118,21 @@ export class ActivityAllocationService {
           AND prior."revision" = i."currentRevision" - 1
       WHERE i."activityId" = ${activityId}
         AND i."registrationId" = ${registrationId}
+        AND i."id" IN (${Prisma.join(batchIds)})
         AND i."currentStatusCode" = 'cancelled'
         AND current_revision."statusCode" = 'cancelled'
         AND prior."statusCode" = 'pass'
       ORDER BY i."id" ASC
       FOR UPDATE OF i, current_revision, prior
     `);
+      rows.push(...batch);
+    }
     if (
+      rows.length !== releasedIdentityIds.length ||
+      new Set(rows.map((row) => row.participationIdentityId)).size !== releasedIdentityIds.length ||
       rows.some(
         (row) =>
+          !releasedIdSet.has(row.participationIdentityId) ||
           row.currentStatusCode !== 'cancelled' ||
           row.currentRevisionStatusCode !== 'cancelled' ||
           row.currentPositionId !== null ||

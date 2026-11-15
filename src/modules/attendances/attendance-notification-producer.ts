@@ -5,19 +5,18 @@ import { MemberStatus, Prisma, UserStatus } from '@prisma/client';
 import {
   NOTIFICATION_CHANNEL_IN_APP,
   NOTIFICATION_TYPE_ATTENDANCE_RESULT,
-  NOTIFICATION_TYPE_RECRUITMENT,
   OUTBOX_EVENT_TARGETED_NOTIFICATION,
   OUTBOX_PAYLOAD_VERSION,
 } from '../notifications/notification.constants';
 import { NotificationOutboxService } from '../notifications/notification-outbox.service';
 import type { NotificationOutboxEnqueueInput } from '../notifications/notification-outbox.types';
 import type { ContributionResult } from '../team-join/team-join-progress';
-import { computeContributionBatch } from '../team-join/team-join-progress';
-import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import {
   APP_STATUS_JOINING as TEAM_JOIN_APP_STATUS_JOINING,
-  CONTRIBUTION_THRESHOLD,
-} from '../team-join/team-join.constants';
+  computeContributionBatch,
+  contributionMilestoneIntent,
+} from '../team-join/team-join-progress';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -140,11 +139,13 @@ export class AttendanceNotificationProducer {
       const application = latestByMember.get(memberId);
       if (!application) continue;
       const year = application.cycle.year;
+      const before = pointsByYear.get(year)?.get(memberId);
+      if (!before) throw new Error('Contribution milestone ledger snapshot is incomplete');
       snapshots.push({
         applicationId: application.id,
         memberId,
         cycleYear: year,
-        beforePoints: pointsByYear.get(year)?.get(memberId)?.points ?? new Prisma.Decimal(0),
+        beforePoints: before.points,
       });
     }
     return snapshots;
@@ -184,7 +185,6 @@ export class AttendanceNotificationProducer {
     );
 
     if (input.contributionThresholdSnapshots.length === 0) return;
-    const threshold = CONTRIBUTION_THRESHOLD.toString();
     // after 快照同样批量:同一 cycleYear 一次 SQL。判据(before < 5 且 after 满足)逐字不变。
     const afterByYear = await computeContributionByCycleYear(
       tx,
@@ -194,24 +194,15 @@ export class AttendanceNotificationProducer {
       })),
       this.activityWorkflowGate,
     );
-    const milestones = input.contributionThresholdSnapshots.filter((snapshot) => {
-      if (snapshot.beforePoints.gte(CONTRIBUTION_THRESHOLD)) return false;
-      return afterByYear.get(snapshot.cycleYear)?.get(snapshot.memberId)?.satisfied === true;
+    const milestones = input.contributionThresholdSnapshots.flatMap((snapshot) => {
+      const after = afterByYear.get(snapshot.cycleYear)?.get(snapshot.memberId);
+      // A batch reader must return every requested member, including legitimate zero totals.
+      // Treat a missing result as an error rather than silently omitting a milestone.
+      if (!after) throw new Error('Contribution milestone ledger snapshot is incomplete');
+      const intent = contributionMilestoneIntent({ ...snapshot, afterPoints: after.points });
+      return intent ? [intent] : [];
     });
-    await this.outbox.enqueueMany(
-      milestones.map((snapshot) =>
-        buildTargetedIntent({
-          eventKey: `team-join-contribution-met:${snapshot.applicationId}:${threshold}`,
-          aggregateType: 'team_join_application',
-          aggregateId: snapshot.applicationId,
-          memberId: snapshot.memberId,
-          notificationTypeCode: NOTIFICATION_TYPE_RECRUITMENT,
-          title: '入队贡献值已达标',
-          body: `您的贡献值已达到入队要求（${threshold} 分）。管理员核对其他门槛后将安排综合评估，请留意后续通知。`,
-        }),
-      ),
-      tx,
-    );
+    await this.outbox.enqueueMany(milestones, tx);
   }
 
   private async enqueueTargeted(tx: PrismaTx, input: TargetedIntentInput): Promise<void> {

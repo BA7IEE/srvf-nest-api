@@ -1,5 +1,6 @@
 import { Prisma, Role, UserStatus } from '@prisma/client';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
+import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AppConfig } from '../../config/app.config';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import type { PrismaService } from '../../database/prisma.service';
@@ -80,16 +81,18 @@ describe('v1.1 feedback rate source', () => {
   });
 
   it.each([
-    { enabled: false, readonlyMaintenance: false, expectedRate: 1 },
-    { enabled: false, readonlyMaintenance: true, expectedRate: 1 },
-    { enabled: true, readonlyMaintenance: false, expectedRate: 0.5 },
-    { enabled: true, readonlyMaintenance: true, expectedRate: 0.5 },
+    { enabled: false, readonlyMaintenance: false },
+    { enabled: false, readonlyMaintenance: true },
+    { enabled: true, readonlyMaintenance: false },
+    { enabled: true, readonlyMaintenance: true },
   ])(
-    'chooses the correct denominator when enabled=$enabled and readonly=$readonlyMaintenance',
-    async ({ enabled, readonlyMaintenance, expectedRate }) => {
+    'uses the committed denominator or rejects when enabled=$enabled readonly=$readonlyMaintenance',
+    async ({ enabled, readonlyMaintenance }) => {
       const aggregate = jest.fn().mockResolvedValue({ _count: { _all: 1 }, _avg: { rating: 5 } });
       const groupBy = jest.fn().mockResolvedValue([{ rating: 5, _count: { _all: 1 } }]);
-      const legacyCount = jest.fn().mockResolvedValue(1);
+      const legacyCount = jest
+        .fn()
+        .mockRejectedValue(new Error('legacy attendance must not be read'));
       const queryRaw = jest.fn().mockResolvedValue([{ total: 2 }]);
       const tx = {
         activitySettlementClosureRevision: {
@@ -118,12 +121,17 @@ describe('v1.1 feedback rate source', () => {
       const sourceSpy = jest.spyOn(gate, 'participationReadSource');
       const service = new ActivityFeedbacksQueryService(prisma, authz, {} as RbacService, gate);
 
-      // Identical feedback numerator but deliberately different eligible populations.
-      await expect(service.summary('activity', user)).resolves.toMatchObject({
-        feedbackRate: expectedRate,
-      });
+      if (enabled) {
+        await expect(service.summary('activity', user)).resolves.toMatchObject({
+          feedbackRate: 0.5,
+        });
+      } else {
+        await expect(service.summary('activity', user)).rejects.toMatchObject({
+          biz: BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
+        });
+      }
       expect(sourceSpy).toHaveBeenCalledTimes(1);
-      expect(legacyCount).toHaveBeenCalledTimes(enabled ? 0 : 1);
+      expect(legacyCount).not.toHaveBeenCalled();
       expect(transaction).toHaveBeenCalledTimes(enabled ? 1 : 0);
       expect(queryRaw).toHaveBeenCalledTimes(enabled ? 1 : 0);
     },

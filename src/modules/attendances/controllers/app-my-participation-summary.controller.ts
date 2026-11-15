@@ -28,10 +28,14 @@ export class AppMyParticipationSummaryController {
   })
   @ApiOperation({
     summary:
-      '我的参与累计(时长/活动次数/记录数；生涯贡献：闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff；恒本人范围) [auth]',
+      '我的参与累计(时长/活动次数/记录数；生涯贡献：只取 committed 账本 credited 净额；不叠加、不再封顶；闸关返回 20153/503，无 cutoff；恒本人范围) [auth]',
   })
   @ApiWrappedOkResponse(AppMyParticipationSummaryDto)
-  @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
+  @ApiBizErrorResponse(
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
+  )
   participationSummary(
     @CurrentUser() currentUser: CurrentUserPayload,
   ): Promise<AppMyParticipationSummaryDto> {

@@ -711,14 +711,14 @@ export class AdminMemberAttendanceRecordDto {
 }
 
 // 某队员贡献值生涯累计汇总(队员 360 Tier3):实时算不落库,复用 team-join computeCappedContribution
-// 单闸核(off: approved 考勤北京日封顶 3；on: committed credited；生涯无 cutoff，不叠加)。
+// 只读 committed credited；闸关返回 20153，生涯无 cutoff，不叠加。
 export class MemberContributionSummaryDto {
   @ApiProperty({ description: '队员 Member.id' })
   memberId!: string;
 
   @ApiProperty({
     description:
-      '生涯累计贡献值（Decimal string；闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加）',
+      '生涯累计贡献值（Decimal string；只取 committed 账本 credited 净额；不叠加、不再封顶；闸关返回 20153/503）',
     type: 'string',
   })
   contributionPoints!: string;

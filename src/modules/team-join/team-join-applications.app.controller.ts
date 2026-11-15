@@ -63,6 +63,7 @@ export class TeamJoinApplicationsAppController {
     BizCode.TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE,
     BizCode.ORGANIZATION_NOT_FOUND,
     BizCode.ORGANIZATION_INACTIVE,
+    BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
   )
   submit(
     @Body() dto: CreateAppTeamJoinApplicationDto,
@@ -87,6 +88,7 @@ export class TeamJoinApplicationsAppController {
     BizCode.UNAUTHORIZED,
     BizCode.FORBIDDEN,
     BizCode.TEAM_JOIN_APPLICATION_NOT_FOUND,
+    BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
   )
   current(@CurrentUser() currentUser: CurrentUserPayload): Promise<AppTeamJoinApplicationDto> {
     return this.service.getCurrent(currentUser);
@@ -113,6 +115,7 @@ export class TeamJoinApplicationsAppController {
     BizCode.TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE,
     BizCode.ORGANIZATION_NOT_FOUND,
     BizCode.ORGANIZATION_INACTIVE,
+    BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
   )
   updateTargets(
     @Param('id') id: string,
