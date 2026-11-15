@@ -180,6 +180,52 @@ async function evaluate(
 }
 
 describe('ActivityQualificationEvaluatorService', () => {
+  it('does not acquire member fact locks or append snapshots when no rules apply', async () => {
+    const h = makeHarness({ ruleSets: [] });
+    h.memberFacts.readForQualification.mockRejectedValue(new Error('permission denied'));
+    const result = await evaluate(h.service, h.tx);
+    expect(result).toEqual({
+      resultCode: 'pass',
+      activity: { resultCode: 'pass', unmetRules: [] },
+      sessions: new Map(),
+      positions: new Map(),
+      snapshotCandidates: [],
+    });
+    await h.service.appendSnapshots({
+      evaluation: result,
+      phase: 'display',
+      registrationRevisionId: null,
+      tx: h.tx as never,
+    });
+    expect(h.memberFacts.readForQualification).not.toHaveBeenCalled();
+    expect(h.certificateFacts.readCoveringFacts).not.toHaveBeenCalled();
+    expect(h.insuranceRequirement.isMemberInsuredForActivity).not.toHaveBeenCalled();
+    expect(h.tx.qualificationEvaluationSnapshot.create).not.toHaveBeenCalled();
+  });
+
+  it('still validates targets without rules and preserves per-target pass projections', async () => {
+    const h = makeHarness({ ruleSets: [] });
+    await expect(
+      evaluate(h.service, h.tx, [{ sessionId: 'missing', positionId: null }]),
+    ).rejects.toBeInstanceOf(BizException);
+    h.tx.activitySession.findMany.mockResolvedValue([{ id: 's1' }]);
+    h.tx.activitySessionPosition.findMany.mockResolvedValue([
+      { id: 'p1', sessionId: 's1', qualificationRuleSetId: null },
+    ]);
+    const result = await evaluate(h.service, h.tx, [{ sessionId: 's1', positionId: 'p1' }]);
+    expect(result.sessions.get('s1')).toEqual({ resultCode: 'pass', unmetRules: [] });
+    expect(result.positions.get('p1')).toEqual({ resultCode: 'pass', unmetRules: [] });
+    expect(h.memberFacts.readForQualification).not.toHaveBeenCalled();
+  });
+
+  it('does not bypass member locks or configuration validation when rules exist', async () => {
+    const h = makeHarness({ ruleSets: [ruleSet('active')] });
+    h.memberFacts.readForQualification.mockRejectedValue(new Error('permission denied'));
+    await expect(evaluate(h.service, h.tx)).rejects.toThrow('permission denied');
+    const invalid = makeHarness({ ruleSets: [ruleSet('empty', {}, [])] });
+    await expect(evaluate(invalid.service, invalid.tx)).rejects.toBeInstanceOf(BizException);
+  });
+
   it('evaluates all seven frozen D83 rule types through their owner fact ports', async () => {
     const harness = makeHarness({
       ruleSets: [
