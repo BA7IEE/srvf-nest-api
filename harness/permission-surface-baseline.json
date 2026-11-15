@@ -428,59 +428,59 @@
       "description": "sha256:b02ab20dd2bb4b258507e6e607280b431c0104590a1653aa749dc946db7d45d9"
     },
     "attendance.approve.sheet": {
-      "endpoints": 1,
-      "surface": "sha256:34ecea1616a817eaa4c3b4a3a03fd2f7bd940e1ebef22f00f334a6c4191b9066",
-      "description": "sha256:d0df5c209b599a49fe888addde775de208aa95d83ac61cdda0d4737bee51cdb1"
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:8ad919f76e57b5f4e347219b5f12815f073a3d1e231ac0e3ac4d5010dbb209b6"
     },
     "attendance.create.sheet": {
-      "endpoints": 1,
-      "surface": "sha256:fb896d469ae9a05379acc061ec24d372f516c697468989ae52b67704c304ce2a",
-      "description": "sha256:74d83a4a7fc93aaf77ded528fe2bdbd10b7e2a4529c03508762cc61f93124dc5"
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:a42ea889c8dfc15e230e214b3ae84d7bfb2d62c98dac7ac1ca52686bd5d8d636"
     },
     "attendance.delete.sheet": {
-      "endpoints": 1,
-      "surface": "sha256:401cf301b75d58032e622a62ecb539114bd0286f33bd67427618d173a81ba5ed",
-      "description": "sha256:b2db7dd23017e158e28df224a5d78c68adc3cd4b44497d2b1299a92f10bdbe8d"
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:2c1317608df161deba670aabebfa74f3c1cddea13121dde66189a96885ad67f6"
     },
     "attendance.final-approve.sheet": {
-      "endpoints": 1,
-      "surface": "sha256:1798a0bb989228ac21418f145847a8083fd1d3cdfb3dba1d4d9141faffeed4de",
-      "description": "sha256:7c2ddd76e53817a539bca742579953c969fc121722c2bfbabd2d96f64a2e11cd"
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:361b8ad8e27ecb3e3e0cffb57f2297e28db9e6d7d35314b9dde1b45e42c220cf"
     },
     "attendance.final-reject.sheet": {
-      "endpoints": 1,
-      "surface": "sha256:141d2f68d117da3a0197a5dbf3e4a303a27716419d8c692912836f7972487b02",
-      "description": "sha256:8132c1ef5d73c67ad23b23a62e5d814abccc6ae57eaed6745ae3d78863a2195f"
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:0a16a8317d8fd4018cce185f38dda42824b78c4a2c07a36622ab25f63f2ef8e6"
     },
     "attendance.final-return.sheet": {
-      "endpoints": 1,
-      "surface": "sha256:eb434a50680ca6c7ec8e75000e09c53f478a56e249730133b069c7a8805fd405",
-      "description": "sha256:4a5c0681c1c7d2cefdeffcd1091448a8139b94f0d0d86260ba1bfadfbc5c2e18"
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:01408094d33a4555d24ee04377841d791875296b7c3490397afa05d9f8ac86ce"
     },
     "attendance.read.sheet": {
-      "endpoints": 20,
-      "surface": "sha256:e0261ef9b58eacade1f8e920cc9dc27280c0295830ac900f431be83d596fbf41",
-      "description": "sha256:efdfcdb3d7291a58a8bbdb0cf1c537ee6734e9fab0aa9558b3a916c1f693cbf8"
+      "endpoints": 13,
+      "surface": "sha256:bcbfc0ca287cb61578ccf96ceec20fc13b2a847c56ad2c219f97c6f23da1e674",
+      "description": "sha256:6c71ed22e10312f8ff3b545cb63468dd7e91d706188ff7af72b03f9713c2312d"
     },
     "attendance.reject.sheet": {
-      "endpoints": 1,
-      "surface": "sha256:6f45c43a4322dbf98e4aa02f206e5d9ecaba337b3a5396322a4bc7ed89e0a8b3",
-      "description": "sha256:11bd42c2162b732dd8e2fd0a3fe314215f06dbeb3c5120b1abbb6f597af64d52"
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:76a0bdb924e47122d23fcc789dd8f25f01063815f59ddd0c9afaeb694ca02599"
     },
     "attendance.reopen.sheet": {
-      "endpoints": 1,
-      "surface": "sha256:79b2ad0486ba824b04f726ba4106e3c893b26b5e9eda79984c05ce0f01448d0d",
-      "description": "sha256:bddb370bfee5c8fc808d802a60f590319889d77bdca15d7c4837829d0a70d2dd"
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:7a1f7fd2840d46bf5894fd934c4af1829bb1bab73f603e40b09ed2de2d0030c5"
     },
     "attendance.return.sheet": {
-      "endpoints": 1,
-      "surface": "sha256:33cce42929dc51a6a664ec65d24ba37bdce2c5f9e5c78739ed4129c110394dfe",
-      "description": "sha256:55b910a3682a1ff162d035539cc0796d6833af908e2f57b14954b643b55d916c"
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:6faec7549ab9cc89ea5a3252d7628bf17092819fbe90ca0e406cc675246cfb6e"
     },
     "attendance.update.sheet": {
-      "endpoints": 2,
-      "surface": "sha256:b21713b2043274ed14833c665ce0236fe8e6e4482736602fa72b1d6c80353c0f",
-      "description": "sha256:8a34850047092682cf30ffb95deee78c2f011151122007314edc99ff1f92b193"
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:9285527e52bd0b5ba117f71daa19306e192e0dcdbd74a77f8896bf7a8ed23f9c"
     },
     "audit-log.read.entry": {
       "endpoints": 2,

@@ -188,7 +188,7 @@ describe('活动 v1.1 开闸态 —— 参与读面取自同一真相源(第六�
       },
       select: { id: true },
     });
-    // statusCode 取 `pass` —— reconciliation 的 registeredParticipants 只认这个状态。
+    // 报名来源由不可变参与 revision 证明，不能由 pass 表头猜测。
     const registration = await prisma.activityRegistration.create({
       data: { activityId, memberId, statusCode: 'pass' },
       select: { id: true },
@@ -199,10 +199,21 @@ describe('活动 v1.1 开闸态 —— 参与读面取自同一真相源(第六�
         sessionId: session.id,
         registrationId: registration.id,
         memberId,
+        currentRevision: 1,
         currentStatusCode: 'pass',
         populationIncluded: true,
       },
       select: { id: true },
+    });
+    await prisma.activityParticipationRevision.create({
+      data: {
+        identityId: identity.id,
+        revision: 1,
+        statusCode: 'pass',
+        sourceCode: 'self',
+        effectiveAt: ACTIVITY_START,
+        createdByUserId: adminUserId,
+      },
     });
     const revision = await prisma.participantSettlementResultRevision.create({
       data: {

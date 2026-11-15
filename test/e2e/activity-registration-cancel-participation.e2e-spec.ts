@@ -1,11 +1,20 @@
 import type { INestApplication } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma, Role, UserStatus } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import type { JwtConfig } from '../../src/config/jwt.config';
 import { PrismaService } from '../../src/database/prisma.service';
 import { ActivityRegistrationAuditRecorder } from '../../src/modules/activity-registrations/activity-registration-audit-recorder';
 import { ActivityRegistrationsService } from '../../src/modules/activity-registrations/activity-registrations.service';
-import { AppActivityCheckInsService } from '../../src/modules/attendances/app-activity-check-ins.service';
+import { RegistrationCommandService } from '../../src/modules/activity-registrations/registration-command.service';
+import { AttendancePunchCommandService } from '../../src/modules/attendances/attendance-punch-command.service';
+import { AttendancePunchAccessService } from '../../src/modules/attendances/attendance-punch-access.service';
+import {
+  digestAttendanceQrToken,
+  signAttendanceQrToken,
+} from '../../src/modules/attendances/attendance-qr-token';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
@@ -28,14 +37,7 @@ interface BlockedBackend extends BackendIdentity {
   waitEventType: string | null;
 }
 
-interface CheckInLockHook {
-  lockAndLoadWriteContext: (
-    tx: Prisma.TransactionClient,
-    activityId: string,
-    memberId: string,
-    action: string,
-  ) => Promise<unknown>;
-}
+type SelfPunchInput = Parameters<AttendancePunchCommandService['selfPunch']>[0];
 
 function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void;
@@ -140,14 +142,16 @@ describe('activity registration cancel participation evidence', () => {
   let prismaB: PrismaService;
   let registrationsA: ActivityRegistrationsService;
   let registrationsB: ActivityRegistrationsService;
-  let checkInsA: AppActivityCheckInsService;
-  let checkInsB: AppActivityCheckInsService;
+  let punchesA: AttendancePunchCommandService;
+  let punchesB: AttendancePunchCommandService;
   let admin: CurrentUserPayload;
   let user: CurrentUserPayload;
   let organizationId: string;
   let sequence = 0;
+  const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
 
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     appA = await createTestApp();
     await resetDb(appA);
     appB = await createTestApp();
@@ -155,8 +159,8 @@ describe('activity registration cancel participation evidence', () => {
     prismaB = appB.get(PrismaService);
     registrationsA = appA.get(ActivityRegistrationsService);
     registrationsB = appB.get(ActivityRegistrationsService);
-    checkInsA = appA.get(AppActivityCheckInsService);
-    checkInsB = appB.get(AppActivityCheckInsService);
+    punchesA = appA.get(AttendancePunchCommandService);
+    punchesB = appB.get(AttendancePunchCommandService);
 
     const [backendA, backendB] = await Promise.all([
       readBackendIdentity(prismaA),
@@ -186,7 +190,12 @@ describe('activity registration cancel participation evidence', () => {
   });
 
   afterAll(async () => {
-    await Promise.all([appA.close(), appB.close()]);
+    try {
+      await Promise.all([appA.close(), appB.close()]);
+    } finally {
+      if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
+    }
   });
 
   async function createMemberUser(label: string): Promise<CurrentUserPayload> {
@@ -212,10 +221,14 @@ describe('activity registration cancel participation evidence', () => {
     };
   }
 
-  async function seedPassRegistration(label: string): Promise<{
+  async function seedPassRegistration(
+    label: string,
+    legacyOnly = false,
+  ): Promise<{
     activityId: string;
     registrationId: string;
     memberId: string;
+    punchInput: SelfPunchInput | null;
   }> {
     user = await createMemberUser(label);
     const now = Date.now();
@@ -231,9 +244,107 @@ describe('activity registration cancel participation evidence', () => {
         locationLatitude: '22.0000000',
         statusCode: 'published',
         publishedAt: new Date(now - 60_000),
+        isPublicRegistration: true,
+        allocationModeCode: 'first_come',
+        capacity: 1,
+        registrationDeadline: new Date(now + 60 * 60_000),
       },
       select: { id: true },
     });
+    if (!legacyOnly) {
+      const session = await prismaA.activitySession.create({
+        data: {
+          activityId: activity.id,
+          code: `cancel-session-${sequence}`,
+          name: 'Cancellation race session',
+          startAt: new Date(now - 60 * 60_000),
+          endAt: new Date(now + 60 * 60_000),
+          locationText: 'Cancellation race',
+          capacity: 1,
+          checkInOpenAt: new Date(now - 60 * 60_000),
+          checkInCloseAt: new Date(now + 60 * 60_000),
+          checkOutOpenAt: new Date(now - 60 * 60_000),
+          checkOutCloseAt: new Date(now + 60 * 60_000),
+          locationRequired: false,
+          locationPolicySourceCode: 'session',
+          statusCode: 'scheduled',
+        },
+      });
+      await prismaA.activityCapacityBucket.createMany({
+        data: [
+          {
+            activityId: activity.id,
+            scopeTypeCode: 'activity_person',
+            scopeId: activity.id,
+            capacity: 1,
+          },
+          {
+            activityId: activity.id,
+            scopeTypeCode: 'session_participation',
+            scopeId: session.id,
+            capacity: 1,
+          },
+        ],
+      });
+      await prismaA.activityEvidenceState.create({ data: { activityId: activity.id } });
+      const registered = await appA.get(RegistrationCommandService).submit(
+        activity.id,
+        {
+          operationKey: `cancel-registration-${sequence}`,
+          formVersion: null,
+          answers: [],
+          preferences: [{ sessionId: session.id, positionIds: [] }],
+        },
+        user,
+        AUDIT_META,
+      );
+      const identity = await prismaA.activityParticipationIdentity.findFirstOrThrow({
+        where: { registrationId: registered.registrationId },
+      });
+      expect(identity.currentStatusCode).toBe('pass');
+      expect(identity.populationIncluded).toBe(true);
+      // The race exercises real selfPunch. Only the pre-existing signed QR is a fixture.
+      const credential = {
+        credentialId: randomUUID(),
+        activityId: activity.id,
+        sessionId: session.id,
+        actionCode: 'check_in' as const,
+        credentialVersion: 1,
+        validFrom: new Date(now - 60_000),
+        validUntil: new Date(now + 60 * 60_000),
+      };
+      const config = appA.get(ConfigService).getOrThrow<JwtConfig>('jwt');
+      const qrToken = signAttendanceQrToken(credential, config.secret);
+      await prismaA.attendanceQrCredential.create({
+        data: {
+          id: credential.credentialId,
+          activityId: activity.id,
+          sessionId: session.id,
+          actionCode: credential.actionCode,
+          credentialVersion: credential.credentialVersion,
+          statusCode: 'active',
+          tokenDigest: digestAttendanceQrToken(qrToken),
+          signingKeyVersion: 0,
+          validFrom: credential.validFrom,
+          validUntil: credential.validUntil,
+          issuedByUserId: admin.id,
+          issuedAt: new Date(now),
+        },
+      });
+      return {
+        activityId: activity.id,
+        registrationId: registered.registrationId,
+        memberId: user.memberId!,
+        punchInput: {
+          activityId: activity.id,
+          sessionId: session.id,
+          actionCode: 'check_in',
+          dto: { qrToken, eventKey: `cancel-punch-${sequence}` },
+          currentUser: user,
+          auditMeta: AUDIT_META,
+        },
+      };
+    }
     const registration = await prismaA.activityRegistration.create({
       data: {
         activityId: activity.id,
@@ -248,6 +359,7 @@ describe('activity registration cancel participation evidence', () => {
       activityId: activity.id,
       registrationId: registration.id,
       memberId: user.memberId!,
+      punchInput: null,
     };
   }
 
@@ -262,14 +374,14 @@ describe('activity registration cancel participation evidence', () => {
       },
       select: { id: true },
     });
-    const hooks = checkInsA as unknown as CheckInLockHook;
-    const originalLock = hooks.lockAndLoadWriteContext.bind(checkInsA);
+    const access = appA.get(AttendancePunchAccessService);
+    const originalLock = access.lockActivity.bind(access);
     const reached = deferred<BackendIdentity>();
     const release = deferred();
     const lockSpy = jest
-      .spyOn(hooks, 'lockAndLoadWriteContext')
-      .mockImplementation(async (tx, activityId, memberId, action) => {
-        const context = await originalLock(tx, activityId, memberId, action);
+      .spyOn(access, 'lockActivity')
+      .mockImplementation(async (tx, activityId, allowedStatuses) => {
+        const context = await originalLock(tx, activityId, allowedStatuses);
         if (activityId === fixture.activityId) {
           reached.resolve(await readBackendIdentity(tx));
           await release.promise;
@@ -277,14 +389,11 @@ describe('activity registration cancel participation evidence', () => {
         return context;
       });
 
-    let checkInPromise: ReturnType<AppActivityCheckInsService['checkIn']> | undefined;
+    let checkInPromise: ReturnType<AttendancePunchCommandService['selfPunch']> | undefined;
     let cancelPromise: ReturnType<ActivityRegistrationsService['cancelAdmin']> | undefined;
     try {
-      checkInPromise = checkInsA.checkIn(
-        fixture.activityId,
-        { longitude: 114, latitude: 22, accuracy: 5 },
-        user,
-      );
+      if (!fixture.punchInput) throw new Error('native punch fixture missing');
+      checkInPromise = punchesA.selfPunch(fixture.punchInput);
       const blocker = await withTimeout(reached.promise, 'check-in transaction barrier');
       await waitForPausedTransaction(prismaB, blocker.pid);
 
@@ -304,8 +413,8 @@ describe('activity registration cancel participation evidence', () => {
       });
 
       expect(
-        await prismaA.activityCheckIn.count({
-          where: { registrationId: fixture.registrationId, deletedAt: null },
+        await prismaA.attendancePunchEvent.count({
+          where: { activityId: fixture.activityId, memberId: fixture.memberId },
         }),
       ).toBe(1);
       expect(
@@ -341,8 +450,8 @@ describe('activity registration cancel participation evidence', () => {
     }
   });
 
-  it('soft-deleted ActivityCheckIn:不阻断 pass 取消，正常递补 waitlisted', async () => {
-    const fixture = await seedPassRegistration('soft-deleted-check-in');
+  it.each([false, true])('旧 GPS/考勤不阻断取消（软删=%s）', async (softDeleted) => {
+    const fixture = await seedPassRegistration('legacy-evidence', true);
     const waitlistedUser = await createMemberUser('soft-deleted-waitlisted');
     const waitlisted = await prismaA.activityRegistration.create({
       data: {
@@ -352,14 +461,30 @@ describe('activity registration cancel participation evidence', () => {
       },
       select: { id: true },
     });
-    const checkIn = await checkInsA.checkIn(
-      fixture.activityId,
-      { longitude: 114, latitude: 22, accuracy: 5 },
-      user,
-    );
-    await prismaA.activityCheckIn.update({
-      where: { id: checkIn.id },
-      data: { deletedAt: new Date() },
+    await prismaA.activityCheckIn.create({
+      data: {
+        activityId: fixture.activityId,
+        registrationId: fixture.registrationId,
+        memberId: fixture.memberId,
+        checkInAt: new Date(),
+        geoVerified: false,
+        deletedAt: softDeleted ? new Date() : null,
+      },
+    });
+    const sheet = await prismaA.attendanceSheet.create({
+      data: { activityId: fixture.activityId, submitterUserId: admin.id, statusCode: 'approved' },
+    });
+    const record = await prismaA.attendanceRecord.create({
+      data: {
+        sheetId: sheet.id,
+        memberId: fixture.memberId,
+        roleCode: 'member',
+        checkInAt: new Date(Date.now() - 60 * 60_000),
+        checkOutAt: new Date(),
+        serviceHours: '1',
+        contributionPoints: '3',
+        attendanceStatusCode: 'present',
+      },
     });
 
     await expect(
@@ -379,12 +504,13 @@ describe('activity registration cancel participation evidence', () => {
       await prismaA.activityCheckIn.count({
         where: { registrationId: fixture.registrationId, deletedAt: null },
       }),
-    ).toBe(0);
+    ).toBe(softDeleted ? 0 : 1);
     expect(
       await prismaA.activityCheckIn.count({
         where: { registrationId: fixture.registrationId },
       }),
     ).toBe(1);
+    expect(await prismaA.attendanceRecord.findUnique({ where: { id: record.id } })).toEqual(record);
     expect(
       await prismaA.activityRegistration.findUniqueOrThrow({
         where: { id: fixture.registrationId },
@@ -399,7 +525,7 @@ describe('activity registration cancel participation evidence', () => {
     ).toEqual({ statusCode: 'pending' });
   });
 
-  it('cancel-first:check-in 真实等待后以 22076 失败，零 ActivityCheckIn', async () => {
+  it('cancel-first:新版打卡真实等待后以 22076 失败，零 PunchEvent', async () => {
     const fixture = await seedPassRegistration('cancel-first');
     const recorder = appA.get(ActivityRegistrationAuditRecorder);
     const originalLogCancel = recorder.logCancel.bind(recorder);
@@ -414,7 +540,7 @@ describe('activity registration cancel participation evidence', () => {
     });
 
     let cancelPromise: ReturnType<ActivityRegistrationsService['cancelAdmin']> | undefined;
-    let checkInPromise: ReturnType<AppActivityCheckInsService['checkIn']> | undefined;
+    let checkInPromise: ReturnType<AttendancePunchCommandService['selfPunch']> | undefined;
     try {
       cancelPromise = registrationsA.cancelAdmin(
         fixture.activityId,
@@ -426,12 +552,9 @@ describe('activity registration cancel participation evidence', () => {
       const blocker = await withTimeout(reached.promise, 'cancel transaction barrier');
       await waitForPausedTransaction(prismaB, blocker.pid);
 
-      checkInPromise = checkInsB.checkIn(
-        fixture.activityId,
-        { longitude: 114, latitude: 22, accuracy: 5 },
-        user,
-      );
-      await waitForBlockedBackend(prismaA, blocker, checkInPromise, '%FROM "Activity"%FOR SHARE%');
+      if (!fixture.punchInput) throw new Error('native punch fixture missing');
+      checkInPromise = punchesB.selfPunch(fixture.punchInput);
+      await waitForBlockedBackend(prismaA, blocker, checkInPromise, '%FROM "Activity"%FOR UPDATE%');
       release.resolve();
 
       await expect(withTimeout(cancelPromise, 'cancel completion')).resolves.toMatchObject({
@@ -442,8 +565,8 @@ describe('activity registration cancel participation evidence', () => {
       });
       expect(BizCode.ATTENDANCE_REGISTRATION_INVALID.code).toBe(22076);
       expect(
-        await prismaA.activityCheckIn.count({
-          where: { registrationId: fixture.registrationId, deletedAt: null },
+        await prismaA.attendancePunchEvent.count({
+          where: { activityId: fixture.activityId, memberId: fixture.memberId },
         }),
       ).toBe(0);
     } finally {
