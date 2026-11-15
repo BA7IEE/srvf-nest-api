@@ -2349,7 +2349,11 @@ describe('OpenAPI 契约快照', () => {
     for (const property of Object.values(instance.properties ?? {})) {
       expect(property.nullable).toBe(true);
     }
-    expect(Object.keys(submit.properties ?? {}).sort()).toEqual(['confirmation', 'operationKey']);
+    expect(Object.keys(submit.properties ?? {}).sort()).toEqual([
+      'confirmation',
+      'expectedDraftHash',
+      'operationKey',
+    ]);
     expect(submit.required?.slice().sort()).toEqual(['confirmation', 'operationKey']);
     const operation = doc.paths['/api/admin/v1/activities/{id}/simple-draft']?.put;
     expect(operation?.requestBody?.content?.['application/json']?.schema?.$ref).toBe(
