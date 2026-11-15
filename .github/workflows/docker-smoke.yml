@@ -27,6 +27,7 @@ on:
       - 'src/storage-consistency-worker.ts'
       - 'src/modules/storage/**'
       - 'src/modules/attachments/storage-consistency*'
+      - '!**/*.md'
 
 jobs:
   docker-smoke:
