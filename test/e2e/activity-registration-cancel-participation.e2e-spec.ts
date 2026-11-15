@@ -374,6 +374,16 @@ describe('activity registration cancel participation evidence', () => {
       },
       select: { id: true },
     });
+    // 真实先到先得报名已经产生审核审计；失败的取消不能再追加任何审核记录。
+    const reviewAuditQuery = {
+      where: {
+        event: 'registration.review',
+        resourceId: { in: [fixture.registrationId, waitlisted.id] },
+      },
+      select: { id: true },
+      orderBy: { id: 'asc' as const },
+    };
+    const reviewAuditBefore = await prismaA.auditLog.findMany(reviewAuditQuery);
     const access = appA.get(AttendancePunchAccessService);
     const originalLock = access.lockActivity.bind(access);
     const reached = deferred<BackendIdentity>();
@@ -429,14 +439,7 @@ describe('activity registration cancel participation evidence', () => {
           select: { statusCode: true },
         }),
       ).toEqual({ statusCode: 'waitlisted' });
-      expect(
-        await prismaA.auditLog.count({
-          where: {
-            event: 'registration.review',
-            resourceId: { in: [fixture.registrationId, waitlisted.id] },
-          },
-        }),
-      ).toBe(0);
+      expect(await prismaA.auditLog.findMany(reviewAuditQuery)).toEqual(reviewAuditBefore);
     } finally {
       release.resolve();
       try {

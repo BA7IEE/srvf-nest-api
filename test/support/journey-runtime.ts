@@ -92,8 +92,30 @@ async function seedJourneyReferenceData(prisma: PrismaService): Promise<void> {
   ]);
 }
 
-export async function createJourneyRuntime(): Promise<JourneyRuntime> {
-  const app = await createTestApp();
+export async function createJourneyRuntime(
+  options: { nativeActivities?: boolean } = {},
+): Promise<JourneyRuntime> {
+  const activityFlags = {
+    ACTIVITY_V11_WORKFLOW_ENABLED: 'true',
+    ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED: 'true',
+    ACTIVITY_OS_CONTROL_PLANE_MODE: 'active',
+  };
+  const previous = new Map(Object.keys(activityFlags).map((key) => [key, process.env[key]]));
+  const restoreActivityFlags = () => {
+    if (!options.nativeActivities) return;
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  };
+  if (options.nativeActivities) Object.assign(process.env, activityFlags);
+  let app: INestApplication;
+  try {
+    app = await createTestApp();
+  } catch (error) {
+    restoreActivityFlags();
+    throw error;
+  }
   const state: JourneyRuntimeState = {
     prisma: app.get(PrismaService),
     adminUserId: '',
@@ -117,7 +139,11 @@ export async function createJourneyRuntime(): Promise<JourneyRuntime> {
     },
     async close(): Promise<void> {
       states.delete(runtime);
-      await app.close();
+      try {
+        await app.close();
+      } finally {
+        restoreActivityFlags();
+      }
     },
   };
   states.set(runtime, state);

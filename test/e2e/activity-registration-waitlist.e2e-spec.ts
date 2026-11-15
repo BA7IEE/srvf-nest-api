@@ -195,8 +195,6 @@ describe('activity registration waitlist', () => {
   let activityPositions: ActivityPositionsService;
   let appActivities: AppActivitiesService;
   let dashboard: MetaService;
-  let appCheckIns: AppActivityCheckInsService;
-  let attendancesB: AttendancesService;
   let organizationId: string;
   let admin: CurrentUserPayload;
   let sequence = 0;
@@ -215,8 +213,6 @@ describe('activity registration waitlist', () => {
     activityPositions = app.get(ActivityPositionsService);
     appActivities = app.get(AppActivitiesService);
     dashboard = app.get(MetaService);
-    appCheckIns = app.get(AppActivityCheckInsService);
-    attendancesB = appB.get(AttendancesService);
 
     const adminUser = await createTestUser(app, {
       username: 'waitlist-super-admin',
@@ -1568,7 +1564,7 @@ describe('activity registration waitlist', () => {
     let cleanupFailure: unknown;
     try {
       await withTimeout(rootReached.promise, 'attendance root blocker', BLOCKER_TIMEOUT_MS);
-      submitPromise = attendancesB.submit(
+      submitPromise = appB.get(AttendancesService).submit(
         activityId,
         {
           records: [
@@ -1705,11 +1701,9 @@ describe('activity registration waitlist', () => {
     const checkInUser = await createMemberUser('check-in');
     await seedRegistration(checkInActivityId, checkInUser.memberId, 'waitlisted');
     await expect(
-      appCheckIns.checkIn(
-        checkInActivityId,
-        { longitude: 114.1, latitude: 22.5 },
-        checkInUser.user,
-      ),
+      app
+        .get(AppActivityCheckInsService)
+        .checkIn(checkInActivityId, { longitude: 114.1, latitude: 22.5 }, checkInUser.user),
     ).rejects.toMatchObject({ biz: BizCode.ATTENDANCE_REGISTRATION_INVALID });
   });
 });

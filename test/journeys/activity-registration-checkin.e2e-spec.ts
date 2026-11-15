@@ -43,7 +43,7 @@ describe('旅程金五条② 活动报名审批签到（当前真实部分链）
   beforeAll(async () => {
     // createJourneyRuntime 走与生产相同的 Nest bootstrap；借此同时验证 report Guard 在启动时盘点。
     log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
-    runtime = await createJourneyRuntime();
+    runtime = await createJourneyRuntime({ nativeActivities: true });
   });
 
   afterAll(async () => {
@@ -51,7 +51,7 @@ describe('旅程金五条② 活动报名审批签到（当前真实部分链）
     log.mockRestore();
   });
 
-  it('经真实 HTTP 留下 ActivityCheckIn 证据，并登记结算账本的具名缺口', async () => {
+  it('经真实 HTTP 留下新版打卡证据，保持报名锚点与重试幂等', async () => {
     // 禁止改回硬编码计数：每个回填面都必须让 Guard 静态库存与生成 manifest 的
     // truth source 同步，而不是再为一个实例数字改既有旅程断言。
     const manifestUndeclaredRouteCount = countManifestUndeclaredRoutes();
@@ -72,7 +72,7 @@ describe('旅程金五条② 活动报名审批签到（当前真实部分链）
     expect(result.knownGap).toBe(JOURNEY_2_KNOWN_GAP);
     expect(result.reviewTrigger).toBe(JOURNEY_2_REVIEW_TRIGGER);
 
-    // 变异红证据：若合法重试不再返回同一 ActivityCheckIn，或一报名可生成多条证据，id/count
+    // 变异红证据：若合法重试不再返回同一 PunchEvent，或同键生成多条证据，id/count
     // 任一断言都会变红；该探针不通过 Prisma 伪造 punch 或结算事实。
   });
 });

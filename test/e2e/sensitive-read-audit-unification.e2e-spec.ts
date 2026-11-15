@@ -102,7 +102,6 @@ describe('sensitive-read audit unification (C-2)', () => {
   let emergencyContacts: EmergencyContactsService;
   let memberInsurances: MemberInsurancesService;
   let certificates: CertificatesService;
-  let attendances: AttendancesService;
   let registrations: ActivityRegistrationsService;
   let recruitmentQueries: RecruitmentApplicationsQueryService;
   let recruitmentClaims: RecruitmentCertificateClaimsService;
@@ -123,7 +122,6 @@ describe('sensitive-read audit unification (C-2)', () => {
     emergencyContacts = app.get(EmergencyContactsService);
     memberInsurances = app.get(MemberInsurancesService);
     certificates = app.get(CertificatesService);
-    attendances = app.get(AttendancesService);
     registrations = app.get(ActivityRegistrationsService);
     recruitmentQueries = app.get(RecruitmentApplicationsQueryService);
     recruitmentClaims = app.get(RecruitmentCertificateClaimsService);
@@ -322,12 +320,14 @@ describe('sensitive-read audit unification (C-2)', () => {
           AUDIT_META,
         );
       case 'attendance-list':
-        return attendances.list(
-          fixtures.activityId,
-          { page: 1, pageSize: 20, statusCode: ATTENDANCE_FILTER_VALUE },
-          actor,
-          AUDIT_META,
-        );
+        return app
+          .get(AttendancesService)
+          .list(
+            fixtures.activityId,
+            { page: 1, pageSize: 20, statusCode: ATTENDANCE_FILTER_VALUE },
+            actor,
+            AUDIT_META,
+          );
       case 'recruitment-list':
         return recruitmentList();
     }
@@ -356,12 +356,14 @@ describe('sensitive-read audit unification (C-2)', () => {
       actor,
       AUDIT_META,
     );
-    await attendances.list(
-      fixtures.activityId,
-      { page: 1, pageSize: 20, statusCode: ATTENDANCE_FILTER_VALUE },
-      actor,
-      AUDIT_META,
-    );
+    await app
+      .get(AttendancesService)
+      .list(
+        fixtures.activityId,
+        { page: 1, pageSize: 20, statusCode: ATTENDANCE_FILTER_VALUE },
+        actor,
+        AUDIT_META,
+      );
     const registrationGenerator = await registrations.exportCsv(
       fixtures.activityId,
       { format: 'csv', scope: REGISTRATION_SCOPE_FILTER_VALUE },
