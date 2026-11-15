@@ -11,6 +11,10 @@ import { NotificationOutboxService } from '../../src/modules/notifications/notif
 import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
+import {
+  clearContributionCreditFixtures,
+  seedContributionCredit,
+} from '../fixtures/contribution-ledger.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
@@ -54,8 +58,9 @@ describe('招新三期(入队)admin 面 e2e', () => {
   let prismaB: PrismaService;
   let adminAuth: string; // SUPER_ADMIN(rbac.can 短路)
   let userAuth: string; // 普通 USER(RBAC 边界)
-  let adminUserId: string; // attendance sheet submitterUserId
+  let adminUserId: string;
   let previousGate: string | undefined;
+  const previousWorkflowGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
   let memberSeq = 0;
 
   function markGate(
@@ -134,46 +139,24 @@ describe('招新三期(入队)admin 面 e2e', () => {
     return a.id;
   }
 
-  // 直接给 member 插入若干考勤记录(同一 org/activity/sheet;默认 approved)。
-  // 活动闭环硬化(2026-06-21):全局每日封顶按 checkInAt 北京日分组,故贡献值夹具需显式控制每条 checkInAt。
-  async function insertContributionRecords(
+  // 被验的是入队读取/事务；显式提供已存在的正式净额或尚未生效的账本输入。
+  async function insertContributionCredits(
     memberId: string,
-    recs: Array<{ points: string; checkInAt: Date }>,
-    opts: { sheetStatus?: string } = {},
+    recs: Array<{ points: string; checkInAt: Date; recognizedPoints?: string }>,
+    opts: { batchStatus?: 'committed' | 'preparing' } = {},
   ): Promise<void> {
     const org = await prisma.organization.create({
       data: { name: '考勤测试部门', nodeTypeCode: 'demo-node-type-1' },
     });
-    const activity = await prisma.activity.create({
-      data: {
-        title: '考勤测试活动',
-        activityTypeCode: 'demo-act',
-        organizationId: org.id,
-        startAt: BEFORE_CUTOFF,
-        endAt: BEFORE_CUTOFF,
-        location: '深圳',
-        statusCode: 'completed',
-      },
-    });
-    const sheet = await prisma.attendanceSheet.create({
-      data: {
-        activityId: activity.id,
-        submitterUserId: adminUserId,
-        statusCode: opts.sheetStatus ?? 'approved',
-      },
-    });
     for (const r of recs) {
-      await prisma.attendanceRecord.create({
-        data: {
-          sheetId: sheet.id,
-          memberId,
-          roleCode: 'member',
-          checkInAt: r.checkInAt,
-          checkOutAt: new Date(r.checkInAt.getTime() + 4 * 3600_000),
-          serviceHours: '4.00',
-          attendanceStatusCode: 'present',
-          contributionPoints: r.points,
-        },
+      await seedContributionCredit(prisma, {
+        memberId,
+        actorUserId: adminUserId,
+        organizationId: org.id,
+        occurredAt: r.checkInAt,
+        creditedPoints: r.points,
+        recognizedPoints: r.recognizedPoints,
+        batchStatus: opts.batchStatus,
       });
     }
   }
@@ -192,25 +175,21 @@ describe('招新三期(入队)admin 面 e2e', () => {
     return out;
   }
 
-  // 给 member 加贡献值,使「全局每日封顶后的汇总总分」恰为 points。
-  // 活动闭环硬化(2026-06-21;上限于 v0.48.0 调整为 3):把 points 摊到多个不同北京日(每日 ≤ 3,
-  // 各日不触顶 → 封顶后汇总 = points)。单条大分值已不现实(任何单北京日最多计 3);锚在
-  // opts.checkInAt(默认 BEFORE_CUTOFF)往前逐日推,各条占一个独立北京日。after-cutoff / 非 approved
-  // 记录由 cutoff / status 过滤排除,其日序与 before-cutoff approved 记录重叠也不进汇总。
+  // 把给定正式净额分到不同北京日；after-cutoff / 未 committed 的分录应被读核排除。
   async function addContribution(
     memberId: string,
     points: string,
-    opts: { checkInAt?: Date; sheetStatus?: string } = {},
+    opts: { checkInAt?: Date; batchStatus?: 'committed' | 'preparing' } = {},
   ): Promise<void> {
     const base = opts.checkInAt ?? BEFORE_CUTOFF;
     const recs = splitAcrossDays(points).map((p, i) => ({
       points: p,
       checkInAt: new Date(base.getTime() - i * 86_400_000),
     }));
-    await insertContributionRecords(
+    await insertContributionCredits(
       memberId,
       recs,
-      opts.sheetStatus !== undefined ? { sheetStatus: opts.sheetStatus } : {},
+      opts.batchStatus !== undefined ? { batchStatus: opts.batchStatus } : {},
     );
   }
 
@@ -467,6 +446,7 @@ describe('招新三期(入队)admin 面 e2e', () => {
   beforeAll(async () => {
     previousGate = process.env.INSURANCE_ENFORCEMENT_ENABLED;
     process.env.INSURANCE_ENFORCEMENT_ENABLED = 'true';
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     appB = await createTestApp();
     prisma = app.get(PrismaService);
@@ -491,24 +471,25 @@ describe('招新三期(入队)admin 面 e2e', () => {
   });
 
   afterAll(async () => {
-    await settleAllWithTimeout([app.close(), appB.close()], 'team-join app shutdown');
-    if (previousGate === undefined) delete process.env.INSURANCE_ENFORCEMENT_ENABLED;
-    else process.env.INSURANCE_ENFORCEMENT_ENABLED = previousGate;
+    try {
+      await settleAllWithTimeout([app.close(), appB.close()], 'team-join app shutdown');
+    } finally {
+      if (previousGate === undefined) delete process.env.INSURANCE_ENFORCEMENT_ENABLED;
+      else process.env.INSURANCE_ENFORCEMENT_ENABLED = previousGate;
+      if (previousWorkflowGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousWorkflowGate;
+    }
   });
 
   beforeEach(async () => {
-    await prisma.attendanceRecord.deleteMany({});
-    await prisma.attendanceSheet.deleteMany({});
+    await clearContributionCreditFixtures(prisma);
     await prisma.activity.deleteMany({});
-    // PR4 evidence is immutable for UPDATE/DELETE. Test isolation intentionally uses the same
-    // guarded TRUNCATE mechanism as resetDb; the trigger does not and must not block TRUNCATE.
     assertTestDatabaseUrl(process.env.DATABASE_URL);
     await prisma.$executeRawUnsafe('TRUNCATE TABLE "insurance_eligibility_evidences"');
     await prisma.teamJoinApplication.deleteMany({});
-    await prisma.memberOrganizationMembership.deleteMany({}); // T4 一键入队建的归属(FK 顺序:先于 org/member)
+    await prisma.memberOrganizationMembership.deleteMany({});
     await prisma.teamJoinCycle.deleteMany({});
     await prisma.organization.deleteMany({});
-    // 统一通知 S3:入队定向通知(recipientMemberId FK→Member Restrict)须先于 member 清。
     await prisma.notificationDelivery.deleteMany({});
     await prisma.notificationRead.deleteMany({});
     await prisma.notification.deleteMany({});
@@ -688,32 +669,41 @@ describe('招新三期(入队)admin 面 e2e', () => {
     ]);
   });
 
-  it('⑥ 贡献值仅算 approved sheet + before-cutoff(after-cutoff/非 approved 不计)', async () => {
+  it('⑥ 贡献值仅算 committed credited + before-cutoff(after-cutoff/未生效不计)', async () => {
     const cycleId = await openCycle();
     const memberId = await createMember();
-    await addContribution(memberId, '3.00'); // approved + before cutoff → 计
+    await addContribution(memberId, '3.00'); // committed + before cutoff → 计
     await addContribution(memberId, '10.00', { checkInAt: AFTER_CUTOFF }); // after cutoff → 不计
-    await addContribution(memberId, '10.00', { sheetStatus: 'pending' }); // 非 approved → 不计
+    await addContribution(memberId, '10.00', { batchStatus: 'preparing' }); // 未生效 → 不计
     const appId = await createApplication(cycleId, memberId);
     const res = await markAllGeneralPassed(appId);
     const body = res.body.data;
-    expect(body.contributionPoints).toBe('3'); // 仅 approved+before-cutoff 的 3
+    expect(body.contributionPoints).toBe('3'); // 仅 committed+before-cutoff 的 3
     expect(body.contributionSatisfied).toBe(false);
     expect(body.statusCode).toBe('joining');
   });
 
-  it('⑥b【全局每日封顶】同一北京日多条记录 → 当日封顶 3;跨日再累加', async () => {
+  it('⑥b 使用账本已封顶净额，排除 capped-out 部分，跨北京日累加', async () => {
     const cycleId = await openCycle();
     const memberId = await createMember();
     const appId = await createApplication(cycleId, memberId);
 
-    // dayA 同一北京日 3 条 × 2.0 = 6.0 → 当日封顶 3;dayB 另一北京日 1 条 × 1.0(不触顶)。
+    // 上游已将 dayA 的 6 分认定值记为 2+1+0 正式净额；dayB 另有 1 分。
+    // 写侧封顶由 ledger-posting E2E 验证；此处必须读 credited，不重新 SUM recognized。
     const dayA = BEFORE_CUTOFF;
     const dayB = new Date(BEFORE_CUTOFF.getTime() - 86_400_000);
-    await insertContributionRecords(memberId, [
-      { points: '2.00', checkInAt: dayA },
-      { points: '2.00', checkInAt: dayA },
-      { points: '2.00', checkInAt: dayA },
+    await insertContributionCredits(memberId, [
+      { points: '2.00', recognizedPoints: '2.00', checkInAt: dayA },
+      {
+        points: '1.00',
+        recognizedPoints: '2.00',
+        checkInAt: new Date(dayA.getTime() + 3_600_000),
+      },
+      {
+        points: '0.00',
+        recognizedPoints: '2.00',
+        checkInAt: new Date(dayA.getTime() + 2 * 3_600_000),
+      },
       { points: '1.00', checkInAt: dayB },
     ]);
 
@@ -721,7 +711,7 @@ describe('招新三期(入队)admin 面 e2e', () => {
       .get(`${ADMIN_APPS}/${appId}`)
       .set('Authorization', adminAuth)
       .expect(200);
-    // 旧直接 SUM = 7.0;新按北京日封顶:min(6.0,3)=3 + 1.0 = 4。
+    // recognized SUM = 7，正式 credited SUM = 4。
     expect(detail.body.data.contributionPoints).toBe('4');
     expect(detail.body.data.contributionSatisfied).toBe(false);
   });

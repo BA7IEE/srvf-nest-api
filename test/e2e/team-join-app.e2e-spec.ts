@@ -6,6 +6,10 @@ import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
+import {
+  clearContributionCreditFixtures,
+  seedContributionCredit,
+} from '../fixtures/contribution-ledger.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
@@ -78,6 +82,7 @@ describe('招新三期(入队)App 自助面 e2e', () => {
   let inactiveAuth: string;
   let adminAuth: string;
   let orgSeq = 0;
+  const previousWorkflowGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
 
   async function makeLinked(
     username: string,
@@ -128,20 +133,6 @@ describe('招新三期(入队)App 自助面 e2e', () => {
 
   async function addContribution(memberId: string, points: string): Promise<void> {
     const org = await makeOrg();
-    const activity = await prisma.activity.create({
-      data: {
-        title: '考勤',
-        activityTypeCode: 'demo-act',
-        organizationId: org,
-        startAt: BEFORE_CUTOFF,
-        endAt: BEFORE_CUTOFF,
-        location: '深圳',
-        statusCode: 'completed',
-      },
-    });
-    const sheet = await prisma.attendanceSheet.create({
-      data: { activityId: activity.id, submitterUserId: volA.userId, statusCode: 'approved' },
-    });
     // 活动闭环硬化(2026-06-21;上限于 v0.48.0 调整为 3):把 points 摊到多个不同北京日
     // (每日 ≤ 3,各日不触顶 → 封顶后汇总 = points);单条大分值已不现实(单北京日最多计 3)。
     let cents = Math.round(Number(points) * 100);
@@ -149,17 +140,12 @@ describe('招新三期(入队)App 自助面 e2e', () => {
     while (cents > 0) {
       const take = Math.min(cents, 300);
       const checkInAt = new Date(BEFORE_CUTOFF.getTime() - dayOffset * 86_400_000);
-      await prisma.attendanceRecord.create({
-        data: {
-          sheetId: sheet.id,
-          memberId,
-          roleCode: 'member',
-          checkInAt,
-          checkOutAt: new Date(checkInAt.getTime() + 4 * 3600_000),
-          serviceHours: '4.00',
-          attendanceStatusCode: 'present',
-          contributionPoints: (take / 100).toFixed(2),
-        },
+      await seedContributionCredit(prisma, {
+        memberId,
+        actorUserId: volA.userId,
+        organizationId: org,
+        occurredAt: checkInAt,
+        creditedPoints: (take / 100).toFixed(2),
       });
       cents -= take;
       dayOffset += 1;
@@ -167,6 +153,7 @@ describe('招新三期(入队)App 自助面 e2e', () => {
   }
 
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     appB = await createTestApp();
     prisma = app.get(PrismaService);
@@ -182,18 +169,21 @@ describe('招新三期(入队)App 自助面 e2e', () => {
   });
 
   afterAll(async () => {
-    await settleAllWithTimeout([app.close(), appB.close()], 'team-join app surface shutdown');
+    try {
+      await settleAllWithTimeout([app.close(), appB.close()], 'team-join app surface shutdown');
+    } finally {
+      if (previousWorkflowGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousWorkflowGate;
+    }
   });
 
   beforeEach(async () => {
-    await prisma.attendanceRecord.deleteMany({});
-    await prisma.attendanceSheet.deleteMany({});
+    await clearContributionCreditFixtures(prisma);
     await prisma.activity.deleteMany({});
     await prisma.teamJoinApplication.deleteMany({});
     await prisma.memberOrganizationMembership.deleteMany({});
     await prisma.teamJoinCycle.deleteMany({});
     await prisma.organization.deleteMany({});
-    // 复位 volA/volB 的入队相关身份(gradeCode 清空;部门已随 memberDepartment 清)
     await prisma.member.updateMany({
       where: { id: { in: [volA.memberId, volB.memberId] } },
       data: { gradeCode: null },

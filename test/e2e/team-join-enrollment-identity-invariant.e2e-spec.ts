@@ -50,6 +50,7 @@ interface Volunteer {
 }
 
 describe('入队身份不变量:唯一 transition(M2)', () => {
+  const previousWorkflowGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
   let appA: INestApplication;
   let appB: INestApplication;
   let prismaA: PrismaService;
@@ -231,6 +232,7 @@ describe('入队身份不变量:唯一 transition(M2)', () => {
   }
 
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     appA = await createTestApp();
     appB = await createTestApp();
     await resetDb(appA);
@@ -297,7 +299,12 @@ describe('入队身份不变量:唯一 transition(M2)', () => {
   });
 
   afterAll(async () => {
-    await Promise.all([appA.close(), appB.close()]);
+    try {
+      await Promise.all([appA.close(), appB.close()]);
+    } finally {
+      if (previousWorkflowGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousWorkflowGate;
+    }
   });
 
   // ── ① 串行路径:七个写方逐个被拒(修复前它们全都成功,并各造一条 frozen 行)──────
