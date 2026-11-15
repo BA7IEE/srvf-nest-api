@@ -12,40 +12,9 @@ import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 
-// GAP-003(handoff/admin-web.md §4;goal「GAP-003 收口」):
-// GET admin/v1/meta/dashboard-summary 工作台/首页待办汇总 e2e。
-//
-// 角色用**真 seed**(子进程,沿 meta-resolve-labels.e2e-spec.ts 范式)——
-// 需要真实 biz-admin / ops-admin 两个内置角色的实际码集,不能用 test/fixtures/rbac.fixture.ts
-// 那份轻量 ops-admin-only fixture(只覆盖 PR-1~PR-4B 时代的码,不含业务面 activity-registration/
-// attendance 码)。
-//
-// ⚠️ 重要发现(亲核 prisma/seed.ts,非本 PR 引入的行为):goal 原文权限矩阵写「SA 全见 /
-// ops-admin 全见 / 仅持 registration 读码者只见该块 / 零权限空对象」。亲核 seed.ts 后:
-// `activity-registration.read.record` / `attendance.read.sheet` 是**业务面**码,归属
-// biz-admin(73 码集,seed.ts:3119 注释「activity-registration 5 + attendance 8」),
-// **不在** ops-admin(94 码,运营/系统面:rbac.*/dict.*/org.*/attachment-config.*/
-// storage-setting.*/user.*/audit-log.*/sms/wechat/realname/authz/announcement-import/
-// meta.resolve.label)的绑定集合内。即 ops-admin 实际只能看到 activities 裸块,与「全见」
-// 描述不符。这不是本端点的缺陷,而是既有业务面/运营面码分层的既定事实(与
-// admin-web.md §2.3 「两个扁平列表 GLOBAL-only」的权限来源完全一致——那两个列表本身也
-// 只认 activity-registration.read.record / attendance.read.sheet,ops-admin 一样调不通)。
-// 故本文件用 **biz-admin** 承载「全见」人设(与两个扁平列表的真实权限来源一致),
-// 另外**追加**一个真 ops-admin 用例验证其确实只见 activities 裸块 —— 比 goal 原文矩阵
-// 覆盖更全,且不掩盖这处事实纠正(已在 PR body 登记)。
-//
-// 覆盖:
-//   ① 裸 token 缺失 → 401
-//   ② SUPER_ADMIN 三块全见(rbac.can 短路)
-//   ③ biz-admin(持两码)三块全见
-//   ④ ops-admin(不持两码)只见 activities 裸块 —— 证实 codeless 设计意图,非缺口
-//   ⑤ 仅持 activity-registration.read.record 的自定义角色 → 只见 registrations + activities
-//   ⑥ 零权限 ADMIN(无任何角色绑定)→ 只见 activities(非字面空对象,见 codeless 说明)
-//   ⑦ org-readonly(副队长@SMRT)summary 与 scoped 扁平列表对账
-//   ⑧ group-readonly(副组长@SMRT 子组)summary 与 scoped 扁平列表对账
-//   ⑨ 有码但无组织范围返回两个零值块,不报错
-//   ⑩ GLOBAL 计数对账:registrations.{pending,waitlisted} / attendanceSheets.{pending,pendingFinalReview} /
-//      activities.published 与对应列表端点同条件 total 严格相等
+// 使用真实 seed 验证内置角色、职务动态只读投影和 TREE 绑定。
+// 报名计数按 scope；新版结算待办要求 GLOBAL 读码及对应 GLOBAL 审核码。
+// 无权省略与关闸不可用分开；旧 Sheet、历史版本和 run 待办数不得混用。
 
 const SEED_ENV = {
   APP_ENV: 'test',
@@ -68,6 +37,7 @@ function runSeed(): void {
 const SUMMARY_PATH = '/api/admin/v1/meta/dashboard-summary';
 
 describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇总)', () => {
+  const previousWorkflowGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
   let app: INestApplication;
   let prisma: PrismaService;
 
@@ -77,6 +47,7 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
   let registrationOnlyAuth: string; // ADMIN + 自定义角色,仅 activity-registration.read.record
   let publishReviewerAuth: string; // USER + activity-publish-reviewer@SMRT TREE
   let firstReviewerAuth: string; // USER + attendance-first-reviewer@SMRT TREE
+  let globalFirstReviewerAuth: string;
   let orgReadonlyAuth: string; // USER + vice-captain@SMRT → org-readonly@TREE
   let groupReadonlyAuth: string; // USER + deputy-group-leader@SMRT 子组 → group-readonly@TREE
   let emptyScopeAuth: string; // USER + biz-admin@SELF,有码但无组织范围
@@ -86,6 +57,8 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
   let groupOrganizationId: string;
   let outsideOrganizationId: string;
   let submitterUserId: string;
+  let orgSettlementActivityIds: string[];
+  let groupSettlementActivityIds: string[];
 
   function getSummary(auth?: string) {
     const req = request(httpServer(app)).get(SUMMARY_PATH);
@@ -96,15 +69,12 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     auth: string,
     expected: {
       registrations: { pending: number; waitlisted: number };
-      attendanceSheets: {
-        pending: number;
-        pendingFirstReview?: number;
-        pendingFinalReview: number;
-      };
+      settlementActivityIds: string[];
+      settlementVersionCount: number;
     },
   ): Promise<void> {
-    const [summary, pendingRegistrations, waitlistedRegistrations, pendingSheets, finalSheets] =
-      await Promise.all([
+    const [summary, pendingRegistrations, waitlistedRegistrations, settlements] = await Promise.all(
+      [
         getSummary(auth),
         request(httpServer(app))
           .get('/api/admin/v1/registrations')
@@ -115,36 +85,34 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
           .query({ statusCode: 'waitlisted' })
           .set('Authorization', auth),
         request(httpServer(app))
-          .get('/api/admin/v1/attendance-sheets')
-          .query({ statusCode: 'pending' })
+          .get('/api/admin/v1/attendance-settlements')
           .set('Authorization', auth),
-        request(httpServer(app))
-          .get('/api/admin/v1/attendance-sheets')
-          .query({ statusCode: 'pending_final_review' })
-          .set('Authorization', auth),
-      ]);
+      ],
+    );
 
-    for (const res of [
-      summary,
-      pendingRegistrations,
-      waitlistedRegistrations,
-      pendingSheets,
-      finalSheets,
-    ]) {
+    for (const res of [summary, pendingRegistrations, waitlistedRegistrations]) {
       expect(res.status).toBe(200);
     }
     expect(summary.body.data.registrations).toEqual(expected.registrations);
-    expect(summary.body.data.attendanceSheets).toEqual(expected.attendanceSheets);
+    expect(summary.body.data).not.toHaveProperty('attendanceSheets');
+    expect(summary.body.data).not.toHaveProperty('settlementReviews');
+    // 待办块的 GLOBAL 门槛与版本列表的组织可见范围是两个不同合同。
+    expect(settlements.status).toBe(200);
+    expect(settlements.body.data.total).toBe(expected.settlementVersionCount);
+    expect(settlements.body.data.items).toHaveLength(expected.settlementVersionCount);
+    const items = settlements.body.data.items as Array<{ activityId: string }>;
+    expect([...new Set(items.map((item) => item.activityId))].sort()).toEqual(
+      [...expected.settlementActivityIds].sort(),
+    );
     expect(summary.body.data.activities).toEqual({ published: 3, pendingCompletion: 1 });
     expect(pendingRegistrations.body.data.total).toBe(summary.body.data.registrations.pending);
     expect(waitlistedRegistrations.body.data.total).toBe(
       summary.body.data.registrations.waitlisted,
     );
-    expect(pendingSheets.body.data.total).toBe(summary.body.data.attendanceSheets.pending);
-    expect(finalSheets.body.data.total).toBe(summary.body.data.attendanceSheets.pendingFinalReview);
   }
 
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
     runSeed();
@@ -240,6 +208,12 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
       publishReviewerRoleId,
     );
     firstReviewerAuth = await createScopedReviewer('dashsum-first-reviewer', firstReviewerRoleId);
+    const globalFirstReviewer = await createTestUser(app, {
+      username: 'dashsum-global-first-reviewer',
+      role: Role.ADMIN,
+    });
+    await grantOpsAdminToUser(app, globalFirstReviewer.id, firstReviewerRoleId);
+    globalFirstReviewerAuth = (await loginAs(app, 'dashsum-global-first-reviewer')).authHeader;
 
     const createPositionScopedUser = async (
       username: string,
@@ -331,6 +305,8 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     const actPublished2 = await mkActivity('dashsum活动·已发布2', 'published', groupOrganizationId);
     const actDraft = await mkActivity('dashsum活动·草稿', 'draft', groupOrganizationId);
     const actOutside = await mkActivity('dashsum活动·范围外', 'published', outsideOrganizationId);
+    orgSettlementActivityIds = [actPublished1.id, actPublished2.id, actDraft.id];
+    groupSettlementActivityIds = [actPublished2.id, actDraft.id];
     await prisma.activity.update({
       where: { id: actPublished1.id },
       data: {
@@ -379,6 +355,60 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     await mkSheet(actOutside.id, 'pending');
     // GLOBAL pending=3/final=1；org-readonly pending=2/final=1；group-readonly 各 1。
 
+    // 新待办按 run 状态计数，故意与旧 Sheet 不同；历史版本也不能重复算待办。
+    const mkSettlement = async (activityId: string, statusCode: string) => {
+      const seal = await prisma.evidenceSeal.create({
+        data: {
+          activityId,
+          sealRevision: 1,
+          evidenceRevision: 0,
+          populationRevision: 0,
+          workflowRevision: 0,
+          allWindowsClosedAt: new Date(),
+          openSegmentCount: 0,
+          manualReviewPendingCount: 0,
+          populationCountDistinct: 0,
+          populationCountBySession: {},
+          contentHash: `dashboard-seal-${activityId}`,
+          statusCode: 'active',
+          sealedByUserId: submitterUserId,
+          sealedAt: new Date(),
+        },
+      });
+      const run = await prisma.attendanceSettlementRun.create({
+        data: {
+          activityId,
+          statusCode,
+          currentSubmittedVersion: statusCode === 'drafting' ? 1 : 2,
+        },
+      });
+      for (const version of [1, 2]) {
+        const draft = version === 2 && statusCode === 'drafting';
+        await prisma.attendanceSettlementVersion.create({
+          data: {
+            settlementRunId: run.id,
+            version,
+            evidenceSealId: seal.id,
+            evidenceRevision: 0,
+            populationRevision: 0,
+            workflowRevision: 0,
+            contentHash: `dashboard-version-${activityId}-${version}`,
+            personCount: 0,
+            sessionParticipationCount: 0,
+            serviceSegmentCount: 0,
+            createdByUserId: submitterUserId,
+            submittedAt: draft ? null : new Date(),
+            statusCode: draft ? 'draft' : version === 1 ? 'returned' : 'submitted',
+            operationKey: `dashboard-version-${activityId}-${version}`,
+          },
+        });
+      }
+    };
+    await mkSettlement(actPublished1.id, 'pending_first_review');
+    await mkSettlement(actPublished2.id, 'pending_final_review');
+    await mkSettlement(actDraft.id, 'drafting');
+    await mkSettlement(actOutside.id, 'pending_first_review');
+
     await prisma.activityPublishReview.createMany({
       data: [
         {
@@ -413,7 +443,12 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
   });
 
   afterAll(async () => {
-    await app.close();
+    try {
+      await app.close();
+    } finally {
+      if (previousWorkflowGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousWorkflowGate;
+    }
   });
 
   it('① 无 Authorization → 401', async () => {
@@ -427,24 +462,23 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     expect(res.body.code).toBe(0);
     const data = res.body.data;
     expect(data.registrations).toEqual({ pending: 4, waitlisted: 2 });
-    expect(data.attendanceSheets).toEqual({
-      pending: 3,
-      pendingFirstReview: 3,
+    expect(data).not.toHaveProperty('attendanceSheets');
+    expect(data.settlementReviews).toEqual({
+      available: true,
+      pendingFirstReview: 2,
       pendingFinalReview: 1,
     });
     expect(data.activityPublishReviews).toEqual({ pending: 2 });
     expect(data.activities).toEqual({ published: 3, pendingCompletion: 1 });
   });
 
-  it('③ biz-admin(持 activity-registration.read.record + attendance.read.sheet)三块全见', async () => {
+  it('③ biz-admin 有业务读码但无新审核码，不获得结算待办', async () => {
     const res = await getSummary(bizAdminAuth);
     expect(res.status).toBe(200);
     const data = res.body.data;
     expect(data.registrations).toEqual({ pending: 4, waitlisted: 2 });
-    expect(data.attendanceSheets).toEqual({
-      pending: 3,
-      pendingFinalReview: 1,
-    });
+    expect(data).not.toHaveProperty('attendanceSheets');
+    expect(data).not.toHaveProperty('settlementReviews');
     expect(data).not.toHaveProperty('activityPublishReviews');
     expect(data.activities).toEqual({ published: 3, pendingCompletion: 1 });
   });
@@ -455,6 +489,7 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     const data = res.body.data;
     expect(data).not.toHaveProperty('registrations');
     expect(data).not.toHaveProperty('attendanceSheets');
+    expect(data).not.toHaveProperty('settlementReviews');
     expect(data.activities).toEqual({ published: 3, pendingCompletion: 1 });
   });
 
@@ -464,6 +499,7 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     const data = res.body.data;
     expect(data.registrations).toEqual({ pending: 4, waitlisted: 2 });
     expect(data).not.toHaveProperty('attendanceSheets');
+    expect(data).not.toHaveProperty('settlementReviews');
     expect(data.activities).toEqual({ published: 3, pendingCompletion: 1 });
   });
 
@@ -473,6 +509,7 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     const data = res.body.data;
     expect(data).not.toHaveProperty('registrations');
     expect(data).not.toHaveProperty('attendanceSheets');
+    expect(data).not.toHaveProperty('settlementReviews');
     expect(data.activities).toEqual({ published: 3, pendingCompletion: 1 });
   });
 
@@ -485,41 +522,48 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     });
   });
 
-  it('⑧ scoped 一审员得到独立的一审待办数，且仍保留兼容读计数', async () => {
+  it('⑧ 旧 TREE 一审绑定不满足新版审核台 GLOBAL 前置，不泄露结算待办', async () => {
     const res = await getSummary(firstReviewerAuth);
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual({
-      attendanceSheets: {
-        pending: 2,
-        pendingFirstReview: 2,
-        pendingFinalReview: 1,
-      },
       activities: { published: 3, pendingCompletion: 1 },
     });
+    const list = await request(httpServer(app))
+      .get('/api/admin/v1/attendance-settlements')
+      .set('Authorization', firstReviewerAuth);
+    expect(list.status).toBe(200);
+    expect(list.body.data.total).toBe(5);
+    const items = list.body.data.items as Array<{ activityId: string }>;
+    expect([...new Set(items.map((item) => item.activityId))].sort()).toEqual(
+      [...orgSettlementActivityIds].sort(),
+    );
   });
 
-  it('⑨ org-readonly(副队长@SMRT)的 summary 与其 scoped 报名/考勤列表一致', async () => {
+  it('⑨ org-readonly 保留 TREE 报名/结算版本范围，不获得审核待办块', async () => {
     await expectScopedSummaryMatchesLists(orgReadonlyAuth, {
       registrations: { pending: 3, waitlisted: 1 },
-      attendanceSheets: { pending: 2, pendingFinalReview: 1 },
+      settlementActivityIds: orgSettlementActivityIds,
+      settlementVersionCount: 5,
     });
   });
 
-  it('⑩ group-readonly(副组长@子组)的 summary 与其 scoped 报名/考勤列表一致', async () => {
+  it('⑩ group-readonly 保留子组报名/结算版本范围，不获得审核待办块', async () => {
     await expectScopedSummaryMatchesLists(groupReadonlyAuth, {
       registrations: { pending: 1, waitlisted: 1 },
-      attendanceSheets: { pending: 1, pendingFinalReview: 1 },
+      settlementActivityIds: groupSettlementActivityIds,
+      settlementVersionCount: 3,
     });
   });
 
-  it('⑪ 有码但无组织范围时保留两个零值块，且与 scoped 空列表一致', async () => {
+  it('⑪ 无有效组织范围时报名零值与空列表一致，结算无权块省略', async () => {
     await expectScopedSummaryMatchesLists(emptyScopeAuth, {
       registrations: { pending: 0, waitlisted: 0 },
-      attendanceSheets: { pending: 0, pendingFinalReview: 0 },
+      settlementActivityIds: [],
+      settlementVersionCount: 0,
     });
   });
 
-  it('⑫ GLOBAL 计数与对应列表端点同条件 total 严格相等', async () => {
+  it('⑫ GLOBAL 报名/活动计数与列表相等，结算历史版本数不伪装成待办数', async () => {
     const summaryRes = await getSummary(superAdminAuth);
     expect(summaryRes.status).toBe(200);
     const data = summaryRes.body.data;
@@ -540,21 +584,18 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     expect(waitlistedRes.body.data.total).toBe(data.registrations.waitlisted);
     expect(waitlistedRes.body.data.total).toBe(2);
 
-    const sheetPendingRes = await request(httpServer(app))
-      .get('/api/admin/v1/attendance-sheets')
-      .query({ statusCode: 'pending' })
+    const settlementList = await request(httpServer(app))
+      .get('/api/admin/v1/attendance-settlements')
+      .query({ pageSize: 100 })
       .set('Authorization', superAdminAuth);
-    expect(sheetPendingRes.status).toBe(200);
-    expect(sheetPendingRes.body.data.total).toBe(data.attendanceSheets.pending);
-    expect(sheetPendingRes.body.data.total).toBe(3);
-
-    const sheetFinalRes = await request(httpServer(app))
-      .get('/api/admin/v1/attendance-sheets')
-      .query({ statusCode: 'pending_final_review' })
-      .set('Authorization', superAdminAuth);
-    expect(sheetFinalRes.status).toBe(200);
-    expect(sheetFinalRes.body.data.total).toBe(data.attendanceSheets.pendingFinalReview);
-    expect(sheetFinalRes.body.data.total).toBe(1);
+    expect(settlementList.status).toBe(200);
+    expect(settlementList.body.data.total).toBe(7);
+    expect(settlementList.body.data.items).toHaveLength(7);
+    expect(data.settlementReviews).toEqual({
+      available: true,
+      pendingFirstReview: 2,
+      pendingFinalReview: 1,
+    });
 
     const activitiesRes = await request(httpServer(app))
       .get('/api/admin/v1/activities')
@@ -563,5 +604,35 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     expect(activitiesRes.status).toBe(200);
     expect(activitiesRes.body.data.total).toBe(data.activities.published);
     expect(activitiesRes.body.data.total).toBe(3);
+  });
+
+  it('GLOBAL 仅一审授权只返回一审字段，不透出终审待办', async () => {
+    const res = await getSummary(globalFirstReviewerAuth);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({
+      settlementReviews: { available: true, pendingFirstReview: 2 },
+      activities: { published: 3, pendingCompletion: 1 },
+    });
+  });
+
+  it('关闸时有权结算块明确不可用，其余计数保持正常', async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'false';
+    let closedApp: INestApplication | undefined;
+    try {
+      closedApp = await createTestApp();
+      const res = await request(httpServer(closedApp))
+        .get(SUMMARY_PATH)
+        .set('Authorization', superAdminAuth);
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual({
+        registrations: { pending: 4, waitlisted: 2 },
+        activityPublishReviews: { pending: 2 },
+        settlementReviews: { available: false },
+        activities: { published: 3, pendingCompletion: 1 },
+      });
+    } finally {
+      await closedApp?.close();
+      process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
+    }
   });
 });

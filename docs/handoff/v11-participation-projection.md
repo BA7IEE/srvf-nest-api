@@ -4,7 +4,9 @@
 
 活动列表 `includeStats=true` 保留 `registrationCount`（未软删报名头的全部状态）；旧 `attendanceSheetCount` 已移除。具有审核台 GLOBAL 读取码及组织范围时才返回 `settlementStats`：开闸为 `available: true` 和曾提交、当前非 draft 的 `submittedVersionCount`（含退回和作废的历史提交，排除未提交即作废的草稿），关闸为 `available: false`，无权限则省略。该数字不是人数、到场或待办，前端须改字段；旧 E2E 断言待按合同审查。
 
-工作台移除 `attendanceSheets`，改为按审核台 GLOBAL 读码及一审/终审 GLOBAL action 裁剪的 `settlementReviews`。开闸时相应字段计数授权组织内处于一审/终审状态的 run；数字不是本人可审核数。关闸时仅有权者得到 `available: false`，其他工作台块照常；无权块或阶段省略。
+工作台移除 `attendanceSheets`，改为按 `attendance.read.sheet` GLOBAL 资格及一审/终审 GLOBAL action 裁剪的 `settlementReviews`。开闸时相应字段计数授权组织内处于一审/终审状态的 run；数字不是本人可审核数。关闸时仅有权者得到 `available: false`，其他工作台块照常；无权块或阶段省略。
+
+首页待办与独立结算版本列表不是相同口径。`GET /api/admin/v1/attendance-settlements` 的实际服务按组织可见范围返回非 draft 版本；TREE 只读账号可读取范围内的历史版本，无有效组织范围时为空。该列表的版本总数不能当作 run 待办数，也不能由首页省略待办块推断列表无权。控制器访问声明仍标记 `rbac-global`，不能据该标记覆盖服务现行的组织范围过滤；本轮没有扩大或收紧这一读取授权。
 
 三个读面先保留既有两项读取权限及资源/组织范围；在同一个 `REPEATABLE READ` 快照中读取授权、活动、报名、身份、当前正式结算、已入账账本和正式时长。月度请求的组织后代展开也使用该事务。无可见组织的月度请求仍为空数组；其余新版关闭的请求返回 20153／503。只读维护态开启且新版工作流已启用时仍可读。
 
