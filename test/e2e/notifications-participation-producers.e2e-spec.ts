@@ -109,7 +109,6 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
   let outbox: NotificationOutboxService;
   let outboxHandlers: NotificationOutboxHandlers;
   let outboxWorker: NotificationOutboxWorker;
-  let attendanceAuditRecorder: AttendanceAuditRecorder;
   let config: ConfigType<typeof appConfig>;
   let activities: ActivitiesService;
   let registrations: ActivityRegistrationsService;
@@ -118,7 +117,6 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
   // 屏障必须打在**真正执行那段代码的实例**上 —— 打在 ActivityRegistrationsService
   // (现在只是薄委托)上,spy 不会被调用、窗口根本没撑开(#1034 同形)。
   let registrationCreates: ActivityRegistrationCreateService;
-  let attendances: AttendancesService;
 
   let adminPayload: CurrentUserPayload;
   // 摘码微刀(2026-07-03):biz-admin 不再持终审两码 → finalApprove 用独立 SUPER_ADMIN
@@ -380,12 +378,10 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
     outbox = app.get(NotificationOutboxService);
     outboxHandlers = app.get(NotificationOutboxHandlers);
     outboxWorker = app.get(NotificationOutboxWorker);
-    attendanceAuditRecorder = app.get(AttendanceAuditRecorder);
     config = app.get(appConfig.KEY);
     activities = app.get(ActivitiesService);
     registrations = app.get(ActivityRegistrationsService);
     registrationCreates = app.get(ActivityRegistrationCreateService);
-    attendances = app.get(AttendancesService);
     await resetDb(app);
 
     // 活动域通知类型语义分离；activity-reminder 只留给开场提醒。
@@ -1296,6 +1292,15 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
 
   // ============ ③ 考勤终审通过 → 逐 record 本人(含贡献值) ============
   describe('考勤结果/贡献值定向通知(finalApprove → 逐 record 本人;仅站内)', () => {
+    let attendances: AttendancesService;
+    let attendanceAuditRecorder: AttendanceAuditRecorder;
+
+    beforeAll(() => {
+      // 旧考勤依赖只属于本组，缺失不能阻断仍活跃的报名和活动通知验收。
+      attendances = app.get(AttendancesService);
+      attendanceAuditRecorder = app.get(AttendanceAuditRecorder);
+    });
+
     it('PR-M2a red:同日已封顶使正式贡献值 5→5 时不得重复发送达标通知', async () => {
       const cycle = await prisma.teamJoinCycle.create({
         data: {
