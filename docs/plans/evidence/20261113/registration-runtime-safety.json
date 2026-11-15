@@ -1,0 +1,107 @@
+{
+  "evidence_type": "DEPLOYED_RUNTIME",
+  "deployment_git_sha": "UNKNOWN",
+  "checks": [
+    {
+      "checked_at": "2026-11-13T10:27:46+08:00",
+      "files": [
+        "/app/dist/modules/activity-registrations/activity-registration-create.service.js",
+        "/app/dist/modules/activities/activity-participation-policy.js"
+      ],
+      "facts": {
+        "admin_calls_admin_policy": true,
+        "admin_policy_status_and_time": true,
+        "admin_policy_no_public_flag": true,
+        "session_form_scoped_rules_guard": true,
+        "eligibility_checks_before_persist": true,
+        "direct_persist_and_audit_calls": true,
+        "persist_head_revision_and_update": true,
+        "create_no_direct_notify_keywords": true
+      }
+    },
+    {
+      "checked_at": "2026-11-13T10:28:37+08:00",
+      "files": [
+        "/app/dist/modules/activity-registrations/activity-registration-review.service.js",
+        "/app/dist/modules/activity-registrations/activity-registration-notification-producer.js",
+        "/app/dist/modules/notifications/notification-outbox.handlers.js"
+      ],
+      "facts": {
+        "approval_updates_and_audits": true,
+        "approval_targets_updated_member": true,
+        "review_passes_same_member": true,
+        "intent_target_member_only": true,
+        "intent_only_in_app_channel": true,
+        "handler_uses_target_and_channels": true,
+        "wechat_requires_channel": true,
+        "wecom_requires_channel": true,
+        "no_sms_keyword_in_targeted_handler": true,
+        "separate_sms_event_cases": true
+      }
+    },
+    {
+      "checked_at": "2026-11-13T10:30:08+08:00",
+      "files": [
+        "/app/dist/modules/attendances/app-activity-check-ins.service.js",
+        "/app/dist/common/activity-workflow/activity-workflow.gate.js"
+      ],
+      "facts": {
+        "gate_before_checkin_create": true,
+        "gate_readonly_before_v11": true,
+        "checkin_direct_create": true,
+        "existing_before_create": true,
+        "checkin_no_direct_notify_keywords": true
+      }
+    },
+    {
+      "checked_at": "2026-11-13T10:30:37+08:00",
+      "files": [
+        "/app/dist/modules/attendances/app-activity-check-ins.service.js"
+      ],
+      "facts": {
+        "gate_before_checkout_update": true,
+        "checkout_direct_update": true,
+        "both_use_time_and_location": true,
+        "checkout_no_direct_notify_keywords": true,
+        "existing_before_update": true
+      }
+    },
+    {
+      "checked_at": "2026-11-13T10:31:18+08:00",
+      "files": [
+        "/app/dist/modules/activities/activity-status-command.service.js",
+        "/app/dist/modules/activities/activity-notification-producer.js"
+      ],
+      "facts": {
+        "publish_has_responsibility_branch": true,
+        "direct_calls_published_producer": true,
+        "direct_uses_null_audience_tags": true,
+        "nonpublic_returns_before_outbox": true,
+        "public_branch_broadcast": true
+      }
+    }
+  ],
+  "readonly_environment_key": {
+    "checked_at": "2026-11-13T10:31:58+08:00",
+    "file": "/app/dist/config/app.config.js",
+    "key": "ACTIVITY_WORKFLOW_READONLY",
+    "exec_child_value": "UNSET",
+    "compiled_parser_child_value": false,
+    "compiled_parser_unset_default": false,
+    "running_api_process_value": "UNKNOWN"
+  },
+  "unknowns": {
+    "indirect_call_side_effects": "UNKNOWN",
+    "database_triggers": "UNKNOWN",
+    "other_async_delivery_paths": "UNKNOWN",
+    "independent_worker_running_image_and_config": "UNKNOWN",
+    "active_api_process_configuration": "UNKNOWN",
+    "deployment_git_sha": "UNKNOWN"
+  },
+  "limitations": [
+    "仅按已验证容器镜像只读检查所列编译方法，未执行任何业务 HTTP；关键词未命中仅限所截取的直接方法。",
+    "审批通知 handler 文件来自目标 API 镜像，不证明独立 worker 实际运行相同代码或配置。",
+    "子进程单键值与编译解析结果不能证明已运行 API 进程的 Nest 配置。",
+    "函数以所列调用边界静态检查，不覆盖间接调用、数据库触发器及其他异步外发路径。"
+  ]
+}

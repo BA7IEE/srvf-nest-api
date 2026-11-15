@@ -1,0 +1,43 @@
+{
+  "recorded_at": "2026-11-13T04:52:07+08:00",
+  "scope": "target API container only",
+  "window_utc": [
+    "2026-11-12T20:45:00Z",
+    "2026-11-12T20:49:00Z"
+  ],
+  "exit_code": 0,
+  "results": [
+    {
+      "case": "attachment_url_when_disabled",
+      "request_id": "cmwe0qbmke6eadbbda68012355fd25f64",
+      "method": "POST",
+      "route": "/api/admin/v1/contents/{id}/attachments/upload-url",
+      "route_matches": true,
+      "server_status": 503
+    },
+    {
+      "case": "empty_body",
+      "request_id": "cmwe0sgu7e4881bdd178b6008f50e61cf",
+      "method": "POST",
+      "route": "/api/admin/v1/contents",
+      "route_matches": true,
+      "server_status": 400
+    },
+    {
+      "case": "attachment_postread",
+      "request_id": "cmwe0rl3d2c0a1eee60f5385724b985f8",
+      "server_status": 304,
+      "browser_cdp_status": 200
+    },
+    {
+      "case": "empty_body_postread",
+      "request_id": "cmwe0t2gyc470a623a6009dcea8286ff6",
+      "server_status": 304,
+      "browser_cdp_status": 200
+    }
+  ],
+  "limits": [
+    "The browser can merge conditional 304 responses with cached 200 bodies.",
+    "Bounded target-container logs only; deployment Git SHA UNKNOWN."
+  ]
+}

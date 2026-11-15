@@ -1,0 +1,55 @@
+{
+  "evidence_type": "DEPLOYED_RUNTIME",
+  "deployment_git_sha": "UNKNOWN",
+  "log_read_window": {
+    "from": "2026-11-13T10:43:30+08:00",
+    "until": "2026-11-13T10:47:30+08:00"
+  },
+  "docker_logs_exit_code": 0,
+  "stdout": {
+    "parsed_nonempty_lines": 65,
+    "unparsed_nonempty_lines": 0
+  },
+  "stderr": {
+    "parsed_nonempty_lines": 0,
+    "unparsed_nonempty_lines": 0
+  },
+  "anchors": [
+    {
+      "request_id": "cmwedihfcc0bf2c99dcd705b6f96298f9",
+      "method": "GET",
+      "path": "/api/admin/v1/activities/{id}/registrations",
+      "http_status": 200,
+      "unique_match": true,
+      "server_time": "2026-11-13T10:44:28.745+08:00"
+    },
+    {
+      "request_id": "cmwedksyea328e2c36bb995923022b589",
+      "method": "GET",
+      "path": "/api/admin/v1/activities/{id}/registrations",
+      "http_status": 200,
+      "unique_match": true,
+      "server_time": "2026-11-13T10:46:17.000+08:00"
+    }
+  ],
+  "anchor_actual_paths_match_in_memory": true,
+  "client_attempt_time_reported": "2026-11-13T10:45:54+08:00",
+  "server_anchor_times_bracket_client_time_numerically": true,
+  "observed_target_post_records_between_anchors": {
+    "request_context_without_status": 0,
+    "completed": 0
+  },
+  "unknowns": {
+    "client_server_historical_clock_synchronization": "UNKNOWN",
+    "missing_or_dropped_logs": "UNKNOWN",
+    "inflight_or_unlogged_requests": "UNKNOWN",
+    "other_instances": "UNKNOWN",
+    "actual_post_reached_service": "UNKNOWN"
+  },
+  "limitations": [
+    "数字仅统计本次实际读取的结构化日志条目，不证明请求未到达或没有未记录的在途请求。",
+    "无法证明日志一定记录每个请求的开始事件，亦不能排除缺日志或其他实例。",
+    "两服务端时间与客户端尝试时间数值上相夹；跨主机历史时钟同步未经证实。",
+    "实际活动路径仅在内存比较，未保存资源 ID、账号、认证信息或正文。"
+  ]
+}

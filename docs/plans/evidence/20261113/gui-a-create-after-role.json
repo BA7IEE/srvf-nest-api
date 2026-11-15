@@ -1,0 +1,44 @@
+{
+  "classification": "GUI",
+  "deploymentSha": "UNKNOWN",
+  "role": "synthetic ordinary USER A",
+  "window": "existing Chrome Incognito, independent from normal administrator and Guest B",
+  "path": "https://dp.srvf.team/#/srvf/activities-domain/activities",
+  "identityBefore": {
+    "timeUtc": "2026-11-13T01:38:41.926Z",
+    "timeBeijing": "2026-11-13T09:38:41.926+08:00",
+    "incognito": true,
+    "visibleUsernameMatchesSyntheticA": true,
+    "visibleUsernameMatchesSyntheticB": false,
+    "activityListVisible": true,
+    "noCreatePermissionMessage": true
+  },
+  "operation": {
+    "action": "clicked browser reload on existing A activity-list page",
+    "timeUtc": "2026-11-13T01:39:03.171Z",
+    "timeBeijing": "2026-11-13T09:39:03.171+08:00",
+    "businessWrite": false,
+    "formSubmitted": false
+  },
+  "observation": {
+    "timeUtc": "2026-11-13T01:39:12.687Z",
+    "timeBeijing": "2026-11-13T09:39:12.687+08:00",
+    "incognito": true,
+    "visibleUsernameMatchesSyntheticA": true,
+    "activityListVisible": true,
+    "loadingIndicatorVisible": false,
+    "feedback": "当前账号没有创建活动权限",
+    "visibleCreateButtons": 0,
+    "formOpened": false
+  },
+  "httpStatus": "UNKNOWN",
+  "requestId": "UNKNOWN",
+  "permissionEndpointReloaded": "UNKNOWN",
+  "screenshot": "NOT_CAPTURED: native Incognito window cannot be isolated for supported redacted screenshot; username and other records could appear",
+  "otherSessions": "no interaction or logout; current authentication state not independently rechecked",
+  "limits": [
+    "refresh and visible feedback only; no network receipt",
+    "does not establish whether scoped grant is effective or explain denial",
+    "candidate frontend source and deployed SHA are not verified equivalent"
+  ]
+}

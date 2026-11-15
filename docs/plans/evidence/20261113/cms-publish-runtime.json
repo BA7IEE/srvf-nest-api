@@ -1,0 +1,84 @@
+{
+  "evidence_type": "DEPLOYED_RUNTIME",
+  "deployment_git_sha": "UNKNOWN",
+  "checks": [
+    {
+      "checked_at": "2026-11-13T11:01:57+08:00",
+      "files": [
+        "/app/dist/modules/content/content-admin.controller.js",
+        "/app/dist/modules/content/content.service.js"
+      ],
+      "facts": {
+        "controller_route_delegates": true,
+        "service_publish_delegates": true,
+        "publish_permission": true,
+        "state_requires_draft": true,
+        "lock_boundary_before_update": true,
+        "status_audit_in_transaction": true,
+        "detail_after_transaction": true,
+        "no_direct_notify_keywords": true
+      }
+    },
+    {
+      "checked_at": "2026-11-13T11:02:44+08:00",
+      "files": [
+        "/app/dist/modules/attachments/attachments.service.js",
+        "/app/dist/modules/attachments/attachment-storage-orchestrator.js",
+        "/app/dist/modules/attachments/attachment-content-boundary.js"
+      ],
+      "facts": {
+        "facade_delegates": true,
+        "orchestrator_delegates": true,
+        "fail_closed_storage_pending": true,
+        "ownerless_gate_exists": true,
+        "ownerless_query_no_content_scope": true,
+        "ownerless_checks_null_resource": true,
+        "ownerless_statuses_pending_processing_succeeded": true,
+        "ownerless_states_pending_upload_present_unbound_provider_unknown": true,
+        "owner_v1_excluded": true,
+        "attachment_lock_and_reference_check": true,
+        "storage_ledger_orphan_writes_present": true,
+        "no_direct_notify_keywords": true
+      }
+    },
+    {
+      "checked_at": "2026-11-13T11:03:28+08:00",
+      "files": [
+        "/app/dist/modules/content/content.service.js",
+        "/app/dist/modules/attachments/attachments.service.js",
+        "/app/dist/modules/attachments/attachment-access.service.js",
+        "/app/dist/modules/attachments/attachment-storage-orchestrator.js"
+      ],
+      "facts": {
+        "detail_lists_attachments_and_cover": true,
+        "list_filters_and_maps_access": true,
+        "null_cover_returns_early": true,
+        "empty_filter_returns_early": true,
+        "filter_can_backfill": true,
+        "access_calls_download_resolver": true,
+        "download_head_and_url": true,
+        "download_can_update_ledger": true,
+        "no_direct_notify_keywords": true
+      }
+    }
+  ],
+  "scope_and_risks": {
+    "global_ownerless_gate": "目标编译检查显示该探针不按当前内容 ID 限定；当前是否存在命中记录 UNKNOWN。",
+    "orphan_delete": "目标编译边界方法存在存储账目更新和 orphan_delete 创建调用；具体触发条件及最终 worker 行为 UNKNOWN。",
+    "local_source_only": "本地源码显示相关分支涉及当前内容关联的未绑定上传；本次部署编译检查没有单独证明该分支的完整作用范围。",
+    "post_commit_detail": "详情在发布事务后构造；如请求结果不明，需先独立读回内容状态。"
+  },
+  "unknowns": {
+    "ownerless_actual_hits": "UNKNOWN",
+    "compiled_orphan_trigger_conditions": "UNKNOWN",
+    "independent_worker": "UNKNOWN",
+    "database_triggers": "UNKNOWN",
+    "indirect_notifications_or_external_delivery": "UNKNOWN",
+    "deployment_git_sha": "UNKNOWN"
+  },
+  "limitations": [
+    "未发送业务 HTTP、未读取数据库或业务 ID。",
+    "通知关键词未命中只适用于所截取的直接方法，不证明所有间接调用、数据库触发器或 worker 无通知及外发。",
+    "有附件或封面时检查到 HEAD、下载 URL 生成及可能的账目操作；实际 provider 和 worker 行为未确认。"
+  ]
+}

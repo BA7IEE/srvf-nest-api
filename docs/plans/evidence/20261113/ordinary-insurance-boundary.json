@@ -1,0 +1,137 @@
+{
+  "classification": "DEPLOYED_HTTP",
+  "target": "https://dp.srvf.team",
+  "deployment_commit": "UNKNOWN",
+  "helper_sha256": "18bbbb528ff4637fe22631c7036bd3591698670b93a3437ba0b859438e9fb8bb",
+  "scope": "synthetic A and B ordinary members in distinct synthetic organizations; insurance identifiers redacted",
+  "results": [
+    {
+      "time": "2026-11-13T05:57:26.056855+08:00",
+      "role": "A",
+      "method": "POST",
+      "path": "/api/auth/v1/login",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe39ctz0f1f29ff4dbb978499dba333"
+    },
+    {
+      "time": "2026-11-13T05:57:30.735079+08:00",
+      "role": "A",
+      "method": "GET",
+      "path": "/api/app/v1/me",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe39gdh4e69be065382c487582ada6d",
+      "member_matches": true,
+      "user_and_member_active": true,
+      "can_use_app": true
+    },
+    {
+      "time": "2026-11-13T05:57:34.976347+08:00",
+      "role": "B",
+      "method": "POST",
+      "path": "/api/auth/v1/login",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe39jn4e48891067c48e5f4b07a284c"
+    },
+    {
+      "time": "2026-11-13T05:57:39.584222+08:00",
+      "role": "B",
+      "method": "GET",
+      "path": "/api/app/v1/me",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe39n7j912e5578e1b5d730efeb4f75",
+      "member_matches": true,
+      "user_and_member_active": true,
+      "can_use_app": true
+    },
+    {
+      "time": "2026-11-13T05:57:46.760988+08:00",
+      "role": "A",
+      "method": "GET",
+      "path": "/api/app/v1/me/insurances?page=1&pageSize=100",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe39sq46115214c6397bf55d01bce56",
+      "cache_bypass_requested": true,
+      "complete_unique_precheck": true
+    },
+    {
+      "time": "2026-11-13T05:57:46.841964+08:00",
+      "role": "A",
+      "method": "POST",
+      "path": "/api/app/v1/me/insurances",
+      "status": 201,
+      "code": 0,
+      "request_id": "cmwe39ssh00d4aabe2bd4f0a2ed0c3652",
+      "synthetic_future_coverage": true,
+      "single_attempt": true
+    },
+    {
+      "time": "2026-11-13T05:57:46.960379+08:00",
+      "role": "A",
+      "method": "GET",
+      "path": "/api/app/v1/me/insurances?page=1&pageSize=100",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe39svv0e2809bf50634255587161dd",
+      "cache_bypass_requested": true,
+      "complete_readback": true,
+      "fields_match": true,
+      "version_matches": true
+    },
+    {
+      "time": "2026-11-13T05:57:53.988785+08:00",
+      "role": "B",
+      "method": "PATCH",
+      "path": "/api/app/v1/me/insurances/{id}",
+      "status": 404,
+      "code": 26001,
+      "request_id": "cmwe39ybw03a24005582b738af53d24b2",
+      "single_attempt": true
+    },
+    {
+      "time": "2026-11-13T05:57:54.106436+08:00",
+      "role": "A",
+      "method": "GET",
+      "path": "/api/app/v1/me/insurances?page=1&pageSize=100",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe39yejcfe9aec6be59168f981a643e",
+      "cache_bypass_requested": true,
+      "fields_match": true,
+      "version_matches": true
+    },
+    {
+      "time": "2026-11-13T05:57:58.705851+08:00",
+      "role": "B",
+      "method": "DELETE",
+      "path": "/api/app/v1/me/insurances/{id}?expectedVersion={version}",
+      "status": 404,
+      "code": 26001,
+      "request_id": "cmwe3a1xvbe2a12f088e39d108883ee2d",
+      "single_attempt": true
+    },
+    {
+      "time": "2026-11-13T05:57:58.800217+08:00",
+      "role": "A",
+      "method": "GET",
+      "path": "/api/app/v1/me/insurances?page=1&pageSize=100",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe3a21rf1afbf076316437b521837a6",
+      "cache_bypass_requested": true,
+      "fields_match": true,
+      "version_matches": true
+    }
+  ],
+  "limits": [
+    "Response messages were not retained; request IDs shown as provided by the service.",
+    "Independent direct HTTPS reads requested cache bypass; behavior of all intermediate caches is not independently proven.",
+    "These are newly created synthetic identities and data, not same-condition replays of the historical three insurance 500s.",
+    "Future coverage avoids the known 30-day reminder window and current test activity, but later side effects cannot be excluded.",
+    "The client stopped and released its listener; no logout was attempted and server-side sessions remain UNKNOWN."
+  ]
+}

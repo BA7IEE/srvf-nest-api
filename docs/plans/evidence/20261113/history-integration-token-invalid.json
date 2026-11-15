@@ -1,0 +1,42 @@
+{
+  "results": [
+    {
+      "time": "2026-11-13T04:08:24.129+08:00",
+      "method": "POST",
+      "target": "https://dp.srvf.team/api/auth/v1/service-token",
+      "role": "anonymous",
+      "status": 503,
+      "code": 37030,
+      "message": "Integration API 未启用",
+      "content_type": "application/json; charset=utf-8",
+      "request_id": "srvf-qa-resume-725f8f63ab0e42a0ae93ba0696bcbcdb",
+      "client_request_id": "srvf-qa-resume-725f8f63ab0e42a0ae93ba0696bcbcdb",
+      "response_token_field_present": false,
+      "original_request_body_keys": [
+        "__srvf_audit_invalid_field"
+      ],
+      "original_request_body_values_redacted": true,
+      "original_request_id": null,
+      "limit": "original headers and deployed SHA unknown; rate-limit bucket may change"
+    },
+    {
+      "time": "2026-11-13T04:08:24.371+08:00",
+      "method": "POST",
+      "target": "https://dp.srvf.team/api/auth/v1/delegated-token",
+      "role": "anonymous",
+      "status": 401,
+      "code": 37011,
+      "message": "<redacted or unavailable>",
+      "content_type": "application/json; charset=utf-8",
+      "request_id": "srvf-qa-resume-f7aee42e68e447fcadcceee2aac08cfe",
+      "client_request_id": "srvf-qa-resume-f7aee42e68e447fcadcceee2aac08cfe",
+      "response_token_field_present": false,
+      "original_request_body_keys": [
+        "__srvf_audit_invalid_field"
+      ],
+      "original_request_body_values_redacted": true,
+      "original_request_id": null,
+      "limit": "original headers and deployed SHA unknown; rate-limit bucket may change"
+    }
+  ]
+}

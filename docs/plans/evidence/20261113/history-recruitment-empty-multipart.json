@@ -1,0 +1,46 @@
+{
+  "results": [
+    {
+      "time": "2026-11-13T05:01:08.086+08:00",
+      "target": "https://dp.srvf.team/api/open/v1/recruitment/applications",
+      "method": "POST",
+      "role": "anonymous",
+      "status": 400,
+      "code": 40000,
+      "message": "请求参数错误",
+      "content_type": "application/json; charset=utf-8",
+      "request_id": "srvf-qa-resume-7b77648836e94a148f2ff523b8dabe91",
+      "client_request_id": "srvf-qa-resume-7b77648836e94a148f2ff523b8dabe91",
+      "set_cookie_present": false,
+      "location_present": false,
+      "followed_redirect": false,
+      "original_body": "empty multipart, no fields or files",
+      "original_request_id": null,
+      "limitations": [
+        "Original unspecified headers and deployed SHA UNKNOWN.",
+        "Rate-limit bucket may change."
+      ]
+    },
+    {
+      "time": "2026-11-13T05:01:08.216+08:00",
+      "target": "https://dp.srvf.team/api/open/v1/recruitment/applications/recognize",
+      "method": "POST",
+      "role": "anonymous",
+      "status": 400,
+      "code": 40000,
+      "message": "请求参数错误",
+      "content_type": "application/json; charset=utf-8",
+      "request_id": "srvf-qa-resume-a2b408f307844a1481a911f01d6f7000",
+      "client_request_id": "srvf-qa-resume-a2b408f307844a1481a911f01d6f7000",
+      "set_cookie_present": false,
+      "location_present": false,
+      "followed_redirect": false,
+      "original_body": "empty multipart, no fields or files",
+      "original_request_id": null,
+      "limitations": [
+        "Original unspecified headers and deployed SHA UNKNOWN.",
+        "Rate-limit bucket may change."
+      ]
+    }
+  ]
+}

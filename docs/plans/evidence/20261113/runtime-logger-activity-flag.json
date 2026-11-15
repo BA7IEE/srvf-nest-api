@@ -1,0 +1,45 @@
+{
+  "recorded_at": "2026-11-13T04:17:12+08:00",
+  "operation_time_exact": "UNKNOWN",
+  "operation_time_bound": "after 2026-11-13T04:10:15.229+08:00 and before recorded_at",
+  "scope": "target API container only",
+  "logger_artifact": "/app/dist/bootstrap/logger-options.js",
+  "logger_validation": "Loaded module, invoked buildLoggerModuleParams with non-sensitive synthetic configuration, tested request serializer with noncredential canary.",
+  "serializer_output_keys": [
+    "method",
+    "url"
+  ],
+  "serializer_drops_body": true,
+  "serializer_drops_query": true,
+  "redaction_paths": [
+    "req.headers.authorization",
+    "req.headers.cookie",
+    "res.headers[\"set-cookie\"]",
+    "req.body.password",
+    "req.body.oldPassword",
+    "req.body.newPassword",
+    "req.body.token",
+    "req.body.accessToken",
+    "req.body.refreshToken",
+    "req.body.stepUpToken",
+    "*.password",
+    "*.oldPassword",
+    "*.newPassword",
+    "*.passwordHash",
+    "*.token",
+    "*.accessToken",
+    "*.refreshToken",
+    "*.stepUpToken"
+  ],
+  "censor": "[REDACTED]",
+  "remove": false,
+  "activity_env_key": "ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED",
+  "activity_env_present": true,
+  "activity_env_value": "false",
+  "compiled_parser_result": false,
+  "limits": [
+    "The logger test does not establish behavior of proxies, custom logs, browser extensions or all telemetry.",
+    "Actual process in-memory activity configuration was not inspected.",
+    "Deployment Git SHA UNKNOWN."
+  ]
+}

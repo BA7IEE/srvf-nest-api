@@ -1,0 +1,49 @@
+{
+  "evidence_type": "DEPLOYED_RUNTIME",
+  "deployment_git_sha": "UNKNOWN",
+  "check_time": "UNKNOWN",
+  "requested_post_scan_window": {
+    "from_inclusive": "2026-11-13T10:45:20+08:00",
+    "until_inclusive": "2026-11-13T10:46:25+08:00"
+  },
+  "log_read_windows": [
+    {
+      "from": "2026-11-13T10:33:00+08:00",
+      "until": "2026-11-13T10:36:00+08:00"
+    },
+    {
+      "from": "2026-11-13T10:45:00+08:00",
+      "until": "2026-11-13T10:47:00+08:00"
+    }
+  ],
+  "anchors": [
+    {
+      "request_id": "cmwed5yxvdcc7d9c63b97dcee8506fe5e",
+      "method": "GET",
+      "path": "/api/admin/v1/activities/{id}/registrations",
+      "status": 200,
+      "unique_completion_match": true,
+      "server_time": "UNKNOWN"
+    },
+    {
+      "request_id": "cmwedksyea328e2c36bb995923022b589",
+      "method": "GET",
+      "path": "/api/admin/v1/activities/{id}/registrations",
+      "status": 200,
+      "unique_completion_match": true,
+      "server_time": "UNKNOWN",
+      "client_receipt_time_reported": "2026-11-13T10:46:16.659+08:00"
+    }
+  ],
+  "actual_paths_match_in_memory": true,
+  "matching_post_count": "UNKNOWN",
+  "matching_post_details": "UNKNOWN",
+  "reason_for_unknown": "UNKNOWN",
+  "other_instances": "UNKNOWN",
+  "limitations": [
+    "脚本返回 POST 数 UNKNOWN，触发该状态的具体分支 UNKNOWN；不能把默认空详情当作零次写入。",
+    "可能原因包括不可解析行、时间范围覆盖不足、匹配 POST 关联不完整或处理异常；这些均为可能性，未经区分和证实。",
+    "仅检查目标容器有界日志，不证明其他实例、尚未完成请求、缺失日志或实际业务状态。",
+    "两次路径比较仅在内存进行，未记录实际活动标识、请求体或认证信息。"
+  ]
+}

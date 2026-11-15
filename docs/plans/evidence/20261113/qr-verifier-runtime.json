@@ -1,0 +1,39 @@
+{
+  "evidence_type": "DEPLOYED_RUNTIME",
+  "inspection_time": "2026-11-13T12:02:24.937+08:00",
+  "target": {
+    "api_container_unique_against_prior_name_fingerprint": true,
+    "external_route_to_inspected_process": "UNKNOWN",
+    "deployment_git_sha": "UNKNOWN"
+  },
+  "scope": "目标 API 容器中二维码校验、自助打卡服务与错误码的直接编译产物；静态检查",
+  "facts": {
+    "verifier_function_found": true,
+    "first_guard_rejects_single_part_synchronously": true,
+    "nonempty_string_without_dot_fails_format_guard_before_decode_or_hmac": true,
+    "credential_service_directly_delegates_to_verifier": true,
+    "self_punch_function_found": true,
+    "workflow_gate_before_qr_verification": true,
+    "qr_verification_before_business_transaction": true,
+    "verification_exception_mapped_to_attendance_qr_not_found": true,
+    "qr_not_found_business_code": 22084,
+    "qr_not_found_http_status": 404,
+    "no_await_in_direct_self_punch_before_verifier": true,
+    "no_direct_persistence_or_dispatch_call_before_verifier": true
+  },
+  "limitations": [
+    "静态代码结果不等于已经发送 HTTP 或取得实际接口响应。",
+    "先前认证、成员、DTO 校验和活动 v1.1 开关可能提前拒绝；实际响应码以请求为准。",
+    "直接方法检查不证明整个 HTTP 请求无写入；控制器、认证、限流、日志、数据库触发器及独立 worker 的实际副作用仍 UNKNOWN。",
+    "LOCAL 限流实现可能修改 PostgreSQL 限流桶，目标路径及运行配置是否适用 UNKNOWN。",
+    "实际公网流量到该进程的路由、运行进程加载状态和部署 Git SHA UNKNOWN。",
+    "首次只读检查脚本因转义出现 Python SyntaxError，在执行前终止；修正后的检查返回上述结果。"
+  ],
+  "operations": {
+    "business_http_request_sent": false,
+    "credential_or_business_data_read": false,
+    "isolated_terminal_exited": true,
+    "isolated_browser_tab_closed": true,
+    "old_multiline_terminal_touched": false
+  }
+}

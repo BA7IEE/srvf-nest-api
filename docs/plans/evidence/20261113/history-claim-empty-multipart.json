@@ -1,0 +1,21 @@
+{
+  "time": "2026-11-13T05:02:18.085+08:00",
+  "target": "https://dp.srvf.team/api/open/v1/recruitment/certificate-claims",
+  "method": "POST",
+  "role": "anonymous",
+  "status": 400,
+  "code": 40000,
+  "message": "证书类别非法",
+  "content_type": "application/json; charset=utf-8",
+  "request_id": "srvf-qa-resume-3ac3e0e412534e7b8fe4a38ffb9c8dbc",
+  "client_request_id": "srvf-qa-resume-3ac3e0e412534e7b8fe4a38ffb9c8dbc",
+  "set_cookie_present": false,
+  "location_present": false,
+  "followed_redirect": false,
+  "original_body": "empty multipart, no fields or files",
+  "original_request_id": null,
+  "limitations": [
+    "Original unspecified headers and deployed SHA UNKNOWN.",
+    "Rate-limit bucket may change."
+  ]
+}

@@ -1,0 +1,382 @@
+{
+  "classification": "DEPLOYED_HTTP",
+  "deployment_sha": "UNKNOWN",
+  "roles_all_unassigned": true,
+  "requests": [
+    {
+      "time": "2026-11-13T05:20:19.022+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/system/v1/roles?page=1&pageSize=100&code=activity-publish-reviewer",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe1xm6e27345c5273373d6a5d1be156",
+      "exact_matches": 1
+    },
+    {
+      "time": "2026-11-13T05:20:24.941+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/system/v1/roles?page=1&pageSize=100&code=attendance-first-reviewer",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe1xqr15310ee5dc8b0afcb441e0d57",
+      "exact_matches": 1
+    },
+    {
+      "time": "2026-11-13T05:20:30.707+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/system/v1/roles?page=1&pageSize=100&code=attendance-final-reviewer",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe1xv7b5e63384b570b8608a0edf3dd",
+      "exact_matches": 1
+    },
+    {
+      "time": "2026-11-13T05:20:35.998+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/system/v1/roles/{roleId}/permissions",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe1xz9xe630061867e448af03617d90",
+      "role": "activity-publish-reviewer",
+      "permission_codes": [
+        "activity-review.read.request",
+        "activity-review.return.request",
+        "activity.publish.record"
+      ],
+      "permission_revision": 0
+    },
+    {
+      "time": "2026-11-13T05:20:42.164+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/system/v1/roles/{roleId}/permissions",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe1y43affc97fa85f78792054470a6d",
+      "role": "attendance-first-reviewer",
+      "permission_codes": [
+        "activity.settlement-first-review.record",
+        "attendance.approve.sheet",
+        "attendance.read.sheet",
+        "attendance.reject.sheet",
+        "attendance.return.sheet"
+      ],
+      "permission_revision": 0
+    },
+    {
+      "time": "2026-11-13T05:20:47.043+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/system/v1/roles/{roleId}/permissions",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe1y7t7b88477676c9ba861c0411944",
+      "role": "attendance-final-reviewer",
+      "permission_codes": [
+        "activity.settlement-final-review.record",
+        "attendance.final-approve.sheet",
+        "attendance.final-reject.sheet",
+        "attendance.final-return.sheet",
+        "attendance.read.sheet",
+        "attendance.reopen.sheet"
+      ],
+      "permission_revision": 0
+    },
+    {
+      "time": "2026-11-13T05:21:01.135+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgAId}",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe1yippa509f9025758f5de39ae46ad",
+      "principal": "R1",
+      "role": "activity-publish-reviewer",
+      "valid": true,
+      "conflicts": 0,
+      "resolved_scope": "ORGANIZATION"
+    },
+    {
+      "time": "2026-11-13T05:21:08.633+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgAId}",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe1yoi1e09c1d52b19cf981dc3b168e",
+      "principal": "R2",
+      "role": "activity-publish-reviewer",
+      "valid": true,
+      "conflicts": 0,
+      "resolved_scope": "ORGANIZATION"
+    },
+    {
+      "time": "2026-11-13T05:21:15.518+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgAId}",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe1ytueb132914e4c68b39d11ff4c4f",
+      "principal": "R1",
+      "role": "attendance-first-reviewer",
+      "valid": true,
+      "conflicts": 0,
+      "resolved_scope": "ORGANIZATION"
+    },
+    {
+      "time": "2026-11-13T05:21:25.564+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgAId}",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe1z1kb810a7dd8553e05766e53ced8",
+      "principal": "R2",
+      "role": "attendance-first-reviewer",
+      "valid": true,
+      "conflicts": 0,
+      "resolved_scope": "ORGANIZATION"
+    },
+    {
+      "time": "2026-11-13T05:21:32.616+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgAId}",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe1z706ce734f72ebea18e4ada36653",
+      "principal": "R1",
+      "role": "attendance-final-reviewer",
+      "valid": true,
+      "conflicts": 0,
+      "resolved_scope": "ORGANIZATION"
+    },
+    {
+      "time": "2026-11-13T05:21:47.464+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgAId}",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe1zigp7064e2499a72f2b4832b6767",
+      "principal": "R2",
+      "role": "attendance-final-reviewer",
+      "valid": true,
+      "conflicts": 0,
+      "resolved_scope": "ORGANIZATION"
+    },
+    {
+      "time": "2026-11-13T05:21:53.812+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/system/v1/roles?page=1&pageSize=100&code=activity",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe1znczf27544b02cd96cac548c53cb",
+      "total": 5
+    },
+    {
+      "time": "2026-11-13T05:22:01.250+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/system/v1/roles/{roleId}/permissions",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe1zt3pd1b5637c89b3241613835f0c",
+      "role": "activity-owner",
+      "permission_codes": [
+        "activity-registration.approve.record",
+        "activity-registration.cancel.record",
+        "activity-registration.create.record",
+        "activity-registration.read.record",
+        "activity-registration.reject.record",
+        "activity-registration.reopen.record",
+        "activity.cancel.record",
+        "activity.complete.record",
+        "activity.settlement-close.record",
+        "activity.settlement-generate.record",
+        "activity.settlement-submit.record",
+        "activity.settlement-update-draft.record",
+        "activity.update.record",
+        "attendance.create.sheet",
+        "attendance.delete.sheet",
+        "attendance.read.sheet",
+        "attendance.update.sheet"
+      ],
+      "permission_revision": 0
+    },
+    {
+      "time": "2026-11-13T05:22:06.487+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/system/v1/roles/{roleId}/permissions",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe1zx58a2708b0d4d5bbdb91328aa5c",
+      "role": "activity-cross-org-initiator",
+      "permission_codes": [
+        "activity.create.cross-org"
+      ],
+      "permission_revision": 0
+    },
+    {
+      "time": "2026-11-13T05:22:14.042+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/system/v1/roles?page=1&pageSize=100",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe202yy7badcbf58fb878dfae2d8c1d",
+      "total": 26
+    },
+    {
+      "time": "2026-11-13T05:22:28.657+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/system/v1/roles/{roleId}/permissions",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe20e8wc07bf058fccc4bea221adac1",
+      "role": "qa1405-organizer-20261107",
+      "permission_codes": [
+        "activity.contribution-policy.select",
+        "activity.create.record",
+        "activity.time-policy.select",
+        "activity.update.record"
+      ],
+      "permission_revision": 0
+    },
+    {
+      "time": "2026-11-13T05:22:37.135+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgAId}",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe20kscb7ccf56d0732decea243bd1b",
+      "principal": "A",
+      "role": "qa1405-organizer-20261107",
+      "valid": true,
+      "conflicts": 0,
+      "resolved_scope": "ORGANIZATION"
+    },
+    {
+      "time": "2026-11-13T05:25:30.833+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgAId}&endedAt=2026-11-15T06%3A00%3A00%2B08%3A00",
+      "principal": "A",
+      "role": "qa1405-organizer-20261107",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe24atpa5818b1f9988d302978a99b9",
+      "valid": true,
+      "conflicts": 0,
+      "resolved_scope": "ORGANIZATION",
+      "scope_matches_organization_A": true,
+      "response_echoes_endedAt": false
+    },
+    {
+      "time": "2026-11-13T05:25:37.641+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgAId}&endedAt=2026-11-15T06%3A00%3A00%2B08%3A00",
+      "principal": "R1",
+      "role": "activity-publish-reviewer",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe24g2o99feccfe9c46e06580162cbc",
+      "valid": true,
+      "conflicts": 0,
+      "resolved_scope": "ORGANIZATION",
+      "scope_matches_organization_A": true,
+      "response_echoes_endedAt": false
+    },
+    {
+      "time": "2026-11-13T05:25:44.789+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgAId}&endedAt=2026-11-15T06%3A00%3A00%2B08%3A00",
+      "principal": "R1",
+      "role": "attendance-first-reviewer",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe24lkzd29c0a29f0ed1ada25b26466",
+      "valid": true,
+      "conflicts": 0,
+      "resolved_scope": "ORGANIZATION",
+      "scope_matches_organization_A": true,
+      "response_echoes_endedAt": false
+    },
+    {
+      "time": "2026-11-13T05:25:51.897+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgAId}&endedAt=2026-11-15T06%3A00%3A00%2B08%3A00",
+      "principal": "R2",
+      "role": "attendance-final-reviewer",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe24r2fd67ab23c6c61ddca10f6bd4b",
+      "valid": true,
+      "conflicts": 0,
+      "resolved_scope": "ORGANIZATION",
+      "scope_matches_organization_A": true,
+      "response_echoes_endedAt": false
+    },
+    {
+      "time": "2026-11-13T05:26:01.533+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/admin/v1/role-bindings?principalType=USER&principalId={userId}&roleId={roleId}",
+      "principal": "A",
+      "role": "qa1405-organizer-20261107",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe24yi31435cd107c4f7a6cbf4af7e6",
+      "count": 0
+    },
+    {
+      "time": "2026-11-13T05:26:07.861+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/admin/v1/role-bindings?principalType=USER&principalId={userId}&roleId={roleId}",
+      "principal": "R1",
+      "role": "activity-publish-reviewer",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe253dx32450028002addd83204d024",
+      "count": 0
+    },
+    {
+      "time": "2026-11-13T05:26:13.772+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/admin/v1/role-bindings?principalType=USER&principalId={userId}&roleId={roleId}",
+      "principal": "R1",
+      "role": "attendance-first-reviewer",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe257y1f7dddc410574851fdab09ea0",
+      "count": 0
+    },
+    {
+      "time": "2026-11-13T05:26:19.671+08:00",
+      "method": "GET",
+      "target": "https://dp.srvf.team/api/admin/v1/role-bindings?principalType=USER&principalId={userId}&roleId={roleId}",
+      "principal": "R2",
+      "role": "attendance-final-reviewer",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe25cmsd0d2d9363062d929f22436dd",
+      "count": 0
+    }
+  ],
+  "limits": [
+    "Role code filter is contains; exact matches checked in memory.",
+    "Preview is not a role binding or proof of live authorization.",
+    "No direct notification, member sensitive or payment code in the three reviewer sets; publish can have notification side effects and first/final sets include settlement review.",
+    "activity-owner is SYSTEM_ONLY; qa1405 organizer is pre-existing custom role read only.",
+    "Four expiry previews validate the input but do not echo endedAt; role creation has no expectedRevision field."
+  ],
+  "proposed_binding_post_fields": [
+    "principalType",
+    "principalId",
+    "roleId",
+    "scopeType",
+    "scopeOrgId",
+    "endedAt"
+  ],
+  "role_permission_revisions": {
+    "qa1405-organizer-20261107": 0,
+    "activity-publish-reviewer": 0,
+    "attendance-first-reviewer": 0,
+    "attendance-final-reviewer": 0
+  },
+  "role_permission_management": {
+    "qa1405-organizer-20261107": "ADMIN_EDITABLE",
+    "activity-publish-reviewer": "RELEASE_MANAGED",
+    "attendance-first-reviewer": "RELEASE_MANAGED",
+    "attendance-final-reviewer": "RELEASE_MANAGED"
+  }
+}

@@ -1,0 +1,836 @@
+{
+  "classification": "DEPLOYED_HTTP; controlled same-origin diagnostic POST adaptation",
+  "deploymentSha": "UNKNOWN",
+  "confirmation": "user confirmed four named limited grants",
+  "scopeType": "ORGANIZATION",
+  "scopeOrganization": "synthetic A",
+  "endedAt": "2026-11-15T06:00:00+08:00",
+  "submittedFieldNames": [
+    "principalType",
+    "principalId",
+    "roleId",
+    "scopeType",
+    "scopeOrgId",
+    "endedAt"
+  ],
+  "identityAssertions": {
+    "threeUsersActive": true,
+    "allUserMemberLinksMatch": true,
+    "allSyntheticMembersActive": true,
+    "eachHasOneActivePrimaryInOrganizationA": true
+  },
+  "initialChecks": [
+    {
+      "method": "GET",
+      "path": "/api/system/v1/rbac/me/permissions",
+      "timeUtc": "2026-11-13T01:05:01.380Z",
+      "timeBeijing": "2026-11-13T09:05:01.380+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwe9yl7m440ffb57c70f20cc7ba4b473",
+      "canReadAndCreateBindings": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/system/v1/roles?page=1&pageSize=100&code={roleCode}",
+      "timeUtc": "2026-11-13T01:05:24.961Z",
+      "timeBeijing": "2026-11-13T09:05:24.961+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwe9z3fb286885b79a1976a7ed6b6ede",
+      "role": "qa1405-organizer-20261107",
+      "exactMatches": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/system/v1/roles?page=1&pageSize=100&code={roleCode}",
+      "timeUtc": "2026-11-13T01:05:25.647Z",
+      "timeBeijing": "2026-11-13T09:05:25.647+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwe9z3wzc37ce792791ef8ebb7f8e46c",
+      "role": "activity-publish-reviewer",
+      "exactMatches": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/system/v1/roles?page=1&pageSize=100&code={roleCode}",
+      "timeUtc": "2026-11-13T01:05:26.411Z",
+      "timeBeijing": "2026-11-13T09:05:26.411+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwe9z4j55c632042b47ced0244670176",
+      "role": "attendance-first-reviewer",
+      "exactMatches": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/system/v1/roles?page=1&pageSize=100&code={roleCode}",
+      "timeUtc": "2026-11-13T01:05:27.058Z",
+      "timeBeijing": "2026-11-13T09:05:27.058+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwe9z510995887ca9003beaff1692b69",
+      "role": "attendance-final-reviewer",
+      "exactMatches": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/system/v1/roles/{roleId}/permissions",
+      "timeUtc": "2026-11-13T01:05:34.242Z",
+      "timeBeijing": "2026-11-13T09:05:34.242+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwe9zajod38cdd1367cad6b124323070",
+      "role": "qa1405-organizer-20261107",
+      "revision": 0,
+      "permissionCodesMatch": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/system/v1/roles/{roleId}/permissions",
+      "timeUtc": "2026-11-13T01:05:34.834Z",
+      "timeBeijing": "2026-11-13T09:05:34.834+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwe9zb0568cd86c8647b0973a3b8f428",
+      "role": "activity-publish-reviewer",
+      "revision": 0,
+      "permissionCodesMatch": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/system/v1/roles/{roleId}/permissions",
+      "timeUtc": "2026-11-13T01:05:35.420Z",
+      "timeBeijing": "2026-11-13T09:05:35.420+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwe9zbi137d973f087cc330f88060d4f",
+      "role": "attendance-first-reviewer",
+      "revision": 0,
+      "permissionCodesMatch": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/system/v1/roles/{roleId}/permissions",
+      "timeUtc": "2026-11-13T01:05:36.054Z",
+      "timeBeijing": "2026-11-13T09:05:36.054+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwe9zby991681bb1f68e2375533f6193",
+      "role": "attendance-final-reviewer",
+      "revision": 0,
+      "permissionCodesMatch": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/organizations/{orgId}",
+      "timeUtc": "2026-11-13T01:05:55.461Z",
+      "timeBeijing": "2026-11-13T09:05:55.461+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwe9zqx681d7236d0afc3784d8242084",
+      "organization": "synthetic A",
+      "statusActive": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/users/{userId}",
+      "timeUtc": "2026-11-13T01:06:08.889Z",
+      "timeBeijing": "2026-11-13T09:06:08.889+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwea01aobf5e534e3e5f00a3ebdd8632",
+      "principal": "A"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/members/{memberId}",
+      "timeUtc": "2026-11-13T01:06:09.555Z",
+      "timeBeijing": "2026-11-13T09:06:09.555+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwea01sk2ed8eb972a269ccff2985290",
+      "principal": "A"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/members/{memberId}/memberships",
+      "timeUtc": "2026-11-13T01:06:10.223Z",
+      "timeBeijing": "2026-11-13T09:06:10.223+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwea02ba50924fa53640b9de7c6f177a",
+      "principal": "A"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/users/{userId}",
+      "timeUtc": "2026-11-13T01:06:10.839Z",
+      "timeBeijing": "2026-11-13T09:06:10.839+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwea02sdff194a4e69d20764a39e8f6e",
+      "principal": "R1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/members/{memberId}",
+      "timeUtc": "2026-11-13T01:06:11.473Z",
+      "timeBeijing": "2026-11-13T09:06:11.473+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwea039secbbd9d4a9bd8c8f6a4b062c",
+      "principal": "R1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/members/{memberId}/memberships",
+      "timeUtc": "2026-11-13T01:06:12.122Z",
+      "timeBeijing": "2026-11-13T09:06:12.122+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwea03tde499b113db06e17295d8eb8a",
+      "principal": "R1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/users/{userId}",
+      "timeUtc": "2026-11-13T01:06:12.718Z",
+      "timeBeijing": "2026-11-13T09:06:12.718+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwea048he4124da2bea18a30c7f8ac89",
+      "principal": "R2"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/members/{memberId}",
+      "timeUtc": "2026-11-13T01:06:13.382Z",
+      "timeBeijing": "2026-11-13T09:06:13.382+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwea04r276b6e5892cb9a49a8cd2ce76",
+      "principal": "R2"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/members/{memberId}/memberships",
+      "timeUtc": "2026-11-13T01:06:14.048Z",
+      "timeBeijing": "2026-11-13T09:06:14.048+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwea059l7305d9926eb2e6d90c8f5434",
+      "principal": "R2"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/role-bindings?principalType=USER&principalId={userId}",
+      "timeUtc": "2026-11-13T01:06:49.553Z",
+      "timeBeijing": "2026-11-13T09:06:49.553+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwea0wob55da5296b12cb204ccf2ad85",
+      "principal": "A",
+      "count": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/role-bindings?principalType=USER&principalId={userId}",
+      "timeUtc": "2026-11-13T01:06:50.215Z",
+      "timeBeijing": "2026-11-13T09:06:50.215+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwea0x5z9fa6bcbcfaf32a03d68723f6",
+      "principal": "R1",
+      "count": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/role-bindings?principalType=USER&principalId={userId}",
+      "timeUtc": "2026-11-13T01:06:50.844Z",
+      "timeBeijing": "2026-11-13T09:06:50.844+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwea0xnid02412da65595e01a75e9722",
+      "principal": "R2",
+      "count": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgId}&endedAt={expiry}",
+      "timeUtc": "2026-11-13T01:07:00.788Z",
+      "timeBeijing": "2026-11-13T09:07:00.788+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwea15bp07b24fab20f093bcf89dd426",
+      "principal": "A",
+      "role": "qa1405-organizer-20261107",
+      "valid": true,
+      "conflicts": 0,
+      "scopeMatches": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgId}&endedAt={expiry}",
+      "timeUtc": "2026-11-13T01:07:01.444Z",
+      "timeBeijing": "2026-11-13T09:07:01.444+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwea15un5565021ccb6a2d8c343018b6",
+      "principal": "R1",
+      "role": "activity-publish-reviewer",
+      "valid": true,
+      "conflicts": 0,
+      "scopeMatches": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgId}&endedAt={expiry}",
+      "timeUtc": "2026-11-13T01:07:02.104Z",
+      "timeBeijing": "2026-11-13T09:07:02.104+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwea16c990cacba9aad59bd465a45e01",
+      "principal": "R1",
+      "role": "attendance-first-reviewer",
+      "valid": true,
+      "conflicts": 0,
+      "scopeMatches": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgId}&endedAt={expiry}",
+      "timeUtc": "2026-11-13T01:07:02.752Z",
+      "timeBeijing": "2026-11-13T09:07:02.752+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwea16udfbdf74ef90abdcd74a306cd4",
+      "principal": "R2",
+      "role": "attendance-final-reviewer",
+      "valid": true,
+      "conflicts": 0,
+      "scopeMatches": true
+    }
+  ],
+  "additionalChecks": [
+    {
+      "method": "GET",
+      "path": "/api/system/v1/roles/{roleId}/permissions",
+      "timeUtc": "2026-11-13T01:13:43.690Z",
+      "timeBeijing": "2026-11-13T09:13:43.690+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwea9s8ta37bed445a4f4e69907b0231",
+      "principal": "A"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/role-bindings?principalType=USER&principalId={userId}&roleId={roleId}",
+      "timeUtc": "2026-11-13T01:13:44.373Z",
+      "timeBeijing": "2026-11-13T09:13:44.373+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwea9sqh5defd9f1d159581b3238db4d",
+      "principal": "A"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgId}&endedAt={expiry}",
+      "timeUtc": "2026-11-13T01:13:45.058Z",
+      "timeBeijing": "2026-11-13T09:13:45.058+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwea9tcdad4be16f9ae43c7884562c6b",
+      "principal": "A"
+    },
+    {
+      "method": "GET",
+      "path": "/api/system/v1/roles/{roleId}/permissions",
+      "timeUtc": "UNKNOWN",
+      "timeBeijing": "UNKNOWN",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmweabvf6971ae31bc317485c721def3a",
+      "principal": "A"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/role-bindings?principalType=USER&principalId={userId}&roleId={roleId}",
+      "timeUtc": "UNKNOWN",
+      "timeBeijing": "UNKNOWN",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmweabvx5db1bf02a713742c6813ce590",
+      "principal": "A"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgId}&endedAt={expiry}",
+      "timeUtc": "UNKNOWN",
+      "timeBeijing": "UNKNOWN",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmweabwf373b4e7d08f8de862da5f13bd",
+      "principal": "A"
+    },
+    {
+      "method": "GET",
+      "path": "/api/system/v1/roles/{roleId}/permissions",
+      "timeUtc": "2026-11-13T01:20:31.159Z",
+      "timeBeijing": "2026-11-13T09:20:31.159+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmweaiim46a72750fa2cae2f10ae7c104",
+      "principal": "A"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/role-bindings?principalType=USER&principalId={userId}&roleId={roleId}",
+      "timeUtc": "2026-11-13T01:20:31.855Z",
+      "timeBeijing": "2026-11-13T09:20:31.855+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmweaij5efc61f4337cb5457755af8362",
+      "principal": "A"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgId}&endedAt={expiry}",
+      "timeUtc": "2026-11-13T01:20:32.518Z",
+      "timeBeijing": "2026-11-13T09:20:32.518+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmweaijo47997ffdeffc39c4b5e30efef",
+      "principal": "A"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/role-bindings?principalType=USER&principalId={userId}&roleId={roleId}",
+      "timeUtc": "2026-11-13T01:08:37.553Z",
+      "timeBeijing": "2026-11-13T09:08:37.553+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmwea37zk4877d85236e2db3525eb33ff",
+      "principal": "A",
+      "count": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/v1/authz/explain",
+      "timeUtc": "2026-11-13T01:14:18.988Z",
+      "timeBeijing": "2026-11-13T09:14:18.988+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmweaajgr3dc0f6f3711e4251ed1defd8",
+      "principal": "A",
+      "readOnlyCanary": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v1/role-bindings?principalType=USER&principalId={userId}&roleId={roleId}",
+      "timeUtc": "2026-11-13T01:16:02.176Z",
+      "timeBeijing": "2026-11-13T09:16:02.176+08:00",
+      "status": 200,
+      "code": 0,
+      "requestId": "cmweacr2049d126066271f28a17fb0cd1",
+      "principal": "A",
+      "count": 0
+    }
+  ],
+  "grants": [
+    {
+      "principal": "A",
+      "role": "qa1405-organizer-20261107",
+      "preflight": [
+        {
+          "method": "GET",
+          "path": "/api/system/v1/roles/{roleId}/permissions",
+          "timeUtc": "2026-11-13T01:23:51.123Z",
+          "timeBeijing": "2026-11-13T09:23:51.123+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweamswx5cd9a7f03ef51ae9e8052457"
+        },
+        {
+          "method": "GET",
+          "path": "/api/admin/v1/role-bindings?principalType=USER&principalId={userId}&roleId={roleId}",
+          "timeUtc": "2026-11-13T01:23:51.750Z",
+          "timeBeijing": "2026-11-13T09:23:51.750+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweamte130c7c8ace1d27328135a4044"
+        },
+        {
+          "method": "GET",
+          "path": "/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgId}&endedAt={expiry}",
+          "timeUtc": "2026-11-13T01:23:52.383Z",
+          "timeBeijing": "2026-11-13T09:23:52.383+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweamtvn5e0846f6a81d1bcf3c6d6827"
+        }
+      ],
+      "preflightAssertions": {
+        "permissionRevision": 0,
+        "permissionCodesMatchConfirmed": true,
+        "exactBindingCount": 0,
+        "previewValid": true,
+        "previewConflicts": 0,
+        "scopeMatchesOrganizationA": true
+      },
+      "write": {
+        "method": "POST",
+        "path": "/api/admin/v1/role-bindings",
+        "timeUtc": "2026-11-13T01:24:47.619Z",
+        "timeBeijing": "2026-11-13T09:24:47.619+08:00",
+        "status": 201,
+        "code": 0,
+        "requestId": "cmweao0ia0f5e4224b897e001d4d6f467"
+      },
+      "writeAssertions": {
+        "controlledRequestAdaptation": true,
+        "singleAdaptedPost": true,
+        "requestFinished": true,
+        "interceptionTabClosed": true,
+        "serverRouteIndependentlyVerified": "UNKNOWN"
+      },
+      "readback": [
+        {
+          "method": "GET",
+          "path": "/api/admin/v1/role-bindings?principalType=USER&principalId={userId}&roleId={roleId}",
+          "timeUtc": "2026-11-13T01:24:59.232Z",
+          "timeBeijing": "2026-11-13T09:24:59.232+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweao9hc93467635892407e3ff8e2d8b"
+        },
+        {
+          "method": "GET",
+          "path": "/api/admin/v1/role-bindings/{bindingId}",
+          "timeUtc": "2026-11-13T01:24:59.825Z",
+          "timeBeijing": "2026-11-13T09:24:59.825+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweao9xqc6dbd771fb326a659fcad9b7"
+        }
+      ],
+      "readbackAssertions": {
+        "listCount": 1,
+        "sameBinding": true,
+        "principalMatches": true,
+        "roleMatches": true,
+        "scopeType": "ORGANIZATION",
+        "scopeOrganizationMatches": true,
+        "status": "ACTIVE",
+        "expiryMatches": true,
+        "readSessionClosed": true
+      }
+    },
+    {
+      "principal": "R1",
+      "role": "activity-publish-reviewer",
+      "preflight": [
+        {
+          "method": "GET",
+          "path": "/api/system/v1/roles/{roleId}/permissions",
+          "timeUtc": "2026-11-13T01:26:39.818Z",
+          "timeBeijing": "2026-11-13T09:26:39.818+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweaqf310e6986f8d0f5adb88d439bfd"
+        },
+        {
+          "method": "GET",
+          "path": "/api/admin/v1/role-bindings?principalType=USER&principalId={userId}&roleId={roleId}",
+          "timeUtc": "2026-11-13T01:26:40.444Z",
+          "timeBeijing": "2026-11-13T09:26:40.444+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweaqfk552535f2b3e202fee840009b9"
+        },
+        {
+          "method": "GET",
+          "path": "/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgId}&endedAt={expiry}",
+          "timeUtc": "2026-11-13T01:26:41.108Z",
+          "timeBeijing": "2026-11-13T09:26:41.108+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweaqg2k0116a343b819dd4b8d942ac8"
+        }
+      ],
+      "preflightAssertions": {
+        "permissionRevision": 0,
+        "permissionCodesMatchConfirmed": true,
+        "exactBindingCount": 0,
+        "previewValid": true,
+        "previewConflicts": 0,
+        "scopeMatchesOrganizationA": true
+      },
+      "write": {
+        "method": "POST",
+        "path": "/api/admin/v1/role-bindings",
+        "timeUtc": "2026-11-13T01:27:13.404Z",
+        "timeBeijing": "2026-11-13T09:27:13.404+08:00",
+        "status": 201,
+        "code": 0,
+        "requestId": "cmwear4zke72811ed97b457628622564c"
+      },
+      "writeAssertions": {
+        "controlledRequestAdaptation": true,
+        "singleAdaptedPost": true,
+        "requestFinished": true,
+        "interceptionTabClosed": true,
+        "serverRouteIndependentlyVerified": "UNKNOWN"
+      },
+      "readback": [
+        {
+          "method": "GET",
+          "path": "/api/admin/v1/role-bindings?principalType=USER&principalId={userId}&roleId={roleId}",
+          "timeUtc": "2026-11-13T01:27:33.152Z",
+          "timeBeijing": "2026-11-13T09:27:33.152+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweark8068ce3f5961835f747f15e143"
+        },
+        {
+          "method": "GET",
+          "path": "/api/admin/v1/role-bindings/{bindingId}",
+          "timeUtc": "2026-11-13T01:27:33.737Z",
+          "timeBeijing": "2026-11-13T09:27:33.737+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmwearkoh66ec866478fda6d79217a879"
+        },
+        {
+          "method": "GET",
+          "path": "/api/system/v1/roles/{roleId}/permissions",
+          "timeUtc": "2026-11-13T01:27:34.352Z",
+          "timeBeijing": "2026-11-13T09:27:34.352+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmwearl6o21685fc7eeaf1cd34861ca7e"
+        }
+      ],
+      "readbackAssertions": {
+        "listCount": 1,
+        "sameBinding": true,
+        "principalMatches": true,
+        "roleMatches": true,
+        "scopeType": "ORGANIZATION",
+        "scopeOrganizationMatches": true,
+        "status": "ACTIVE",
+        "expiryMatches": true,
+        "readSessionClosed": true
+      }
+    },
+    {
+      "principal": "R1",
+      "role": "attendance-first-reviewer",
+      "preflight": [
+        {
+          "method": "GET",
+          "path": "/api/system/v1/roles/{roleId}/permissions",
+          "timeUtc": "2026-11-13T01:27:55.824Z",
+          "timeBeijing": "2026-11-13T09:27:55.824+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweas1qh36650123ca40ce92c922ab2e"
+        },
+        {
+          "method": "GET",
+          "path": "/api/admin/v1/role-bindings?principalType=USER&principalId={userId}&roleId={roleId}",
+          "timeUtc": "2026-11-13T01:27:56.448Z",
+          "timeBeijing": "2026-11-13T09:27:56.448+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweas276d40141f9dddb6286994a9392"
+        },
+        {
+          "method": "GET",
+          "path": "/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgId}&endedAt={expiry}",
+          "timeUtc": "2026-11-13T01:27:57.092Z",
+          "timeBeijing": "2026-11-13T09:27:57.092+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweas2p453bb806d5825c1d7c418a0c0"
+        }
+      ],
+      "preflightAssertions": {
+        "permissionRevision": 0,
+        "permissionCodesMatchConfirmed": true,
+        "exactBindingCount": 0,
+        "previewValid": true,
+        "previewConflicts": 0,
+        "scopeMatchesOrganizationA": true
+      },
+      "write": {
+        "method": "POST",
+        "path": "/api/admin/v1/role-bindings",
+        "timeUtc": "2026-11-13T01:28:08.523Z",
+        "timeBeijing": "2026-11-13T09:28:08.523+08:00",
+        "status": 201,
+        "code": 0,
+        "requestId": "cmweasbiie695d837050942f329f3ad51"
+      },
+      "writeAssertions": {
+        "controlledRequestAdaptation": true,
+        "singleAdaptedPost": true,
+        "requestFinished": true,
+        "interceptionTabClosed": true,
+        "serverRouteIndependentlyVerified": "UNKNOWN"
+      },
+      "readback": [
+        {
+          "method": "GET",
+          "path": "/api/admin/v1/role-bindings?principalType=USER&principalId={userId}&roleId={roleId}",
+          "timeUtc": "2026-11-13T01:28:24.624Z",
+          "timeBeijing": "2026-11-13T09:28:24.624+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweasnxu6c7d898d4cf19a7682d4b676"
+        },
+        {
+          "method": "GET",
+          "path": "/api/admin/v1/role-bindings/{bindingId}",
+          "timeUtc": "2026-11-13T01:28:25.257Z",
+          "timeBeijing": "2026-11-13T09:28:25.257+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweasofwb7ea15c24ff3d8930531fe5f"
+        },
+        {
+          "method": "GET",
+          "path": "/api/system/v1/roles/{roleId}/permissions",
+          "timeUtc": "2026-11-13T01:28:25.920Z",
+          "timeBeijing": "2026-11-13T09:28:25.920+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweasozh1ae3de9fc77df653ff0fd3d2"
+        }
+      ],
+      "readbackAssertions": {
+        "listCount": 1,
+        "sameBinding": true,
+        "principalMatches": true,
+        "roleMatches": true,
+        "scopeType": "ORGANIZATION",
+        "scopeOrganizationMatches": true,
+        "status": "ACTIVE",
+        "expiryMatches": true,
+        "readSessionClosed": true
+      }
+    },
+    {
+      "principal": "R2",
+      "role": "attendance-final-reviewer",
+      "preflight": [
+        {
+          "method": "GET",
+          "path": "/api/system/v1/roles/{roleId}/permissions",
+          "timeUtc": "2026-11-13T01:28:44.161Z",
+          "timeBeijing": "2026-11-13T09:28:44.161+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweat30qc6e52409a8209da74415cc79"
+        },
+        {
+          "method": "GET",
+          "path": "/api/admin/v1/role-bindings?principalType=USER&principalId={userId}&roleId={roleId}",
+          "timeUtc": "2026-11-13T01:28:44.785Z",
+          "timeBeijing": "2026-11-13T09:28:44.785+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweat3jl03db41d954ce9efef0837255"
+        },
+        {
+          "method": "GET",
+          "path": "/api/admin/v1/role-bindings/preview?principalType=USER&principalId={userId}&roleId={roleId}&scopeType=ORGANIZATION&scopeOrgId={orgId}&endedAt={expiry}",
+          "timeUtc": "2026-11-13T01:28:45.451Z",
+          "timeBeijing": "2026-11-13T09:28:45.451+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweat40d205f59480ab97fa9b5acf985"
+        }
+      ],
+      "preflightAssertions": {
+        "permissionRevision": 0,
+        "permissionCodesMatchConfirmed": true,
+        "exactBindingCount": 0,
+        "previewValid": true,
+        "previewConflicts": 0,
+        "scopeMatchesOrganizationA": true
+      },
+      "write": {
+        "method": "POST",
+        "path": "/api/admin/v1/role-bindings",
+        "timeUtc": "2026-11-13T01:28:51.429Z",
+        "timeBeijing": "2026-11-13T09:28:51.429+08:00",
+        "status": 201,
+        "code": 0,
+        "requestId": "cmweat8mba8aecaec9cea5043cbb8927e"
+      },
+      "writeAssertions": {
+        "controlledRequestAdaptation": true,
+        "singleAdaptedPost": true,
+        "requestFinished": true,
+        "interceptionTabClosed": true,
+        "serverRouteIndependentlyVerified": "UNKNOWN"
+      },
+      "readback": [
+        {
+          "method": "GET",
+          "path": "/api/admin/v1/role-bindings?principalType=USER&principalId={userId}&roleId={roleId}",
+          "timeUtc": "2026-11-13T01:29:07.703Z",
+          "timeBeijing": "2026-11-13T09:29:07.703+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweatl6f6bd5d9c17b0c97a3905d159d"
+        },
+        {
+          "method": "GET",
+          "path": "/api/admin/v1/role-bindings/{bindingId}",
+          "timeUtc": "2026-11-13T01:29:08.296Z",
+          "timeBeijing": "2026-11-13T09:29:08.296+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweatlmxac2788081f994d23e9fa5f09"
+        },
+        {
+          "method": "GET",
+          "path": "/api/system/v1/roles/{roleId}/permissions",
+          "timeUtc": "2026-11-13T01:29:08.878Z",
+          "timeBeijing": "2026-11-13T09:29:08.878+08:00",
+          "status": 200,
+          "code": 0,
+          "requestId": "cmweatm5i8576088f58729beff58130f1"
+        }
+      ],
+      "readbackAssertions": {
+        "listCount": 1,
+        "sameBinding": true,
+        "principalMatches": true,
+        "roleMatches": true,
+        "scopeType": "ORGANIZATION",
+        "scopeOrganizationMatches": true,
+        "status": "ACTIVE",
+        "expiryMatches": true,
+        "readSessionClosed": true
+      }
+    }
+  ],
+  "cleanup": {
+    "allGrantRequestsFinished": true,
+    "allOwnedGrantAndReadTabsClosed": true,
+    "existingAdminAndOrdinarySessionsPreserved": true,
+    "localCanaryListenerReleased": true
+  },
+  "limits": [
+    "server-side POST route independently verified UNKNOWN; browser response URL did not match target for last three and was not retained for first",
+    "user-facing form provides date precision only; exact time used controlled request adaptation",
+    "role revisions and permission sets checked before submission, not atomically locked with grant",
+    "effective permission and business authorization tests remain separate",
+    "three earlier recheck request timestamps UNKNOWN; request IDs retained",
+    "setup Error message was not retained; safety rejection UNKNOWN"
+  ]
+}

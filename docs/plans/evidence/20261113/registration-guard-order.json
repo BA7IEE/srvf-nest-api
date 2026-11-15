@@ -1,0 +1,11 @@
+{
+  "evidence_type": "DEPLOYED_RUNTIME",
+  "checked_at": "2026-11-13T10:39:39+08:00",
+  "method": "ActivityRegistrationCreateService.create",
+  "assert_legacy_flow_allowed_called": true,
+  "assert_called_strictly_before_persist": true,
+  "deployment_git_sha": "UNKNOWN",
+  "limitations": [
+    "对目标容器编译的直接方法作静态检查；不证明深层间接调用或运行进程状态。"
+  ]
+}
