@@ -1,7 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import request from 'supertest';
-import { ActivityWorkflowGate } from '../../src/common/activity-workflow/activity-workflow.gate';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
@@ -33,13 +32,14 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 // 审计刀 6 F4：App 资格/窗口/本人 scope、Admin 身份/统计、并发唯一与 no-audit 闭环。
 describe('activity feedbacks F2-F4', () => {
+  const previousWorkflowGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
   let app: INestApplication;
   let prisma: PrismaService;
   let adminAuth: string;
   let submitterUserId: string;
   let organizationId: string;
   let mainActivityId: string;
-  let mainApprovedSheetId: string;
+  let mainSettlement: FeedbackSettlementContext;
   let notCompletedActivityId: string;
   let boundaryActivityId: string;
   let closedActivityId: string;
@@ -57,6 +57,7 @@ describe('activity feedbacks F2-F4', () => {
     `/api/app/v1/my/activities/${activityId}/feedback`;
 
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
@@ -127,9 +128,10 @@ describe('activity feedbacks F2-F4', () => {
       ],
     });
 
-    mainApprovedSheetId = await createAttendanceSheet(mainActivityId, 'approved', [
+    await createAttendanceSheet(mainActivityId, 'approved', [
       approvedA.memberId,
       approvedB.memberId,
+      approvedWithoutFeedback.memberId,
     ]);
     await createAttendanceSheet(boundaryActivityId, 'approved', [approvedA.memberId]);
     for (const { statusCode, user } of nonApprovedSheetMembers) {
@@ -137,12 +139,13 @@ describe('activity feedbacks F2-F4', () => {
     }
     await createAttendanceSheet(concurrentActivityId, 'approved', [concurrentMember.memberId]);
 
-    await createFeedbackSettlement({
+    mainSettlement = await createFeedbackSettlement({
       activityId: mainActivityId,
       tag: 'feedback-main',
       members: [
         { memberId: approvedA.memberId, resultCode: 'present' },
         { memberId: approvedB.memberId, resultCode: 'present' },
+        { memberId: approvedWithoutFeedback.memberId, resultCode: 'absent' },
       ],
       closedAt: new Date(now - DAY_MS),
     });
@@ -167,7 +170,12 @@ describe('activity feedbacks F2-F4', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    try {
+      await app.close();
+    } finally {
+      if (previousWorkflowGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousWorkflowGate;
+    }
   });
 
   it.each([
@@ -191,6 +199,14 @@ describe('activity feedbacks F2-F4', () => {
       expectBizError(res, BizCode.ACTIVITY_FEEDBACK_ATTENDANCE_REQUIRED);
       expect(statusCode).not.toBe('approved');
     }
+  });
+
+  it('旧 approved 记录不能替代最新关账内的 present 与正向服务账资格', async () => {
+    const response = await request(httpServer(app))
+      .put(feedbackPath(mainActivityId))
+      .set('Authorization', approvedWithoutFeedback.authHeader)
+      .send({ rating: 5 });
+    expectBizError(response, BizCode.ACTIVITY_FEEDBACK_ATTENDANCE_REQUIRED);
   });
 
   it('非 completed 活动优先拒绝，窗口关闭边界内可写，closure.closedAt+30+1 天拒绝', async () => {
@@ -427,20 +443,25 @@ describe('activity feedbacks F2-F4', () => {
     });
   });
 
-  it('终审撤回后分母取当前 approved 与历史评价 member 去重并集，feedbackRate 恒不超过 1', async () => {
-    await createAttendanceSheet(mainActivityId, 'approved', [approvedWithoutFeedback.memberId]);
-
-    const reopened = await request(httpServer(app))
-      .post(`/api/admin/v1/attendance-sheets/${mainApprovedSheetId}/reopen`)
-      .set('Authorization', adminAuth)
-      .send({ reason: '第四轮 review 评价率口径回归' });
-    expect(reopened.status).toBe(200);
-    expect(reopened.body.data.statusCode).toBe('pending');
-
-    const currentApprovedMembers = await prisma.attendanceRecord.findMany({
+  it('新关账纠错后分母取当前资格与历史评价 member 去重并集，feedbackRate 恒不超过 1', async () => {
+    // 只验证读取：提供已存在的第二版正式关账，保留第一版和历史评价。
+    const corrected = await createFeedbackSettlement({
+      activityId: mainActivityId,
+      tag: 'feedback-main',
+      revision: 2,
+      context: mainSettlement,
+      members: [
+        { memberId: approvedA.memberId, resultCode: 'absent' },
+        { memberId: approvedB.memberId, resultCode: 'absent' },
+        { memberId: approvedWithoutFeedback.memberId, resultCode: 'present' },
+      ],
+      closedAt: new Date(),
+    });
+    const currentEligibleMembers = await prisma.participationLedgerEntry.findMany({
       where: {
-        deletedAt: null,
-        sheet: { activityId: mainActivityId, statusCode: 'approved', deletedAt: null },
+        postingBatchId: corrected.latestBatchId,
+        entryTypeCode: 'service_credit',
+        serviceHoursDelta: { gt: 0 },
       },
       select: { memberId: true },
       distinct: ['memberId'],
@@ -450,7 +471,7 @@ describe('activity feedbacks F2-F4', () => {
       select: { memberId: true },
       distinct: ['memberId'],
     });
-    expect(currentApprovedMembers.map((row) => row.memberId)).toEqual([
+    expect(currentEligibleMembers.map((row) => row.memberId)).toEqual([
       approvedWithoutFeedback.memberId,
     ]);
     expect(submittedFeedbackMembers).toHaveLength(2);
@@ -482,17 +503,11 @@ describe('activity feedbacks F2-F4', () => {
       data: { activityId, memberId: memberA.memberId, rating: 5 },
     });
     expect(await prisma.attendanceRecord.count({ where: { sheet: { activityId } } })).toBe(0);
-    const gate = app.get(ActivityWorkflowGate);
-    const gateSpy = jest.spyOn(gate, 'participationReadSource').mockReturnValue('committed-ledger');
-    try {
-      const response = await request(httpServer(app))
-        .get(`/api/admin/v1/activities/${activityId}/feedback-summary`)
-        .set('Authorization', adminAuth);
-      expect(response.status).toBe(200);
-      expect(response.body.data).toMatchObject({ count: 1, feedbackRate: 0.5 });
-    } finally {
-      gateSpy.mockRestore();
-    }
+    const response = await request(httpServer(app))
+      .get(`/api/admin/v1/activities/${activityId}/feedback-summary`)
+      .set('Authorization', adminAuth);
+    expect(response.status).toBe(200);
+    expect(response.body.data).toMatchObject({ count: 1, feedbackRate: 0.5 });
   });
 
   it('participation-summary.feedback 与 feedback-summary 聚合严格一致', async () => {

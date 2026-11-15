@@ -156,6 +156,7 @@ describe('ActivitiesService state transitions (characterization)', () => {
     await ctx.prisma.attendanceSheet.deleteMany({});
     await ctx.prisma.activityRegistrationRevision.deleteMany({});
     await ctx.prisma.activityRegistration.deleteMany({});
+    await ctx.prisma.attendanceSettlementRun.deleteMany({});
     await ctx.prisma.activity.deleteMany({});
     await ctx.prisma.auditLog.deleteMany({});
   }
@@ -571,7 +572,7 @@ describe('ActivitiesService state transitions (characterization)', () => {
       ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_PARTICIPATION_EXISTS_DELETE_FORBIDDEN });
     });
 
-    it('reject/cancelled 报名不挡删，但任意未软删考勤单挡删', async () => {
+    it('reject/cancelled 报名与旧考勤历史不挡删，旧历史保持原样', async () => {
       const seed = await seedActivity({ statusCode: 'published' });
       const members = await Promise.all(
         ['reject', 'cancelled'].map((statusCode) =>
@@ -599,15 +600,28 @@ describe('ActivitiesService state transitions (characterization)', () => {
       });
       await expect(
         ctx.service.softDelete(seed.id, ctx.adminPayload, AUDIT_META),
-      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_PARTICIPATION_EXISTS_DELETE_FORBIDDEN });
+      ).resolves.toMatchObject({ id: seed.id });
+      await expect(
+        ctx.prisma.attendanceSheet.findUniqueOrThrow({ where: { id: sheet.id } }),
+      ).resolves.toMatchObject({ statusCode: 'pending', deletedAt: null });
+    });
 
-      await ctx.prisma.attendanceSheet.update({
-        where: { id: sheet.id },
-        data: { deletedAt: new Date() },
+    it('已有新版结算 run 即拒绝删除，活动、结算与审计均无副作用', async () => {
+      const seed = await seedActivity({ statusCode: 'published' });
+      const run = await ctx.prisma.attendanceSettlementRun.create({
+        data: { activityId: seed.id, statusCode: 'drafting' },
       });
+      const auditBefore = await ctx.prisma.auditLog.count();
       await expect(
         ctx.service.softDelete(seed.id, ctx.adminPayload, AUDIT_META),
-      ).resolves.toMatchObject({ id: seed.id });
+      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_PARTICIPATION_EXISTS_DELETE_FORBIDDEN });
+      await expect(
+        ctx.prisma.activity.findUniqueOrThrow({ where: { id: seed.id } }),
+      ).resolves.toMatchObject({ deletedAt: null });
+      await expect(
+        ctx.prisma.attendanceSettlementRun.findUniqueOrThrow({ where: { id: run.id } }),
+      ).resolves.toMatchObject({ statusCode: 'drafting' });
+      expect(await ctx.prisma.auditLog.count()).toBe(auditBefore);
     });
   });
 

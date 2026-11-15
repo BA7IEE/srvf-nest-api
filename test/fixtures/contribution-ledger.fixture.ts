@@ -36,10 +36,7 @@ export async function seedContributionCredit(
     batchStatus?: 'committed' | 'preparing';
   },
 ): Promise<void> {
-  const tag = randomUUID();
   const endAt = new Date(input.occurredAt.getTime() + 3_600_000);
-  const committed = (input.batchStatus ?? 'committed') === 'committed';
-  const recognizedPoints = input.recognizedPoints ?? input.creditedPoints;
   await prisma.$transaction(async (tx) => {
     const activity = await tx.activity.create({
       data: {
@@ -52,76 +49,90 @@ export async function seedContributionCredit(
         statusCode: 'completed',
       },
     });
+    await seedParticipationReadStateInTx(tx, {
+      activityId: activity.id,
+      actorUserId: input.actorUserId,
+      batchStatus: input.batchStatus,
+      participants: [
+        {
+          memberId: input.memberId,
+          resultCode: 'present',
+          serviceHours: '1',
+          creditedPoints: input.creditedPoints,
+          recognizedPoints: input.recognizedPoints,
+        },
+      ],
+    });
+  });
+}
+
+interface ParticipationReadFixtureInput {
+  activityId: string;
+  actorUserId: string;
+  batchStatus?: 'committed' | 'preparing';
+  participants: Array<{
+    memberId: string;
+    sourceCode?: 'self' | 'onsite';
+    resultCode: 'present' | 'absent' | null;
+    serviceHours: string;
+    creditedPoints: string;
+    recognizedPoints?: string;
+    startAt?: Date;
+  }>;
+}
+
+/** 当前正式版本与未决身份的读取夹具，不模拟结算命令、封顶计算或更正提交。 */
+export async function seedParticipationReadState(
+  prisma: PrismaService,
+  input: ParticipationReadFixtureInput,
+): Promise<void> {
+  await prisma.$transaction((tx) => seedParticipationReadStateInTx(tx, input));
+}
+
+async function seedParticipationReadStateInTx(
+  tx: Prisma.TransactionClient,
+  input: ParticipationReadFixtureInput,
+): Promise<void> {
+  const tag = randomUUID();
+  const activity = await tx.activity.findUniqueOrThrow({ where: { id: input.activityId } });
+  const endAt = activity.endAt;
+  const committed = (input.batchStatus ?? 'committed') === 'committed';
+  const population = [];
+  for (const [index, participant] of input.participants.entries()) {
+    const startAt = participant.startAt ?? activity.startAt;
     const session = await tx.activitySession.create({
       data: {
         activityId: activity.id,
-        code: `credit-${tag}`,
-        name: '贡献读取场次',
-        startAt: input.occurredAt,
+        code: `credit-${tag}-${index}`,
+        name: `参与读取场次 ${index + 1}`,
+        startAt,
         endAt,
         locationText: '测试地点',
-        checkInOpenAt: input.occurredAt,
+        checkInOpenAt: startAt,
         checkInCloseAt: endAt,
-        checkOutOpenAt: input.occurredAt,
+        checkOutOpenAt: startAt,
         checkOutCloseAt: endAt,
         locationRequired: false,
         locationPolicySourceCode: 'session',
         statusCode: 'scheduled',
       },
     });
-    const seal = await tx.evidenceSeal.create({
+    let registration = await tx.activityRegistration.findUnique({
+      where: { activityId_memberId: { activityId: activity.id, memberId: participant.memberId } },
+    });
+    registration ??= await tx.activityRegistration.create({
       data: {
         activityId: activity.id,
-        sealRevision: 1,
-        evidenceRevision: 0,
-        populationRevision: 0,
-        workflowRevision: 0,
-        allWindowsClosedAt: endAt,
-        openSegmentCount: 0,
-        manualReviewPendingCount: 0,
-        populationCountDistinct: 1,
-        populationCountBySession: { [session.id]: 1 },
-        contentHash: `read-fixture-seal-${tag}`,
-        statusCode: 'active',
-        sealedByUserId: input.actorUserId,
-        sealedAt: endAt,
+        memberId: participant.memberId,
+        statusCode: participant.sourceCode === 'onsite' ? 'pending' : 'pass',
       },
-    });
-    const run = await tx.attendanceSettlementRun.create({
-      data: {
-        activityId: activity.id,
-        statusCode: committed ? 'posted' : 'posting',
-        currentSubmittedVersion: 1,
-        currentPostedVersion: committed ? 1 : null,
-      },
-    });
-    const version = await tx.attendanceSettlementVersion.create({
-      data: {
-        settlementRunId: run.id,
-        version: 1,
-        evidenceSealId: seal.id,
-        evidenceRevision: 0,
-        populationRevision: 0,
-        workflowRevision: 0,
-        contentHash: `read-fixture-version-${tag}`,
-        personCount: 1,
-        sessionParticipationCount: 1,
-        serviceSegmentCount: 1,
-        createdByUserId: input.actorUserId,
-        submittedAt: endAt,
-        statusCode: 'approved',
-        operationKey: `read-fixture-submit-${tag}`,
-      },
-    });
-    const registration = await tx.activityRegistration.create({
-      data: { activityId: activity.id, memberId: input.memberId, statusCode: 'pass' },
     });
     const identity = await tx.activityParticipationIdentity.create({
       data: {
         activityId: activity.id,
         sessionId: session.id,
         registrationId: registration.id,
-        memberId: input.memberId,
+        memberId: participant.memberId,
         currentRevision: 1,
         currentStatusCode: 'pass',
         populationIncluded: true,
@@ -132,61 +143,112 @@ export async function seedContributionCredit(
         identityId: identity.id,
         revision: 1,
         statusCode: 'pass',
-        sourceCode: 'self',
-        effectiveAt: input.occurredAt,
+        sourceCode: participant.sourceCode ?? 'self',
+        effectiveAt: startAt,
         createdByUserId: input.actorUserId,
       },
     });
+    population.push({ participant, session, identity, startAt });
+  }
+  const posted = population.filter((row) => row.participant.resultCode !== null);
+  const personCount = new Set(posted.map((row) => row.participant.memberId)).size;
+  const seal = await tx.evidenceSeal.create({
+    data: {
+      activityId: activity.id,
+      sealRevision: 1,
+      evidenceRevision: 0,
+      populationRevision: 0,
+      workflowRevision: 0,
+      allWindowsClosedAt: endAt,
+      openSegmentCount: 0,
+      manualReviewPendingCount: 0,
+      populationCountDistinct: personCount,
+      populationCountBySession: Object.fromEntries(posted.map((row) => [row.session.id, 1])),
+      contentHash: `read-fixture-seal-${tag}`,
+      statusCode: 'active',
+      sealedByUserId: input.actorUserId,
+      sealedAt: endAt,
+    },
+  });
+  const run = await tx.attendanceSettlementRun.create({
+    data: {
+      activityId: activity.id,
+      statusCode: committed ? 'posted' : 'posting',
+      currentSubmittedVersion: 1,
+      currentPostedVersion: committed ? 1 : null,
+    },
+  });
+  const version = await tx.attendanceSettlementVersion.create({
+    data: {
+      settlementRunId: run.id,
+      version: 1,
+      evidenceSealId: seal.id,
+      evidenceRevision: 0,
+      populationRevision: 0,
+      workflowRevision: 0,
+      contentHash: `read-fixture-version-${tag}`,
+      personCount,
+      sessionParticipationCount: posted.length,
+      serviceSegmentCount: posted.filter((row) => row.participant.resultCode === 'present').length,
+      createdByUserId: input.actorUserId,
+      submittedAt: endAt,
+      statusCode: 'approved',
+      operationKey: `read-fixture-submit-${tag}`,
+    },
+  });
+  const batch = await tx.ledgerPostingBatch.create({
+    data: {
+      settlementRunId: run.id,
+      settlementVersionId: version.id,
+      batchRevision: 1,
+      statusCode: input.batchStatus ?? 'committed',
+      requestKey: `read-fixture-batch-${tag}`,
+      totalCount: posted.length,
+      preparedCount: posted.length,
+      preparedAt: endAt,
+      preparedByUserId: input.actorUserId,
+      committedAt: committed ? endAt : null,
+      committedByUserId: committed ? input.actorUserId : null,
+    },
+  });
+  for (const { participant, session, identity, startAt } of posted) {
+    const recognizedPoints = participant.recognizedPoints ?? participant.creditedPoints;
     const result = await tx.participantSettlementResultRevision.create({
       data: {
         settlementVersionId: version.id,
         participationIdentityId: identity.id,
         revision: 1,
-        resultCode: 'present',
-        recognizedServiceHours: '1',
-        calculatedServiceHours: '1',
+        resultCode: participant.resultCode!,
+        recognizedServiceHours: participant.serviceHours,
+        calculatedServiceHours: participant.serviceHours,
         recognizedContributionPoints: recognizedPoints,
         calculatedContributionPoints: recognizedPoints,
         statusCode: committed ? 'committed' : 'draft',
       },
     });
-    const batch = await tx.ledgerPostingBatch.create({
-      data: {
-        settlementRunId: run.id,
-        settlementVersionId: version.id,
-        batchRevision: 1,
-        statusCode: input.batchStatus ?? 'committed',
-        requestKey: `read-fixture-batch-${tag}`,
-        totalCount: 2,
-        preparedCount: 2,
-        preparedAt: endAt,
-        preparedByUserId: input.actorUserId,
-        committedAt: committed ? endAt : null,
-        committedByUserId: committed ? input.actorUserId : null,
-      },
-    });
+    if (participant.resultCode !== 'present') continue;
     for (const entryTypeCode of ['service_credit', 'contribution_credit']) {
       const contribution = entryTypeCode === 'contribution_credit';
       await tx.participationLedgerEntry.create({
         data: {
           postingBatchId: batch.id,
-          entryKey: `read-fixture-${tag}-${entryTypeCode}`,
-          operationKey: `read-fixture-${tag}-${entryTypeCode}`,
-          memberId: input.memberId,
+          entryKey: `read-fixture-${tag}-${identity.id}-${entryTypeCode}`,
+          operationKey: `read-fixture-${tag}-${identity.id}-${entryTypeCode}`,
+          memberId: participant.memberId,
           activityId: activity.id,
           sessionId: session.id,
           participationIdentityId: identity.id,
           resultRevisionId: result.id,
-          ledgerDate: new Date(beijingDayNumber(input.occurredAt) * 86_400_000),
+          ledgerDate: new Date(beijingDayNumber(startAt) * 86_400_000),
           entryTypeCode,
-          serviceHoursDelta: contribution ? '0' : '1',
+          serviceHoursDelta: contribution ? '0' : participant.serviceHours,
           recognizedPointsDelta: contribution ? recognizedPoints : '0',
-          creditedPointsDelta: contribution ? input.creditedPoints : '0',
+          creditedPointsDelta: contribution ? participant.creditedPoints : '0',
           cappedOutPointsDelta: contribution
-            ? new Prisma.Decimal(recognizedPoints).minus(input.creditedPoints)
+            ? new Prisma.Decimal(recognizedPoints).minus(participant.creditedPoints)
             : '0',
         },
       });
     }
-  });
+  }
 }

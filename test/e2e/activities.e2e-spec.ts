@@ -23,6 +23,7 @@ import { memberIdentityData } from '../helpers/member-identity.fixture';
 // 细粒度判权矩阵另见 activities-rbac-boundary.e2e-spec.ts。
 
 describe('activities 模块', () => {
+  const previousWorkflowGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
   let app: INestApplication;
   let prisma: PrismaService;
   let superAdminAuth: string;
@@ -37,6 +38,7 @@ describe('activities 模块', () => {
   let inactiveGenderRequirementCode: string;
 
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
@@ -120,7 +122,12 @@ describe('activities 模块', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    try {
+      await app.close();
+    } finally {
+      if (previousWorkflowGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousWorkflowGate;
+    }
   });
 
   const baseCreatePayload = (override: Record<string, unknown> = {}): Record<string, unknown> => ({
@@ -551,7 +558,7 @@ describe('activities 模块', () => {
         );
       activityInChild = childAct.body.data.id;
 
-      // 给 activityInParent 加一条报名 + 一张考勤单,供 includeStats 聚合断言。
+      // 旧 Sheet 数故意与新版提交版本数不同，防止聚合仍偷读旧源。
       const member = await prisma.member.create({
         data: { memberNo: 'f1stats-mem-1', ...memberIdentityData('F1统计队员') },
       });
@@ -566,6 +573,57 @@ describe('activities 模块', () => {
           statusCode: 'draft',
         },
       });
+      // 列表读取输入；真正的送审/审核/入账链由 native journey 验证。
+      const actor = await prisma.user.findFirstOrThrow({ where: { username: 'act-adm' } });
+      const seal = await prisma.evidenceSeal.create({
+        data: {
+          activityId: activityInParent,
+          sealRevision: 1,
+          evidenceRevision: 0,
+          populationRevision: 0,
+          workflowRevision: 0,
+          allWindowsClosedAt: new Date(),
+          openSegmentCount: 0,
+          manualReviewPendingCount: 0,
+          populationCountDistinct: 0,
+          populationCountBySession: {},
+          contentHash: 'f1-stats-seal',
+          statusCode: 'active',
+          sealedByUserId: actor.id,
+          sealedAt: new Date(),
+        },
+      });
+      const run = await prisma.attendanceSettlementRun.create({
+        data: {
+          activityId: activityInParent,
+          statusCode: 'pending_first_review',
+          currentSubmittedVersion: 2,
+        },
+      });
+      for (const [version, statusCode, submittedAt] of [
+        [1, 'returned', new Date()],
+        [2, 'submitted', new Date()],
+        [3, 'draft', null],
+      ] as const) {
+        await prisma.attendanceSettlementVersion.create({
+          data: {
+            settlementRunId: run.id,
+            version,
+            statusCode,
+            submittedAt,
+            evidenceSealId: seal.id,
+            evidenceRevision: 0,
+            populationRevision: 0,
+            workflowRevision: 0,
+            contentHash: `f1-stats-version-${version}`,
+            personCount: 0,
+            sessionParticipationCount: 0,
+            serviceSegmentCount: 0,
+            createdByUserId: actor.id,
+            operationKey: `f1-stats-version-${version}`,
+          },
+        });
+      }
     });
 
     it('q 模糊命中 title', async () => {
@@ -607,7 +665,7 @@ describe('activities 模块', () => {
       expect(ids).toEqual(expect.arrayContaining([activityInParent, activityInChild]));
     });
 
-    it('includeStats=true 附带 registrationCount/attendanceSheetCount(批量聚合);默认省略', async () => {
+    it('includeStats=true 附带报名数和非 draft 提交版本数，排除旧 Sheet；默认省略', async () => {
       const withStats = await request(httpServer(app))
         .get('/api/admin/v1/activities')
         .query({ organizationId: statsParentOrgId, includeStats: 'true' })
@@ -617,10 +675,14 @@ describe('activities 模块', () => {
         withStats.body.data.items as Array<{
           id: string;
           registrationCount: number;
-          attendanceSheetCount: number;
+          settlementStats: { available: boolean; submittedVersionCount?: number };
         }>
       ).find((i) => i.id === activityInParent);
-      expect(item).toMatchObject({ registrationCount: 1, attendanceSheetCount: 1 });
+      expect(item).toMatchObject({
+        registrationCount: 1,
+        settlementStats: { available: true, submittedVersionCount: 2 },
+      });
+      expect(item).not.toHaveProperty('attendanceSheetCount');
 
       const withoutStats = await request(httpServer(app))
         .get('/api/admin/v1/activities')
@@ -631,6 +693,7 @@ describe('activities 模块', () => {
       );
       expect(plainItem).not.toHaveProperty('registrationCount');
       expect(plainItem).not.toHaveProperty('attendanceSheetCount');
+      expect(plainItem).not.toHaveProperty('settlementStats');
     });
 
     it('GET /options → 200,items 含 {id,label,startAt,statusCode},label=title,[auth]仅登录', async () => {
