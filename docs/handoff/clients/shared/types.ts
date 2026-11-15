@@ -3,7 +3,7 @@
 // surface: shared —— 被两个及以上 surface 共用的类型(唯一定义处)
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:edfc12594e53c4c85dd164ca011fff47d53058069c32eab8816e2982d5931224
+// inputDigest: sha256:9c482b26a40fbb2717bea782773a2641e89752ff365a6db50b1cd545ca1d7125
 
 /** 统一响应 envelope —— 全仓契约恒为 { code, message, data }。 */
 export interface ApiEnvelope<T> {
@@ -91,6 +91,32 @@ export interface ContentReadListItemDto {
   "viewCount": number;
   "publishedAt"?: Record<string, unknown> | null;
   "createdAt": string;
+}
+
+export interface ContributionPolicyCategoryRuleDto {
+  "timeCategoryCode": "volunteer_service" | "training" | "organization" | "non_creditable";
+  "durationBands": ContributionPolicyDurationBandDto[];
+}
+
+export interface ContributionPolicyDefinitionDto {
+  "defaultResult": ContributionPolicyResultDto;
+  "roleRules": ContributionPolicyRoleRuleDto[];
+}
+
+export interface ContributionPolicyDurationBandDto {
+  "recognizedPoints": string;
+  "explanationCode": string;
+  "maxSecondsInclusive": number | null;
+}
+
+export interface ContributionPolicyResultDto {
+  "recognizedPoints": string;
+  "explanationCode": string;
+}
+
+export interface ContributionPolicyRoleRuleDto {
+  "attendanceRoleCode": string;
+  "categoryRules": ContributionPolicyCategoryRuleDto[];
 }
 
 export interface PageResultDto {

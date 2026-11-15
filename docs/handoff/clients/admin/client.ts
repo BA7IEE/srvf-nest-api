@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:edfc12594e53c4c85dd164ca011fff47d53058069c32eab8816e2982d5931224
+// inputDigest: sha256:9c482b26a40fbb2717bea782773a2641e89752ff365a6db50b1cd545ca1d7125
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -24,6 +24,9 @@ import type {
   ActivityOptionsResponseDto,
   ActivityParticipationSummaryDto,
   ActivityPositionResponseDto,
+  ActivityPublishReviewReferencedContributionPolicyDto,
+  ActivityPublishReviewReferencedPoliciesResponseDto,
+  ActivityPublishReviewReferencedTimePolicyDto,
   ActivityPublishReviewResponseDto,
   ActivityReconciliationDto,
   ActivityReconciliationRegisteredParticipantDto,
@@ -210,6 +213,11 @@ import type {
   ContentAttachmentConfirmDto,
   ContentAttachmentDto,
   ContentAttachmentUploadUrlDto,
+  ContributionPolicyCategoryRuleDto,
+  ContributionPolicyDefinitionDto,
+  ContributionPolicyDurationBandDto,
+  ContributionPolicyResultDto,
+  ContributionPolicyRoleRuleDto,
   CorrectMemberIdentityDto,
   CreateActivityCollaboratorDto,
   CreateActivityDto,
@@ -729,6 +737,10 @@ export function createAdminClient(fetcher: Fetcher) {
     /** 通过待处理发布审核并发布活动 [rbac: activity.publish.record] */
     AdminActivityPublishReviewsControllerApprove(id: string, body: ApproveActivityPublishReviewDto): Promise<ApiEnvelope<ActivityPublishReviewResponseDto>> {
       return fetcher<ActivityPublishReviewResponseDto>({ method: "POST", path: `/api/admin/v1/activity-publish-reviews/${id}/approve`, body });
+    },
+    /** 仅读取本审核冻结base和target实际引用的完整政策版本；不授予政策目录读取权 [rbac: activity-review.read.request] */
+    AdminActivityPublishReviewsControllerReferencedPolicies(id: string): Promise<ApiEnvelope<ActivityPublishReviewReferencedPoliciesResponseDto>> {
+      return fetcher<ActivityPublishReviewReferencedPoliciesResponseDto>({ method: "GET", path: `/api/admin/v1/activity-publish-reviews/${id}/referenced-policies` });
     },
     /** 退回待处理发布审核 [rbac: activity-review.return.request] */
     AdminActivityPublishReviewsControllerReturnReview(id: string, body: ReturnActivityPublishReviewDto): Promise<ApiEnvelope<ActivityPublishReviewResponseDto>> {

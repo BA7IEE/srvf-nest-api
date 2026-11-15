@@ -3,11 +3,11 @@
 // surface: System 系统面
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:edfc12594e53c4c85dd164ca011fff47d53058069c32eab8816e2982d5931224
+// inputDigest: sha256:9c482b26a40fbb2717bea782773a2641e89752ff365a6db50b1cd545ca1d7125
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
-import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, PageResultDto } from '../shared/types';
-export type { ApiEnvelope, PageResult, FetchRequest, Fetcher, PageResultDto };
+import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ContributionPolicyCategoryRuleDto, ContributionPolicyDefinitionDto, ContributionPolicyDurationBandDto, ContributionPolicyResultDto, ContributionPolicyRoleRuleDto, PageResultDto } from '../shared/types';
+export type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ContributionPolicyCategoryRuleDto, ContributionPolicyDefinitionDto, ContributionPolicyDurationBandDto, ContributionPolicyResultDto, ContributionPolicyRoleRuleDto, PageResultDto };
 
 export interface AssignUserRoleDto {
   "roleCode": string;
@@ -82,32 +82,6 @@ export interface AuditLogResponseDto {
   "event": string;
   "context": AuditContextDto;
   "success": boolean;
-}
-
-export interface ContributionPolicyCategoryRuleDto {
-  "timeCategoryCode": "volunteer_service" | "training" | "organization" | "non_creditable";
-  "durationBands": ContributionPolicyDurationBandDto[];
-}
-
-export interface ContributionPolicyDefinitionDto {
-  "defaultResult": ContributionPolicyResultDto;
-  "roleRules": ContributionPolicyRoleRuleDto[];
-}
-
-export interface ContributionPolicyDurationBandDto {
-  "recognizedPoints": string;
-  "explanationCode": string;
-  "maxSecondsInclusive": number | null;
-}
-
-export interface ContributionPolicyResultDto {
-  "recognizedPoints": string;
-  "explanationCode": string;
-}
-
-export interface ContributionPolicyRoleRuleDto {
-  "attendanceRoleCode": string;
-  "categoryRules": ContributionPolicyCategoryRuleDto[];
 }
 
 export interface ContributionRuleResponseDto {

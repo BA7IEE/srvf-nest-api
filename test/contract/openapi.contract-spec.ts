@@ -36,6 +36,8 @@ interface OpenApiSchema {
   enum?: unknown[];
   required?: string[];
   properties?: Record<string, OpenApiSchema>;
+  items?: OpenApiSchema;
+  allOf?: OpenApiSchema[];
 }
 
 interface OpenApiResponse {
@@ -47,6 +49,7 @@ interface OpenApiOperation {
   summary?: string;
   tags?: string[];
   security?: Array<Record<string, unknown[]>>;
+  parameters?: Array<{ in: string; name: string; required?: boolean }>;
   responses?: Record<string, OpenApiResponse>;
   requestBody?: {
     content?: {
@@ -843,6 +846,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 活动责任闭环 PR-4:独立发布审核工作台 4 端点。
   ['get', '/api/admin/v1/activity-publish-reviews'],
   ['get', '/api/admin/v1/activity-publish-reviews/{id}'],
+  ['get', '/api/admin/v1/activity-publish-reviews/{id}/referenced-policies'],
   ['post', '/api/admin/v1/activity-publish-reviews/{id}/approve'],
   ['post', '/api/admin/v1/activity-publish-reviews/{id}/return'],
   // 活动责任闭环 PR-5:负责人/协办人读取、增删、移交，以及 legacy 认领/补发起人 6 端点。
@@ -1229,7 +1233,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 672; // ActivityOS V1 adds six explicit Admin simple-activity routes.
+const EXPECTED_ROUTE_COUNT = 673; // Adds the review-scoped referenced-policy read route.
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -1344,6 +1348,9 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'CancelActivityDto',
   'PublishActivityDto',
   'ActivityResponseDto',
+  'ActivityPublishReviewReferencedPoliciesResponseDto',
+  'ActivityPublishReviewReferencedTimePolicyDto',
+  'ActivityPublishReviewReferencedContributionPolicyDto',
   'ActivityListItemDto',
   'CreateActivityPositionDto',
   'UpdateActivityPositionDto',
@@ -2507,6 +2514,86 @@ describe('OpenAPI 契约快照', () => {
     expect(documented4xxCodes(approve)).toEqual(
       expect.arrayContaining([BizCode.ACTIVITY_METRIC_REFERENCE_UNAVAILABLE.code]),
     );
+  });
+
+  it('referenced policies remain a review-bound read without catalogue query parameters', () => {
+    const operation =
+      doc.paths['/api/admin/v1/activity-publish-reviews/{id}/referenced-policies']?.get;
+    expect(operation).toBeDefined();
+    expect(operation?.security).toEqual([{ bearer: [] }]);
+    expect(operation?.parameters).toEqual([
+      expect.objectContaining({ in: 'path', name: 'id', required: true }),
+    ]);
+    expect(operation?.requestBody).toBeUndefined();
+    expect(
+      operation?.responses?.['200']?.content?.['application/json']?.schema?.properties?.data,
+    ).toEqual({ $ref: '#/components/schemas/ActivityPublishReviewReferencedPoliciesResponseDto' });
+    expect(documented4xxCodes(operation).sort((a, b) => a - b)).toEqual(
+      [
+        BizCode.BAD_REQUEST.code,
+        BizCode.UNAUTHORIZED.code,
+        BizCode.RBAC_FORBIDDEN.code,
+        BizCode.ACTIVITY_PUBLISH_REVIEW_NOT_FOUND.code,
+        BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID.code,
+      ].sort((a, b) => a - b),
+    );
+  });
+
+  it('referenced-policy DTOs bind complete typed immutable definitions to the frozen review', () => {
+    const schemas = doc.components?.schemas ?? {};
+    const response = schemas.ActivityPublishReviewReferencedPoliciesResponseDto as OpenApiSchema;
+    const responseFields = [
+      'activityId',
+      'contributionPolicies',
+      'reviewId',
+      'snapshotHash',
+      'snapshotSchemaVersion',
+      'timePolicies',
+    ];
+    expect(Object.keys(response.properties ?? {}).sort()).toEqual(responseFields);
+    expect(response.required?.slice().sort()).toEqual(responseFields);
+    expect(response.properties?.snapshotHash).toMatchObject({
+      type: 'string',
+      pattern: '^[0-9a-f]{64}$',
+    });
+    for (const [field, schemaName, definitionName] of [
+      ['timePolicies', 'ActivityPublishReviewReferencedTimePolicyDto', 'TimePolicyDefinitionDto'],
+      [
+        'contributionPolicies',
+        'ActivityPublishReviewReferencedContributionPolicyDto',
+        'ContributionPolicyDefinitionDto',
+      ],
+    ] as const) {
+      expect(response.properties?.[field]).toMatchObject({
+        type: 'array',
+        items: { $ref: `#/components/schemas/${schemaName}` },
+      });
+      const version = schemas[schemaName] as OpenApiSchema;
+      const versionFields = [
+        'definition',
+        'definitionHash',
+        'effectiveFrom',
+        'effectiveUntil',
+        'evaluatorVersion',
+        'policyId',
+        'schemaVersion',
+        'version',
+        'versionId',
+      ];
+      expect(Object.keys(version.properties ?? {}).sort()).toEqual(versionFields);
+      expect(version.required?.slice().sort()).toEqual(versionFields);
+      expect(version.properties?.definition?.allOf).toEqual([
+        { $ref: `#/components/schemas/${definitionName}` },
+      ]);
+      expect(schemas[definitionName]).toBeDefined();
+      expect(version.properties?.definitionHash).toMatchObject({
+        type: 'string',
+        pattern: '^[0-9a-f]{64}$',
+      });
+      expect(version.properties?.schemaVersion?.enum).toEqual([1]);
+      expect(version.properties?.evaluatorVersion?.enum).toEqual([1]);
+      expect(version.properties?.effectiveUntil).toMatchObject({ type: 'string', nullable: true });
+    }
   });
 
   it('logout OpenAPI 明确 family 撤销且成功 data=null', () => {
