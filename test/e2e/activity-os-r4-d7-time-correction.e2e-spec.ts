@@ -15,6 +15,8 @@ import { ActivityTimeAllocationService } from '../../src/modules/activities/acti
 import { ActivityTimeSettlementService } from '../../src/modules/activities/activity-time-settlement.service';
 import { ActivityTimeSettlementQueryService } from '../../src/modules/activities/activity-time-settlement-query.service';
 import { ActivityTimeSettlementAccessService } from '../../src/modules/activities/activity-time-settlement-access.service';
+import { ActivityContributionSettlementService } from '../../src/modules/activities/activity-contribution-settlement.service';
+import { E4PreparePhaseDiagnostic } from '../helpers/e4-prepare-phase-diagnostic';
 import request from 'supertest';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
@@ -4232,30 +4234,132 @@ describe('D7-1 recognition correction real transaction', () => {
       if (population === 1) await recognize(p);
       const service = f.app.get(ActivityTimeSettlementService);
       const originalPrepare = service.prepare.bind(service);
+      const observePhases = population === 2000 && r5CiAuthenticated();
+      let phases: E4PreparePhaseDiagnostic | undefined;
+      let phaseActive = false;
+      let phaseFaults = 0;
+      let queryObserverReady = false;
+      let receivedQueries = 0;
+      const observePhaseSafely = (work: () => unknown) =>
+        safeD7Diagnostic(work, () => {
+          phaseFaults++;
+        });
+      if (observePhases)
+        observePhaseSafely(() => {
+          phases = new E4PreparePhaseDiagnostic(
+            [
+              { phase: 'C3_PROOF', target: service, method: 'lockedProof' },
+              { phase: 'C3_SOURCE', target: service, method: 'lockedSources' },
+              {
+                phase: 'C3_EVAL',
+                target: f.app.get(ActivityTimeSettlementQueryService),
+                method: 'evaluateInTx',
+              },
+              { phase: 'C3_BUCKET_WRITE', target: service, method: 'insertBuckets' },
+              {
+                phase: 'E4_PREPARE',
+                target: f.app.get(ActivityContributionSettlementService),
+                method: 'prepareTimeInTx',
+              },
+              { phase: 'C3_RECEIPT', target: service, method: 'receipt' },
+            ],
+            undefined,
+            undefined,
+            'C3_PREPARE',
+          );
+          // R5 CI supplies this same owner client with query events enabled.
+          const queryClient = f.db as unknown as {
+            $on(event: 'query', listener: (event: Prisma.QueryEvent) => void): void;
+          };
+          queryClient.$on('query', (event) => {
+            if (!phaseActive) return;
+            observePhaseSafely(() => {
+              // Only kind/duration enter the observer; SQL and parameters never do.
+              const kind = /^\s*(?:INSERT|UPDATE|DELETE)\b/iu.test(event.query)
+                ? 'WRITE'
+                : /^\s*(?:SELECT|WITH)\b/iu.test(event.query)
+                  ? 'READ'
+                  : null;
+              if (kind) {
+                receivedQueries++;
+                phases?.query(kind, event.duration);
+              }
+            });
+          });
+          queryObserverReady = true;
+        });
       const prepareSpy = jest.spyOn(service, 'prepare').mockImplementation((...args) => {
         const enteredMs = performance.now();
-        return observeD7SetupRejection(
-          () => originalPrepare(...args),
-          (error) => {
-            // Closed projections only: no message, query, parameters, IDs or credentials.
-            console.info(
-              '[d7-main-settlement-failure] ' +
-                JSON.stringify({
-                  phase: 'prepare',
-                  population,
-                  elapsedMs: Math.round(performance.now() - enteredMs),
-                  code: diagnosticCode(error),
-                  ...commitErrorLocation(error),
-                }),
-            );
-          },
-        );
+        const runPrepare = () => originalPrepare(...args);
+        const observedPrepare = async () => {
+          phaseActive = true;
+          observePhaseSafely(() => phases?.begin());
+          try {
+            const result = await runPrepare();
+            observePhaseSafely(() => phases?.finish('OK'));
+            return result;
+          } catch (error) {
+            observePhaseSafely(() => phases?.finish('FAIL'));
+            throw error;
+          } finally {
+            phaseActive = false;
+          }
+        };
+        return observeD7SetupRejection(observePhases ? observedPrepare : runPrepare, (error) => {
+          // Closed projections only: no message, query, parameters, IDs or credentials.
+          console.info(
+            '[d7-main-settlement-failure] ' +
+              JSON.stringify({
+                phase: 'prepare',
+                population,
+                elapsedMs: Math.round(performance.now() - enteredMs),
+                code: diagnosticCode(error),
+                ...commitErrorLocation(error),
+              }),
+          );
+        });
       });
       const preparedTime = await (async () => {
         try {
           return await post(p.url + '/prepare', prepareCommand(p));
         } finally {
           prepareSpy.mockRestore();
+          if (observePhases) {
+            observePhaseSafely(() => phases?.restore());
+            // Emit only after the original request settles, outside its transaction.
+            deferD7Diagnostic(() => {
+              const metadata = {
+                population,
+                profile: 'C3_PREPARE',
+                phaseFaults,
+                queryCoverage: queryObserverReady && receivedQueries > 0 ? 'OBSERVED' : 'UNKNOWN',
+                querySemantics: 'RECEIVED_READ_WRITE_EVENTS_ONLY',
+                cpuSemantics: 'NODE_PROCESS_INCLUSIVE_NOT_DATABASE',
+                phaseSemantics: 'INCLUSIVE_DO_NOT_SUM',
+              };
+              const emitted = phases?.emitTo((json) =>
+                console.info(
+                  '[d7-main-prepare-phases] ' +
+                    JSON.stringify({
+                      ...metadata,
+                      status:
+                        phaseFaults === 0 &&
+                        queryObserverReady &&
+                        receivedQueries > 0 &&
+                        phases?.snapshot().status === 'COMPLETE'
+                          ? 'COMPLETE'
+                          : 'UNKNOWN',
+                      timing: JSON.parse(json) as unknown,
+                    }),
+                ),
+              );
+              if (!emitted)
+                console.info(
+                  '[d7-main-prepare-phases] ' +
+                    JSON.stringify({ ...metadata, status: 'UNKNOWN', reason: 'EMIT_UNAVAILABLE' }),
+                );
+            });
+          }
         }
       })();
       const originalSubmit = service.submit.bind(service);

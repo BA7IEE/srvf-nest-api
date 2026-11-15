@@ -15,6 +15,14 @@ export const E4_PREPARE_PHASES = [
   'C3_RECEIPT',
 ] as const;
 export type E4PreparePhase = (typeof E4_PREPARE_PHASES)[number];
+export type E4PrepareProfile = 'E4_NATIVE' | 'C3_PREPARE';
+const C3_PREPARE_PHASES: readonly E4PreparePhase[] = [
+  'C3_PROOF',
+  'C3_SOURCE',
+  'C3_EVAL',
+  'C3_BUCKET_WRITE',
+  'C3_RECEIPT',
+];
 export type E4PreparePhaseBinding = {
   phase: E4PreparePhase;
   target: object;
@@ -96,9 +104,12 @@ export class E4PreparePhaseDiagnostic {
     bindings: readonly E4PreparePhaseBinding[],
     private readonly clock: () => number = () => performance.now(),
     private readonly cpu: () => unknown = () => process.cpuUsage(),
+    private readonly profile: E4PrepareProfile = 'E4_NATIVE',
   ) {
     // Complete preflight before shadowing any instance method.
     try {
+      if (!['E4_NATIVE', 'C3_PREPARE'].includes(profile))
+        throw new Error('Unknown prepare diagnostic profile');
       const seen = new Set<E4PreparePhase>();
       const methods = new Map<object, Set<string>>();
       const prepared: Omit<Installed, 'wrapper'>[] = [];
@@ -128,7 +139,7 @@ export class E4PreparePhaseDiagnostic {
           original: original as (...args: unknown[]) => unknown,
         });
       }
-      if (seen.size !== E4_PREPARE_PHASES.length)
+      if (this.requiredPhases.some((phase) => !seen.has(phase)))
         throw new Error('Fixed phase coverage unavailable');
       for (const item of prepared) {
         const invoke = (receiver: unknown, args: unknown[]) => this.invoke(item, receiver, args);
@@ -156,7 +167,10 @@ export class E4PreparePhaseDiagnostic {
         E4_EVAL_WRITE: 'insertEvaluations',
         C3_RECEIPT: 'receipt',
       };
-      if (prepared.every((binding) => binding.method === fixedMethods[binding.phase])) {
+      if (
+        profile === 'E4_NATIVE' &&
+        prepared.every((binding) => binding.method === fixedMethods[binding.phase])
+      ) {
         const proof = prepared.find((binding) => binding.phase === 'C3_PROOF')!;
         try {
           const client: unknown = Reflect.get(proof.target, 'prisma');
@@ -169,6 +183,10 @@ export class E4PreparePhaseDiagnostic {
       this.unknown = true;
       this.restore();
     }
+  }
+
+  private get requiredPhases(): readonly E4PreparePhase[] {
+    return this.profile === 'C3_PREPARE' ? C3_PREPARE_PHASES : E4_PREPARE_PHASES;
   }
 
   private tick(): number | null {
@@ -380,7 +398,7 @@ export class E4PreparePhaseDiagnostic {
     this.stopped = true;
     if (
       this.frames.length ||
-      (outcome === 'OK' && E4_PREPARE_PHASES.some((phase) => this.phases.get(phase)!.calls === 0))
+      (outcome === 'OK' && this.requiredPhases.some((phase) => this.phases.get(phase)!.calls === 0))
     )
       this.unknown = true;
   }
@@ -412,7 +430,15 @@ export class E4PreparePhaseDiagnostic {
           ? ('COMPLETE' as const)
           : ('UNKNOWN' as const),
       root: { ...this.root },
-      phases: E4_PREPARE_PHASES.map((phase) => ({ phase, ...this.phases.get(phase)! })),
+      // Unbound optional phases are unobserved, not measured zeros.
+      phases: E4_PREPARE_PHASES.filter(
+        (phase) =>
+          this.profile !== 'C3_PREPARE' ||
+          this.installed.some((binding) => binding.phase === phase),
+      ).map((phase) => ({ phase, ...this.phases.get(phase)! })),
+      ...(this.profile === 'C3_PREPARE'
+        ? { profile: this.profile, requiredPhases: [...C3_PREPARE_PHASES] }
+        : {}),
     };
   }
 
