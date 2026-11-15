@@ -27,6 +27,7 @@ import {
 import {
   parseCorrectionChangeSet,
   serializeCorrectionChangeSetForHash,
+  serializeCorrectionChangeSetForInput,
 } from './correction-change-set';
 import type {
   AppCommitActivityTimeCorrectionDto,
@@ -205,14 +206,14 @@ export class ActivityTimeCorrectionCommandService {
     if (changeSet.schemaVersion !== 2 && changeSet.schemaVersion !== 3) {
       throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
     }
-    const requestedChangeJson = serializeCorrectionChangeSetForHash(changeSet);
+    const hashChangeJson = serializeCorrectionChangeSetForHash(changeSet);
     const businessHash = fingerprintMetricEnvelope(
       `attendance-correction-request-v${changeSet.schemaVersion}`,
       {
         activityId,
         participationIdentityId: dto.participationIdentityId,
         requestTypeCode: dto.requestTypeCode,
-        requestedChangeJson,
+        requestedChangeJson: hashChangeJson,
         reason: dto.reason,
         attachmentIds: dto.attachmentIds ?? null,
       },
@@ -221,7 +222,7 @@ export class ActivityTimeCorrectionCommandService {
       activityId,
       participationIdentityId: dto.participationIdentityId,
       requestTypeCode: dto.requestTypeCode,
-      requestedChangeJson,
+      requestedChangeJson: serializeCorrectionChangeSetForInput(changeSet),
       reason: dto.reason,
       attachmentIds: dto.attachmentIds,
       operationKey: dto.operationKey,

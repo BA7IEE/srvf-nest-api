@@ -183,6 +183,21 @@ export function serializeCorrectionChangeSetForHash(
   return serialized;
 }
 
+/** Serialize a validated Human request for a subsequent domain parse and storage. */
+export function serializeCorrectionChangeSetForInput(
+  changeSet: CorrectionChangeSet,
+): Record<string, unknown> {
+  const serialized = serializeCorrectionChangeSetForHash(changeSet);
+  if (changeSet.schemaVersion === TIME_CORRECTION_CHANGE_SCHEMA_VERSION) {
+    serialized.results = changeSet.results.map((result) => ({
+      ...result,
+      recognizedServiceHours: decimal2Text(result.recognizedServiceHours),
+      recognizedContributionPoints: decimal2Text(result.recognizedContributionPoints),
+    }));
+  }
+  return serialized;
+}
+
 function decimal2Text(value: number): string {
   return value.toFixed(2);
 }

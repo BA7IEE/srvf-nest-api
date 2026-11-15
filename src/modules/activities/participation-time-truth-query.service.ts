@@ -58,6 +58,11 @@ interface ClassifiedRootRow {
   recognizedSeconds: number;
 }
 
+interface ManifestRootRow extends Omit<ClassifiedRootRow, 'memberId'> {
+  memberId: string | null;
+  rootExpectedEntryCount: number;
+}
+
 export interface OfficialParticipationTimeTotal {
   activityId: string;
   memberId: string;
@@ -91,6 +96,10 @@ interface CorrectionEntryRow {
   participationIdentityId: string;
   categoryCode: string;
   secondsDelta: number;
+  entryRootManifestId: string | null;
+  entryIdentityId: string | null;
+  entryCategoryCode: string | null;
+  entryRecognizedSeconds: number | null;
 }
 
 interface SliceRow {
@@ -636,12 +645,73 @@ export class ParticipationTimeTruthQueryService {
         ? []
         : await tx.$queryRaw<CorrectionEntryRow[]>(Prisma.sql`
             SELECT entry."manifestId", entry."rootEntryId", entry."participationIdentityId",
-              entry."categoryCode", entry."secondsDelta"
+              entry."categoryCode", entry."secondsDelta",
+              root."manifestId" AS "entryRootManifestId",
+              root."participationIdentityId" AS "entryIdentityId",
+              root."categoryCode" AS "entryCategoryCode",
+              root."recognizedSeconds" AS "entryRecognizedSeconds"
             FROM "ParticipationTimeCorrectionEntry" entry
+            LEFT JOIN "ParticipationTimeLedgerEntry" root ON root.id = entry."rootEntryId"
             WHERE entry."manifestId" IN (${Prisma.join(manifestIds)})
             ORDER BY entry."manifestId", entry."rootEntryId", entry."entryTypeCode", entry.id
           `);
-    const rootEntryIds = roots.map((row) => row.rootEntryId);
+    // A correction covers the entire root manifest. Validate every member before
+    // projecting back to the requested scope, including roots with no entry in
+    // a damaged correction set. Fetch the manifest roots in one batch.
+    const correctedRootIds = [...new Set(manifests.map((row) => row.rootManifestId))];
+    const manifestRoots =
+      correctedRootIds.length === 0
+        ? []
+        : await tx.$queryRaw<ManifestRootRow[]>(Prisma.sql`
+            SELECT entry.id AS "rootEntryId", entry."manifestId" AS "rootManifestId",
+              entry."activityId", entry."participationIdentityId", identity."memberId",
+              entry."categoryCode", entry."recognizedSeconds",
+              root."expectedEntryCount" AS "rootExpectedEntryCount"
+            FROM "ParticipationTimeLedgerEntry" entry
+            JOIN "ParticipationTimeLedgerManifest" root ON root.id = entry."manifestId"
+            LEFT JOIN "ActivityParticipationIdentity" identity
+              ON identity.id = entry."participationIdentityId"
+              AND identity."activityId" = entry."activityId"
+            WHERE entry."manifestId" IN (${Prisma.join(correctedRootIds)})
+            ORDER BY entry."manifestId", entry.id
+          `);
+    const validationRoots = new Map(roots.map((root) => [root.rootEntryId, root]));
+    const countsByManifest = new Map<string, { actual: number; expected: number }>();
+    for (const root of manifestRoots) {
+      if (
+        root.memberId === null ||
+        !TIME_SETTLEMENT_CATEGORIES.includes(
+          root.categoryCode as (typeof TIME_SETTLEMENT_CATEGORIES)[number],
+        ) ||
+        !Number.isSafeInteger(root.recognizedSeconds) ||
+        root.recognizedSeconds < 0 ||
+        !Number.isSafeInteger(root.rootExpectedEntryCount) ||
+        root.rootExpectedEntryCount < 0
+      )
+        invalidTruth();
+      const count = countsByManifest.get(root.rootManifestId);
+      if (count && count.expected !== root.rootExpectedEntryCount) invalidTruth();
+      countsByManifest.set(root.rootManifestId, {
+        actual: (count?.actual ?? 0) + 1,
+        expected: root.rootExpectedEntryCount,
+      });
+      validationRoots.set(root.rootEntryId, { ...root, memberId: root.memberId });
+    }
+    for (const rootId of correctedRootIds) {
+      const count = countsByManifest.get(rootId);
+      if (!count || count.actual !== count.expected) invalidTruth();
+    }
+    const correctedRootIdSet = new Set(correctedRootIds);
+    const uncorrectedEntryIds = roots
+      .filter((root) => !correctedRootIdSet.has(root.rootManifestId))
+      .map((root) => root.rootEntryId);
+    const slicePredicates: Prisma.Sql[] = [];
+    if (correctedRootIds.length > 0) {
+      slicePredicates.push(Prisma.sql`entry."manifestId" IN (${Prisma.join(correctedRootIds)})`);
+    }
+    if (uncorrectedEntryIds.length > 0) {
+      slicePredicates.push(Prisma.sql`entry.id IN (${Prisma.join(uncorrectedEntryIds)})`);
+    }
     const rootSlices = await tx.$queryRaw<SliceRow[]>(Prisma.sql`
       SELECT entry.id AS "rootEntryId", NULL::text AS "proofId",
         entry."participationIdentityId", slice.id AS "sliceId", slice."categoryCode",
@@ -651,7 +721,7 @@ export class ParticipationTimeTruthQueryService {
       JOIN "ParticipantTimeAllocationSlice" slice
         ON slice."allocationRevisionId" = source."allocationRevisionId"
         AND slice."activityId" = entry."activityId"
-      WHERE entry.id IN (${Prisma.join(rootEntryIds)})
+      WHERE ${Prisma.join(slicePredicates, ' OR ')}
       ORDER BY entry.id, slice."startAt", slice."endAt", slice.id
     `);
     const latestWithProof = [...latestByRoot.values()].filter(
@@ -686,7 +756,7 @@ export class ParticipationTimeTruthQueryService {
           ]);
     this.verifyProofs(latestWithProof, proofs);
 
-    const rootsByEntryId = new Map(roots.map((root) => [root.rootEntryId, root]));
+    const manifestsById = new Map(manifests.map((manifest) => [manifest.id, manifest]));
     const rootSlicesByEntryCategory = groupSlices(rootSlices, (slice) =>
       slice.rootEntryId === null
         ? null
@@ -698,23 +768,37 @@ export class ParticipationTimeTruthQueryService {
         : sliceGroupKey(slice.proofId, slice.participationIdentityId, slice.categoryCode),
     );
     const correctionSeconds = new Map<string, number>();
+    const correctedRootSeconds = new Map<string, number>();
     for (const entry of corrections) {
-      const root = rootsByEntryId.get(entry.rootEntryId);
+      const manifest = manifestsById.get(entry.manifestId);
       if (
-        !root ||
-        root.participationIdentityId !== entry.participationIdentityId ||
-        root.categoryCode !== entry.categoryCode ||
+        !manifest ||
+        entry.entryRootManifestId !== manifest.rootManifestId ||
+        entry.entryIdentityId !== entry.participationIdentityId ||
+        entry.entryCategoryCode !== entry.categoryCode ||
+        !TIME_SETTLEMENT_CATEGORIES.includes(
+          entry.categoryCode as (typeof TIME_SETTLEMENT_CATEGORIES)[number],
+        ) ||
+        entry.entryRecognizedSeconds === null ||
+        !Number.isSafeInteger(entry.entryRecognizedSeconds) ||
+        entry.entryRecognizedSeconds < 0 ||
         !Number.isSafeInteger(entry.secondsDelta)
       ) {
         invalidTruth();
       }
+      correctedRootSeconds.set(entry.rootEntryId, entry.entryRecognizedSeconds);
       const next = (correctionSeconds.get(entry.rootEntryId) ?? 0) + entry.secondsDelta;
       if (!Number.isSafeInteger(next)) invalidTruth();
       correctionSeconds.set(entry.rootEntryId, next);
     }
+    for (const [rootEntryId, seconds] of correctedRootSeconds) {
+      const total = seconds + (correctionSeconds.get(rootEntryId) ?? 0);
+      if (!Number.isSafeInteger(total) || total < 0) invalidTruth();
+    }
 
+    const selectedRootIds = new Set(roots.map((root) => root.rootEntryId));
     const output: ParticipationTimeTruthItem[] = [];
-    for (const root of roots) {
+    for (const root of validationRoots.values()) {
       const recognizedSeconds =
         root.recognizedSeconds + (correctionSeconds.get(root.rootEntryId) ?? 0);
       if (!Number.isSafeInteger(recognizedSeconds) || recognizedSeconds < 0) invalidTruth();
@@ -731,7 +815,9 @@ export class ParticipationTimeTruthQueryService {
             sliceGroupKey(root.rootEntryId, root.participationIdentityId, root.categoryCode),
           ) ?? []);
       if (slices.length === 0) invalidTruth();
-      for (const day of allocateSecondsByDate(recognizedSeconds, slices)) {
+      const days = allocateSecondsByDate(recognizedSeconds, slices);
+      if (!selectedRootIds.has(root.rootEntryId)) continue;
+      for (const day of days) {
         if (day.ledgerDate < input.dateFrom || day.ledgerDate > input.dateTo) continue;
         output.push({
           ledgerDate: day.ledgerDate,
