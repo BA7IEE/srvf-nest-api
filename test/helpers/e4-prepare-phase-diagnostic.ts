@@ -15,7 +15,68 @@ export const E4_PREPARE_PHASES = [
   'C3_RECEIPT',
 ] as const;
 export type E4PreparePhase = (typeof E4_PREPARE_PHASES)[number];
-export type E4PrepareProfile = 'E4_NATIVE' | 'C3_PREPARE';
+export type E4PrepareProfile = 'E4_NATIVE' | 'C3_PREPARE' | 'C3_SOURCE_QUERIES';
+const C3_SOURCE_QUERY_FAMILIES = [
+  'POPULATION',
+  'SETTLEMENT_RESULTS',
+  'CURRENT_SEGMENTS',
+  'LATEST_ALLOCATIONS',
+  'SOURCE_ROW_LOCKS',
+  'OTHER',
+] as const;
+type C3SourceQueryFamily = (typeof C3_SOURCE_QUERY_FAMILIES)[number];
+
+/** Conservative statement-shape recognition only. No SQL, parameters or hashes are retained. */
+export function classifyC3SourceReadQuery(query: unknown): C3SourceQueryFamily {
+  if (typeof query !== 'string' || query.length > 32768) return 'OTHER';
+  const sql = query.replace(/\s+/gu, ' ').trim().replace(/;$/u, '');
+  if (sql.includes(';')) return 'OTHER';
+  if (
+    sql.startsWith('SELECT s.id, s."participationIdentityId", s."segmentKey", s.revision,') &&
+    sql.includes(
+      ' FROM "ParticipantServiceSegmentRevision" s JOIN "ActivityParticipationIdentity" i ON i.id = s."participationIdentityId" ',
+    )
+  )
+    return 'CURRENT_SEGMENTS';
+  if (
+    sql.startsWith(
+      'SELECT a.* FROM ( SELECT DISTINCT identity, segment FROM jsonb_to_recordset(',
+    ) &&
+    sql.includes(' CROSS JOIN LATERAL ( SELECT ') &&
+    sql.includes(' FROM "ParticipantTimeAllocationRevision" a WHERE ') &&
+    sql.includes(' ORDER BY a.revision DESC LIMIT 1 ) a ORDER BY ')
+  )
+    return 'LATEST_ALLOCATIONS';
+  if (
+    /^SELECT id FROM "(?:ActivityParticipationIdentity|ParticipantServiceSegmentRevision|ActivityRuleSnapshot|TimePolicyVersion)" WHERE .+ ORDER BY id FOR SHARE$/u.test(
+      sql,
+    )
+  )
+    return 'SOURCE_ROW_LOCKS';
+  if (
+    /^SELECT (?:"public"\."ActivityParticipationIdentity"|"ActivityParticipationIdentity"|"t\d+")\."id", (?:"public"\."ActivityParticipationIdentity"|"ActivityParticipationIdentity"|"t\d+")\."memberId" FROM (?:"public"\.)?"ActivityParticipationIdentity"(?: AS "t\d+")? WHERE /u.test(
+      sql,
+    ) &&
+    sql.includes('"populationIncluded"')
+  )
+    return 'POPULATION';
+  if (
+    /^SELECT (?:"public"\."ParticipantSettlementResultRevision"|"ParticipantSettlementResultRevision"|"t\d+")\."participationIdentityId", (?:"public"\."ParticipantSettlementResultRevision"|"ParticipantSettlementResultRevision"|"t\d+")\."exceptionFlagsJson" FROM (?:"public"\.)?"ParticipantSettlementResultRevision"(?: AS "t\d+")? WHERE /u.test(
+      sql,
+    ) &&
+    sql.includes('"settlementVersionId"')
+  )
+    return 'SETTLEMENT_RESULTS';
+  return 'OTHER';
+}
+
+type SourceQueryCounters = {
+  family: C3SourceQueryFamily;
+  kind: 'READ' | 'WRITE';
+  events: number;
+  totalMs: number;
+  largestMs: number;
+};
 const C3_PREPARE_PHASES: readonly E4PreparePhase[] = [
   'C3_PROOF',
   'C3_SOURCE',
@@ -80,6 +141,7 @@ export class E4PreparePhaseDiagnostic {
   private readonly installed: Installed[] = [];
   private readonly frames: Frame[] = [];
   private readonly root = counters();
+  private readonly sourceQueries = new Map<string, SourceQueryCounters>();
   private active = false;
   private begun = false;
   private stopped = false;
@@ -108,7 +170,7 @@ export class E4PreparePhaseDiagnostic {
   ) {
     // Complete preflight before shadowing any instance method.
     try {
-      if (!['E4_NATIVE', 'C3_PREPARE'].includes(profile))
+      if (!['E4_NATIVE', 'C3_PREPARE', 'C3_SOURCE_QUERIES'].includes(profile))
         throw new Error('Unknown prepare diagnostic profile');
       const seen = new Set<E4PreparePhase>();
       const methods = new Map<object, Set<string>>();
@@ -186,7 +248,19 @@ export class E4PreparePhaseDiagnostic {
   }
 
   private get requiredPhases(): readonly E4PreparePhase[] {
-    return this.profile === 'C3_PREPARE' ? C3_PREPARE_PHASES : E4_PREPARE_PHASES;
+    return this.isC3Profile ? C3_PREPARE_PHASES : E4_PREPARE_PHASES;
+  }
+
+  private get isC3Profile(): boolean {
+    return this.profile === 'C3_PREPARE' || this.profile === 'C3_SOURCE_QUERIES';
+  }
+
+  get sourceQueryWindowOpen(): boolean {
+    return (
+      this.profile === 'C3_SOURCE_QUERIES' &&
+      this.active &&
+      this.frames.some((frame) => frame.phase === 'C3_SOURCE')
+    );
   }
 
   private tick(): number | null {
@@ -364,7 +438,7 @@ export class E4PreparePhaseDiagnostic {
   }
 
   /** Event windows and process CPU intervals are inclusive. CPU includes native threads; do not sum nested phases or infer JavaScript-only CPU. */
-  query(kind: 'READ' | 'WRITE', durationMs: number): void {
+  query(kind: 'READ' | 'WRITE', durationMs: number, family?: C3SourceQueryFamily): void {
     if (!this.active) return;
     if (!['READ', 'WRITE'].includes(kind) || !Number.isFinite(durationMs) || durationMs < 0) {
       this.unknown = true;
@@ -382,6 +456,32 @@ export class E4PreparePhaseDiagnostic {
       row.queryCount++;
       row[kind === 'READ' ? 'readMs' : 'writeMs'] += durationMs;
       row.largestMs = Math.max(row.largestMs, durationMs);
+    }
+    if (this.sourceQueryWindowOpen) {
+      let safeFamily: C3SourceQueryFamily = family ?? 'OTHER';
+      if (
+        !C3_SOURCE_QUERY_FAMILIES.includes(safeFamily) ||
+        (kind === 'WRITE' && safeFamily !== 'OTHER')
+      ) {
+        this.unknown = true;
+        safeFamily = 'OTHER';
+      }
+      const key = `${safeFamily}:${kind}`;
+      const row = this.sourceQueries.get(key) ?? {
+        family: safeFamily,
+        kind,
+        events: 0,
+        totalMs: 0,
+        largestMs: 0,
+      };
+      if (!Number.isSafeInteger(row.events + 1) || !Number.isFinite(row.totalMs + durationMs)) {
+        this.unknown = true;
+        return;
+      }
+      row.events++;
+      row.totalMs += durationMs;
+      row.largestMs = Math.max(row.largestMs, durationMs);
+      this.sourceQueries.set(key, row);
     }
   }
 
@@ -432,13 +532,36 @@ export class E4PreparePhaseDiagnostic {
       root: { ...this.root },
       // Unbound optional phases are unobserved, not measured zeros.
       phases: E4_PREPARE_PHASES.filter(
-        (phase) =>
-          this.profile !== 'C3_PREPARE' ||
-          this.installed.some((binding) => binding.phase === phase),
+        (phase) => !this.isC3Profile || this.installed.some((binding) => binding.phase === phase),
       ).map((phase) => ({ phase, ...this.phases.get(phase)! })),
-      ...(this.profile === 'C3_PREPARE'
+      ...(this.isC3Profile
         ? { profile: this.profile, requiredPhases: [...C3_PREPARE_PHASES] }
         : {}),
+      ...(this.profile === 'C3_SOURCE_QUERIES'
+        ? { sourceQueries: this.sourceQuerySnapshot() }
+        : {}),
+    };
+  }
+
+  private sourceQuerySnapshot() {
+    const families = C3_SOURCE_QUERY_FAMILIES.flatMap((family) =>
+      (['READ', 'WRITE'] as const).flatMap((kind) => {
+        const row = this.sourceQueries.get(`${family}:${kind}`);
+        return row ? [{ ...row }] : [];
+      }),
+    );
+    const events = families.reduce((sum, row) => sum + row.events, 0);
+    return {
+      status: events > 0 ? 'OBSERVED' : 'UNKNOWN',
+      classification:
+        events === 0
+          ? 'UNKNOWN'
+          : families.some((row) => row.family === 'OTHER')
+            ? 'PARTIAL'
+            : 'COMPLETE',
+      semantics: 'RECEIVED_EVENTS_IN_C3_SOURCE_ONLY_NOT_DATABASE_EXECUTION_PROOF',
+      events,
+      families,
     };
   }
 

@@ -16,7 +16,10 @@ import { ActivityTimeSettlementService } from '../../src/modules/activities/acti
 import { ActivityTimeSettlementQueryService } from '../../src/modules/activities/activity-time-settlement-query.service';
 import { ActivityTimeSettlementAccessService } from '../../src/modules/activities/activity-time-settlement-access.service';
 import { ActivityContributionSettlementService } from '../../src/modules/activities/activity-contribution-settlement.service';
-import { E4PreparePhaseDiagnostic } from '../helpers/e4-prepare-phase-diagnostic';
+import {
+  classifyC3SourceReadQuery,
+  E4PreparePhaseDiagnostic,
+} from '../helpers/e4-prepare-phase-diagnostic';
 import request from 'supertest';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
@@ -4265,7 +4268,7 @@ describe('D7-1 recognition correction real transaction', () => {
             ],
             undefined,
             undefined,
-            'C3_PREPARE',
+            'C3_SOURCE_QUERIES',
           );
           // R5 CI supplies this same owner client with query events enabled.
           const queryClient = f.db as unknown as {
@@ -4274,7 +4277,7 @@ describe('D7-1 recognition correction real transaction', () => {
           queryClient.$on('query', (event) => {
             if (!phaseActive) return;
             observePhaseSafely(() => {
-              // Only kind/duration enter the observer; SQL and parameters never do.
+              // Only kind/duration and a closed family enter the observer, never SQL/parameters.
               const kind = /^\s*(?:INSERT|UPDATE|DELETE)\b/iu.test(event.query)
                 ? 'WRITE'
                 : /^\s*(?:SELECT|WITH)\b/iu.test(event.query)
@@ -4282,7 +4285,11 @@ describe('D7-1 recognition correction real transaction', () => {
                   : null;
               if (kind) {
                 receivedQueries++;
-                phases?.query(kind, event.duration);
+                const family =
+                  kind === 'READ' && phases?.sourceQueryWindowOpen
+                    ? classifyC3SourceReadQuery(event.query)
+                    : undefined;
+                phases?.query(kind, event.duration, family);
               }
             });
           });
@@ -4330,7 +4337,7 @@ describe('D7-1 recognition correction real transaction', () => {
             deferD7Diagnostic(() => {
               const metadata = {
                 population,
-                profile: 'C3_PREPARE',
+                profile: 'C3_SOURCE_QUERIES',
                 phaseFaults,
                 queryCoverage: queryObserverReady && receivedQueries > 0 ? 'OBSERVED' : 'UNKNOWN',
                 querySemantics: 'RECEIVED_READ_WRITE_EVENTS_ONLY',
