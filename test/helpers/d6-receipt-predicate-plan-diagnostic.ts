@@ -20,6 +20,7 @@ export const D6_PREDICATE_SQL = Object.freeze({
     'database',current_database()=$1 AND NOT pg_catalog.pg_is_in_recovery(),
     'sameRole',current_user=session_user,
     'readOnly',current_setting('transaction_read_only')='on',
+    'repeatableRead',current_setting('transaction_isolation')='repeatable read',
     'backend',pg_catalog.pg_backend_pid(),
     'virtual',(SELECT virtualxid FROM pg_catalog.pg_locks
       WHERE pid=pg_catalog.pg_backend_pid() AND locktype='virtualxid'
@@ -60,7 +61,7 @@ function metric(value: unknown, key: string): number | null {
 }
 
 /** Only the pinned repository predicates can become executable diagnostic SQL. */
-export function d6ReceiptPredicateAuthority(source: string): Record<D6PredicateLabel, string> {
+function pinnedPredicates(source: string): Record<D6PredicateLabel, string> {
   const matches = [
     ...source.matchAll(
       /CREATE FUNCTION astr_receipt_complete_guard\(\) RETURNS trigger LANGUAGE plpgsql AS \$\$(.*?)\$\$;/gs,
@@ -89,16 +90,26 @@ export function d6ReceiptPredicateAuthority(source: string): Record<D6PredicateL
       .replaceAll('draft_id', 'parent_row."settlementVersionId"');
     for (const table of Object.keys(relations))
       predicate = predicate.replaceAll(`"${table}"`, `public."${table}"`);
-    // A materialized verdict exposes stale/violating data as zero root rows without
-    // printing the predicate result or folding the predicate into a different join.
-    queries[label] = `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, FORMAT JSON)
+    queries[label] = predicate;
+  }
+  return queries;
+}
+function explainPredicate(predicate: string): string {
+  // A zero-row verdict is not accepted as a fast success.
+  return `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, FORMAT JSON)
 WITH verdict AS MATERIALIZED (
   SELECT NOT EXISTS (${predicate}) AS valid
   FROM public."ActivitySettlementTimeRevision" parent_row
   WHERE parent_row.id=$1 AND parent_row."kindCode"='draft'
 ) SELECT 1 FROM verdict WHERE valid`;
-  }
-  return queries;
+}
+export function d6ReceiptPredicateAuthority(source: string): Record<D6PredicateLabel, string> {
+  const predicates = pinnedPredicates(source);
+  return {
+    SOURCE_READY: explainPredicate(predicates.SOURCE_READY),
+    BUCKET_SOURCE: explainPredicate(predicates.BUCKET_SOURCE),
+    BUCKET_TOTAL: explainPredicate(predicates.BUCKET_TOTAL),
+  };
 }
 
 const kinds = new Set([
@@ -175,7 +186,7 @@ export type D6PredicatePlanSummary = {
 };
 
 /** Never enumerate/stringify raw plans: forbidden fields may contain values or accessors. */
-export function summarizeD6PredicatePlan(rows: unknown): D6PredicatePlanSummary {
+function inspectPredicatePlan(rows: unknown) {
   const first = own(array(rows, 1), '0');
   const document = own(array(own(first, 'QUERY PLAN'), 1), '0');
   const root = own(document, 'Plan');
@@ -209,7 +220,7 @@ export function summarizeD6PredicatePlan(rows: unknown): D6PredicatePlanSummary 
         stack.push({ node: own(values, String(i)), depth: item.depth + 1 });
     }
   }
-  return {
+  const plan: D6PredicatePlanSummary = {
     executionMs: number(own(document, 'Execution Time')),
     planningMs: number(own(document, 'Planning Time')),
     rootRows: number(own(root, 'Actual Rows')),
@@ -218,6 +229,11 @@ export function summarizeD6PredicatePlan(rows: unknown): D6PredicatePlanSummary 
     parsedNodes: nodes.length,
     topWorkNodes: nodes.sort((a, b) => work(b) - work(a)).slice(0, 6),
   };
+  const sliceScans = nodes.filter((node) => node.relation === 'SLICE');
+  return { plan, sliceScans };
+}
+export function summarizeD6PredicatePlan(rows: unknown): D6PredicatePlanSummary {
+  return inspectPredicatePlan(rows).plan;
 }
 
 type Mode = 'auto' | 'force_generic_plan' | 'force_custom_plan';
@@ -236,6 +252,7 @@ type Reason =
   | 'PLAN_SHAPE'
   | 'IDENTITY'
   | 'POST_PREPARE_DATA_CHANGED'
+  | 'COUNTEREXAMPLES'
   | 'OUTPUT';
 type Row = {
   label: D6PredicateLabel;
@@ -441,4 +458,414 @@ export async function observeD6ReceiptPredicatePlans(
     transactions,
     statements,
   );
+}
+
+export const D6_SLICE_COMPARISON_READ_ONLY =
+  'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY';
+export const D6_SLICE_CASES = Object.freeze([
+  'UNCHANGED',
+  'FORGED_DURATION',
+  'EMPTY_CATEGORY',
+  'EMPTY_CATEGORY_ZERO',
+  'NULL_VS_ZERO',
+  'NULL_BASELINE',
+  'FORGED_QUANTUM',
+  'MISSING_SOURCE',
+] as const);
+type SliceCase = (typeof D6_SLICE_CASES)[number];
+type SliceVariant = 'ORIGINAL' | 'ONCE_PER_ALLOCATION';
+type SliceControl = {
+  label: SliceCase;
+  originalRejected: boolean;
+  candidateRejected: boolean;
+  sameRejectSet: boolean;
+  readinessRejected: boolean;
+  sourceRows: number;
+  sliceRows: number;
+};
+type SliceSample = {
+  order: 'AB' | 'BA';
+  variant: SliceVariant;
+  executionMs: number;
+  planningMs: number;
+  rootRows: number;
+  rootLoops: number;
+  rootBuffers: ReturnType<typeof buffers>;
+  sliceScans: WorkNode[];
+};
+type SliceIdentity = {
+  phase: 'CONTROLS' | 'AB' | 'BA';
+  sameBackend: true;
+  sameVirtualTransaction: true;
+  repeatableRead: true;
+  readOnly: true;
+  functionPinned: true;
+  parentSealed: true;
+  planCacheMode: Mode;
+};
+function sliceSnapshot(
+  status: 'DISABLED' | 'UNKNOWN' | 'PARTIAL' | 'OBSERVED',
+  reason: string,
+  controls: SliceControl[] = [],
+  samples: SliceSample[] = [],
+  identities: SliceIdentity[] = [],
+  transactions = 0,
+  statements = 0,
+  equivalent: boolean | null = null,
+) {
+  return {
+    status,
+    reason,
+    purpose: 'READ_ONLY_SHADOW_AB_NOT_NATIVE_GUARD_OR_PERFORMANCE_ACCEPTANCE',
+    scope: 'SAME_REPEATABLE_READ_SNAPSHOT_WITHIN_EACH_PAIR_NOT_ACROSS_PAIRS',
+    candidate: 'CURRENT_REVISION_ALLOCATION_INDEX_DRIVEN_FOUR_CATEGORY_NUMERIC_MAP',
+    oracle: 'NORMAL_INPUT_BOTH_EMPTY_REJECT_SETS_PLUS_BIDIRECTIONAL_PROJECTION_COUNTEREXAMPLES',
+    oracleScope: 'ONLY_SOURCE_READY_AND_BUCKET_SOURCE_NOT_COMPLETE_GUARD_ACCEPTANCE',
+    completeness: 'ORIGINAL_SOURCE_READY_UNCHANGED_AND_TESTED_FOR_MISSING_SOURCE',
+    effects: 'EXTRA_READS_MAY_WARM_CACHES_NO_FORCED_PLAN_MODE_OR_STATISTICS_UPDATE',
+    buffers: 'INCLUSIVE_NODE_BUFFERS_DO_NOT_SUM_PARENT_CHILDREN',
+    rows: 'POSTGRES_ROUNDED_PER_LOOP_AVERAGES_NOT_EXACT_TUPLE_TOTALS',
+    transactionBudgetMs: 5000,
+    statementBudgetMs: 2000,
+    transactions,
+    explicitObserverStatements: statements,
+    equivalent,
+    controls,
+    samples,
+    identities,
+  };
+}
+export type D6SliceComparisonSnapshot = ReturnType<typeof sliceSnapshot>;
+export function d6ReceiptSliceComparisonAuthority(source: string) {
+  const predicates = pinnedPredicates(source);
+  const original = predicates.BUCKET_SOURCE;
+  const start = original.indexOf(
+    '(SELECT coalesce(sum(extract(epoch FROM (slice."endAt" - slice."startAt")) * 1000), 0)',
+  );
+  const suffix = ') AS expected_recognized';
+  const end = original.indexOf(suffix, start) + suffix.length;
+  requireValue(start >= 0 && end > start);
+  let candidate =
+    original.slice(0, start) +
+    'coalesce((d6_totals_map.by_allocation -> a.id ->> b."categoryCode")::NUMERIC, 0) AS expected_recognized' +
+    original.slice(end);
+  const sums = ['volunteer_service', 'training', 'organization', 'non_creditable']
+    .map(
+      (category) => `'${category}', coalesce(sum(extract(epoch FROM
+        (slice."endAt" - slice."startAt")) * 1000)
+        FILTER (WHERE slice."categoryCode" = '${category}'), 0)`,
+    )
+    .join(',\n');
+  // One statement-local numeric map avoids an unindexed aggregate-to-source join.
+  // Every slice lookup is driven by an allocation from this exact revision.
+  candidate = candidate.replace(
+    'WITH source_facts AS (',
+    `WITH d6_allocation_ids AS MATERIALIZED (
+      SELECT DISTINCT "allocationRevisionId"
+      FROM public."ParticipantSettlementTimeBucketSource"
+      WHERE "timeRevisionId" = parent_row.id
+    ), d6_totals_map AS MATERIALIZED (
+      SELECT jsonb_object_agg(ids."allocationRevisionId", per_allocation.totals) AS by_allocation
+      FROM d6_allocation_ids ids
+      CROSS JOIN LATERAL (
+        SELECT jsonb_build_object(${sums}) AS totals
+        FROM public."ParticipantTimeAllocationSlice" slice
+        WHERE slice."allocationRevisionId" = ids."allocationRevisionId"
+      ) per_allocation
+    ), source_facts AS (`,
+  );
+  candidate = candidate.replace(
+    'WHERE bs."timeRevisionId" = parent_row.id',
+    'CROSS JOIN d6_totals_map\n      WHERE bs."timeRevisionId" = parent_row.id',
+  );
+  requireValue(candidate.includes('CROSS JOIN d6_totals_map'));
+  const rejectIds = (predicate: string) => {
+    requireValue(predicate.includes('SELECT 1 FROM source_facts f'));
+    return predicate.replace(
+      'SELECT 1 FROM source_facts f',
+      'SELECT f.id AS id FROM source_facts f',
+    );
+  };
+  const difference = `d6_difference AS (
+    (SELECT id FROM d6_original EXCEPT SELECT id FROM d6_candidate)
+    UNION ALL
+    (SELECT id FROM d6_candidate EXCEPT SELECT id FROM d6_original)
+  )`;
+  const project = (predicate: string) => {
+    for (const [relation, replacement] of [
+      ['ParticipantSettlementTimeBucketSource', 'd6_source'],
+      ['ParticipantSettlementTimeBucket', 'd6_bucket'],
+      ['ParticipantTimeAllocationSlice', 'd6_slice'],
+      ['TimePolicyVersion', 'd6_policy'],
+    ])
+      predicate = predicate.replaceAll(`public."${relation}"`, replacement);
+    return predicate;
+  };
+  const readiness = predicates.SOURCE_READY.replaceAll(
+    'public."ParticipantSettlementTimeBucketSource"',
+    'd6_ready_source',
+  );
+  const cases = D6_SLICE_CASES.map((label, ordinal) => `(${ordinal},'${label}')`).join(',');
+  // Projection-only counterexamples exercise these two source stages, not acceptance
+  // by the complete receipt guard. Actual guard forgery E2E tests remain unchanged.
+  const counterexamples = `SELECT c.label, proof.*
+  FROM public."ActivitySettlementTimeRevision" parent_row
+  CROSS JOIN (VALUES ${cases}) c(ordinal,label)
+  CROSS JOIN LATERAL (
+    WITH d6_sample_allocation AS MATERIALIZED (
+      SELECT "allocationRevisionId" AS id
+      FROM public."ParticipantSettlementTimeBucketSource"
+      WHERE "timeRevisionId"=parent_row.id
+      GROUP BY "allocationRevisionId" HAVING count(*)=4
+      ORDER BY "allocationRevisionId" COLLATE "C" LIMIT 1
+    ), d6_sample_source AS MATERIALIZED (
+      SELECT s.* FROM public."ParticipantSettlementTimeBucketSource" s
+      JOIN d6_sample_allocation a ON a.id=s."allocationRevisionId"
+      WHERE s."timeRevisionId"=parent_row.id
+    ), d6_source AS MATERIALIZED (
+      SELECT s.id,s."bucketId",s."timeRevisionId",s."activityId",s."allocationRevisionId",
+        s."sourceSegmentId",s."sourceSegmentRevision",
+        CASE WHEN c.label='NULL_BASELINE' OR
+          (c.label='NULL_VS_ZERO' AND b."categoryCode"='training')
+          THEN NULL::BIGINT ELSE s."rawCalculatedMilliseconds" END AS "rawCalculatedMilliseconds",
+        CASE WHEN c.label='FORGED_DURATION' THEN s."rawRecognizedMilliseconds"+1
+          WHEN c.label='EMPTY_CATEGORY_ZERO' AND b."categoryCode"='training' THEN 0::BIGINT
+          ELSE s."rawRecognizedMilliseconds" END AS "rawRecognizedMilliseconds"
+      FROM d6_sample_source s JOIN public."ParticipantSettlementTimeBucket" b ON b.id=s."bucketId"
+      WHERE NOT(c.label='MISSING_SOURCE' AND b."categoryCode"='training')
+    ), d6_bucket AS MATERIALIZED (
+      SELECT b.id,b."participationIdentityId",b."categoryCode",b."timePolicyVersionId",
+        b."definitionHash",b."evaluatorVersion",
+        b."quantumSeconds"+CASE WHEN c.label='FORGED_QUANTUM' THEN 1 ELSE 0 END AS "quantumSeconds"
+      FROM public."ParticipantSettlementTimeBucket" b
+      WHERE b.id IN (SELECT "bucketId" FROM d6_sample_source)
+    ), d6_slice AS MATERIALIZED (
+      SELECT s.* FROM public."ParticipantTimeAllocationSlice" s
+      JOIN d6_sample_allocation a ON a.id=s."allocationRevisionId"
+      WHERE NOT(c.label IN ('EMPTY_CATEGORY','EMPTY_CATEGORY_ZERO') AND s."categoryCode"='training')
+    ), d6_policy AS MATERIALIZED (
+      SELECT p.id,CASE WHEN c.label='NULL_BASELINE'
+        THEN jsonb_set(p."definitionJson",'{evidence,requireManualRecognition}','true'::jsonb,false)
+        ELSE p."definitionJson" END AS "definitionJson"
+      FROM public."TimePolicyVersion" p WHERE p.id IN (
+        SELECT a."policyVersionId" FROM public."ParticipantTimeAllocationRevision" a
+        JOIN d6_sample_allocation sample ON sample.id=a.id)
+    ), d6_ready_source AS MATERIALIZED (
+      SELECT s.* FROM public."ParticipantSettlementTimeBucketSource" s
+      WHERE s."timeRevisionId"=parent_row.id AND NOT(c.label='MISSING_SOURCE' AND s.id IN (
+        SELECT sample.id FROM d6_sample_source sample
+        JOIN public."ParticipantSettlementTimeBucket" b ON b.id=sample."bucketId"
+        WHERE b."categoryCode"='training'))
+    ), d6_original AS MATERIALIZED (${rejectIds(project(original))}),
+      d6_candidate AS MATERIALIZED (${rejectIds(project(candidate))}),
+      d6_readiness AS MATERIALIZED (SELECT EXISTS(${readiness}) AS rejected),
+      ${difference}
+    SELECT (EXISTS(SELECT 1 FROM d6_original) OR d6_readiness.rejected) AS "originalRejected",
+      (EXISTS(SELECT 1 FROM d6_candidate) OR d6_readiness.rejected) AS "candidateRejected",
+      NOT EXISTS(SELECT 1 FROM d6_difference) AS "sameRejectSet",
+      d6_readiness.rejected AS "readinessRejected",
+      (SELECT count(*)::INTEGER FROM d6_source) AS "sourceRows",
+      (SELECT count(*)::INTEGER FROM d6_slice) AS "sliceRows"
+    FROM d6_readiness
+  ) proof WHERE parent_row.id=$1 AND parent_row."kindCode"='draft' ORDER BY c.ordinal`;
+  return {
+    original: explainPredicate(original),
+    candidate: explainPredicate(candidate),
+    counterexamples,
+  };
+}
+export async function observeD6ReceiptSliceComparison(
+  client: D6PredicatePlanClient,
+  reference: unknown,
+  options: Options = {},
+): Promise<D6SliceComparisonSnapshot> {
+  let phase: Reason = 'ENVIRONMENT';
+  let expected: string;
+  let sql: ReturnType<typeof d6ReceiptSliceComparisonAuthority>;
+  try {
+    const env = options.env ?? process.env;
+    if (
+      env.GITHUB_ACTIONS !== 'true' ||
+      env.GITHUB_WORKFLOW !== 'CI' ||
+      env.GITHUB_JOB !== 'slow' ||
+      env.GITHUB_EVENT_NAME !== 'pull_request'
+    )
+      return sliceSnapshot('DISABLED', 'ENVIRONMENT');
+    phase = 'WORKER';
+    requireValue(/^[1-9][0-9]?$/u.test(process.env.JEST_WORKER_ID ?? ''));
+    expected = deriveTestDbName();
+    phase = 'REFERENCE';
+    requireValue(typeof reference === 'string' && /^[A-Za-z0-9_:-]{1,200}$/u.test(reference));
+    phase = 'AUTHORITY';
+    sql = d6ReceiptSliceComparisonAuthority(
+      options.source ?? readFileSync(resolve(__dirname, '../..', migration), 'utf8'),
+    );
+  } catch {
+    return sliceSnapshot('UNKNOWN', phase);
+  }
+  let transactions = 0;
+  let statements = 0;
+  let equivalent: boolean | null = null;
+  let controls: SliceControl[] = [];
+  const samples: SliceSample[] = [];
+  const identities: SliceIdentity[] = [];
+  const stage: { current: Reason } = { current: 'TRANSACTION' };
+  type Query = (text: string, ...values: unknown[]) => Promise<unknown>;
+  const readMetadata = (rows: unknown) => {
+    const result = metadata(rows);
+    requireValue(own(own(own(array(rows, 1), '0'), 'observation'), 'repeatableRead') === true);
+    return result;
+  };
+  const attempt = async <T>(
+    name: SliceIdentity['phase'],
+    run: (query: Query) => Promise<T>,
+  ): Promise<T> => {
+    stage.current = 'TRANSACTION';
+    transactions++;
+    let active = true;
+    try {
+      const result = await client.$transaction(
+        async (tx) => {
+          const query: Query = (text, ...values) => {
+            requireValue(active);
+            statements++;
+            return tx.$queryRawUnsafe(text, ...values);
+          };
+          const execute = (text: string) => {
+            requireValue(active);
+            statements++;
+            return tx.$executeRawUnsafe(text);
+          };
+          stage.current = 'READ_ONLY';
+          await execute(D6_SLICE_COMPARISON_READ_ONLY);
+          await execute(D6_PREDICATE_SQL.timeout);
+          stage.current = 'METADATA';
+          const before = readMetadata(
+            await query(D6_PREDICATE_SQL.metadata, expected, reference, bodyHash),
+          );
+          const value = await run(query);
+          stage.current = 'METADATA';
+          const after = readMetadata(
+            await query(D6_PREDICATE_SQL.metadata, expected, reference, bodyHash),
+          );
+          stage.current = 'IDENTITY';
+          requireValue(
+            before.backend === after.backend &&
+              before.virtual === after.virtual &&
+              before.oid === after.oid &&
+              before.version === after.version &&
+              before.mode === after.mode,
+          );
+          return { value, mode: before.mode };
+        },
+        { maxWait: 1000, timeout: 5000 },
+      );
+      identities.push({
+        phase: name,
+        sameBackend: true,
+        sameVirtualTransaction: true,
+        repeatableRead: true,
+        readOnly: true,
+        functionPinned: true,
+        parentSealed: true,
+        planCacheMode: result.mode,
+      });
+      return result.value;
+    } finally {
+      // A driver timeout can settle before its callback: never issue late SQL.
+      active = false;
+    }
+  };
+  let reason: Reason = 'NONE';
+  try {
+    controls = await attempt('CONTROLS', async (query) => {
+      stage.current = 'COUNTEREXAMPLES';
+      const rows = array(await query(sql.counterexamples, reference), D6_SLICE_CASES.length);
+      requireValue(rows.length === D6_SLICE_CASES.length);
+      return D6_SLICE_CASES.map((label, index): SliceControl => {
+        const row = own(rows, String(index));
+        const rejects = [
+          'FORGED_DURATION',
+          'EMPTY_CATEGORY',
+          'NULL_VS_ZERO',
+          'FORGED_QUANTUM',
+          'MISSING_SOURCE',
+        ].includes(label);
+        const readinessRejected = label === 'MISSING_SOURCE';
+        const sourceRows = readinessRejected ? 3 : 4;
+        const sliceRows = label.startsWith('EMPTY_CATEGORY') ? 4 : 5;
+        requireValue(
+          own(row, 'label') === label &&
+            own(row, 'originalRejected') === rejects &&
+            own(row, 'candidateRejected') === rejects &&
+            own(row, 'sameRejectSet') === true &&
+            own(row, 'readinessRejected') === readinessRejected &&
+            own(row, 'sourceRows') === sourceRows &&
+            own(row, 'sliceRows') === sliceRows,
+        );
+        return {
+          label,
+          originalRejected: rejects,
+          candidateRejected: rejects,
+          sameRejectSet: true,
+          readinessRejected,
+          sourceRows,
+          sliceRows,
+        };
+      });
+    });
+    for (const order of ['AB', 'BA'] as const) {
+      const variants: SliceVariant[] =
+        order === 'AB' ? ['ORIGINAL', 'ONCE_PER_ALLOCATION'] : ['ONCE_PER_ALLOCATION', 'ORIGINAL'];
+      const pair = await attempt(order, async (query) => {
+        const result: SliceSample[] = [];
+        for (const variant of variants) {
+          stage.current = 'PLAN_SQL';
+          const raw = await query(variant === 'ORIGINAL' ? sql.original : sql.candidate, reference);
+          stage.current = 'PLAN_SHAPE';
+          const { plan, sliceScans } = inspectPredicatePlan(raw);
+          stage.current = 'POST_PREPARE_DATA_CHANGED';
+          requireValue(plan.rootRows === 1 && plan.rootLoops === 1);
+          requireValue(
+            sliceScans.length > 0 &&
+              sliceScans.length <= 4 &&
+              sliceScans.every(
+                (scan) =>
+                  scan.loops > 0 &&
+                  ['Index Scan', 'Index Only Scan', 'Bitmap Heap Scan'].includes(scan.kind),
+              ),
+          );
+          result.push({
+            order,
+            variant,
+            executionMs: plan.executionMs,
+            planningMs: plan.planningMs,
+            rootRows: plan.rootRows,
+            rootLoops: plan.rootLoops,
+            rootBuffers: plan.rootBuffers,
+            sliceScans,
+          });
+        }
+        return result;
+      });
+      samples.push(...pair);
+      // Both NOT EXISTS verdicts are true in this pair's snapshot: their complete
+      // reject sets are empty. Do not run the expensive pair again just to count zero.
+      equivalent = true;
+    }
+  } catch (error) {
+    reason = failureReason(error, stage.current);
+  }
+  const result = sliceSnapshot(
+    samples.length === 4 ? 'OBSERVED' : samples.length ? 'PARTIAL' : 'UNKNOWN',
+    reason,
+    controls,
+    samples,
+    identities,
+    transactions,
+    statements,
+    equivalent,
+  );
+  if (Buffer.byteLength(JSON.stringify(result), 'utf8') <= 8192) return result;
+  return sliceSnapshot('UNKNOWN', 'OUTPUT', [], [], [], transactions, statements);
 }

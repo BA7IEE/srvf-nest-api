@@ -2,8 +2,12 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   D6_PREDICATE_SQL as SQL,
+  D6_SLICE_CASES,
+  D6_SLICE_COMPARISON_READ_ONLY,
   d6ReceiptPredicateAuthority,
+  d6ReceiptSliceComparisonAuthority,
   observeD6ReceiptPredicatePlans,
+  observeD6ReceiptSliceComparison,
   summarizeD6PredicatePlan,
   type D6PredicatePlanClient,
 } from '../../test/helpers/d6-receipt-predicate-plan-diagnostic';
@@ -74,7 +78,31 @@ function state() {
     planCacheMode: 'auto',
     guard: { oid: 20000, version: '9000', pinned: true },
     sealed: true,
+    repeatableRead: false,
   };
+}
+function controls() {
+  return D6_SLICE_CASES.map((label) => ({
+    label,
+    originalRejected: [
+      'FORGED_DURATION',
+      'EMPTY_CATEGORY',
+      'NULL_VS_ZERO',
+      'FORGED_QUANTUM',
+      'MISSING_SOURCE',
+    ].includes(label),
+    candidateRejected: [
+      'FORGED_DURATION',
+      'EMPTY_CATEGORY',
+      'NULL_VS_ZERO',
+      'FORGED_QUANTUM',
+      'MISSING_SOURCE',
+    ].includes(label),
+    sameRejectSet: true,
+    readinessRejected: label === 'MISSING_SOURCE',
+    sourceRows: label === 'MISSING_SOURCE' ? 3 : 4,
+    sliceRows: label.startsWith('EMPTY_CATEGORY') ? 4 : 5,
+  }));
 }
 type Call = { transaction: number; kind: string; sql?: string; values?: unknown[] };
 function fixture(
@@ -84,11 +112,14 @@ function fixture(
     fail?: (sql: string, transaction: number) => boolean;
     error?: Error;
     plan?: () => unknown;
+    equivalent?: boolean;
+    controls?: () => unknown;
   } = {},
 ) {
   const calls: Call[] = [];
   let transactions = 0;
   let closed = 0;
+  let comparisonMode = false;
   const client = {
     async $transaction(
       run: (tx: {
@@ -100,6 +131,7 @@ function fixture(
       const transaction = ++transactions;
       calls.push({ transaction, kind: 'BEGIN', values: [bounds] });
       let readonly = false;
+      let repeatableRead = false;
       let metadata = 0;
       const tx = {
         $executeRawUnsafe(sql: string) {
@@ -107,6 +139,7 @@ function fixture(
           if (options.fail?.(sql, transaction))
             return Promise.reject(options.error ?? new Error('PRIVATE_EXEC_ERROR'));
           if (sql === SQL.readOnly) readonly = true;
+          if (sql === D6_SLICE_COMPARISON_READ_ONLY) readonly = repeatableRead = true;
           return Promise.resolve(0);
         },
         $queryRawUnsafe(sql: string, ...values: unknown[]) {
@@ -116,10 +149,27 @@ function fixture(
           if (sql === SQL.metadata) {
             const row = state();
             row.readOnly = readonly;
+            row.repeatableRead = repeatableRead;
             row.database = values[0] === (options.database ?? deriveTestDbName());
             row.guard.pinned = values[2] === hash;
             row.sealed = values[1] === reference;
             return Promise.resolve([{ observation: options.change?.(row, metadata++) ?? row }]);
+          }
+          if (comparisonMode) {
+            const comparison = d6ReceiptSliceComparisonAuthority(source);
+            if (values.length !== 1 || values[0] !== reference)
+              throw new Error('UNEXPECTED_COMPARISON_PARAMETERS');
+            if (sql === comparison.counterexamples)
+              return Promise.resolve(options.controls ? options.controls() : controls());
+            if (sql === comparison.original || sql === comparison.candidate) {
+              const rows = plan();
+              rows[0]['QUERY PLAN'][0].Plan.Plans[0]['Actual Loops'] =
+                sql === comparison.original ? 40000 : 10000;
+              if (sql === comparison.candidate && options.equivalent === false)
+                rows[0]['QUERY PLAN'][0].Plan['Actual Rows'] = 0;
+              return Promise.resolve(options.plan ? options.plan() : rows);
+            }
+            throw new Error('UNEXPECTED_COMPARISON_SQL');
           }
           if (!Object.values(queries).includes(sql)) throw new Error('UNEXPECTED_SQL');
           if (values.length !== 1 || values[0] !== reference)
@@ -154,6 +204,18 @@ function fixture(
         source,
         ...options,
       });
+    },
+    compare(options: Parameters<typeof observeD6ReceiptSliceComparison>[2] = {}) {
+      comparisonMode = true;
+      return observeD6ReceiptSliceComparison(
+        client as unknown as D6PredicatePlanClient,
+        reference,
+        {
+          env,
+          source,
+          ...options,
+        },
+      );
     },
   };
 }
@@ -545,45 +607,61 @@ describe('D6 post-prepare read-only predicate plan diagnostic', () => {
     expect(f.calls).toEqual([]);
   });
 
-  it('does not issue SQL if a timed-out callback resumes after its transaction has ended', async () => {
-    let release: (value: unknown) => void = () => {};
-    let reached: () => void = () => {};
-    const pending = new Promise<unknown>((resolve) => {
-      release = resolve;
-    });
-    const started = new Promise<void>((resolve) => {
-      reached = resolve;
-    });
-    const calls: string[] = [];
-    let background: Promise<unknown> | undefined;
-    const client = {
-      async $transaction(run: (tx: object) => Promise<unknown>) {
-        background = run({
-          $executeRawUnsafe(sql: string) {
-            calls.push(sql);
-            return Promise.resolve(0);
-          },
-          $queryRawUnsafe(sql: string) {
-            calls.push(sql);
-            reached();
-            return pending;
-          },
-        });
-        void background.catch(() => {});
-        await started;
-        throw Object.assign(new Error('PRIVATE_ENDED_TRANSACTION'), { code: 'P2028' });
-      },
-    };
-    const result = await observeD6ReceiptPredicatePlans(
-      client as unknown as D6PredicatePlanClient,
-      reference,
-      { env, source },
-    );
-    expect(result.rows[0].reason).toBe('TRANSACTION_BUDGET');
-    release([{ observation: state() }]);
-    await background?.catch(() => {});
-    expect(calls).toEqual([SQL.readOnly, SQL.timeout, SQL.metadata]);
-  });
+  it.each(['predicate', 'comparison'])(
+    'does not issue SQL if a timed-out %s callback resumes after its transaction has ended',
+    async (kind) => {
+      let release: (value: unknown) => void = () => {};
+      let reached: () => void = () => {};
+      const pending = new Promise<unknown>((resolve) => {
+        release = resolve;
+      });
+      const started = new Promise<void>((resolve) => {
+        reached = resolve;
+      });
+      const calls: string[] = [];
+      let background: Promise<unknown> | undefined;
+      const client = {
+        async $transaction(run: (tx: object) => Promise<unknown>) {
+          background = run({
+            $executeRawUnsafe(sql: string) {
+              calls.push(sql);
+              return Promise.resolve(0);
+            },
+            $queryRawUnsafe(sql: string) {
+              calls.push(sql);
+              reached();
+              return pending;
+            },
+          });
+          void background.catch(() => {});
+          await started;
+          throw Object.assign(new Error('PRIVATE_ENDED_TRANSACTION'), { code: 'P2028' });
+        },
+      };
+      if (kind === 'predicate') {
+        const result = await observeD6ReceiptPredicatePlans(
+          client as unknown as D6PredicatePlanClient,
+          reference,
+          { env, source },
+        );
+        expect(result.rows[0].reason).toBe('TRANSACTION_BUDGET');
+      } else {
+        const result = await observeD6ReceiptSliceComparison(
+          client as unknown as D6PredicatePlanClient,
+          reference,
+          { env, source },
+        );
+        expect(result.reason).toBe('TRANSACTION_BUDGET');
+      }
+      release([{ observation: { ...state(), repeatableRead: true } }]);
+      await background?.catch(() => {});
+      expect(calls).toEqual([
+        kind === 'predicate' ? SQL.readOnly : D6_SLICE_COMPARISON_READ_ONLY,
+        SQL.timeout,
+        SQL.metadata,
+      ]);
+    },
+  );
 
   it('rejects an accessor in required metadata without invoking it', async () => {
     let accessed = false;
@@ -650,4 +728,275 @@ describe('D6 post-prepare read-only predicate plan diagnostic', () => {
     expect(result.reason).toBe('AUTHORITY');
     expect(f.calls).toEqual([]);
   });
+});
+
+describe('D6 fixed read-only per-allocation slice comparison', () => {
+  it('retains the pinned original and changes only recognized-slice derivation in the candidate', () => {
+    const sql = d6ReceiptSliceComparisonAuthority(source);
+    expect(sql.original === queries.BUCKET_SOURCE).toBe(true);
+    expect(sql.candidate.includes('d6_allocation_ids AS MATERIALIZED')).toBe(true);
+    expect(sql.candidate.includes('jsonb_object_agg')).toBe(true);
+    expect(sql.candidate.includes('CROSS JOIN LATERAL')).toBe(true);
+    expect(
+      sql.candidate.includes('slice."allocationRevisionId" = ids."allocationRevisionId"'),
+    ).toBe(true);
+    expect(
+      sql.candidate.includes('->> b."categoryCode")::NUMERIC, 0) AS expected_recognized'),
+    ).toBe(true);
+    for (const category of ['volunteer_service', 'training', 'organization', 'non_creditable'])
+      expect(sql.candidate.includes(`slice."categoryCode" = '${category}'`)).toBe(true);
+    const tail = '    SELECT 1 FROM source_facts f';
+    expect(
+      sql.original.slice(sql.original.indexOf(tail)) ===
+        sql.candidate.slice(sql.candidate.indexOf(tail)),
+    ).toBe(true);
+  });
+
+  it('refuses changed authority and never adds DDL, writes, statistics or plan-mode changes', () => {
+    expect(() =>
+      d6ReceiptSliceComparisonAuthority(
+        source.replace('WITH source_facts AS (', 'WITH changed AS ('),
+      ),
+    ).toThrow();
+    const sql = d6ReceiptSliceComparisonAuthority(source);
+    for (const text of Object.values(sql)) {
+      expect(text.length).toBeGreaterThan(100);
+      expect(
+        /\b(?:INSERT|UPDATE|DELETE|TRUNCATE|ALTER|DROP|LOAD|GRANT|SET)\b/iu.test(
+          text.replace(/--[^\n]*/g, ''),
+        ),
+      ).toBe(false);
+      expect(/auto_explain|work_mem|plan_cache_mode|default_statistics_target/iu.test(text)).toBe(
+        false,
+      );
+      expect(text.includes(reference)).toBe(false);
+    }
+  });
+
+  it('compares both directions of reject-ID sets server-side without returning IDs', () => {
+    const { counterexamples } = d6ReceiptSliceComparisonAuthority(source);
+    expect((counterexamples.match(/\bEXCEPT\b/g) ?? []).length).toBe(2);
+    expect(counterexamples.includes('AS "sameRejectSet"')).toBe(true);
+    expect(counterexamples.includes('astcr_source_ready_guard')).toBe(false);
+    expect(counterexamples.includes('source_counts AS MATERIALIZED')).toBe(true);
+    for (const label of D6_SLICE_CASES) expect(counterexamples.includes(`'${label}'`)).toBe(true);
+    expect(counterexamples.includes('AS "readinessRejected"')).toBe(true);
+  });
+
+  it('captures same-snapshot AB and BA orders, explicit slice scans and non-vacuous counterexamples', async () => {
+    const f = fixture();
+    const result = await f.compare();
+    expect(result.status).toBe('OBSERVED');
+    expect(result.equivalent).toBe(true);
+    expect(result.controls).toHaveLength(8);
+    expect(result.samples.map((s) => [s.order, s.variant])).toEqual([
+      ['AB', 'ORIGINAL'],
+      ['AB', 'ONCE_PER_ALLOCATION'],
+      ['BA', 'ONCE_PER_ALLOCATION'],
+      ['BA', 'ORIGINAL'],
+    ]);
+    expect(result.samples.map((s) => s.sliceScans[0].loops)).toEqual([40000, 10000, 10000, 40000]);
+    expect(result.identities).toHaveLength(3);
+    expect(
+      result.identities.every(
+        (s) =>
+          s.sameBackend &&
+          s.sameVirtualTransaction &&
+          s.repeatableRead &&
+          s.readOnly &&
+          s.functionPinned &&
+          s.parentSealed,
+      ),
+    ).toBe(true);
+    expect(result.transactions).toBe(3);
+    expect(result.explicitObserverStatements).toBe(17);
+    expect(f.closed).toBe(3);
+    for (const c of f.calls.filter((c) => c.kind === 'BEGIN'))
+      expect(c.values).toEqual([{ maxWait: 1000, timeout: 5000 }]);
+    expect(f.calls.filter((c) => c.sql === D6_SLICE_COMPARISON_READ_ONLY)).toHaveLength(3);
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(8192);
+    expect(JSON.stringify(result)).not.toMatch(/PRIVATE|b4f874|3\/100|app_test|9000/);
+  });
+
+  it('does not report successful performance samples for a violating full-data candidate', async () => {
+    const f = fixture({ equivalent: false });
+    const result = await f.compare();
+    expect(result.status).toBe('UNKNOWN');
+    expect(result.reason).toBe('POST_PREPARE_DATA_CHANGED');
+    expect(result.samples).toEqual([]);
+    expect(result.equivalent).toBeNull();
+    expect(f.calls.filter((c) => c.kind === 'BEGIN')).toHaveLength(2);
+  });
+
+  it.each(['accepts-forged', 'null-is-zero', 'missing-source', 'missing-case', 'empty-fixture'])(
+    'refuses vacuous or wrong shadow controls (%s)',
+    async (kind) => {
+      const f = fixture({
+        controls() {
+          const rows = controls();
+          if (kind === 'accepts-forged') rows[1].candidateRejected = false;
+          if (kind === 'null-is-zero') rows[4].candidateRejected = false;
+          if (kind === 'missing-source') rows[7].readinessRejected = false;
+          if (kind === 'missing-case') rows.pop();
+          if (kind === 'empty-fixture') rows[0].sourceRows = 0;
+          return rows;
+        },
+      });
+      const result = await f.compare();
+      expect(result.status).toBe('UNKNOWN');
+      expect(result.reason).toBe('COUNTEREXAMPLES');
+      expect(result.samples).toEqual([]);
+      expect(f.calls.some((c) => c.sql?.startsWith('EXPLAIN'))).toBe(false);
+      expect(f.closed).toBe(1);
+    },
+  );
+
+  it.each(['database', 'sameRole', 'repeatableRead', 'readOnly', 'sealed'])(
+    'does not compare outside its %s fence',
+    async (field) => {
+      const f = fixture({
+        change(row) {
+          Reflect.set(row, field, false);
+        },
+      });
+      const result = await f.compare();
+      expect(result.status).toBe('UNKNOWN');
+      expect(result.reason).toBe('METADATA');
+      expect(f.calls.some((c) => c.sql?.startsWith('EXPLAIN'))).toBe(false);
+    },
+  );
+
+  it.each(['GITHUB_ACTIONS', 'GITHUB_WORKFLOW', 'GITHUB_JOB', 'GITHUB_EVENT_NAME'])(
+    'issues no SQL without the approved %s context',
+    async (field) => {
+      const f = fixture();
+      expect((await f.compare({ env: { ...env, [field]: 'not-approved' } })).status).toBe(
+        'DISABLED',
+      );
+      expect(f.calls).toEqual([]);
+    },
+  );
+
+  it('rejects a template/foreign database even if its name looks like a test database', async () => {
+    const f = fixture({ database: deriveTemplateTestDbName() });
+    expect((await f.compare()).status).toBe('UNKNOWN');
+    expect(f.calls.some((c) => c.sql?.startsWith('EXPLAIN'))).toBe(false);
+  });
+
+  it('keeps a completed pair but rolls back a failed second pair without raw errors', async () => {
+    const f = fixture({ fail: (sql, tx) => tx === 3 && sql.startsWith('EXPLAIN') });
+    const result = await f.compare();
+    expect(result.status).toBe('PARTIAL');
+    expect(result.samples).toHaveLength(2);
+    expect(result.identities).toHaveLength(2);
+    expect(f.calls.filter((c) => c.transaction === 3).at(-1)?.kind).toBe('ROLLBACK');
+    expect(f.closed).toBe(3);
+    expect(JSON.stringify(result)).not.toContain('PRIVATE');
+  });
+
+  it('requires exact source authority before using the existing fixture client', async () => {
+    const f = fixture();
+    const result = await f.compare({ source: 'untrusted' });
+    expect(result.reason).toBe('AUTHORITY');
+    expect(f.calls).toEqual([]);
+  });
+
+  it.each(['statement', 'transaction'])(
+    'stops its %s-budget failure without post-error SQL or a retry',
+    async (kind) => {
+      const f = fixture({
+        error: Object.assign(new Error('PRIVATE_TIMEOUT'), {
+          code: kind === 'statement' ? 'P2010' : 'P2028',
+          meta: { code: '57014' },
+        }),
+        fail: (sql) => sql.startsWith('EXPLAIN'),
+      });
+      const result = await f.compare();
+      expect(result.reason).toBe(kind === 'statement' ? 'PLAN_TIMEOUT' : 'TRANSACTION_BUDGET');
+      expect(result.samples).toEqual([]);
+      expect(f.transactions).toBe(2);
+      expect(f.calls.at(-1)?.kind).toBe('ROLLBACK');
+      expect(JSON.stringify(result)).not.toContain('PRIVATE');
+    },
+  );
+
+  it.each(['backend', 'virtual', 'mode', 'oid', 'version'])(
+    'rejects changing %s identity before recording controls or samples',
+    async (field) => {
+      const f = fixture({
+        change(row, index) {
+          if (index !== 1) return;
+          if (field === 'backend') row.backend++;
+          if (field === 'virtual') row.virtual = '3/101';
+          if (field === 'mode') row.planCacheMode = 'force_generic_plan';
+          if (field === 'oid') row.guard.oid++;
+          if (field === 'version') row.guard.version = '9001';
+        },
+      });
+      const result = await f.compare();
+      expect(result.reason).toBe('IDENTITY');
+      expect(result.controls).toEqual([]);
+      expect(result.samples).toEqual([]);
+      expect(result.identities).toEqual([]);
+      expect(f.calls.at(-1)?.kind).toBe('ROLLBACK');
+    },
+  );
+
+  it('does not read DATABASE_URL, but still binds to the actual Jest worker', async () => {
+    const nextEnv: NodeJS.ProcessEnv = { ...env, JEST_WORKER_ID: '1' };
+    Object.defineProperty(nextEnv, 'DATABASE_URL', {
+      get() {
+        throw new Error('PRIVATE_URL');
+      },
+    });
+    const replacement = jest.replaceProperty(process, 'env', nextEnv);
+    try {
+      expect((await fixture().compare()).status).toBe('OBSERVED');
+      nextEnv.JEST_WORKER_ID = '0';
+      const f = fixture();
+      expect((await f.compare()).reason).toBe('WORKER');
+      expect(f.calls).toEqual([]);
+    } finally {
+      replacement.restore();
+    }
+  });
+
+  it('rejects a counterexample accessor without invoking it or emitting partial controls', async () => {
+    let invoked = false;
+    const f = fixture({
+      controls() {
+        const rows = controls();
+        Object.defineProperty(rows[1], 'candidateRejected', {
+          get() {
+            invoked = true;
+            throw new Error('PRIVATE_COUNTEREXAMPLE');
+          },
+        });
+        return rows;
+      },
+    });
+    const result = await f.compare();
+    expect(result.reason).toBe('COUNTEREXAMPLES');
+    expect(invoked).toBe(false);
+    expect(result.controls).toEqual([]);
+    expect(JSON.stringify(result)).not.toContain('PRIVATE');
+  });
+
+  it.each(['zero-verdict', 'no-slice-scan'])(
+    'does not call a %s plan successful work reduction',
+    async (kind) => {
+      const f = fixture({
+        plan() {
+          const rows = plan();
+          if (kind === 'zero-verdict') rows[0]['QUERY PLAN'][0].Plan['Actual Rows'] = 0;
+          else rows[0]['QUERY PLAN'][0].Plan.Plans = [];
+          return rows;
+        },
+      });
+      const result = await f.compare();
+      expect(result.status).toBe('UNKNOWN');
+      expect(result.samples).toEqual([]);
+      expect(result.reason).toBe('POST_PREPARE_DATA_CHANGED');
+    },
+  );
 });
