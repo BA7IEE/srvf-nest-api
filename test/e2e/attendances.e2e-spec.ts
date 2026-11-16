@@ -346,47 +346,81 @@ describe('attendances 模块', () => {
   // ============ 权限边界 ============
 
   describe('权限边界', () => {
-    it('未登录 POST submit → 401', async () => {
+    const missingVersionId = 'cl000000000000000000xxxx';
+    const submitCommand = {
+      operationKey: 'attendance-permission-submit',
+      expectedDraftVersion: 1,
+      evidenceSealId: 'cl000000000000000000seal',
+      confirmation: true,
+    };
+    let before: number[];
+    const footprint = () =>
+      Promise.all([
+        prisma.attendanceSettlementRun.count(),
+        prisma.attendanceSettlementVersion.count(),
+        prisma.participantSettlementResultRevision.count(),
+        prisma.settlementReviewAction.count(),
+        prisma.ledgerPostingBatch.count(),
+        prisma.participationLedgerEntry.count(),
+        prisma.auditLog.count(),
+        prisma.notificationOutboxIntent.count(),
+      ]);
+    beforeEach(async () => {
+      before = await footprint();
+    });
+    afterEach(async () => {
+      expect(await footprint()).toEqual(before);
+    });
+
+    it('未登录 POST 新结算 submit → 401', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-        .send({ records: [baseRecord()] });
+        .post(`/api/app/v1/my/managed-activities/${activityId}/settlement/submit`)
+        .send(submitCommand);
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    it('USER POST submit → 30100 RBAC_FORBIDDEN', async () => {
+    it('USER POST 新结算 submit → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
+        .post(`/api/app/v1/my/managed-activities/${activityId}/settlement/submit`)
         .set('Authorization', userWithMemberAuth)
-        .send({ records: [baseRecord()] });
+        .send(submitCommand);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER GET list → 30100 RBAC_FORBIDDEN', async () => {
+    it('USER GET 结算审核列表 → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
+        .get('/api/admin/v1/attendance-settlements')
         .set('Authorization', userWithMemberAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER GET detail → 30100 RBAC_FORBIDDEN', async () => {
+    it('USER GET 结算入账状态不泄露版本存在性 → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/admin/v1/attendance-sheets/cl000000000000000000xxxx`)
+        .get(`/api/admin/v1/attendance-settlements/${missingVersionId}/posting-batch`)
         .set('Authorization', userWithMemberAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER GET review-detail → 30100 RBAC_FORBIDDEN', async () => {
+    it('USER GET 新结算 review-detail 不泄露版本存在性 → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/admin/v1/attendance-sheets/cl000000000000000000xxxx/review-detail`)
+        .get(`/api/admin/v1/attendance-settlements/${missingVersionId}/review-detail`)
         .set('Authorization', userWithMemberAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER PATCH edit → 30100 RBAC_FORBIDDEN', async () => {
+    it('USER PATCH 新结算认定不泄露参与身份存在性 → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/cl000000000000000000xxxx`)
+        .patch(
+          `/api/app/v1/my/managed-activities/${activityId}/settlement/items/${missingVersionId}`,
+        )
         .set('Authorization', userWithMemberAuth)
-        .send({});
+        .send({
+          expectedDraftVersion: 1,
+          resultCode: 'present',
+          recognizedServiceHours: 1,
+          recognizedContributionPoints: 1,
+          reason: 'unauthorized edit',
+        });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
@@ -397,11 +431,19 @@ describe('attendances 模块', () => {
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER PATCH approve → 30100 RBAC_FORBIDDEN', async () => {
+    it('USER POST 新结算 first-approve 不泄露版本存在性 → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/cl000000000000000000xxxx/approve`)
+        .post(`/api/admin/v1/attendance-settlements/${missingVersionId}/first-approve`)
         .set('Authorization', userWithMemberAuth)
-        .send({});
+        .send({
+          operationKey: 'attendance-permission-review',
+          evidenceSealId: submitCommand.evidenceSealId,
+          evidenceRevision: 0,
+          populationRevision: 0,
+          workflowRevision: 0,
+          contentHash: '0'.repeat(64),
+          note: 'unauthorized review',
+        });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 

@@ -56,4 +56,6 @@ App 的“责任范围”是旧控制器的 `app-member` + `responsibility`，se
 | `DELETE /api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}` | W.softDelete | 责任范围、`attendance.delete.sheet` | 未发现等价软删接口 |
 | `POST /api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}/resubmit` | W.resubmit | 责任范围、`attendance.update.sheet` | `POST .../settlement/versions/{versionId}/resubmit`，使用新结算提交权限 |
 
-本候选的活动对账、参与汇总和月度总览在新版关闭时可返回 `20153`／503；月度无可见组织时先返回空数组。三个读面、列表统计及工作台的新语义见[参与投影](v11-participation-projection.md)；成员退出保护和遗留资源解析仍有旧依赖，新版达标通知未接线，真实 PG／HTTP 未验证。不得据此部署。
+本候选的活动对账、参与汇总和月度总览在新版关闭时可返回 `20153`／503；月度无可见组织时先返回空数组。三个读面、列表统计及工作台的新语义见[参与投影](v11-participation-projection.md)；成员退出保护和遗留资源解析仍有旧依赖，新版达标通知未接线。已有定向 PG／HTTP 验证，完整 E2E 与外部前端联调仍未收口。不得据此部署。
+
+管理员现场复核仍有能力缺口：当前 Admin 结算接口提供版本审核与入账状态，没有按活动分页读取现场打卡证据、保留取消/软删成员历史的等价读面，也没有只读的未结算出勤/缺席聚合。App 现场名册要求当前责任资格，不能用授予管理员活动责任的方式冒充原有 `attendance.read.sheet` GLOBAL/ACTIVITY 读权。`admin-activity-check-ins.e2e-spec.ts` 的相关验收继续保留，不能仅以旧路由返回 404 宣称完成。旧草稿“忘签退补到结束时间”不适用于新链；新链保留开放段并阻止封场，不伪造签退事实。旧软删、终态驳回与新链退回/更正也不是等价命令，需分别核定其验收口径。
