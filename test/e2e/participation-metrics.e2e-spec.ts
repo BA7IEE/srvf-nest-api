@@ -5,6 +5,7 @@ import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
+import { seedParticipationReadState } from '../fixtures/contribution-ledger.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
@@ -13,6 +14,7 @@ import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 审计刀 5 F1–F4：三条核心口径锁 + admin/App scope 边界。
 describe('participation metrics F1-F4', () => {
+  const previousWorkflowGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
   let app: INestApplication;
   let prisma: PrismaService;
   let superAdminAuth: string;
@@ -25,6 +27,7 @@ describe('participation metrics F1-F4', () => {
   let memberDId: string;
 
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
@@ -127,7 +130,7 @@ describe('participation metrics F1-F4', () => {
 
     await prisma.attendanceRecord.createMany({
       data: [
-        // 仅 pending Sheet 的记录：算到场证据，但时长/贡献绝不计入。
+        // 旧 pending 记录保留作反例，不能代替新版正式结果。
         {
           sheetId: pendingSheet.id,
           memberId: memberAId,
@@ -138,7 +141,7 @@ describe('participation metrics F1-F4', () => {
           attendanceStatusCode: 'present',
           contributionPoints: '9',
         },
-        // 无任何报名的临时参加者。
+        // 旧临时参加记录；新版来源由下方不可变 onsite 修订给出。
         {
           sheetId: approvedSheet.id,
           memberId: members[2].id,
@@ -185,16 +188,52 @@ describe('participation metrics F1-F4', () => {
       ],
     });
 
+    await seedParticipationReadState(prisma, {
+      activityId,
+      actorUserId: superAdmin.id,
+      participants: [
+        { memberId: memberAId, resultCode: null, serviceHours: '0', creditedPoints: '0' },
+        { memberId: memberBId, resultCode: 'absent', serviceHours: '0', creditedPoints: '0' },
+        {
+          memberId: members[2].id,
+          sourceCode: 'onsite',
+          resultCode: 'present',
+          serviceHours: '1.5',
+          creditedPoints: '0.5',
+        },
+        {
+          memberId: memberDId,
+          resultCode: 'present',
+          serviceHours: '2.5',
+          creditedPoints: '2',
+          startAt: new Date('2026-07-10T02:00:00.000Z'),
+        },
+        {
+          memberId: memberDId,
+          resultCode: 'present',
+          serviceHours: '3',
+          recognizedPoints: '2',
+          creditedPoints: '1',
+          startAt: new Date('2026-07-10T05:00:00.000Z'),
+        },
+      ],
+    });
+
     superAdminAuth = (await loginAs(app, 'pmx-super-admin')).authHeader;
     bareUserAuth = (await loginAs(app, 'pmx-bare-user')).authHeader;
     memberUserAuth = (await loginAs(app, 'pmx-member-user')).authHeader;
   });
 
   afterAll(async () => {
-    await app.close();
+    try {
+      await app.close();
+    } finally {
+      if (previousWorkflowGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousWorkflowGate;
+    }
   });
 
-  it('F1: pending record 算 attended、不算 no-show；时长小计仍只计 approved', async () => {
+  it('F1: 未决身份既非到场也非缺席，来源取不可变修订，时长只读已入账净额', async () => {
     const res = await request(httpServer(app))
       .get(`/api/admin/v1/activities/${activityId}/reconciliation`)
       .set('Authorization', superAdminAuth);
@@ -204,23 +243,27 @@ describe('participation metrics F1-F4', () => {
       passRegistrationCount: 3,
       attendedCount: 2,
       noShowCount: 1,
+      pendingCount: 1,
     });
     const pendingEvidence = res.body.data.registeredParticipants.find(
       (item: { memberId: string }) => item.memberId === memberAId,
     );
     expect(pendingEvidence).toMatchObject({
-      outcome: 'attended',
-      recordCount: 1,
-      approvedRecordCount: 0,
-      totalServiceHours: '0',
+      outcome: 'pending',
+      origin: 'registered',
+      recordCount: 0,
+      postedResultCount: 0,
+      totalServiceHours: null,
     });
+    expect(pendingEvidence).not.toHaveProperty('approvedRecordCount');
     const noShow = res.body.data.registeredParticipants.find(
       (item: { memberId: string }) => item.memberId === memberBId,
     );
     expect(noShow).toMatchObject({ outcome: 'no-show', recordCount: 0 });
     expect(res.body.data.temporaryParticipants).toHaveLength(1);
     expect(res.body.data.temporaryParticipants[0]).toMatchObject({
-      outcome: 'temporary',
+      outcome: 'attended',
+      origin: 'onsite',
       recordCount: 1,
       totalServiceHours: '1.5',
     });
@@ -245,7 +288,7 @@ describe('participation metrics F1-F4', () => {
     expectBizError(unauthenticated, BizCode.UNAUTHORIZED);
   });
 
-  it('F2: 报名/实到/到场率正确，时长贡献与直方图仅计 approved records', async () => {
+  it('F2: 永久报名头与参与来源分开，正式结果定人数，净额和逐人时长直方图自洽', async () => {
     const res = await request(httpServer(app))
       .get(`/api/admin/v1/activities/${activityId}/participation-summary`)
       .set('Authorization', superAdminAuth);
@@ -255,26 +298,32 @@ describe('participation metrics F1-F4', () => {
       activityId,
       activityStatusCode: 'completed',
       registrationCounts: {
-        total: 7,
-        pending: 1,
+        total: 8,
+        pending: 2,
         pass: 3,
         reject: 1,
         cancelled: 1,
         waitlisted: 1,
       },
-      attendeeCount: 3,
-      registeredAttendeeCount: 2,
+      attendeeCount: 2,
+      registeredAttendeeCount: 1,
       temporaryAttendeeCount: 1,
+      mixedOriginAttendeeCount: 0,
+      unknownOriginAttendeeCount: 0,
       noShowCount: 1,
+      pendingCount: 1,
+      pendingSessionCount: 1,
+      otherResultCount: 0,
       attendanceRate: 0.6667,
       totalServiceHours: '7',
-      totalContributionPoints: '4.5',
+      totalContributionPoints: '3.5',
       durationHistogram: {
         under2Hours: 1,
-        from2To4Hours: 2,
-        from4To8Hours: 0,
+        from2To4Hours: 0,
+        from4To8Hours: 1,
         atLeast8Hours: 0,
       },
+      durationUnknownCount: 0,
       feedback: { count: 0, avgRating: null },
     });
     const counts = res.body.data.registrationCounts as Record<string, number>;
@@ -283,7 +332,7 @@ describe('participation metrics F1-F4', () => {
     ).toBe(counts.total);
   });
 
-  it('F3: 个人累计 approved-only，贡献值与既有 contribution-summary 严格等值', async () => {
+  it('F3: 个人累计正式净额，按身份×北京日计数，贡献值与 contribution-summary 等值', async () => {
     const [participation, contribution] = await Promise.all([
       request(httpServer(app))
         .get(`/api/admin/v1/members/${memberDId}/participation-summary`)
@@ -300,11 +349,9 @@ describe('participation metrics F1-F4', () => {
       activityCount: 1,
       recordCount: 2,
       contributionPoints: '3',
-      // 第 7 批第 ②-a 刀纯加法新增;本夹具不造账本分录,故四个值恒 "0"
-      // (顺带是一条「无账本时不返 null」的正对照)。上面四个数字一字未改。
       ledgerTotals: {
-        committedServiceHours: '0',
-        committedContributionPoints: '0',
+        committedServiceHours: '5.5',
+        committedContributionPoints: '3',
         inFlightServiceHours: '0',
         inFlightContributionPoints: '0',
       },
@@ -327,8 +374,8 @@ describe('participation metrics F1-F4', () => {
       recordCount: 2,
       contributionPoints: '3',
       ledgerTotals: {
-        committedServiceHours: '0',
-        committedContributionPoints: '0',
+        committedServiceHours: '5.5',
+        committedContributionPoints: '3',
         inFlightServiceHours: '0',
         inFlightContributionPoints: '0',
       },

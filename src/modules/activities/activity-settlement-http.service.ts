@@ -640,13 +640,14 @@ export class ActivitySettlementHttpService {
   async updateDraftItem(
     input: SettlementDraftItemUpdateInput,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<SettlementDraftItemUpdateResult & { identityId: string }> {
     await this.assertCanActivity(
       currentUser,
       ACTIVITY_SETTLEMENT_ACTION.updateDraft,
       input.activityId,
     );
-    const result = await this.draftItems.updateItem(input);
+    const result = await this.draftItems.updateItem(input, currentUser, auditMeta);
     return { ...result, identityId: result.participationIdentityId };
   }
 

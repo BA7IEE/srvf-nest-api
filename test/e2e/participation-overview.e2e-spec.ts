@@ -6,6 +6,7 @@ import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
+import { seedParticipationReadState } from '../fixtures/contribution-ledger.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
@@ -18,6 +19,7 @@ interface ActivitySummaryBody {
 }
 
 describe('participation overview F5 + scoped reconciliation', () => {
+  const previousWorkflowGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
   let app: INestApplication;
   let prisma: PrismaService;
   let scopedAuth: string;
@@ -30,6 +32,7 @@ describe('participation overview F5 + scoped reconciliation', () => {
   let hiddenActivityId: string;
 
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
@@ -165,6 +168,7 @@ describe('participation overview F5 + scoped reconciliation', () => {
         }),
       ),
     );
+    // 旧历史与新账本故意不等：可见旧时长 16h，新账本 4h，禁止空集/同值假绿。
     await prisma.attendanceRecord.createMany({
       data: [
         {
@@ -172,20 +176,20 @@ describe('participation overview F5 + scoped reconciliation', () => {
           memberId: members[0].id,
           roleCode: 'member',
           checkInAt: new Date('2026-07-15T01:00:00.000Z'),
-          checkOutAt: new Date('2026-07-15T02:30:00.000Z'),
-          serviceHours: '1.5',
+          checkOutAt: new Date('2026-07-15T09:00:00.000Z'),
+          serviceHours: '8',
           attendanceStatusCode: 'present',
-          contributionPoints: '0.5',
+          contributionPoints: '3',
         },
         {
           sheetId: sheets[1].id,
           memberId: members[2].id,
           roleCode: 'member',
-          checkInAt: new Date('2026-07-15T03:00:00.000Z'),
-          checkOutAt: new Date('2026-07-15T05:30:00.000Z'),
-          serviceHours: '2.5',
+          checkInAt: new Date('2026-07-15T01:00:00.000Z'),
+          checkOutAt: new Date('2026-07-15T09:00:00.000Z'),
+          serviceHours: '8',
           attendanceStatusCode: 'present',
-          contributionPoints: '1',
+          contributionPoints: '3',
         },
         {
           sheetId: sheets[2].id,
@@ -199,10 +203,52 @@ describe('participation overview F5 + scoped reconciliation', () => {
         },
       ],
     });
+    await seedParticipationReadState(prisma, {
+      activityId: visibleActivity1Id,
+      actorUserId: submitter.id,
+      participants: [
+        {
+          memberId: members[0].id,
+          resultCode: 'present',
+          serviceHours: '1.5',
+          creditedPoints: '0.5',
+        },
+        {
+          memberId: members[1].id,
+          resultCode: 'absent',
+          serviceHours: '0',
+          creditedPoints: '0',
+        },
+      ],
+    });
+    await seedParticipationReadState(prisma, {
+      activityId: visibleActivity2Id,
+      actorUserId: submitter.id,
+      participants: [
+        {
+          memberId: members[2].id,
+          resultCode: 'present',
+          serviceHours: '2.5',
+          creditedPoints: '1',
+        },
+      ],
+    });
+    await seedParticipationReadState(prisma, {
+      activityId: hiddenActivityId,
+      actorUserId: submitter.id,
+      participants: [
+        { memberId: members[3].id, resultCode: 'present', serviceHours: '8', creditedPoints: '3' },
+      ],
+    });
   });
 
   afterAll(async () => {
-    await app.close();
+    try {
+      await app.close();
+    } finally {
+      if (previousWorkflowGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousWorkflowGate;
+    }
   });
 
   const getActivitySummary = (activityId: string) =>
@@ -237,6 +283,8 @@ describe('participation overview F5 + scoped reconciliation', () => {
     const month = overview.body.data.months[0];
     expect(month.activityCount).toBe(2);
     expect(month.completedActivityCount).toBe(2);
+    expect(month.participationCount).toBe(2);
+    expect(month.totalServiceHours).toBe('4');
     expect(month.participationCount).toBe(f2.reduce((sum, item) => sum + item.attendeeCount, 0));
     expect(month.totalServiceHours).toBe(
       f2

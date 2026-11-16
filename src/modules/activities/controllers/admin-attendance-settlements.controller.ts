@@ -43,12 +43,16 @@ import {
   ListAdminAttendanceSettlementsQueryDto,
 } from '../dto/admin/admin-settlement-read.dto';
 import { RequiresPermission } from '../../../common/decorators/route-authz.decorator';
+import { AdminParticipationReadService } from '../admin-participation-read.service';
 
 @ApiTags('Admin - Attendance Settlements')
 @ApiBearerAuth()
 @Controller('admin/v1/attendance-settlements')
 export class AdminAttendanceSettlementsController {
-  constructor(private readonly settlements: ActivitySettlementHttpService) {}
+  constructor(
+    private readonly settlements: ActivitySettlementHttpService,
+    private readonly reads: AdminParticipationReadService,
+  ) {}
 
   @Get()
   @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
@@ -77,8 +81,9 @@ export class AdminAttendanceSettlementsController {
   reviewDetail(
     @Param() params: AdminSettlementVersionReadParamsDto,
     @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<AdminSettlementReviewDetailDto> {
-    return this.settlements.reviewDetail(params.settlementVersionId, user);
+    return this.reads.reviewDetail(params.settlementVersionId, user, this.auditMeta(req));
   }
 
   @Get(':id/posting-batch')

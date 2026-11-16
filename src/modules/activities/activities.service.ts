@@ -39,6 +39,7 @@ import { ActivityInitiationPolicy } from './activity-initiation-policy';
 import { ActivityNotificationProducer } from './activity-notification-producer';
 import { ActivityPublishReviewService } from './activity-publish-review.service';
 import { ActivityAllocationModeService } from './activity-allocation-mode.service';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 
 // V2 第一阶段批次 3A activities service。
 // 详见 docs:
@@ -92,6 +93,7 @@ export class ActivitiesService {
     private readonly initiationPolicy: ActivityInitiationPolicy,
     private readonly publishReviewService: ActivityPublishReviewService,
     private readonly allocationModes: ActivityAllocationModeService,
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
     @Inject(appConfig.KEY)
     private readonly config: ConfigType<typeof appConfig>,
   ) {}
@@ -100,30 +102,72 @@ export class ActivitiesService {
 
   // ============ list ============
 
-  // F1/A6(D7):批量聚合 registrationCount/attendanceSheetCount(includeStats=true 时),
-  // 两条 groupBy 一次查完当前页全部 activityId,禁 N+1。
-  private async attachStats(items: ActivityListItemDto[]): Promise<ActivityListItemDto[]> {
+  // 报名头与新版审核台版本是不同统计；权限、活动组织及版本数在同一快照中读取。
+  private async attachStats(
+    items: ActivityListItemDto[],
+    user: CurrentUserPayload,
+  ): Promise<ActivityListItemDto[]> {
     if (items.length === 0) return items;
     const activityIds = items.map((i) => i.id);
-    const [regGroups, sheetGroups] = await Promise.all([
-      this.prisma.activityRegistration.groupBy({
-        by: ['activityId'],
-        where: { activityId: { in: activityIds }, deletedAt: null },
-        _count: { _all: true },
-      }),
-      this.prisma.attendanceSheet.groupBy({
-        by: ['activityId'],
-        where: { activityId: { in: activityIds }, deletedAt: null },
-        _count: { _all: true },
-      }),
-    ]);
-    const regCountByActivity = new Map(regGroups.map((g) => [g.activityId, g._count._all]));
-    const sheetCountByActivity = new Map(sheetGroups.map((g) => [g.activityId, g._count._all]));
-    return items.map((item) => ({
-      ...item,
-      registrationCount: regCountByActivity.get(item.id) ?? 0,
-      attendanceSheetCount: sheetCountByActivity.get(item.id) ?? 0,
-    }));
+    return this.prisma.$transaction(
+      async (tx) => {
+        const regGroups = await tx.activityRegistration.groupBy({
+          by: ['activityId'],
+          where: { activityId: { in: activityIds }, deletedAt: null },
+          _count: { _all: true },
+        });
+        const regCountByActivity = new Map(regGroups.map((g) => [g.activityId, g._count._all]));
+        const globalRead = await this.rbac.can(user, 'attendance.read.sheet', undefined, tx);
+        const scope = globalRead
+          ? await this.authz.getVisibleOrganizationScope(user, 'attendance.read.sheet', tx)
+          : null;
+        const organizationWhere =
+          scope?.global === true ? {} : { organizationId: { in: scope?.organizationIds ?? [] } };
+        const visibleActivities =
+          scope?.hasPermission === true
+            ? await tx.activity.findMany({
+                where: { id: { in: activityIds }, deletedAt: null, ...organizationWhere },
+                select: { id: true },
+              })
+            : [];
+        const visibleIds = visibleActivities.map((activity) => activity.id);
+        const visible = new Set(visibleIds);
+        const available =
+          this.activityWorkflowGate.participationReadSource() === 'committed-ledger';
+        const runs =
+          available && visibleIds.length > 0
+            ? await tx.attendanceSettlementRun.findMany({
+                where: {
+                  activityId: { in: visibleIds },
+                  activity: { deletedAt: null, ...organizationWhere },
+                },
+                select: {
+                  activityId: true,
+                  _count: {
+                    select: {
+                      versions: {
+                        where: { statusCode: { not: 'draft' }, submittedAt: { not: null } },
+                      },
+                    },
+                  },
+                },
+              })
+            : [];
+        const counts = new Map(runs.map((run) => [run.activityId, run._count.versions]));
+        return items.map((item) => ({
+          ...item,
+          registrationCount: regCountByActivity.get(item.id) ?? 0,
+          ...(visible.has(item.id)
+            ? {
+                settlementStats: available
+                  ? { available: true, submittedVersionCount: counts.get(item.id) ?? 0 }
+                  : { available: false },
+              }
+            : {}),
+        }));
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
   }
 
   // Q-A7:USER 强制白名单状态(忽略入参 statusCode,防 draft/cancelled 存在性泄漏);
@@ -265,7 +309,7 @@ export class ActivitiesService {
     );
 
     return {
-      items: includeStats ? await this.attachStats(items) : items,
+      items: includeStats ? await this.attachStats(items, currentUser) : items,
       total,
       page,
       pageSize,

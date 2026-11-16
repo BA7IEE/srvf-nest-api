@@ -6,7 +6,7 @@ describe('旅程金五条① 招募→晋升→建号→入队', () => {
   let runtime: JourneyRuntime;
 
   beforeAll(async () => {
-    runtime = await createJourneyRuntime();
+    runtime = await createJourneyRuntime({ nativeActivities: true });
   });
 
   afterAll(async () => {

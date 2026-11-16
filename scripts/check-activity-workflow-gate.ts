@@ -139,6 +139,17 @@ const READ_METHODS = new Set([
 /** 参与真相的旧链表 —— C8 的看守对象。 */
 const PARTICIPATION_DELEGATE = 'attendanceRecord';
 
+// Public ledger read primitives also define settlement read faces after legacy
+// retirement. Discover their consumers in every production file, independently
+// of where the consumer or its gate helper happens to live.
+const LEDGER_READ_COLUMNS = new Map<string, readonly string[]>([
+  ['loadMemberLedgerTotals', ['serviceHours', 'contributionPoints']],
+  ['sumCommittedByMemberForActivities', ['serviceHours', 'contributionPoints']],
+  ['countCommittedParticipationForMember', ['activityCount', 'recordCount']],
+  ['sumCommittedCreditedPointsForMemberInTx', ['contributionPoints']],
+  ['sumCommittedCreditedPointsForMembersInTx', ['contributionPoints']],
+]);
+
 /** production-like 下空值即 fail-fast 的启动点(仓库内可见的两处)。 */
 export const SMOKE_WORKFLOW_FILE = ['.github', 'workflows', 'docker-smoke.yml'].join('/');
 export const ENV_EXAMPLE_FILE = '.env.example';
@@ -237,7 +248,7 @@ function analyzeFile(fileName: string, text: string): Map<string, MethodInfo> {
   return methods;
 }
 
-type SettlementRead = { line: number; columns: string[] };
+type SettlementRead = { line: number; columns: string[]; origin: string };
 
 type ReadFaceInfo = {
   name: string;
@@ -330,8 +341,18 @@ function analyzeSettlementReadFaces(fileName: string, text: string): Map<string,
           scope.reads.push({
             line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
             columns: [...columns].sort(),
+            origin: PARTICIPATION_DELEGATE,
           });
         }
+      }
+
+      const ledgerColumns = LEDGER_READ_COLUMNS.get(fnName);
+      if (ledgerColumns !== undefined) {
+        scope.reads.push({
+          line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
+          columns: [...ledgerColumns],
+          origin: callee.getText(source),
+        });
       }
 
       // 受控链写入 ⇒ 本作用域属链内部
@@ -807,9 +828,9 @@ export function runCriteria(
   // **不用文件名启发式**(`*-query.service.ts` 之类 —— 那种判据加一个新目录就瞎)。
   // 靠两个结构事实:
   //
-  //   ① **这个查询要了哪些列**:只有 select 里出现 `serviceHours` / `contributionPoints`
-  //      的 `attendanceRecord` 读取才算结算量读面。旧链内部读的是 id / 状态 / 时间段,
-  //      拿来做校验和状态机。实测:全仓 30 处 attendanceRecord 读取,只有 7 处要了结算列。
+  //   ① **这个查询读取什么**:旧链按 attendanceRecord 的结算选列识别；
+  //      新链按公开账本读原语识别。仅靠旧表选列会在退役后得到空扫描面，
+  //      漏掉仍在对外产出工时、贡献及参与计数的新链消费者。
   //   ② **这个函数写不写受控链**:写了就是链内部。例:`attendance-review.approve()`
   //      确实 select 了 contributionPoints,但那只是 R31 的非空校验,而同一方法里
   //      `attendanceSheet.update` 在写旧链 ⇒ 豁免。写侧本来就由 C2 按
@@ -827,7 +848,11 @@ export function runCriteria(
     // 反向闸领地:恒按 approved 算,接了闸反而由 C4 判红。
     if (REVERSE_GATE_MARKERS.some((g) => r.includes(g))) continue;
     const text = readSource(file);
-    if (!text.includes(PARTICIPATION_DELEGATE)) continue;
+    if (
+      !text.includes(PARTICIPATION_DELEGATE) &&
+      ![...LEDGER_READ_COLUMNS.keys()].some((operation) => text.includes(operation))
+    )
+      continue;
 
     for (const info of analyzeSettlementReadFaces(r, text).values()) {
       if (info.reads.length === 0) continue;
@@ -841,11 +866,11 @@ export function runCriteria(
       counts.settlementReadFaces += 1;
       if (info.referencesGate) continue;
       const where = info.reads
-        .map((read) => `第 ${read.line} 行取 ${read.columns.join(' / ')}`)
+        .map((read) => `第 ${read.line} 行从 ${read.origin} 取 ${read.columns.join(' / ')}`)
         .join(';');
       findings.push({
         criterion: 'C8',
-        detail: `${r} 的 ${info.name}() 从 ${PARTICIPATION_DELEGATE} 读结算量(${where})并对外产出,却没有问闸(${READ_SOURCE}())—— 闸开后本读面会继续用旧真相出数,而同一实例的其它读面已切到已入账账本,同一个人在两个页面拿到两个数字。修法:照 participation-summary-query.service.ts 的三元范式接闸。`,
+        detail: `${r} 的 ${info.name}() 读结算量(${where})并对外产出,却没有问闸(${READ_SOURCE}())—— 该读面脱离统一的读源与可用性边界。修法:在读取前沿同一调用链校验工作流读源。`,
       });
     }
   }

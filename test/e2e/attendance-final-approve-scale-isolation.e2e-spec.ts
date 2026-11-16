@@ -11,6 +11,8 @@ import {
 import { PrismaService } from '../../src/database/prisma.service';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { AttendancesService } from '../../src/modules/attendances/attendances.service';
+import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
+import { LedgerPreparationService } from '../../src/modules/activities/ledger-preparation.service';
 import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -132,13 +134,17 @@ function installQueryCounter(prisma: PrismaService): QueryCounter {
 describe('考勤终审:规模、隔离级别与有界锁等待(M3)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let attendances: AttendancesService;
+  let posting: LedgerPostingService;
+  let preparation: LedgerPreparationService;
   let finalReviewer: CurrentUserPayload;
   let submitterUserId: string;
   let reviewerUserId: string;
   let activityId: string;
+  let organizationId: string;
+  let ownerMemberId: string;
   let databaseName: string;
   let seq = 0;
+  const previousV11 = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
 
   async function makeMember(): Promise<string> {
     seq += 1;
@@ -226,6 +232,209 @@ describe('考勤终审:规模、隔离级别与有界锁等待(M3)', () => {
     return sheet.id;
   }
 
+  // The native member lock protects ledger activation, after review and chunked
+  // preparation. Seed that approved checkpoint, then use the real preparation
+  // and commit protocols; never manufacture a committed result or ledger.
+  async function readyBatch(memberId: string, checkInAt: Date) {
+    const tag = `m3-native-${++seq}`;
+    const endAt = new Date(checkInAt.getTime() + 3_600_000);
+    const activity = await prisma.activity.create({
+      data: {
+        title: tag,
+        activityTypeCode: 'm3s-act',
+        organizationId,
+        startAt: checkInAt,
+        endAt,
+        location: 'M3',
+        statusCode: 'completed',
+      },
+    });
+    await prisma.activityResponsibilityAssignment.create({
+      data: {
+        activityId: activity.id,
+        memberId: ownerMemberId,
+        responsibilityType: 'owner',
+        status: 'active',
+        canManageRegistrations: true,
+        canManageAttendance: true,
+        assignedByUserId: submitterUserId,
+        source: 'publish',
+      },
+    });
+    const session = await prisma.activitySession.create({
+      data: {
+        activityId: activity.id,
+        code: tag,
+        name: tag,
+        startAt: checkInAt,
+        endAt,
+        locationText: 'M3',
+        checkInOpenAt: checkInAt,
+        checkInCloseAt: endAt,
+        checkOutOpenAt: checkInAt,
+        checkOutCloseAt: endAt,
+        locationRequired: false,
+        locationPolicySourceCode: 'session',
+        statusCode: 'scheduled',
+      },
+    });
+    const registration = await prisma.activityRegistration.create({
+      data: { activityId: activity.id, memberId, statusCode: 'pass' },
+    });
+    const identity = await prisma.activityParticipationIdentity.create({
+      data: {
+        activityId: activity.id,
+        sessionId: session.id,
+        registrationId: registration.id,
+        memberId,
+        currentStatusCode: 'pass',
+        populationIncluded: true,
+      },
+    });
+    const events = await prisma.attendancePunchEvent.createManyAndReturn({
+      data: [
+        { eventTypeCode: 'check_in', occurredAt: checkInAt },
+        { eventTypeCode: 'check_out', occurredAt: endAt },
+      ].map((event) => ({
+        ...event,
+        activityId: activity.id,
+        sessionId: session.id,
+        participationIdentityId: identity.id,
+        memberId,
+        sourceCode: 'staff_scan',
+        receivedAt: event.occurredAt,
+        operatorUserId: submitterUserId,
+        eventKey: `${tag}-${event.eventTypeCode}`,
+        requestHash: `${tag}-${event.eventTypeCode}`,
+        evidenceRevision: 0,
+      })),
+    });
+    await prisma.participantServiceSegmentRevision.create({
+      data: {
+        participationIdentityId: identity.id,
+        segmentKey: tag,
+        revision: 0,
+        sourceCheckInEventId: events.find((event) => event.eventTypeCode === 'check_in')!.id,
+        sourceCloseEventId: events.find((event) => event.eventTypeCode === 'check_out')!.id,
+        resultCode: 'valid',
+        statusCode: 'draft',
+        checkInAt,
+        checkOutAt: endAt,
+        serviceHours: '1',
+      },
+    });
+    const seal = await prisma.evidenceSeal.create({
+      data: {
+        activityId: activity.id,
+        sealRevision: 1,
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        allWindowsClosedAt: endAt,
+        openSegmentCount: 0,
+        manualReviewPendingCount: 0,
+        populationCountDistinct: 1,
+        populationCountBySession: { [session.id]: 1 },
+        contentHash: `${tag}-seal`,
+        statusCode: 'active',
+        sealedByUserId: submitterUserId,
+        sealedAt: endAt,
+      },
+    });
+    const run = await prisma.attendanceSettlementRun.create({
+      data: {
+        activityId: activity.id,
+        statusCode: 'posting',
+        currentDraftVersion: 1,
+        currentSubmittedVersion: 1,
+      },
+    });
+    const version = await prisma.attendanceSettlementVersion.create({
+      data: {
+        settlementRunId: run.id,
+        version: 1,
+        evidenceSealId: seal.id,
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        contentHash: `${tag}-version`,
+        personCount: 1,
+        sessionParticipationCount: 1,
+        serviceSegmentCount: 1,
+        createdByUserId: submitterUserId,
+        submittedAt: endAt,
+        statusCode: 'approved',
+        operationKey: `${tag}-submit`,
+        requestHash: `${tag}-submit`,
+      },
+    });
+    await prisma.participantSettlementResultRevision.create({
+      data: {
+        settlementVersionId: version.id,
+        participationIdentityId: identity.id,
+        revision: 0,
+        resultCode: 'present',
+        recognizedServiceHours: '1',
+        calculatedServiceHours: '1',
+        recognizedContributionPoints: '1',
+        calculatedContributionPoints: '1',
+        statusCode: 'draft',
+      },
+    });
+    const batch = await prisma.ledgerPostingBatch.create({
+      data: {
+        settlementRunId: run.id,
+        settlementVersionId: version.id,
+        batchRevision: 1,
+        statusCode: 'preparing',
+        requestKey: `${tag}-prepare`,
+        requestHash: `${tag}-prepare`,
+        totalCount: 1,
+        preparedByUserId: finalReviewer.id,
+      },
+    });
+    const { jobId } = await preparation.ensurePrepareJob(batch.id);
+    for (const item of await prisma.activityBatchJobItem.findMany({ where: { jobId } })) {
+      await preparation.prepareChunk(jobId, item.id);
+    }
+    expect((await preparation.finalize(jobId)).batchStatus).toBe('ready');
+    return {
+      activityId: activity.id,
+      batchId: batch.id,
+      versionId: version.id,
+      runId: run.id,
+      memberId,
+    };
+  }
+
+  function commit(batchId: string) {
+    return posting.commitBatch(
+      { postingBatchId: batchId, operationKey: `commit:${batchId}` },
+      finalReviewer,
+      META,
+    );
+  }
+
+  function nativeFootprint(fixture: Awaited<ReturnType<typeof readyBatch>>) {
+    return Promise.all([
+      prisma.ledgerPostingBatch.findUniqueOrThrow({ where: { id: fixture.batchId } }),
+      prisma.attendanceSettlementRun.findUniqueOrThrow({ where: { id: fixture.runId } }),
+      prisma.participantSettlementResultRevision.findMany({
+        where: { settlementVersionId: fixture.versionId },
+      }),
+      prisma.participationLedgerEntry.findMany({
+        where: { postingBatchId: fixture.batchId },
+        orderBy: { id: 'asc' },
+      }),
+      prisma.memberContributionDayState.findMany({
+        where: { memberId: fixture.memberId },
+        orderBy: { ledgerDate: 'asc' },
+      }),
+      prisma.auditLog.count(),
+      prisma.notificationOutboxIntent.count(),
+    ]);
+  }
+
   /**
    * 占住一把锁直到 `release()`,返回三件事:
    *   · `acquired` —— 锁**真的到手**后才 resolve。不等它就开始被测事务 = 用竞态碰运气,
@@ -259,10 +468,12 @@ describe('考勤终审:规模、隔离级别与有界锁等待(M3)', () => {
   }
 
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
-    attendances = app.get(AttendancesService);
+    posting = app.get(LedgerPostingService);
+    preparation = app.get(LedgerPreparationService);
     [{ current_database: databaseName }] = await prisma.$queryRaw<
       Array<{ current_database: string }>
     >(Prisma.sql`SELECT current_database()`);
@@ -304,7 +515,9 @@ describe('考勤终审:规模、隔离级别与有界锁等待(M3)', () => {
       memberId: null,
     };
 
-    const organizationId = (
+    ownerMemberId = await makeMember();
+    await prisma.user.update({ where: { id: submitterUserId }, data: { memberId: ownerMemberId } });
+    organizationId = (
       await prisma.organization.create({
         data: { name: 'M3S Org', nodeTypeCode: 'm3s-node', status: 'ACTIVE' },
         select: { id: true },
@@ -329,12 +542,18 @@ describe('考勤终审:规模、隔离级别与有界锁等待(M3)', () => {
   }, 300_000);
 
   afterAll(async () => {
-    await app.close();
+    try {
+      await app?.close();
+    } finally {
+      if (previousV11 === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousV11;
+    }
   });
 
   it(
     `① 规模位:${SCALE_RECORDS} 人考勤单一次终审 —— SQL 次数不随人数增长,且在事务预算内`,
     async () => {
+      const attendances = app.get(AttendancesService);
       const memberIds: string[] = [];
       for (let i = 0; i < SCALE_RECORDS; i += 1) memberIds.push(await makeMember());
       // 每人一条 joining 申请 ⇒ 走满 before/after 两次快照 + milestone 判定(评审的 1408 基数场景)。
@@ -385,15 +604,14 @@ describe('考勤终审:规模、隔离级别与有界锁等待(M3)', () => {
   );
 
   it(
-    '② convoy 位:同一队员的键被长时间占住 —— 终审以 40901 有界失败,不是 P2028→50000',
+    '② convoy 位:同一队员的键被长时间占住 —— 新账本提交以 40901 有界失败且整笔零写',
     async () => {
       const memberId = await makeMember();
-      const sheetId = await createPendingFinalReviewSheet([
-        { memberId, points: '1.00', checkInAt: DAY_C },
-      ]);
+      const fixture = await readyBatch(memberId, DAY_C);
+      const before = await nativeFootprint(fixture);
 
-      // 必须等占位事务真正拿到键，再放终审进来；否则这个用例会退化成调度竞态，
-      // 终审偶尔会先通过，无法证明有界锁等待的行为。
+      // 必须等占位事务真正拿到键，再放账本提交进来；否则会退化成调度竞态，
+      // 提交偶尔会先通过，无法证明有界锁等待的行为。
       const holder = holdLock(
         (tx) => tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${memberId}))::text AS locked`,
       );
@@ -402,7 +620,7 @@ describe('考勤终审:规模、隔离级别与有界锁等待(M3)', () => {
       const startedAt = Date.now();
       let caught: unknown;
       try {
-        await attendances.finalApprove(sheetId, {}, finalReviewer, META);
+        await commit(fixture.batchId);
       } catch (err) {
         caught = err;
       }
@@ -415,43 +633,39 @@ describe('考勤终审:规模、隔离级别与有界锁等待(M3)', () => {
       expect((caught as BizException).biz).toBe(BizCode.CONCURRENT_WRITE_LOCK_TIMEOUT);
       // 有界:必须在 5s 事务预算**之前**失败,否则闸没生效(先撞的仍是 P2028)。
       expect(elapsedMs).toBeLessThan(5_000);
-      // 失败即全回滚:Sheet 状态、intent 都不得留下半成品。
-      expect(
-        (
-          await prisma.attendanceSheet.findUniqueOrThrow({
-            where: { id: sheetId },
-            select: { statusCode: true },
-          })
-        ).statusCode,
-      ).toBe('pending_final_review');
-      expect(
-        await prisma.notificationOutboxIntent.count({
-          where: { aggregateType: 'attendance_sheet', aggregateId: sheetId },
-        }),
-      ).toBe(0);
+      // Prepared entries remain invisible: no batch/result/run mutation, audit
+      // or notification may escape a timed-out activation.
+      expect(await nativeFootprint(fixture)).toEqual(before);
     },
     CASE_TIMEOUT_MS,
   );
 
   it(
-    '② convoy 位(反向):键空闲时,同一队员的多张单串行终审全部成功',
+    '② convoy 位(反向):键空闲时,同一队员跨活动的三个新账本批次并发提交全部成功',
     async () => {
       const memberId = await makeMember();
-      const sheetIds = await Promise.all([
-        createPendingFinalReviewSheet([{ memberId, points: '1.00', checkInAt: DAY_A }]),
-        createPendingFinalReviewSheet([{ memberId, points: '1.00', checkInAt: DAY_B }]),
-        createPendingFinalReviewSheet([{ memberId, points: '1.00', checkInAt: DAY_C }]),
-      ]);
-
-      const results = await Promise.allSettled(
-        sheetIds.map((sheetId) => attendances.finalApprove(sheetId, {}, finalReviewer, META)),
+      const fixtures = await Promise.all(
+        [DAY_A, DAY_B, DAY_C].map((day) => readyBatch(memberId, day)),
       );
+
+      const results = await Promise.allSettled(fixtures.map((fixture) => commit(fixture.batchId)));
       for (const result of results) {
         expect(result.status).toBe('fulfilled');
       }
       expect(
-        await prisma.attendanceSheet.count({
-          where: { id: { in: sheetIds }, statusCode: 'approved' },
+        await prisma.ledgerPostingBatch.count({
+          where: {
+            id: { in: fixtures.map((fixture) => fixture.batchId) },
+            statusCode: 'committed',
+          },
+        }),
+      ).toBe(3);
+      expect(
+        await prisma.participantSettlementResultRevision.count({
+          where: {
+            settlementVersionId: { in: fixtures.map((fixture) => fixture.versionId) },
+            statusCode: 'committed',
+          },
         }),
       ).toBe(3);
     },
@@ -533,6 +747,7 @@ describe('考勤终审:规模、隔离级别与有界锁等待(M3)', () => {
   it(
     `④-a 近预算位:等 ${MEMBER_LOCK_WAIT_BUDGET_MS - 200}ms 拿到键后,${SCALE_RECORDS} 人终审仍跑完(不是 P2028→500)`,
     async () => {
+      const attendances = app.get(AttendancesService);
       /** 卡在锁预算之内 —— 本例要的是「等到了」,不是「等超时」(那是 ② 的判据)。 */
       const HOLD_MS = MEMBER_LOCK_WAIT_BUDGET_MS - 200;
       expect(HOLD_MS).toBeLessThan(MEMBER_LOCK_WAIT_BUDGET_MS);
@@ -592,52 +807,51 @@ describe('考勤终审:规模、隔离级别与有界锁等待(M3)', () => {
   );
 
   it(
-    '④-b 近预算位(串行两段等待):Sheet 行锁 + member 键各自都在锁预算内,相加越过旧的 5s 默认预算',
+    '④-b 近预算位(串行两段等待):Activity 根锁 + member 键各自都在锁预算内,相加越过旧的 5s 默认预算',
     async () => {
-      /** 第一段:claimAtStatus 的 FOR NO KEY UPDATE 等这么久。 */
-      const SHEET_HOLD_MS = 3_000;
-      /** 第二段结束点(从终审起算):member 键等到这一刻。 */
+      /** 第一段:账本提交的 Activity 根锁等这么久。 */
+      const ROOT_HOLD_MS = 3_000;
+      /** 第二段结束点(从提交起算):member 键等到这一刻。 */
       const MEMBER_HOLD_MS = MEMBER_TX_TIMEOUT_MS - 1_200;
 
       // ── 前提自证:这四条任意一条不成立,本用例就不再是它自称的那个判据 ──
       // 单段都必须在锁预算内,否则先撞的是 40901(那是 ② 的判据,不是本例的)。
-      expect(SHEET_HOLD_MS).toBeLessThan(MEMBER_LOCK_WAIT_BUDGET_MS);
-      expect(MEMBER_HOLD_MS - SHEET_HOLD_MS).toBeLessThan(MEMBER_LOCK_WAIT_BUDGET_MS);
+      expect(ROOT_HOLD_MS).toBeLessThan(MEMBER_LOCK_WAIT_BUDGET_MS);
+      expect(MEMBER_HOLD_MS - ROOT_HOLD_MS).toBeLessThan(MEMBER_LOCK_WAIT_BUDGET_MS);
       // 相加必须越过旧的 5s 默认预算,否则修复前它也是绿的 —— 绿的对抗用例证明不了任何事。
       expect(MEMBER_HOLD_MS).toBeGreaterThan(PRISMA_DEFAULT_TX_TIMEOUT_MS);
       // 且必须落在新预算之内,否则修复后它也是红的。
       expect(MEMBER_HOLD_MS).toBeLessThan(MEMBER_TX_TIMEOUT_MS);
 
       const memberId = await makeMember();
-      const sheetId = await createPendingFinalReviewSheet([
-        { memberId, points: '1.00', checkInAt: DAY_A },
-      ]);
+      const fixture = await readyBatch(memberId, DAY_A);
 
-      // 两把锁都先到手,再放终审进来 —— 顺序颠倒就变成竞态。
-      const sheetHolder = holdLock(
-        (tx) => tx.$queryRaw`SELECT "id" FROM "AttendanceSheet" WHERE "id" = ${sheetId} FOR UPDATE`,
+      // 两把锁都先到手,再放提交进来 —— 顺序颠倒就变成竞态。
+      const activityHolder = holdLock(
+        (tx) =>
+          tx.$queryRaw`SELECT "id" FROM "Activity" WHERE "id" = ${fixture.activityId} FOR UPDATE`,
       );
       const memberHolder = holdLock(
         (tx) => tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${memberId}))::text AS locked`,
       );
-      await Promise.all([sheetHolder.acquired, memberHolder.acquired]);
+      await Promise.all([activityHolder.acquired, memberHolder.acquired]);
 
       const startedAt = Date.now();
       const timers = [
-        setTimeout(sheetHolder.release, SHEET_HOLD_MS),
+        setTimeout(activityHolder.release, ROOT_HOLD_MS),
         setTimeout(memberHolder.release, MEMBER_HOLD_MS),
       ];
       let caught: unknown;
       try {
-        await attendances.finalApprove(sheetId, {}, finalReviewer, META);
+        await commit(fixture.batchId);
       } catch (err) {
         caught = err;
       }
       const elapsedMs = Date.now() - startedAt;
       for (const t of timers) clearTimeout(t);
-      sheetHolder.release();
+      activityHolder.release();
       memberHolder.release();
-      await Promise.all([sheetHolder.done, memberHolder.done]);
+      await Promise.all([activityHolder.done, memberHolder.done]);
 
       // 修复前:两段等待相加 ≈ 5.8s > Prisma 默认 5s ⇒ P2028 ⇒ 全局过滤器 50000。
       expect(caught).toBeUndefined();
@@ -646,12 +860,12 @@ describe('考勤终审:规模、隔离级别与有界锁等待(M3)', () => {
       expect(elapsedMs).toBeLessThan(MEMBER_TX_TIMEOUT_MS);
       expect(
         (
-          await prisma.attendanceSheet.findUniqueOrThrow({
-            where: { id: sheetId },
+          await prisma.ledgerPostingBatch.findUniqueOrThrow({
+            where: { id: fixture.batchId },
             select: { statusCode: true },
           })
         ).statusCode,
-      ).toBe('approved');
+      ).toBe('committed');
     },
     CASE_TIMEOUT_MS,
   );

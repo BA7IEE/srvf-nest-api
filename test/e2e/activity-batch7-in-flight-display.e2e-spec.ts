@@ -13,7 +13,7 @@ import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 
-// ===== 第 7 批第 ②-a 刀:统计读面加「在途」显示(不动任何取数)=====
+// 退役后的统计读面：已生效净额与在途小计保持分离。
 //
 // ## 「在途」的定义(直查法),以及为什么不用差值法
 //
@@ -22,8 +22,7 @@ import { memberIdentityData } from '../helpers/member-identity.fixture';
 // 另一个候选是差值法「现有总数 − 已生效」。它被否掉有两条硬理由,本 spec 各有用例坐实:
 //   1. **会算出负数**:冲正已入账、而重记那笔还在途时,已生效可以**大于**考勤口径的总数
 //      ⇒ 差值为负。「在途 -2 小时」没法向队员解释。
-//   2. **它减的是两张表**:四个数字来自 approved 考勤记录(北京日封顶),账本来自分录 delta 求和。
-//      两者本就可能有漂移;差值法会把漂移**当成在途报出来**,比不显示更糟。
+//   2. 旧考勤与账本本就可能不等；不能把这份历史差异当成在途金额。
 //
 // 直查法则是结构性互斥:一条分录只有一个 `postingBatchId`,一个批次只有一个 `statusCode`。
 //
@@ -31,8 +30,7 @@ import { memberIdentityData } from '../helpers/member-identity.fixture';
 //
 // 见「不变量 1b」用例里的实测数字。两条独立原因:
 //   · **阶段缺口** —— 批次要到终审才存在,「考勤已审批但结算没走到终审」那一段两个小计都不计;
-//   · **口径不同** —— 四个数字按考勤记录算,两个小计按账本分录算。
-// 所以本刀**不合并数字**,三个口径并排摆着,各自标签清楚。
+//   · 参与汇总只承认已生效净额，不加在途，也不回退旧考勤。
 //
 // ## 夹具为什么直插分录而不走真实写链
 //
@@ -128,8 +126,10 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
   let probeBatchId: string;
 
   let sequence = 0;
+  const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
 
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
@@ -189,7 +189,7 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
     });
     probeMemberId = probeMember.id;
 
-    // ---- ① approved 考勤:四个数字的唯一来源,本刀一个字没动 ----
+    // ---- ① 旧 approved 考勤故意与新链不等，作为禁止回退的反面样本 ----
     const attendanceActivity = await prisma.activity.create({
       data: {
         title: '第 7 批②-a 考勤活动',
@@ -281,7 +281,12 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
   });
 
   afterAll(async () => {
-    await app.close();
+    try {
+      await app.close();
+    } finally {
+      if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
+    }
   });
 
   function creditPair(options: {
@@ -753,8 +758,8 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
     //    两处都写会让「改取数」这个变异同时红两条,红集重叠、诊断力下降。
 
     // 🔴 实测结论:等式**两条轴都不成立**,所以本刀不合并数字。
-    //    服务时长:1.5 + 3.5  = 5    ≠ 4
-    //    贡献值  :0.5 + 1.25 = 1.75 ≠ 2
+    //    服务时长:1.5 + 3.5  = 5    ≠ 已生效净额 1.5
+    //    贡献值  :0.5 + 1.25 = 1.75 ≠ 已生效净额 0.5
     expect(decimalSum(totals.committedServiceHours, totals.inFlightServiceHours)).toBe('5');
     expect(decimalSum(totals.committedServiceHours, totals.inFlightServiceHours)).not.toBe(
       body.totalServiceHours,
@@ -767,8 +772,8 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
     ).not.toBe(body.contributionPoints);
   });
 
-  // ===== 不变量 2:既有四个数字逐字不变 =====
-  it('不变量 2:既有四个数字整包不变,不随账本状态漂移(改成 committed 取数当场红)', async () => {
+  // ===== 不变量 2:汇总只认已生效事实，不混入旧分或在途 =====
+  it('不变量 2:四个汇总字段来自已生效账本，旧考勤与在途均不叠加', async () => {
     const [adminResponse, appResponse] = await Promise.all([
       getAdminSummary(focusMemberId),
       getAppSummary(),
@@ -776,22 +781,22 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
     expect(adminResponse.status).toBe(200);
     expect(appResponse.status).toBe(200);
 
-    // 整包快照:四个字段的**名字与值**一并钉住。这些值只能由 approved 考勤推出
-    // (4 / 1 活动 / 1 条 / 2 分);账本两条轴(已生效 1.5 / 0.5、在途 3.5 / 1.25)
-    // 与它们**逐个都不相等** ⇒ 谁把取数换成 committed 或 committed+inFlight,本条必红。
+    // 整包断言保留；1.5/0.5 与旧考勤 4/2 及在途 3.5/1.25 都不相等。
     const expected = {
-      totalServiceHours: APPROVED_SERVICE_HOURS,
+      totalServiceHours: '1.5',
       activityCount: 1,
       recordCount: 1,
-      contributionPoints: APPROVED_CONTRIBUTION_POINTS,
+      contributionPoints: '0.5',
     };
     expect(summaryNumbersOf(adminResponse)).toEqual(expected);
     expect(summaryNumbersOf(appResponse)).toEqual(expected);
 
-    // contribution-summary 的那一个数字同样未动。
+    expect(expected.totalServiceHours).not.toBe(APPROVED_SERVICE_HOURS);
+    expect(expected.contributionPoints).not.toBe(APPROVED_CONTRIBUTION_POINTS);
+    // 独立贡献入口必须使用同一已生效净额。
     const contribution = await getAdminContribution(focusMemberId);
     expect(contribution.status).toBe(200);
-    expect(bodyOf(contribution).contributionPoints).toBe(APPROVED_CONTRIBUTION_POINTS);
+    expect(bodyOf(contribution).contributionPoints).toBe(expected.contributionPoints);
   });
 
   // ===== 不变量 3:既有 committed 过滤一处不少,且没有 bypass 开关 =====

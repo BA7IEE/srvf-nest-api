@@ -1,5 +1,6 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 
 import {
   ApiBizErrorResponse,
@@ -17,23 +18,20 @@ import {
   AdminMemberParticipationLedgerParamsDto,
   ListAdminMemberParticipationLedgerQueryDto,
 } from '../dto/admin/admin-settlement-read.dto';
-import { LedgerQueryService } from '../ledger-query.service';
+import { AdminParticipationReadService } from '../admin-participation-read.service';
 import { RequiresPermission } from '../../../common/decorators/route-authz.decorator';
 import {
   AdminParticipationTimeProofQueryDto,
   AdminParticipationTimeProofResponseDto,
 } from '../dto/admin/admin-participation-time-proof.dto';
-import { ParticipationTimeProofQueryService } from '../participation-time-proof-query.service';
+import type { AuditMeta } from '../../audit-logs/audit-logs.types';
 
 // 与既有 admin/v1/members/:memberId 跨轴读面并列；判权和防枚举在服务层完成。
 @ApiTags('Admin - Participation Ledger')
 @ApiBearerAuth()
 @Controller('admin/v1/members/:memberId')
 export class AdminMemberParticipationLedgerController {
-  constructor(
-    private readonly ledgerQuery: LedgerQueryService,
-    private readonly timeProofQuery: ParticipationTimeProofQueryService,
-  ) {}
+  constructor(private readonly reads: AdminParticipationReadService) {}
 
   // 账本权限口径见 LedgerQueryService 的 LEDGER_READ_ACTION：合同 §6.11 空白，2026-08-06 显式接受复用考勤读码。
   @Get('participation-ledger')
@@ -52,8 +50,9 @@ export class AdminMemberParticipationLedgerController {
     @Param() params: AdminMemberParticipationLedgerParamsDto,
     @Query() query: ListAdminMemberParticipationLedgerQueryDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<PageResultDto<AdminParticipationLedgerEntryDto>> {
-    return this.ledgerQuery.listForAdminMember(params.memberId, query, currentUser);
+    return this.reads.listForMember(params.memberId, query, currentUser, this.auditMeta(req));
   }
 
   @Get('participation-time-proof')
@@ -76,7 +75,16 @@ export class AdminMemberParticipationLedgerController {
     @Param() params: AdminMemberParticipationLedgerParamsDto,
     @Query() query: AdminParticipationTimeProofQueryDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<AdminParticipationTimeProofResponseDto> {
-    return this.timeProofQuery.forAdminMember(params.memberId, query, currentUser);
+    return this.reads.proofForMember(params.memberId, query, currentUser, this.auditMeta(req));
+  }
+
+  private auditMeta(req: Request): AuditMeta {
+    return {
+      requestId: req.id as string,
+      ip: req.ip ?? null,
+      ua: req.headers['user-agent'] ?? null,
+    };
   }
 }

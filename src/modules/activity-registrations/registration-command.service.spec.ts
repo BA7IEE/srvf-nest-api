@@ -83,9 +83,18 @@ function makeTx() {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     activityParticipationRevision: { create: jest.fn() },
-    attendanceRecord: { findFirst: jest.fn() },
-    activityCheckIn: { findFirst: jest.fn() },
-    attendancePunchEvent: { findFirst: jest.fn() },
+    attendanceRecord: {
+      findFirst: jest.fn(() => {
+        throw new Error('legacy attendance must not be read');
+      }),
+    },
+    activityCheckIn: {
+      findFirst: jest.fn(() => {
+        throw new Error('legacy GPS must not be read');
+      }),
+    },
+    attendancePunchEvent: { findFirst: jest.fn().mockResolvedValue(null) },
+    participantSettlementResultRevision: { findFirst: jest.fn().mockResolvedValue(null) },
   };
   return tx;
 }
@@ -156,6 +165,50 @@ function makeService(tx: ReturnType<typeof makeTx>, opts: { transactionError?: E
 }
 
 describe('RegistrationCommandService', () => {
+  it.each(['punch', 'committed result'])(
+    'blocks a new submission with existing v1.1 %s before header or form writes',
+    async (kind) => {
+      const tx = makeTx();
+      tx.$queryRaw
+        .mockReset()
+        .mockResolvedValueOnce([
+          {
+            id: 'activity-1',
+            statusCode: 'published',
+            isPublicRegistration: true,
+            registrationDeadline: null,
+            genderRequirementCode: null,
+            requiresInsurance: false,
+            allocationModeCode: 'manual',
+            title: '活动',
+            startAt: new Date('2099-12-30T00:00:00Z'),
+            endAt: new Date('2099-12-31T00:00:00Z'),
+          },
+        ])
+        .mockResolvedValueOnce([
+          { id: 'registration-1', statusCode: 'cancelled', currentRevision: 1, deletedAt: null },
+        ])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: 'member-1', status: 'ACTIVE', deletedAt: null }])
+        .mockResolvedValueOnce([{ id: 'user-1', status: 'ACTIVE', deletedAt: null }]);
+      if (kind === 'punch') tx.attendancePunchEvent.findFirst.mockResolvedValue({ id: 'punch-1' });
+      else tx.participantSettlementResultRevision.findFirst.mockResolvedValue({ id: 'result-1' });
+      const { service } = makeService(tx);
+      await expect(
+        service.submit('activity-1', command(), user(), {
+          requestId: 'request-1',
+          ip: null,
+          ua: null,
+        }),
+      ).rejects.toEqual(new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID));
+      expect(tx.activityRegistration.create).not.toHaveBeenCalled();
+      expect(tx.activityRegistration.updateMany).not.toHaveBeenCalled();
+      expect(tx.registrationFormVersion.findFirst).not.toHaveBeenCalled();
+      expect(tx.attendanceRecord.findFirst).not.toHaveBeenCalled();
+      expect(tx.activityCheckIn.findFirst).not.toHaveBeenCalled();
+    },
+  );
+
   it('creates a minimal first immutable command chain only after all pre-write rereads', async () => {
     const tx = makeTx();
     const { service, audit, insuranceRequirement } = makeService(tx);

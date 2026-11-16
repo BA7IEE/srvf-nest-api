@@ -241,12 +241,13 @@ export class AttendancePunchCommandService {
           input.actionCode === 'check_in'
             ? identity.currentPositionId
             : (checkInEvent?.positionId ?? null);
-        const locationRule = await this.lockLocationRule(
+        const locationRule = await this.lockPunchRule(
           tx,
           input.activityId,
           input.sessionId,
           positionId,
         );
+        this.assertPositionWindow(locationRule, session, input.actionCode, now);
         const location = this.locationPolicy.evaluate({
           required: locationRule.required,
           radiusMeters: locationRule.radiusMeters,
@@ -489,12 +490,13 @@ export class AttendancePunchCommandService {
       input.actionCode === 'check_in'
         ? identity.currentPositionId
         : (checkInEvent?.positionId ?? null);
-    const locationRule = await this.lockLocationRule(
+    const locationRule = await this.lockPunchRule(
       tx,
       input.activityId,
       input.sessionId,
       positionId,
     );
+    this.assertPositionWindow(locationRule, session, input.actionCode, input.deviceTime);
     const location = this.locationPolicy.evaluate({
       required: locationRule.required,
       radiusMeters: locationRule.radiusMeters,
@@ -656,6 +658,11 @@ export class AttendancePunchCommandService {
     if (occurredAt === null || !Number.isFinite(occurredAt.getTime())) {
       throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
     }
+    // A configured future window is not evidence that an imported event has
+    // already happened. Exact replay was resolved above without a new write.
+    if (occurredAt > receivedAt) {
+      throw new BizException(BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW);
+    }
     this.assertSessionWindow(session, input.actionCode, occurredAt);
     const priorEvents = await this.eventsForIdentity(tx, identity.id);
     const projection = this.project(priorEvents, session);
@@ -678,12 +685,13 @@ export class AttendancePunchCommandService {
       input.actionCode === 'check_in'
         ? identity.currentPositionId
         : (checkInEvent?.positionId ?? null);
-    const locationRule = await this.lockLocationRule(
+    const locationRule = await this.lockPunchRule(
       tx,
       input.activityId,
       input.sessionId,
       positionId,
     );
+    this.assertPositionWindow(locationRule, session, input.actionCode, occurredAt);
     const location = this.locationPolicy.evaluate({
       required: locationRule.required,
       radiusMeters: locationRule.radiusMeters,
@@ -1245,25 +1253,37 @@ export class AttendancePunchCommandService {
     };
   }
 
-  private async lockLocationRule(
+  private async lockPunchRule(
     tx: PrismaTx,
     activityId: string,
     sessionId: string,
     positionId: string | null,
-  ): Promise<{ required: boolean; radiusMeters: number | null }> {
+  ): Promise<{
+    required: boolean;
+    radiusMeters: number | null;
+    startAt: Date | null;
+    endAt: Date | null;
+  }> {
     if (positionId === null) {
       const session = await tx.activitySession.findFirst({
         where: { id: sessionId, activityId, deletedAt: null },
         select: { locationRequired: true, radiusMeters: true },
       });
       if (!session) throw new BizException(BizCode.BAD_REQUEST);
-      return { required: session.locationRequired, radiusMeters: session.radiusMeters };
+      return {
+        required: session.locationRequired,
+        radiusMeters: session.radiusMeters,
+        startAt: null,
+        endAt: null,
+      };
     }
     const position = await tx.activitySessionPosition.findFirst({
       where: { id: positionId, activityId, sessionId, deletedAt: null },
       select: {
         locationRequired: true,
         radiusMeters: true,
+        startAt: true,
+        endAt: true,
         session: { select: { locationRequired: true, radiusMeters: true } },
       },
     });
@@ -1271,7 +1291,29 @@ export class AttendancePunchCommandService {
     return {
       required: position.locationRequired ?? position.session.locationRequired,
       radiusMeters: position.radiusMeters ?? position.session.radiusMeters,
+      startAt: position.startAt,
+      endAt: position.endAt,
     };
+  }
+
+  private assertPositionWindow(
+    position: { startAt: Date | null; endAt: Date | null },
+    session: LockedSession,
+    action: SelfAction,
+    now: Date,
+  ): void {
+    // The Activity root lock also serializes position changes. Ordinary punches
+    // use the intersection with the session window already checked above.
+    // An explicit termination checkout deadline preserves the contractual
+    // 30-minute closure window instead of trapping an already-open segment.
+    const terminationCheckout =
+      action === 'check_out' && session.terminationCheckOutDeadline !== null;
+    if (
+      (position.startAt !== null && now < position.startAt) ||
+      (!terminationCheckout && position.endAt !== null && now > position.endAt)
+    ) {
+      throw new BizException(BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW);
+    }
   }
 
   private assertSessionWindow(

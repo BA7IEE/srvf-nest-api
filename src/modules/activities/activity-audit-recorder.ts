@@ -562,36 +562,6 @@ export class ActivityAuditRecorder {
     });
   }
 
-  async logAttendanceDeclaration(args: {
-    activityId: string;
-    actorUserId: string;
-    actorRoleSnap: Role;
-    declaredAt: Date;
-    auditMeta: AuditMeta;
-    tx: PrismaTx;
-  }): Promise<void> {
-    await this.auditLogs.log({
-      event: ACTIVITY_AUDIT_EVENT,
-      actorUserId: args.actorUserId,
-      actorRoleSnap: args.actorRoleSnap,
-      resourceType: AUDIT_RESOURCE_TYPE,
-      resourceId: args.activityId,
-      meta: args.auditMeta,
-      before: {
-        attendanceDeclaredCompleteAt: null,
-        attendanceDeclaredCompleteByUserId: null,
-      },
-      after: {
-        attendanceDeclaredCompleteAt: args.declaredAt,
-        attendanceDeclaredCompleteByUserId: args.actorUserId,
-      },
-      extra: {
-        operation: 'attendance-declare-complete',
-      },
-      tx: args.tx,
-    });
-  }
-
   // ============ P2-14 刀 A:设 / 清封面与图集 ============
   //
   // event 仍是 `'activity.publish'`(本模块 7 类操作共用,沿 batch3 草案 §20.2 A1 的

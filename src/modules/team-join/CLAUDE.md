@@ -4,10 +4,13 @@
 贡献来源切换与保险资格是不同既有配置，不能混为一个开关或另增开关。
 
 - computeContribution/computeCappedContribution必传同一ActivityWorkflowGate与只读账本端口。
-  责任制闸关：approved考勤，北京日封顶3；闸开：仅SUM committed credited delta含冲回/重记，
+  本地退役候选：闸关返20153/503；闸开仅SUM committed credited delta含冲回/重记，
   不叠加旧分、不二次封顶、空账不fallback。cycle.year cutoff/门槛5不变，单人批量同核。
+  readonly不影响已启用读面。
   旧分上线前转换并逐人对账总分/cutoff，生产转换未执行。
-  既有考勤终审通知仍同事务approved前后调用该核，不新建账本提交通知。
+  旧终审已关闭，新结算尚未接入贡献达标通知，不宣称通知已迁移。
+- 贡献结果须有限Decimal；批量恰好覆盖每个去重请求成员，不遗漏或混入其他成员。
+  错误向上传播，合法零值与负净额保留；读取完整性不代表通知接线或DB权限已验证。
 - contribution-ledger-reader只声明语义；TeamJoinModule.register(reader)唯一token注入，
   AppModule唯一组合点传公开LedgerQueryService。
   team-join不直接聚合账本、不反向import实现、不提供旧核或global client默认；批量一次groupBy。

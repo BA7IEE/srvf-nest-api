@@ -4,17 +4,15 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
-import {
-  buildActivityParticipationMetrics,
-  buildOfficialDurationHistogram,
-  type DurationHistogramMetric,
-} from '../activities/activity-participation-metrics';
+import type { DurationHistogramMetric } from '../activities/activity-participation-metrics';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import {
   LedgerQueryService,
+  listParticipationOverviewActivitiesInTx,
+  readPostedParticipationFactsInTx,
+  buildV11ParticipationMetrics,
   eligibleSecondsToServiceHours,
   sumOfficialEligibleSeconds,
-  type OfficialParticipationTimeTotal,
 } from '../activities/ledger-query.service';
 import { AuthzService } from '../authz/authz.service';
 import { OrganizationsService } from '../organizations/organizations.service';
@@ -27,12 +25,29 @@ interface MonthAccumulator {
   activityCount: number;
   completedActivityCount: number;
   participationCount: number;
+  registeredParticipationCount: number;
+  temporaryParticipationCount: number;
+  mixedOriginParticipationCount: number;
+  unknownOriginParticipationCount: number;
+  pendingCount: number;
+  pendingSessionCount: number;
+  otherResultCount: number;
+  durationUnknownCount: number;
   totalServiceHours: Prisma.Decimal;
   officialEligibleSeconds: number;
-  completedPassCount: number;
   completedAttendeeCount: number;
   completedNoShowCount: number;
   durationHistogram: DurationHistogramMetric;
+}
+
+function byActivity<T extends { activityId: string }>(rows: readonly T[]): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const row of rows) {
+    const group = groups.get(row.activityId) ?? [];
+    group.push(row);
+    groups.set(row.activityId, group);
+  }
+  return groups;
 }
 
 @Injectable()
@@ -42,24 +57,17 @@ export class ParticipationOverviewQueryService {
     private readonly authz: AuthzService,
     private readonly organizations: OrganizationsService,
     private readonly ledgerQuery: LedgerQueryService,
-    // 活动 v1.1 cutover gate —— 统计读面取数源的判闸依据(合同 §16.2 单轨第三项)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
   ) {}
-
-  private async readOfficialTime(activityIds: readonly string[]) {
-    return this.prisma.$transaction(
-      (tx) => this.ledgerQuery.readOfficialParticipationTimeTotalsInTx(tx, { activityIds }),
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
-    );
-  }
 
   private async resolveVisibleOrganizationIds(
     currentUser: CurrentUserPayload,
     query: ParticipationOverviewQueryDto,
+    tx: Prisma.TransactionClient,
   ): Promise<string[] | undefined> {
     const [attendanceScope, registrationScope] = await Promise.all([
-      this.authz.getVisibleOrganizationScope(currentUser, 'attendance.read.sheet'),
-      this.authz.getVisibleOrganizationScope(currentUser, 'activity-registration.read.record'),
+      this.authz.getVisibleOrganizationScope(currentUser, 'attendance.read.sheet', tx),
+      this.authz.getVisibleOrganizationScope(currentUser, 'activity-registration.read.record', tx),
     ]);
     if (!attendanceScope.hasPermission || !registrationScope.hasPermission) {
       throw new BizException(BizCode.RBAC_FORBIDDEN);
@@ -81,189 +89,152 @@ export class ParticipationOverviewQueryService {
       query.organizationId === undefined
         ? undefined
         : query.includeDescendants
-          ? await this.organizations.queryDescendantOrgIds(query.organizationId)
+          ? await this.organizations.queryDescendantOrgIds(query.organizationId, tx)
           : [query.organizationId];
     if (requestedIds === undefined) return authorizedIds;
     if (authorizedIds === undefined) return requestedIds;
-
     const requestedSet = new Set(requestedIds);
     return authorizedIds.filter((id) => requestedSet.has(id));
-  }
-
-  /**
-   * 闸开后的取数:逐活动服务时长来自**已 committed 的账本分录**。
-   *
-   * 🔴 **D8 receipt 之前只切「结算量」这一轴**。月度的 `participationCount` /
-   *    `averageAttendanceRate` / `noShowRate` / `durationHistogram` 当时刻意不随闸切换 ——
-   *    闸控范围经拍板收窄为
-   *    「结算真相链」,不含 Session / Participation / Registration;而「参与活动数 /
-   *    记录条数在账本口径下如何定义」是已登记的悬案 D1(维护者明文「不在无数据时
-   *    凭空发明语义」)。D8-2 receipt 存在后仅工时与直方图改读统一 selector，
-   *    participation/no-show 等事实继续不变。
-   */
-  private async loadCommittedServiceHoursByActivity(
-    activityIds: readonly string[],
-  ): Promise<Map<string, Prisma.Decimal>> {
-    const rows = await this.ledgerQuery.sumCommittedByMemberForActivities(activityIds);
-    const byActivity = new Map<string, Prisma.Decimal>();
-    for (const row of rows) {
-      const prev = byActivity.get(row.activityId) ?? new Prisma.Decimal(0);
-      // Decimal 相加是精确的,不经浮点。
-      byActivity.set(row.activityId, prev.add(new Prisma.Decimal(row.serviceHours)));
-    }
-    return byActivity;
   }
 
   async getOverview(
     query: ParticipationOverviewQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<ParticipationOverviewResponseDto> {
-    const organizationIds = await this.resolveVisibleOrganizationIds(currentUser, query);
-    if (organizationIds?.length === 0) return { months: [] };
-
-    const activities = await this.prisma.activity.findMany({
-      where: {
-        deletedAt: null,
-        ...(organizationIds ? { organizationId: { in: organizationIds } } : {}),
-        ...(query.activityTypeCode ? { activityTypeCode: query.activityTypeCode } : {}),
-        ...(query.dateFrom || query.dateTo
-          ? {
-              startAt: {
-                ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
-                ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
-              },
-            }
-          : {}),
-      },
-      select: { id: true, statusCode: true, startAt: true },
-      orderBy: [{ startAt: 'asc' }, { id: 'asc' }],
-    });
-    if (activities.length === 0) return { months: [] };
-
-    const activityIds = activities.map((activity) => activity.id);
-    // registrations/records 仍是两次 IN 批量读取；D8-2 selector 以固定查询数判定 official time。
-    const [registrations, records, officialTime] = await Promise.all([
-      this.prisma.activityRegistration.findMany({
-        where: { activityId: { in: activityIds }, deletedAt: null },
-        select: { id: true, activityId: true, memberId: true, statusCode: true },
-      }),
-      this.prisma.attendanceRecord.findMany({
-        where: {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const organizationIds = await this.resolveVisibleOrganizationIds(currentUser, query, tx);
+        if (organizationIds?.length === 0) return { months: [] };
+        if (this.activityWorkflowGate.participationReadSource() !== 'committed-ledger') {
+          throw new BizException(BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED);
+        }
+        const activities = await listParticipationOverviewActivitiesInTx(tx, {
           deletedAt: null,
-          sheet: { activityId: { in: activityIds }, deletedAt: null },
-        },
-        select: {
-          memberId: true,
-          serviceHours: true,
-          contributionPoints: true,
-          sheet: { select: { activityId: true, statusCode: true } },
-        },
-      }),
-      this.readOfficialTime(activityIds),
-    ]);
-
-    const registrationsByActivity = new Map<string, typeof registrations>();
-    for (const registration of registrations) {
-      const rows = registrationsByActivity.get(registration.activityId) ?? [];
-      rows.push(registration);
-      registrationsByActivity.set(registration.activityId, rows);
-    }
-    const recordsByActivity = new Map<string, typeof records>();
-    for (const record of records) {
-      const rows = recordsByActivity.get(record.sheet.activityId) ?? [];
-      rows.push(record);
-      recordsByActivity.set(record.sheet.activityId, rows);
-    }
-
-    // 取数源由闸决定,不是两套并存(合同 §16.2 第三项)。闸关(默认)= 今天的行为。
-    const committedByActivity =
-      officialTime === null &&
-      this.activityWorkflowGate.participationReadSource() === 'committed-ledger'
-        ? await this.loadCommittedServiceHoursByActivity(activityIds)
-        : null;
-    const officialByActivity = new Map<string, OfficialParticipationTimeTotal[]>();
-    for (const row of officialTime?.totals ?? []) {
-      const rows = officialByActivity.get(row.activityId) ?? [];
-      rows.push(row);
-      officialByActivity.set(row.activityId, rows);
-    }
-
-    const months = new Map<string, MonthAccumulator>();
-    for (const activity of activities) {
-      const metrics = buildActivityParticipationMetrics(
-        activity.statusCode,
-        registrationsByActivity.get(activity.id) ?? [],
-        recordsByActivity.get(activity.id) ?? [],
-      );
-      const month = activity.startAt.toISOString().slice(0, 7);
-      const accumulator = months.get(month) ?? {
-        activityCount: 0,
-        completedActivityCount: 0,
-        participationCount: 0,
-        totalServiceHours: new Prisma.Decimal(0),
-        officialEligibleSeconds: 0,
-        completedPassCount: 0,
-        completedAttendeeCount: 0,
-        completedNoShowCount: 0,
-        durationHistogram: {
-          under2Hours: 0,
-          from2To4Hours: 0,
-          from4To8Hours: 0,
-          atLeast8Hours: 0,
-        },
-      };
-      accumulator.activityCount += 1;
-      accumulator.participationCount += metrics.attendeeCount;
-      const officialRows = officialByActivity.get(activity.id) ?? [];
-      if (officialTime === null) {
-        accumulator.totalServiceHours = accumulator.totalServiceHours.add(
-          committedByActivity === null
-            ? metrics.totalServiceHours
-            : (committedByActivity.get(activity.id) ?? new Prisma.Decimal(0)),
-        );
-      } else {
-        accumulator.officialEligibleSeconds = sumOfficialEligibleSeconds([
-          { eligibleSeconds: accumulator.officialEligibleSeconds },
-          ...officialRows,
+          ...(organizationIds ? { organizationId: { in: organizationIds } } : {}),
+          ...(query.activityTypeCode ? { activityTypeCode: query.activityTypeCode } : {}),
+          ...(query.dateFrom || query.dateTo
+            ? {
+                startAt: {
+                  ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
+                  ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
+                },
+              }
+            : {}),
+        });
+        if (activities.length === 0) return { months: [] };
+        const activityIds = activities.map((activity) => activity.id);
+        const [registrations, facts, ledgerRows, official] = await Promise.all([
+          tx.activityRegistration.findMany({
+            where: { activityId: { in: activityIds }, deletedAt: null },
+            select: { id: true, activityId: true, memberId: true, statusCode: true },
+          }),
+          readPostedParticipationFactsInTx(tx, activityIds),
+          this.ledgerQuery.sumCommittedByMemberForActivities(activityIds, tx),
+          this.ledgerQuery.readOfficialParticipationTimeTotalsInTx(tx, { activityIds }),
         ]);
-      }
-      const histogram =
-        officialTime === null
-          ? metrics.durationHistogram
-          : buildOfficialDurationHistogram(officialRows);
-      accumulator.durationHistogram.under2Hours += histogram.under2Hours;
-      accumulator.durationHistogram.from2To4Hours += histogram.from2To4Hours;
-      accumulator.durationHistogram.from4To8Hours += histogram.from4To8Hours;
-      accumulator.durationHistogram.atLeast8Hours += histogram.atLeast8Hours;
-      if (activity.statusCode === 'completed') {
-        accumulator.completedActivityCount += 1;
-        accumulator.completedPassCount += metrics.registrationCounts.pass;
-        accumulator.completedAttendeeCount += metrics.registeredAttendeeCount;
-        accumulator.completedNoShowCount += metrics.noShowCount;
-      }
-      months.set(month, accumulator);
-    }
-
-    return {
-      months: [...months.entries()].map(([month, value]) => ({
-        month,
-        activityCount: value.activityCount,
-        completedActivityCount: value.completedActivityCount,
-        participationCount: value.participationCount,
-        totalServiceHours:
-          officialTime === null
-            ? value.totalServiceHours.toString()
-            : eligibleSecondsToServiceHours(value.officialEligibleSeconds).toString(),
-        averageAttendanceRate:
-          value.completedPassCount === 0
-            ? 0
-            : Number((value.completedAttendeeCount / value.completedPassCount).toFixed(4)),
-        noShowRate:
-          value.completedPassCount === 0
-            ? 0
-            : Number((value.completedNoShowCount / value.completedPassCount).toFixed(4)),
-        durationHistogram: value.durationHistogram,
-      })),
-    };
+        const registrationGroups = byActivity(registrations);
+        const factGroups = byActivity(facts);
+        const ledgerGroups = byActivity(ledgerRows);
+        const officialGroups = byActivity(official?.totals ?? []);
+        const months = new Map<string, MonthAccumulator>();
+        for (const activity of activities) {
+          const officialRows = officialGroups.get(activity.id) ?? [];
+          const metrics = buildV11ParticipationMetrics({
+            registrations: registrationGroups.get(activity.id) ?? [],
+            facts: factGroups.get(activity.id) ?? [],
+            ledgerRows: ledgerGroups.get(activity.id) ?? [],
+            officialRows: official === null ? null : officialRows,
+          });
+          // Activity.startAt's UTC month remains the grouping key; ledger Beijing dates do not split it.
+          const month = activity.startAt.toISOString().slice(0, 7);
+          const value = months.get(month) ?? {
+            activityCount: 0,
+            completedActivityCount: 0,
+            participationCount: 0,
+            registeredParticipationCount: 0,
+            temporaryParticipationCount: 0,
+            mixedOriginParticipationCount: 0,
+            unknownOriginParticipationCount: 0,
+            pendingCount: 0,
+            pendingSessionCount: 0,
+            otherResultCount: 0,
+            durationUnknownCount: 0,
+            totalServiceHours: new Prisma.Decimal(0),
+            officialEligibleSeconds: 0,
+            completedAttendeeCount: 0,
+            completedNoShowCount: 0,
+            durationHistogram: {
+              under2Hours: 0,
+              from2To4Hours: 0,
+              from4To8Hours: 0,
+              atLeast8Hours: 0,
+            },
+          };
+          value.activityCount += 1;
+          value.participationCount += metrics.attendeeCount;
+          value.registeredParticipationCount += metrics.registeredAttendeeCount;
+          value.temporaryParticipationCount += metrics.temporaryAttendeeCount;
+          value.mixedOriginParticipationCount += metrics.mixedOriginAttendeeCount;
+          value.unknownOriginParticipationCount += metrics.unknownOriginAttendeeCount;
+          value.pendingCount += metrics.pendingCount;
+          value.pendingSessionCount += metrics.pendingSessionCount;
+          value.otherResultCount += metrics.otherResultCount;
+          value.durationUnknownCount += metrics.durationUnknownCount;
+          if (official === null && metrics.totalServiceHours !== null) {
+            value.totalServiceHours = value.totalServiceHours.add(metrics.totalServiceHours);
+          } else if (official !== null) {
+            value.officialEligibleSeconds = sumOfficialEligibleSeconds([
+              { eligibleSeconds: value.officialEligibleSeconds },
+              ...officialRows,
+            ]);
+          }
+          value.durationHistogram.under2Hours += metrics.durationHistogram.under2Hours;
+          value.durationHistogram.from2To4Hours += metrics.durationHistogram.from2To4Hours;
+          value.durationHistogram.from4To8Hours += metrics.durationHistogram.from4To8Hours;
+          value.durationHistogram.atLeast8Hours += metrics.durationHistogram.atLeast8Hours;
+          if (activity.statusCode === 'completed') {
+            value.completedActivityCount += 1;
+            value.completedAttendeeCount += metrics.attendeeCount;
+            value.completedNoShowCount += metrics.noShowCount;
+          }
+          months.set(month, value);
+        }
+        return {
+          months: [...months.entries()].map(([month, value]) => {
+            const denominator = value.completedAttendeeCount + value.completedNoShowCount;
+            return {
+              month,
+              activityCount: value.activityCount,
+              completedActivityCount: value.completedActivityCount,
+              participationCount: value.participationCount,
+              registeredParticipationCount: value.registeredParticipationCount,
+              temporaryParticipationCount: value.temporaryParticipationCount,
+              mixedOriginParticipationCount: value.mixedOriginParticipationCount,
+              unknownOriginParticipationCount: value.unknownOriginParticipationCount,
+              pendingCount: value.pendingCount,
+              pendingSessionCount: value.pendingSessionCount,
+              otherResultCount: value.otherResultCount,
+              durationUnknownCount: value.durationUnknownCount,
+              totalServiceHours:
+                value.durationUnknownCount > 0
+                  ? null
+                  : official === null
+                    ? value.totalServiceHours.toString()
+                    : eligibleSecondsToServiceHours(value.officialEligibleSeconds).toString(),
+              averageAttendanceRate:
+                denominator === 0
+                  ? null
+                  : Number((value.completedAttendeeCount / denominator).toFixed(4)),
+              noShowRate:
+                denominator === 0
+                  ? null
+                  : Number((value.completedNoShowCount / denominator).toFixed(4)),
+              durationHistogram: value.durationHistogram,
+            };
+          }),
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
   }
 }

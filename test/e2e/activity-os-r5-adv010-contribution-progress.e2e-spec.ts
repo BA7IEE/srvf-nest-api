@@ -255,6 +255,22 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
     expect(self.body.data.contributionPoints).toBe(points);
   }
 
+  async function expectProgressUnavailable(who: Candidate, app: INestApplication) {
+    for (const [url, auth] of [
+      [`${ADMIN_APPLICATIONS}/${who.applicationId}`, f.creator.auth],
+      [`${APP_APPLICATIONS}/current`, who.auth],
+    ]) {
+      const response = await request(httpServer(app))
+        .get(url)
+        .set('Authorization', auth)
+        .expect(503);
+      expect(response.body).toMatchObject({
+        code: BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED.code,
+        data: null,
+      });
+    }
+  }
+
   async function expectMemberSummaries(who: Candidate, points: string) {
     for (const url of [
       `/api/admin/v1/members/${who.memberId}/contribution-summary`,
@@ -612,12 +628,12 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
     });
     await expectProgress(who, '0');
     const off = await appWithState(false, false);
-    await expectProgress(who, '3', off);
+    await expectProgressUnavailable(who, off);
     await postE4Ledger(f, await submitE4Time(f, source, await prepareE4Time(f, source)));
     await expectProgress(who, '2');
     const readonly = await appWithState(true, true);
     await expectProgress(who, '2', readonly);
-    await expectProgress(who, '3', off);
+    await expectProgressUnavailable(who, off);
   });
 
   it('applies the exclusive Beijing cycle cutoff on real ledger DATE values on both sides of midnight', async () => {
@@ -688,7 +704,7 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
     ).toBe('0.5');
   });
 
-  it('reconciles real legacy conversion per member for lifetime and cycle cutoff before changing source', async () => {
+  it('reconciles legacy conversion lifetime/cutoff while retired contribution reads stay unavailable', async () => {
     const who = await candidate();
     const legacyIds: string[] = [];
     for (const [start, end] of [
@@ -753,22 +769,23 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
     const readonly = await appWithState(false, true);
     const oldGate = readonly.get(ActivityWorkflowGate),
       newGate = f.app.get(ActivityWorkflowGate);
-    const oldLifetime = await computeCappedContribution(
-      f.db,
-      who.memberId,
-      null,
-      oldGate,
-      LedgerQueryService,
-    );
-    const oldCycle = await computeContribution(
-      f.db,
-      who.memberId,
-      2020,
-      oldGate,
-      LedgerQueryService,
-    );
-    expect(oldLifetime.toString()).toBe('5');
-    expect(oldCycle.points.toString()).toBe('3');
+    await expect(
+      computeCappedContribution(f.db, who.memberId, null, oldGate, LedgerQueryService),
+    ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED });
+    await expect(
+      computeContribution(f.db, who.memberId, 2020, oldGate, LedgerQueryService),
+    ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED });
+    await expectProgressUnavailable(who, readonly);
+    // Independent fixture oracle: March 31 has 2+2 capped to 3; April 1 adds 2.
+    // The retired runtime reader cannot serve as the conversion oracle anymore.
+    const expectedLifetime = '5';
+    const expectedCycle = '3';
+    const legacyTotal = await f.db.attendanceRecord.aggregate({
+      where: { memberId: who.memberId, sheet: { activityId: { in: legacyIds } } },
+      _sum: { contributionPoints: true },
+    });
+    expect(legacyTotal._sum.contributionPoints?.toString()).toBe('6');
+    await expectProgress(who, '0');
     for (const activityId of legacyIds) {
       const result = await readonly
         .get(LegacyLedgerConversionService)
@@ -779,12 +796,12 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
       (
         await computeCappedContribution(f.db, who.memberId, null, newGate, LedgerQueryService)
       ).toString(),
-    ).toBe(oldLifetime.toString());
+    ).toBe(expectedLifetime);
     expect(
       (
         await computeContribution(f.db, who.memberId, 2020, newGate, LedgerQueryService)
       ).points.toString(),
-    ).toBe(oldCycle.points.toString());
+    ).toBe(expectedCycle);
     const count = await f.db.participationLedgerEntry.count();
     for (const activityId of legacyIds)
       expect(
@@ -798,5 +815,6 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
       ).toBe('already-converted');
     expect(await f.db.participationLedgerEntry.count()).toBe(count);
     await expectProgress(who, '5');
+    await expectProgressUnavailable(who, readonly);
   });
 });

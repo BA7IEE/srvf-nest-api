@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { MemberStatus, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import type { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -7,6 +7,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { AuthzService } from '../authz/authz.service';
+import { assertActiveMemberLifecycle } from '../members/member-lifecycle-lock';
 import { RbacService } from '../permissions/rbac.service';
 import { ActivityInvitationAuditRecorder } from './activity-invitation-audit-recorder';
 import { hashActivityInvitationDecline } from './activity-invitation-request-hash';
@@ -93,9 +94,9 @@ export class ActivityInvitationService {
     auditMeta: AuditMeta,
   ): Promise<AppActivityInvitationDto> {
     await this.assertAction(currentUser, 'activity-registration.create.record', activityId);
-    const now = new Date();
+    const requestedAt = new Date();
     const expiresAt = new Date(dto.expiresAt);
-    if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= now.getTime()) {
+    if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= requestedAt.getTime()) {
       throw new BizException(BizCode.BAD_REQUEST);
     }
 
@@ -106,59 +107,70 @@ export class ActivityInvitationService {
     }
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        await this.lockActivity(tx, activityId);
-        await this.assertManagedResponsibility(tx, activityId, currentUser);
-        await this.assertActiveTargetMember(tx, dto.memberId);
-        await this.assertInvitationScope(tx, activityId, sessionId, positionId);
+      return await this.prisma.$transaction(
+        async (tx) => {
+          await this.lockActivity(tx, activityId);
+          await this.assertManagedResponsibility(tx, activityId, currentUser);
+          // Serialize with offboarding after the Activity root lock; use the live status after
+          // waiting, not the status that was visible before another lifecycle transaction committed.
+          await assertActiveMemberLifecycle(tx, dto.memberId);
+          await this.assertInvitationScope(tx, activityId, sessionId, positionId);
 
-        const pending = await this.lockPendingForScope(tx, activityId, dto.memberId, sessionId);
-        const expired = pending.filter(
-          (invitation) => invitation.expiresAt.getTime() <= now.getTime(),
-        );
-        if (expired.length > 0) {
-          await tx.activityInvitation.updateMany({
-            where: { id: { in: expired.map((invitation) => invitation.id) } },
-            data: { statusCode: 'expired' },
-          });
-          for (const invitation of expired) {
-            await this.audit.logInvitationChange({
-              invitation: { ...invitation, statusCode: 'expired' },
-              before: invitation,
-              actorUserId: currentUser.id,
-              actorRoleSnap: currentUser.role,
-              operation: 'expire',
-              auditMeta,
-              tx,
-            });
+          const pending = await this.lockPendingForScope(tx, activityId, dto.memberId, sessionId);
+          // Lock waits can cross either deadline. Re-evaluate both the request and the old
+          // pending invitations at the same post-lock instant before making any changes.
+          const now = new Date();
+          if (expiresAt.getTime() <= now.getTime()) {
+            throw new BizException(BizCode.BAD_REQUEST);
           }
-        }
-        if (pending.some((invitation) => invitation.expiresAt.getTime() > now.getTime())) {
-          throw new BizException(BizCode.ACTIVITY_INVITATION_ALREADY_PENDING);
-        }
+          const expired = pending.filter(
+            (invitation) => invitation.expiresAt.getTime() <= now.getTime(),
+          );
+          if (expired.length > 0) {
+            await tx.activityInvitation.updateMany({
+              where: { id: { in: expired.map((invitation) => invitation.id) } },
+              data: { statusCode: 'expired' },
+            });
+            for (const invitation of expired) {
+              await this.audit.logInvitationChange({
+                invitation: { ...invitation, statusCode: 'expired' },
+                before: invitation,
+                actorUserId: currentUser.id,
+                actorRoleSnap: currentUser.role,
+                operation: 'expire',
+                auditMeta,
+                tx,
+              });
+            }
+          }
+          if (pending.some((invitation) => invitation.expiresAt.getTime() > now.getTime())) {
+            throw new BizException(BizCode.ACTIVITY_INVITATION_ALREADY_PENDING);
+          }
 
-        const created = await tx.activityInvitation.create({
-          data: {
-            activityId,
-            memberId: dto.memberId,
-            sessionId,
-            positionId,
-            statusCode: 'pending',
-            expiresAt,
-            invitedByUserId: currentUser.id,
-          },
-          select: invitationSelect,
-        });
-        await this.audit.logInvitationChange({
-          invitation: created,
-          actorUserId: currentUser.id,
-          actorRoleSnap: currentUser.role,
-          operation: 'create',
-          auditMeta,
-          tx,
-        });
-        return this.toDto(created, now);
-      });
+          const created = await tx.activityInvitation.create({
+            data: {
+              activityId,
+              memberId: dto.memberId,
+              sessionId,
+              positionId,
+              statusCode: 'pending',
+              expiresAt,
+              invitedByUserId: currentUser.id,
+            },
+            select: invitationSelect,
+          });
+          await this.audit.logInvitationChange({
+            invitation: created,
+            actorUserId: currentUser.id,
+            actorRoleSnap: currentUser.role,
+            operation: 'create',
+            auditMeta,
+            tx,
+          });
+          return this.toDto(created, now);
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+      );
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new BizException(BizCode.ACTIVITY_INVITATION_ALREADY_PENDING);
@@ -430,15 +442,6 @@ export class ActivityInvitationService {
       select: { id: true },
     });
     if (activity === null) throw new BizException(BizCode.RBAC_FORBIDDEN);
-  }
-
-  private async assertActiveTargetMember(tx: PrismaTx, memberId: string): Promise<void> {
-    const member = await tx.member.findFirst({
-      where: { id: memberId, deletedAt: null },
-      select: { status: true },
-    });
-    if (member === null) throw new BizException(BizCode.MEMBER_NOT_FOUND);
-    if (member.status !== MemberStatus.ACTIVE) throw new BizException(BizCode.MEMBER_INACTIVE);
   }
 
   private async assertInvitationScope(

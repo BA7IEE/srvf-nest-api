@@ -3,7 +3,8 @@
 活动生命周期归activities，考勤归attendances；本模块不主动维护AttendanceRecord。
 状态只走activity-registration-state-machine：pending→pass/reject、legacy waitlisted→pending、
 pending/waitlisted→reject、pending/pass/waitlisted→cancelled、reject→pending。
-仅pass占容量。allocation已committed/first_come的候补可由取消链在原session+position转pass，
+旧报名容量判据为pass；新版按身份/预留事实，不能由pending表头推断无占位。
+allocation已committed/first_come的候补可由取消链在原session+position转pass，
 不开放手动/跨岗waitlisted→pass或reject→pass，不把新链套给legacy writer。
 
 ## 永久头与命令
@@ -47,6 +48,12 @@ cancelAdmin/cancelMy固定Activity→永久head→全identities，先核current 
 pending/waitlisted/pass才释放position/session/最后activity-person，再追加cancel revisions并CAS清投影。
 cancelled/rejected/not_selected仅空pointer/position/population时noop，
 attended/settled/cancellation_requested/未知20147；人口真变同tx只bump一次populationRevision。
+取消单独允许waitlisted修订保留正序号候补岗位、身份当前占位岗位为空，须核同活动同场次；
+历史无岗位null/null沿旧规则，此例外不扩到驳回/重报/现场参加。
+本次转cancelled的pass identity ID同事务传给递补，旧取消场次不重复当成本次释放；
+混合新旧队列、现场参与与开场交错尚待处理。
+候补个别取消后，后续整批void因当前修订不再等于冻结投影而fail-closed返20147；
+不改历史候选/投影，可执行后续方案及隔离PG验证尚未完成。
 拒绝同核：pending/waitlisted追加rejected，pass先释放三层；header summary=not_selected。
 reopen只coherent rejected→pending/summary=active，cancelled/not_selected空投影noop；
 reject/reopen不追加RegistrationRevision/evidence，漂移整体回滚。
@@ -55,8 +62,9 @@ reject/reopen不追加RegistrationRevision/evidence，漂移整体回滚。
 legacy同样沿revision链关闭；pass/active reservation保留，不复制容量DML。
 approve对cancelled/completed拒20124；reject/cancel刻意可清理残留，不加此闸。
 reopen清reviewedBy/At/Note、不发通知、不要求Member ACTIVE，后续approve必须重验。
-取消经共同assertNoParticipationEvidence依次查live AttendanceRecord/ActivityCheckIn，
-任一有证据21033；不引attendances service、不删历史、不回滚贡献。
+取消/重提经共同assertNoParticipationEvidence，在Activity→Registration锁内查同报名身份的
+任意新版PunchEvent（含void/replace）与committed结算结果（含零值），任一存在21033。
+旧Sheet/GPS不再参与运行时判定；不删历史、不回滚贡献，历史数据拒绝集合与此前不等价。
 截止闸在isPublicRegistration之后，now>deadline才20123，不按北京日取整，不限制approve。
 
 ## 资格、保险与现场
@@ -111,7 +119,9 @@ export静态路由在:id前，现有MyActivities方法级tag例外保留。
 
 通知与业务写/audit同事务，provider在commit后。
 cancelMy标题/收件人快照在claim+证据守卫后读取；仅取消pass通知owner，
-pending/waitlisted取消零通知。正文仅displayName/memberNo，缺任一匿名，不用内部ID。
+pending/waitlisted取消零通知；现场参与可能是pending表头+pass身份，
+真实占位与混合队列仍待闭合，不能据表头声称无占位。
+正文仅displayName/memberNo，缺任一匿名，不用内部ID。
 gate=true只当前ACTIVE owner，缺失fail-closed；gate=false才显式publisher。
 review key绑定registration/reviewedAt/audit序号，其他绑定状态时刻，enqueue失败全回滚。
 按改动跑state/audit、永久头、capacity/allocation、资格/onsite、取消/候补和expiry定向E2E，

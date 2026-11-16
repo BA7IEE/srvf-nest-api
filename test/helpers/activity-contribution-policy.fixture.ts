@@ -1439,15 +1439,19 @@ export async function createE4Source(
   }
   if (options.recognizedServiceHours !== undefined) {
     // Existing independent recognition command: E4 never derives legacy hours from policy points.
-    await fixture.app.get(SettlementDraftService).updateItem({
-      activityId: draft.activityId,
-      participationIdentityId: identity.id,
-      expectedDraftVersion: generated.settlementVersion,
-      resultCode: 'present',
-      recognizedServiceHours: options.recognizedServiceHours,
-      recognizedContributionPoints: 0,
-      reason: '按既有认定合同明确服务小时，贡献值仍由政策证明导出',
-    });
+    await fixture.app.get(SettlementDraftService).updateItem(
+      {
+        activityId: draft.activityId,
+        participationIdentityId: identity.id,
+        expectedDraftVersion: generated.settlementVersion,
+        resultCode: 'present',
+        recognizedServiceHours: options.recognizedServiceHours,
+        recognizedContributionPoints: 0,
+        reason: '按既有认定合同明确服务小时，贡献值仍由政策证明导出',
+      },
+      actor,
+      E4_META,
+    );
     const current = await fixture.db.attendanceSettlementVersion.findFirstOrThrow({
       where: { settlementRunId: generated.settlementRunId, statusCode: 'draft' },
       orderBy: { version: 'desc' },

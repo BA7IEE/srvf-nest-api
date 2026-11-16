@@ -16,20 +16,20 @@ describe('Activity OS 无 AI 业务 Journey（当前基线入口）', () => {
   let runtime: JourneyRuntime;
 
   beforeAll(async () => {
-    runtime = await createJourneyRuntime();
+    runtime = await createJourneyRuntime({ nativeActivities: true });
   });
 
   afterAll(async () => {
     await runtime.close();
   });
 
-  it('无 AI Runtime 时仍可经真实 HTTP 创建、发布、报名、审批并签到', async () => {
+  it('无 AI Runtime 时仍可经真实 HTTP 创建、审核发布、报名分配并打卡', async () => {
     const result = await runActivityRegistrationCheckInJourney(runtime);
 
     expect(result.checkInRegistrationId).toBe(result.registrationId);
     expect(result.replayCheckInId).toBe(result.checkInId);
     expect(result.checkInCount).toBe(1);
-    // 当前生产链尚无 AttendancePunchEvent 写入口；明确保留具名缺口，不把未落地结算伪装成绿。
+    // 本旅程未串联签退与结算；不把独立的结算验证冒充整条旅程已经打通。
     expect(result.knownGap).toBe(JOURNEY_2_KNOWN_GAP);
     expect(result.reviewTrigger).toBe(JOURNEY_2_REVIEW_TRIGGER);
   });

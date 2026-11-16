@@ -4231,7 +4231,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'attendance.create.sheet': {
       displayName: '提交考勤单',
       businessDescription:
-        '给一场活动录一份考勤:谁到了、几点到几点、担任什么角色,交上去等审核。分数不用自己填 —— 系统按「活动类型 + 考勤角色」的算分规则自动算好,没有对应规则的就记 0 分;活动一旦取消就不能再交了。',
+        '旧考勤单提交入口已退役，本码保留用于历史权限配置。新版打卡和结算提交按活动职责及各自的权限判定，授予此码不能恢复旧提交入口。',
       sectionCode: 'activity-participation',
       groupCode: 'attendance',
       sortOrder: 22510,
@@ -4244,7 +4244,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'attendance.delete.sheet': {
       displayName: '删除待审考勤单',
       businessDescription:
-        '把一份还没人审的考勤单连同里面所有到场记录一起撤掉。只有「等一审」的单能删,被退回或已审过的都删不了;删完在后台就找不回来了,只能重新录一份。',
+        '旧待审考勤单删除入口已退役，本码保留用于历史权限配置；不能删除新版打卡、结算或账本事实，也不能恢复旧删除入口。',
       sectionCode: 'activity-participation',
       groupCode: 'attendance',
       sortOrder: 22520,
@@ -4257,7 +4257,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'attendance.read.sheet': {
       displayName: '查看考勤与贡献数据',
       businessDescription:
-        '能看考勤单列表和明细、跨活动的考勤审批工作台、活动的 GPS 打卡证据和评价打分,还有每个队员的考勤记录、服务时长和贡献值累计。这一条开的面比名字看着大得多,给只读岗位时要留意。',
+        '查看授权范围内的结算审核台、版本明细与入账批次，活动和队员的参与账本、服务时长证明、贡献与参与汇总，以及活动评价。部分汇总还要求报名读取权限；关闸时受控汇总明确不可用。旧考勤单、旧 GPS 证据和旧考勤记录入口已退役。',
       sectionCode: 'activity-participation',
       groupCode: 'attendance',
       sortOrder: 22530,
@@ -4270,7 +4270,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'attendance.update.sheet': {
       displayName: '修改并重交考勤单',
       businessDescription:
-        '改一份还没审完的考勤单(等一审的、被退回的都能改),改完还能把退回的单子重新交上去走审核。每次保存都会把原来那批到场记录整批换掉、分数按当前规则重算一遍;活动已取消就不能再动里面的记录。',
+        '旧考勤单编辑和重交入口已退役，本码保留用于历史权限配置。新版打卡更正与结算修订走各自的职责、权限和审核流程，不由此码恢复旧写入。',
       sectionCode: 'activity-participation',
       groupCode: 'attendance',
       sortOrder: 22540,
@@ -4284,7 +4284,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'attendance.approve.sheet': {
       displayName: '考勤一审通过',
       businessDescription:
-        '确认一份考勤单没问题,把它送到终审那一步。这一步贡献值还不算数,要等终审通过才真正记到队员头上;单子里只要有一条记录没算出分就通不过,自己交的单也不能自己审。',
+        '旧考勤单一审通过入口已退役，本码保留用于历史权限配置。新版结算一审使用独立审核权限，仍禁止提交人自审；此码不授予新版审核权。',
       sectionCode: 'activity-participation',
       groupCode: 'attendance-review',
       sortOrder: 23010,
@@ -4297,7 +4297,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'attendance.final-approve.sheet': {
       displayName: '考勤终审通过',
       businessDescription:
-        '确认一场活动的考勤无误。通过之后贡献值才真正记到队员头上,每位队员会收到一条写明本次得分的通知;贡献值刚好跨过入队门槛的人还会多收到一条达标提醒。',
+        '旧考勤单终审通过入口及其通知触发已退役，本码保留用于历史权限配置。新版结算终审与贡献入账分别由当前审核和账本流程负责，此码不能直接生效贡献或触发旧终审通知。',
       sectionCode: 'activity-participation',
       groupCode: 'attendance-review',
       sortOrder: 23020,
@@ -4310,7 +4310,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'attendance.final-reject.sheet': {
       displayName: '考勤终审驳回',
       businessDescription:
-        '判定这份考勤不成立(必须写理由),流程到此为止、一分贡献值都不记。里面的到场记录会一起删掉,而且这份单子之后再也不能改、不能删、不能重交,只能另起一份;系统不会通知提交人。',
+        '旧考勤单终审驳回入口已退役，本码保留用于历史权限配置。不能据此驳回新版结算、删除打卡记录或修改已生效账本。',
       sectionCode: 'activity-participation',
       groupCode: 'attendance-review',
       sortOrder: 23030,
@@ -4323,7 +4323,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'attendance.final-return.sheet': {
       displayName: '考勤终审退回修改',
       businessDescription:
-        '终审时觉得单子还得改,打回给提交人重填(必须写退回原因)。到场记录都留着,提交人和这场活动的考勤责任人会收到带原因的通知,改完要重新走一审、终审两道。',
+        '旧考勤单终审退回入口已退役，本码保留用于历史权限配置。新版结算退回由当前终审职责和独立审核权限控制，此码不恢复旧退回流程或通知。',
       sectionCode: 'activity-participation',
       groupCode: 'attendance-review',
       sortOrder: 23040,
@@ -4336,7 +4336,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'attendance.reject.sheet': {
       displayName: '考勤一审驳回',
       businessDescription:
-        '一审就判这份考勤不成立(必须写理由),贡献值不会产生。单子里的到场记录会跟着一起删掉,这些人这段时间随之腾出来,可以另外交一份新的;系统不会通知提交人,得自己去说一声。',
+        '旧考勤单一审驳回入口已退役，本码保留用于历史权限配置。不能据此驳回新版结算、删除新版参与事实或释放已记录的服务时段。',
       sectionCode: 'activity-participation',
       groupCode: 'attendance-review',
       sortOrder: 23050,
@@ -4349,7 +4349,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'attendance.reopen.sheet': {
       displayName: '撤回已通过的考勤',
       businessDescription:
-        '把一份已经终审通过的考勤打回最初的等一审状态(必须写原因)。队员已经到账的贡献值和考勤记录会立刻消失,要重新走完一审、终审才回来;这一步不发任何通知,已经据此办掉的报名准入、入队晋级也不会跟着退回。',
+        '旧考勤单撤回入口已退役，本码保留用于历史权限配置。新版已生效贡献必须走获批的更正与冲回流程，不能用此码撤销账本或改变已经完成的入队事实。',
       sectionCode: 'activity-participation',
       groupCode: 'attendance-review',
       sortOrder: 23060,
@@ -4362,7 +4362,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'attendance.return.sheet': {
       displayName: '考勤一审退回修改',
       businessDescription:
-        '一审时把单子打回给提交人重填(必须写退回原因)。到场记录都留着,提交人和这场活动的考勤责任人会收到一条带原因的通知,改完重新交上来再走一遍一审、终审。',
+        '旧考勤单一审退回入口已退役，本码保留用于历史权限配置。新版结算退回由当前一审职责和独立审核权限控制，此码不恢复旧退回流程或通知。',
       sectionCode: 'activity-participation',
       groupCode: 'attendance-review',
       sortOrder: 23070,

@@ -18,6 +18,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { ActivitiesController } from './activities.controller';
 import { ActivitiesService } from './activities.service';
+import { ActivityDashboardQueryService } from './activity-dashboard-query.service';
+import { ACTIVITY_DASHBOARD_QUERY } from '../../common/dashboard/activity-dashboard-query.port';
 import { ActivityAccessService } from './activity-access.service';
 import { ActivityStatusCommandService } from './activity-status-command.service';
 import { ActivityWriteService } from './activity-write.service';
@@ -184,6 +186,8 @@ import { ParticipationTimeTruthQueryService } from './participation-time-truth-q
 import { ParticipationTimeProofQueryService } from './participation-time-proof-query.service';
 import { ParticipationTimeProofPresenter } from './participation-time-proof.presenter';
 import { LedgerQueryService } from './ledger-query.service';
+import { AdminParticipationReadService } from './admin-participation-read.service';
+import { ParticipationReadAuditRecorder } from './participation-read-audit-recorder';
 import { LedgerReadyBatchCommitter } from './ledger-ready-batch-committer.service';
 import { ActivityClosureAuditRecorder } from './activity-closure-audit-recorder';
 import { ActivityClosureNotificationProducer } from './activity-closure-notification-producer';
@@ -328,6 +332,8 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityCreationProfessional,
     ActivityCreationEmergency,
     ActivitiesService,
+    ActivityDashboardQueryService,
+    { provide: ACTIVITY_DASHBOARD_QUERY, useExisting: ActivityDashboardQueryService },
     AppMyActivityBatchJobsService,
     ActivityAccessService,
     ActivityCoverService,
@@ -475,6 +481,8 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     LegacyConversionRegistrationHeadService,
     LegacyLedgerConversionService,
     LedgerQueryService,
+    AdminParticipationReadService,
+    ParticipationReadAuditRecorder,
     // 活动改造 v1.1 第 2 批第六刀(合同 §5.15 + §3.26):机器关账。
     //
     // 🔴 关账是"这场活动的账算完了"的唯一权威(合同 §1.2 把它从负责人**声明**
@@ -497,6 +505,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
   ],
   exports: [
     ActivitiesService,
+    ACTIVITY_DASHBOARD_QUERY,
     // E3-2 callers use activity-owned mapping reads, never cross-domain table access.
     ActivityContributionShadowMappingProofQuery,
     ActivityContributionShadowMappingRegistrationService,

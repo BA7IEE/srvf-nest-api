@@ -13,7 +13,8 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { MemberAuditRecorder } from './member-audit-recorder';
-import type { ActivityMemberOffboardImpactService } from '../activities/activity-member-offboard-impact.service';
+import { ActivityMemberOffboardImpactService } from '../activities/activity-member-offboard-impact.service';
+import { ActivityClosurePolicy } from '../activities/activity-closure-policy';
 import type { AuthzService } from '../authz/authz.service';
 import type { PrismaService } from '../../database/prisma.service';
 import type { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
@@ -363,6 +364,69 @@ describe('MembersService member lifecycle authorization closure', () => {
     expect(acquireOpsAdminInvariantLock.mock.invocationCallOrder[0]).toBeLessThan(
       tx.$queryRaw.mock.invocationCallOrder[0],
     );
+  });
+
+  it('recomputes a mixed history and future identity blocker after a clear preview before writes', async () => {
+    const tx = {
+      ...makeLifecycleTx(),
+      activity: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'activity-1',
+            title: 'Multi-session activity',
+            statusCode: 'published',
+            endAt: new Date(Date.now() + 86_400_000),
+            attendanceDeclaredCompleteAt: null,
+            initiatorMemberId: null,
+            publishReviews: [],
+            responsibilityAssignments: [],
+            attendanceSheets: [],
+            registrations: [
+              {
+                id: 'registration-1',
+                statusCode: 'pass',
+                activityCheckIns: [{ id: 'prior-check-in' }],
+                attendanceRecords: [],
+                participationIdentities: [{ id: 'future-identity' }],
+              },
+            ],
+          },
+        ]),
+      },
+    };
+    const prismaMock = {
+      ...makePrisma(tx as unknown as ReturnType<typeof makeTx>),
+      member: { findFirst: jest.fn().mockResolvedValue(ACTIVE_MEMBER) },
+      activity: { findMany: jest.fn().mockResolvedValue([]) },
+    } as unknown as PrismaService;
+    const access = new MemberAccessService(prismaMock, rbacAllow, authzAllow);
+    const impact = new ActivityMemberOffboardImpactService(prismaMock, new ActivityClosurePolicy());
+    const service = new MembersService(
+      access,
+      new MemberAccountService(prismaMock, access, auditNoop, authzAllow, lastAdminProtectionNoop),
+      prismaMock,
+      rbacAllow,
+      authzAllow,
+      lastAdminProtectionNoop,
+      auditNoop,
+      impact,
+      membersQueryStub,
+      audienceTagsConfig,
+    );
+
+    await expect(service.getOffboardImpact('m1', USER)).resolves.toMatchObject({
+      canOffboard: true,
+      futureRegistrations: [],
+    });
+    await expect(service.offboard('m1', USER, META)).rejects.toEqual(
+      new BizException(BizCode.MEMBER_OFFBOARD_REGISTRATION_CLEANUP_REQUIRED),
+    );
+    expect(tx.activity.findMany).toHaveBeenCalledTimes(1);
+    expect(tx.activity.findMany.mock.invocationCallOrder[0]).toBeGreaterThan(
+      tx.$queryRaw.mock.invocationCallOrder[0],
+    );
+    expect(tx.member.update).not.toHaveBeenCalled();
+    expect(tx.user.update).not.toHaveBeenCalled();
   });
 
   it('member account status 不能把 INACTIVE Member 的 linked User 重新启用', async () => {

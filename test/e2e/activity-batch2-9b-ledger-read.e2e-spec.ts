@@ -6,12 +6,15 @@ import { MemberStatus, Role } from '@prisma/client';
 import request from 'supertest';
 
 import { PrismaService } from '../../src/database/prisma.service';
+import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import { AuditLogsService } from '../../src/modules/audit-logs/audit-logs.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
+import { expectBizError } from '../helpers/biz-code.assert';
 
 // ===== 第 2 批第 ⑨b 刀：审核读面 + 账本读面 =====
 //
@@ -330,7 +333,8 @@ describe('第 2 批第 ⑨b 刀 —— 审核与账本读面', () => {
 
     const response = await request(httpServer(app))
       .get(`/api/admin/v1/attendance-settlements/${fixture.versionId}/review-detail`)
-      .set('Authorization', adminAuthHeader);
+      .set('Authorization', adminAuthHeader)
+      .set('User-Agent', 'settlement-review-read');
 
     expect(response.status).toBe(200);
     expect(response.body.data).toMatchObject({
@@ -339,6 +343,51 @@ describe('第 2 批第 ⑨b 刀 —— 审核与账本读面', () => {
       sealRevisions: [expect.objectContaining({ statusCode: 'active', sealRevision: 1 })],
       gaps: expect.any(Array),
     });
+    const audits = await prisma.auditLog.findMany({
+      where: { event: 'attendance-sheet.read.other', resourceId: fixture.versionId },
+    });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      actorUserId: adminUserId,
+      resourceType: 'attendance_settlement_version',
+      context: {
+        requestId: expect.any(String),
+        ua: 'settlement-review-read',
+        extra: { operation: 'settlement-review-detail', count: 1, filterFields: [] },
+      },
+    });
+  });
+
+  it('GET review-detail 审计失败时不返回版本或个人贡献证明', async () => {
+    const fixture = await createLedgerFixture({ batchStatus: 'ready', ledgerDate: '2020-04-20' });
+    const audit = jest
+      .spyOn(app.get(AuditLogsService), 'log')
+      .mockRejectedValueOnce(new Error('review-read-audit-unavailable'));
+    try {
+      const response = await request(httpServer(app))
+        .get(`/api/admin/v1/attendance-settlements/${fixture.versionId}/review-detail`)
+        .set('Authorization', adminAuthHeader);
+      expect(response.status).toBe(500);
+      expect(response.body.data).toBeNull();
+      expect(audit).toHaveBeenCalledTimes(1);
+      expect(
+        await prisma.auditLog.count({
+          where: { event: 'attendance-sheet.read.other', resourceId: fixture.versionId },
+        }),
+      ).toBe(0);
+    } finally {
+      audit.mockRestore();
+    }
+  });
+
+  it('GET review-detail 不存在的版本不记成功读取审计', async () => {
+    const auditCount = await prisma.auditLog.count();
+    const response = await request(httpServer(app))
+      .get('/api/admin/v1/attendance-settlements/absent-version-activity-batch2-9b/review-detail')
+      .set('Authorization', adminAuthHeader);
+    // 版本解析的既有防枚举合同对缺失版本也统一拒绝，不新增 404 侧信道。
+    expectBizError(response, BizCode.RBAC_FORBIDDEN);
+    expect(await prisma.auditLog.count()).toBe(auditCount);
   });
 
   it.each(['preparing', 'ready', 'committed'] as const)(
@@ -573,6 +622,7 @@ describe('第 2 批第 ⑨b 刀 —— 审核与账本读面', () => {
 
   it('四个 Admin 读面均按 attendance.read.sheet 判权，版本与活动探测不泄露存在性', async () => {
     const fixture = await createLedgerFixture({ batchStatus: 'ready', ledgerDate: '2020-07-03' });
+    const auditCount = await prisma.auditLog.count();
 
     const [
       workbench,
@@ -623,20 +673,145 @@ describe('第 2 批第 ⑨b 刀 —— 审核与账本读面', () => {
     expect(detailExisting.body.code).toBe(detailMissing.body.code);
     expect(batchExisting.body.code).toBe(batchMissing.body.code);
     expect(activityExisting.body.code).toBe(activityMissing.body.code);
+    expect(await prisma.auditLog.count()).toBe(auditCount);
   });
 
-  it('三个账本端点的 transport 实现只依赖 LedgerQueryService，不直接访问分录表', () => {
+  it.each(['activity', 'member'] as const)('%s 轴读取审计与拒绝零审计', async (axis) => {
+    const fixture = await createLedgerFixture({
+      batchStatus: 'committed',
+      ledgerDate: '2020-05-01',
+    });
+    const resourceId = axis === 'activity' ? fixture.activityId : fixture.memberId;
+    const base = axis === 'activity' ? 'activities' : 'members';
+    const path = `/api/admin/v1/${base}/${resourceId}/participation-ledger`;
+    const query =
+      axis === 'member'
+        ? { page: 1, pageSize: 1, dateFrom: '2020-05-01', dateTo: '2020-05-02' }
+        : { page: 1, pageSize: 1 };
+    const where = { event: 'attendance-sheet.read.other', resourceId };
+    const before = await prisma.auditLog.count({ where });
+    const response = await request(httpServer(app))
+      .get(path)
+      .query(query)
+      .set('Authorization', adminAuthHeader)
+      .set('X-Request-Id', `ledger-audit-${axis}`)
+      .set('User-Agent', 'ledger-audit-test')
+      .expect(200);
+    expect(response.body.data.total).toBe(2);
+    expect(response.body.data.items).toHaveLength(1);
+    const rows = await prisma.auditLog.findMany({ where });
+    expect(rows).toHaveLength(before + 1);
+    expect(rows[0]).toMatchObject({
+      actorUserId: adminUserId,
+      actorRoleSnap: Role.SUPER_ADMIN,
+      resourceType: axis,
+      resourceId,
+      success: true,
+      context: {
+        requestId: expect.any(String),
+        ua: 'ledger-audit-test',
+        extra: {
+          operation: 'participation-ledger',
+          count: 1,
+          filterFields: axis === 'member' ? ['dateFrom', 'dateTo'] : [],
+        },
+      },
+    });
+    const context = rows[0].context as Record<string, unknown>;
+    expect(context.extra).toEqual({
+      operation: 'participation-ledger',
+      count: 1,
+      filterFields: axis === 'member' ? ['dateFrom', 'dateTo'] : [],
+    });
+    expect(context).not.toHaveProperty('before');
+    expect(context).not.toHaveProperty('after');
+
+    const audit = jest.spyOn(app.get(AuditLogsService), 'log');
+    try {
+      await request(httpServer(app))
+        .get(path)
+        .query(query)
+        .set('Authorization', appAuthHeader)
+        .expect(403);
+      const missing = await request(httpServer(app))
+        .get(`/api/admin/v1/${base}/missing-ledger-subject/participation-ledger`)
+        .query(query)
+        .set('Authorization', adminAuthHeader)
+        .expect(404);
+      expectBizError(
+        missing,
+        axis === 'member' ? BizCode.MEMBER_NOT_FOUND : BizCode.ACTIVITY_NOT_FOUND,
+      );
+      expect(audit).not.toHaveBeenCalled();
+      expect(await prisma.auditLog.count({ where })).toBe(before + 1);
+    } finally {
+      audit.mockRestore();
+    }
+  });
+
+  it.each(['activity', 'member'] as const)('%s 轴审计失败不返回数据', async (axis) => {
+    const fixture = await createLedgerFixture({
+      batchStatus: 'committed',
+      ledgerDate: '2020-05-03',
+    });
+    const resourceId = axis === 'activity' ? fixture.activityId : fixture.memberId;
+    const base = axis === 'activity' ? 'activities' : 'members';
+    const entries = await prisma.participationLedgerEntry.findMany({
+      where: { postingBatchId: fixture.batchId },
+      orderBy: { id: 'asc' },
+    });
+    const auditCount = await prisma.auditLog.count();
+    const audit = jest
+      .spyOn(app.get(AuditLogsService), 'log')
+      .mockRejectedValueOnce(new Error('participation read audit unavailable'));
+    try {
+      const response = await request(httpServer(app))
+        .get(`/api/admin/v1/${base}/${resourceId}/participation-ledger`)
+        .set('Authorization', adminAuthHeader)
+        .expect(500);
+      expect(response.body.data).toBeNull();
+      expect(audit).toHaveBeenCalledTimes(1);
+      expect(await prisma.auditLog.count()).toBe(auditCount);
+      await expect(
+        prisma.participationLedgerEntry.findMany({
+          where: { postingBatchId: fixture.batchId },
+          orderBy: { id: 'asc' },
+        }),
+      ).resolves.toEqual(entries);
+    } finally {
+      audit.mockRestore();
+    }
+  });
+
+  it('App self 账本不写他人读取审计', async () => {
+    const fixture = await createLedgerFixture({
+      batchStatus: 'committed',
+      ledgerDate: '2020-05-04',
+      memberId: appMemberId,
+    });
+    const before = await prisma.auditLog.count();
+    const response = await request(httpServer(app))
+      .get('/api/app/v1/my/participation-ledger')
+      .set('Authorization', appAuthHeader)
+      .expect(200);
+    expect(itemKeys(response)).toEqual(expect.arrayContaining(fixture.entryKeys));
+    expect(await prisma.auditLog.count()).toBe(before);
+  });
+
+  it('账本 transport 与审计编排均无直接分录查询，共享查询端口仍是唯一读取实现', () => {
     const controllerPaths = [
       'src/modules/activities/controllers/app-my-participation-ledger.controller.ts',
       'src/modules/activities/controllers/admin-member-participation-ledger.controller.ts',
       'src/modules/activities/controllers/admin-activity-participation.controller.ts',
+      'src/modules/activities/admin-participation-read.service.ts',
     ];
 
     for (const relativePath of controllerPaths) {
       const source = stripComments(readFileSync(resolve(process.cwd(), relativePath), 'utf8'));
-      expect(source).toContain('LedgerQueryService');
+      expect(source).toMatch(/\b(LedgerQueryService|AdminParticipationReadService)\b/);
       expect(source).not.toMatch(/\bparticipationLedgerEntry\b/);
       expect(source).not.toMatch(/\$queryRaw\b/);
+      expect(source).not.toMatch(/\bPrismaService\b/);
     }
   });
 });

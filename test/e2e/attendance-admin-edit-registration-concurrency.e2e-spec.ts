@@ -2,443 +2,476 @@ import type { INestApplication } from '@nestjs/common';
 import { Prisma, Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
-import { BizException } from '../../src/common/exceptions/biz.exception';
 import { PrismaService } from '../../src/database/prisma.service';
 import { ActivityRegistrationsService } from '../../src/modules/activity-registrations/activity-registrations.service';
-import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
-import { AttendancesService } from '../../src/modules/attendances/attendances.service';
-import type {
-  AttendanceRecordInputDto,
-  UpdateAttendanceSheetDto,
-} from '../../src/modules/attendances/attendances.dto';
-import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
+import { RegistrationCommandService } from '../../src/modules/activity-registrations/registration-command.service';
+import {
+  AttendancePunchCommandService,
+  type ManagedOnlinePunchInput,
+} from '../../src/modules/attendances/attendance-punch-command.service';
+import { createTestUser } from '../fixtures/users.fixture';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
-import { memberIdentityData } from '../helpers/member-identity.fixture';
 
-// 并发审计 K1(A-R1 = B-F1 双确认 · A-Y1 · B-Y1):
-// Admin 面的考勤单写路径此前把 Activity 聚合锁绑在 `managedActivityId !== undefined`
-// 分支里(第七种形状 S7),Admin 分支既不取 Activity 锁、也不认领 registration ——
-// 于是「Admin 编辑考勤单新增一名队员」与「取消该队员的 pass 报名」可以交错成
-// **cancelled 报名 + live 考勤记录**,而这正是 21033 守卫存在的目的。
-//
-// 为什么必须真双连接:被修的缺陷是「读到 registration 是 pass」与「把引用它的 record
-// 写进库」之间的窗口。串行调用走不进那个窗口,mock 里根本没有窗口。
-//
-// 撑开窗口的手法:blocker 占住 `TimeOverlapPolicy.lockMembersForOverlapCheck` 用的
-// **member advisory 锁**(`pg_advisory_xact_lock(hashtext(memberId))`)。
-// 它恰好位于「批量校验读 registration」之后、「createMany 写 record」之前 ——
-// 修复前后 edit 都会走到这里,所以同一个 barrier 对红绿两侧都成立。
-//
-// 每条用例都标注了**修复前**的表现,那是这些断言存在的理由。
-
-const META: AuditMeta = {
-  requestId: 'attendance-admin-edit-registration-concurrency',
-  ip: '127.0.0.1',
-  ua: 'jest/attendance-admin-edit-registration-concurrency',
-};
-// ⚠️ barrier 钉住的是**生产事务**(Prisma 默认 5s 交互事务预算),观测窗必须远小于它。
-// 用例①在窗内等两次(edit 到达 advisory 键 + 取消到达推进点),所以 2×1.2s + edit 自身工作 < 5s。
-// waiter 正常 20-40ms 就出现;等不到就是「锁没取」——那正是我们要的红。
-// 把窗开大反而会让用例在并行负载下以 P2028(事务过期)红,掩盖真正的判据。
+// The retired Admin Sheet edit/delete writers have no compatibility aliases.
+// Preserve their actual concurrency obligations on the managed punch writer:
+// Activity root locking, cancellation rechecks, and immutable correction facts.
+// All barriers below hold real PostgreSQL rows, without mocking business reads.
+const META = { requestId: 'managed-punch-registration-race', ip: null, ua: null };
 const WAIT_TIMEOUT_MS = 1_200;
 const CASE_TIMEOUT_MS = 60_000;
-
-const ACTIVITY_TYPE = 'aaerc-demo';
-const ROLE_MEMBER = 'member';
-const STATUS_PRESENT = 'present';
-
-// 活动窗固定在过去:考勤 record 的 `checkOutAt` 必须 <= 服务端 now(22079),
-// 用未来时间会让整组用例永远拿不到合法 record。过去的日期只会越来越过去,不会腐烂。
-const ACTIVITY_START = new Date('2026-01-02T01:00:00.000Z');
-const ACTIVITY_END = new Date('2026-01-02T09:00:00.000Z');
-
+interface Fixture {
+  activityId: string;
+  sessionId: string;
+  registrationId: string;
+  identityId: string;
+  input: ManagedOnlinePunchInput;
+}
 interface Barrier {
-  ready: Promise<void>;
+  ready: Promise<number>;
   release: () => void;
   done: Promise<void>;
 }
 
-describe('attendance Admin edit(records) × 报名取消 并发(K1 · A-R1/B-F1)', () => {
+describe('Managed punch/correction × registration cancellation — migrated Admin race acceptance', () => {
   let appA: INestApplication;
   let appB: INestApplication;
-  let prismaA: PrismaService;
-  let prismaB: PrismaService;
-  let attendancesB: AttendancesService;
-  let registrationsA: ActivityRegistrationsService;
-  let admin: CurrentUserPayload;
+  let dbA: PrismaService;
+  let dbB: PrismaService;
+  let punches: AttendancePunchCommandService;
+  let registrations: ActivityRegistrationsService;
+  let manager: CurrentUserPayload;
+  let organizationId: string;
+  let sequence = 0;
+  const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
 
-  let activityId: string;
-  let seq = 0;
-
-  /** 等到确实有连接卡在 advisory 锁上 —— sleep 要么不够(假绿)要么太长。 */
-  async function waitForAdvisoryLockWaiter(): Promise<void> {
-    const deadline = Date.now() + WAIT_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      const [row] = await prismaB.$queryRaw<Array<{ n: number }>>(Prisma.sql`
-        SELECT count(*)::int AS n
-        FROM pg_stat_activity
-        WHERE datname = current_database()
-          AND pid <> pg_backend_pid()
-          AND wait_event_type = 'Lock'
-          AND wait_event = 'advisory'
-      `);
-      if ((row?.n ?? 0) >= 1) return;
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    throw new Error('expected at least 1 advisory lock waiter');
-  }
-
-  async function countActivityRowLockWaiters(): Promise<number> {
-    const [row] = await prismaB.$queryRaw<Array<{ n: number }>>(Prisma.sql`
-      SELECT count(*)::int AS n
-      FROM pg_stat_activity
-      WHERE datname = current_database()
-        AND pid <> pg_backend_pid()
-        AND wait_event_type = 'Lock'
-        AND query LIKE '%FROM "Activity"%FOR UPDATE%'
-    `);
-    return row?.n ?? 0;
-  }
-
-  /** 轮询到出现 Activity 行锁 waiter 为止;返回观察到的数量(超时返回 0)。 */
-  async function pollActivityRowLockWaiter(): Promise<number> {
-    const deadline = Date.now() + WAIT_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      const observed = await countActivityRowLockWaiters();
-      if (observed > 0) return observed;
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    return 0;
-  }
-
-  /**
-   * 等到取消操作到达一个**确定性**的推进点:
-   * - 修复前:Admin edit 不持 Activity 锁,取消一路跑完并提交 → `settled`。
-   * - 修复后:Admin edit 无条件持 Activity `FOR UPDATE`,取消卡在该行锁上 → 观察到 waiter。
-   * 两条分支都不靠 sleep;都没到就是环境异常,直接抛。
-   */
-  async function untilSettledOrBlockedOnActivity(pending: Promise<unknown>): Promise<void> {
-    let settled = false;
-    const mark = (): void => {
-      settled = true;
-    };
-    pending.then(mark, mark);
-    const deadline = Date.now() + WAIT_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      if (settled) return;
-      if ((await countActivityRowLockWaiters()) >= 1) return;
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    throw new Error('取消既未完成,也没有卡在 Activity 行锁上');
-  }
-
-  /** 在自己的事务里占住 member advisory 锁,直到调用方放行。 */
-  function holdMemberAdvisoryLock(memberId: string): Barrier {
-    let signalReady!: () => void;
-    let doRelease!: () => void;
-    const ready = new Promise<void>((resolve) => {
-      signalReady = resolve;
+  async function memberUser(name: string, role: Role): Promise<CurrentUserPayload> {
+    const member = await dbA.member.create({
+      data: { memberNo: name, ...memberIdentityData(name), gradeCode: 'level-2' },
     });
-    const gate = new Promise<void>((resolve) => {
-      doRelease = resolve;
-    });
-    const done = prismaA.$transaction(
-      async (tx) => {
-        // ::text 与生产侧 `TimeOverlapPolicy` 同款:Prisma 反序列化不了 `void` 列。
-        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${memberId}))::text AS locked`;
-        signalReady();
-        await gate;
-      },
-      { timeout: 60_000, maxWait: 60_000 },
-    );
-    return { ready, release: () => doRelease(), done };
-  }
-
-  /** 在自己的事务里占住 Activity 行锁,直到调用方放行。 */
-  function holdActivityRowLock(id: string): Barrier {
-    let signalReady!: () => void;
-    let doRelease!: () => void;
-    const ready = new Promise<void>((resolve) => {
-      signalReady = resolve;
-    });
-    const gate = new Promise<void>((resolve) => {
-      doRelease = resolve;
-    });
-    const done = prismaA.$transaction(
-      async (tx) => {
-        await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${id} FOR UPDATE`;
-        signalReady();
-        await gate;
-      },
-      { timeout: 60_000, maxWait: 60_000 },
-    );
-    return { ready, release: () => doRelease(), done };
-  }
-
-  /**
-   * §DoD 全库不变量:任何 live 考勤记录都不得挂在非 pass / 已软删的报名上。
-   * 这正是 `attendances/CLAUDE.md`「禁止留下 cancelled + live record」与
-   * `docs/handoff/admin-web.md:80` 的 21033 承诺所声明的那条不变式。
-   */
-  async function assertNoLiveRecordUnderDeadRegistration(): Promise<void> {
-    const rows = await prismaA.attendanceRecord.findMany({
-      where: {
-        deletedAt: null,
-        registrationId: { not: null },
-        OR: [
-          { registration: { statusCode: { not: 'pass' } } },
-          { registration: { deletedAt: { not: null } } },
-        ],
-      },
-      select: { id: true, registrationId: true },
-    });
-    expect(rows).toEqual([]);
-  }
-
-  async function createMemberWithPassRegistration(): Promise<{
-    memberId: string;
-    registrationId: string;
-  }> {
-    seq += 1;
-    const member = await prismaA.member.create({
-      data: { memberNo: `aaerc-${seq}`, ...memberIdentityData(`并发考勤${seq}`) },
-      select: { id: true },
-    });
-    const registration = await prismaA.activityRegistration.create({
-      data: { activityId, memberId: member.id, statusCode: 'pass' },
-      select: { id: true },
-    });
-    return { memberId: member.id, registrationId: registration.id };
-  }
-
-  function record(memberId: string, registrationId?: string): AttendanceRecordInputDto {
+    const user = await createTestUser(appA, { username: name, role });
+    await dbA.user.update({ where: { id: user.id }, data: { memberId: member.id } });
     return {
-      memberId,
-      roleCode: ROLE_MEMBER,
-      checkInAt: '2026-01-02T02:00:00.000Z',
-      checkOutAt: '2026-01-02T05:00:00.000Z',
-      attendanceStatusCode: STATUS_PRESENT,
-      ...(registrationId === undefined ? {} : { registrationId }),
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      status: UserStatus.ACTIVE,
+      memberId: member.id,
     };
-  }
-
-  /** 直接落一张 pending Sheet + 一条占位 record(留给 edit 去替换)。 */
-  async function createPendingSheet(placeholderMemberId: string): Promise<string> {
-    const sheet = await prismaA.attendanceSheet.create({
-      data: {
-        activityId,
-        submitterUserId: admin.id,
-        lastSubmittedByUserId: admin.id,
-        lastSubmittedAt: new Date(),
-        statusCode: 'pending',
-        version: 1,
-        records: {
-          create: [
-            {
-              memberId: placeholderMemberId,
-              roleCode: ROLE_MEMBER,
-              checkInAt: new Date('2026-01-02T06:00:00.000Z'),
-              checkOutAt: new Date('2026-01-02T07:00:00.000Z'),
-              serviceHours: new Prisma.Decimal(1),
-              attendanceStatusCode: STATUS_PRESENT,
-              contributionPoints: new Prisma.Decimal(0),
-            },
-          ],
-        },
-      },
-      select: { id: true },
-    });
-    return sheet.id;
   }
 
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     appA = await createTestApp();
-    appB = await createTestApp();
     await resetDb(appA);
-    prismaA = appA.get(PrismaService);
-    prismaB = appB.get(PrismaService);
-    attendancesB = appB.get(AttendancesService);
-    registrationsA = appA.get(ActivityRegistrationsService);
-
-    const adminRow = await prismaA.user.create({
-      data: {
-        username: 'aaerc-super-admin',
-        passwordHash: TEST_PASSWORD_HASH,
-        role: Role.SUPER_ADMIN,
-        status: UserStatus.ACTIVE,
-      },
-      select: { id: true, username: true },
-    });
-    admin = {
-      id: adminRow.id,
-      username: adminRow.username,
-      role: Role.SUPER_ADMIN,
-      status: UserStatus.ACTIVE,
-      memberId: null,
-    };
-
-    const organizationId = (
-      await prismaA.organization.create({
-        data: { name: 'AAERC Org', nodeTypeCode: 'team' },
-        select: { id: true },
-      })
-    ).id;
-
-    const roleDict = await prismaA.dictType.create({
-      data: { code: 'attendance_role', label: '考勤角色' },
-      select: { id: true },
-    });
-    await prismaA.dictItem.create({
-      data: { typeId: roleDict.id, code: ROLE_MEMBER, label: '队员' },
-    });
-    const statusDict = await prismaA.dictType.create({
-      data: { code: 'attendance_status', label: '考勤状态' },
-      select: { id: true },
-    });
-    await prismaA.dictItem.create({
-      data: { typeId: statusDict.id, code: STATUS_PRESENT, label: '出勤' },
-    });
-
-    activityId = (
-      await prismaA.activity.create({
-        data: {
-          title: 'AAERC Activity',
-          activityTypeCode: ACTIVITY_TYPE,
-          organizationId,
-          startAt: ACTIVITY_START,
-          endAt: ACTIVITY_END,
-          location: '深圳',
-          statusCode: 'published',
-          isPublicRegistration: true,
-        },
-        select: { id: true },
+    appB = await createTestApp();
+    dbA = appA.get(PrismaService);
+    dbB = appB.get(PrismaService);
+    punches = appB.get(AttendancePunchCommandService);
+    registrations = appA.get(ActivityRegistrationsService);
+    manager = await memberUser('managed-race-manager', Role.SUPER_ADMIN);
+    organizationId = (
+      await dbA.organization.create({
+        data: { name: 'Managed punch race', nodeTypeCode: 'team' },
       })
     ).id;
   });
-
   afterAll(async () => {
-    await Promise.all([appA.close(), appB.close()]);
+    try {
+      const results = await Promise.allSettled([appA?.close(), appB?.close()]);
+      expect(results.every((result) => result.status === 'fulfilled')).toBe(true);
+    } finally {
+      if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
+    }
   });
 
-  it('两个 app 确实是两条独立连接(否则下面的锁等待全是自欺)', async () => {
-    expect(prismaA).not.toBe(prismaB);
+  async function fixture(): Promise<Fixture> {
+    const tag = `managed-race-${++sequence}`;
+    const user = await memberUser(tag, Role.USER);
+    const start = new Date(Date.now() - 3_600_000);
+    const end = new Date(Date.now() + 3_600_000);
+    const activity = await dbA.activity.create({
+      data: {
+        title: tag,
+        activityTypeCode: 'managed-race',
+        organizationId,
+        startAt: start,
+        endAt: end,
+        location: 'race',
+        statusCode: 'published',
+        isPublicRegistration: true,
+        allocationModeCode: 'first_come',
+        capacity: 1,
+        registrationDeadline: end,
+      },
+    });
+    const session = await dbA.activitySession.create({
+      data: {
+        activityId: activity.id,
+        code: tag,
+        name: tag,
+        startAt: start,
+        endAt: end,
+        locationText: 'race',
+        capacity: 1,
+        statusCode: 'scheduled',
+        locationRequired: false,
+        locationPolicySourceCode: 'session',
+        checkInOpenAt: start,
+        checkInCloseAt: end,
+        checkOutOpenAt: start,
+        checkOutCloseAt: end,
+      },
+    });
+    await dbA.activityCapacityBucket.createMany({
+      data: [
+        {
+          activityId: activity.id,
+          scopeTypeCode: 'activity_person',
+          scopeId: activity.id,
+          capacity: 1,
+        },
+        {
+          activityId: activity.id,
+          scopeTypeCode: 'session_participation',
+          scopeId: session.id,
+          capacity: 1,
+        },
+      ],
+    });
+    await dbA.activityEvidenceState.create({ data: { activityId: activity.id } });
+    await dbA.activityResponsibilityAssignment.create({
+      data: {
+        activityId: activity.id,
+        memberId: manager.memberId!,
+        responsibilityType: 'owner',
+        canManageAttendance: true,
+        canManageRegistrations: true,
+        status: 'active',
+        source: 'admin',
+        assignedByUserId: manager.id,
+      },
+    });
+    // Use the real registration command, including coherent revisions and both
+    // reservations; cancellation must exercise the production release path.
+    const registered = await appA.get(RegistrationCommandService).submit(
+      activity.id,
+      {
+        operationKey: `${tag}:register`,
+        formVersion: null,
+        answers: [],
+        preferences: [{ sessionId: session.id, positionIds: [] }],
+      },
+      user,
+      META,
+    );
+    const identity = await dbA.activityParticipationIdentity.findFirstOrThrow({
+      where: { registrationId: registered.registrationId },
+    });
+    expect(identity).toMatchObject({ currentStatusCode: 'pass', populationIncluded: true });
+    return {
+      activityId: activity.id,
+      sessionId: session.id,
+      registrationId: registered.registrationId,
+      identityId: identity.id,
+      input: {
+        activityId: activity.id,
+        sessionId: session.id,
+        participationIdentityId: identity.id,
+        memberCredential: null,
+        actionCode: 'check_in',
+        sourceCode: 'proxy',
+        eventKey: `${tag}:punch`,
+        reason: '人工现场确认',
+        deviceId: null,
+        longitude: null,
+        latitude: null,
+        accuracy: null,
+        currentUser: manager,
+        auditMeta: META,
+      },
+    };
+  }
+
+  function holdRow(
+    table: 'Activity' | 'ActivitySession' | 'ActivityRegistration',
+    id: string,
+  ): Barrier {
+    let acquired!: (pid: number) => void;
+    let failed!: (error: unknown) => void;
+    let release!: () => void;
+    const ready = new Promise<number>((resolve, reject) => {
+      acquired = resolve;
+      failed = reject;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const done = dbA.$transaction(
+      async (tx) => {
+        // table is a closed, test-owned union; the resource id is parameterized.
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id FROM ${Prisma.raw(`"${table}"`)} WHERE id = ${id} FOR UPDATE`,
+        );
+        const [row] = await tx.$queryRaw<
+          Array<{ pid: number }>
+        >`SELECT pg_backend_pid()::int AS pid`;
+        acquired(row.pid);
+        await gate;
+      },
+      { timeout: 60_000, maxWait: 60_000 },
+    );
+    void done.catch(failed);
+    return { ready, release, done };
+  }
+
+  async function waiter(
+    blockerPid: number,
+    pending: Promise<unknown>,
+    table: string,
+  ): Promise<number> {
+    let settled = false;
+    void pending.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    const deadline = Date.now() + WAIT_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      if (settled) throw new Error('Mutation settled before its required row lock wait');
+      const rows = await dbA.$queryRaw<Array<{ pid: number; blockers: number[] }>>(Prisma.sql`
+        SELECT pid, pg_blocking_pids(pid) AS blockers
+        FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock'
+          AND CAST(${blockerPid} AS integer) = ANY(pg_blocking_pids(pid))
+          AND query LIKE ${`%FROM "${table}"%FOR ${table === 'ActivityRegistration' ? 'NO KEY ' : ''}UPDATE%`}
+      `);
+      if (rows.length === 1) {
+        expect(rows[0].pid).not.toBe(blockerPid);
+        expect(rows[0].blockers).toContain(blockerPid);
+        return rows[0].pid;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(`Required ${table} row lock waiter was not observed`);
+  }
+  function cancel(input: Fixture) {
+    return registrations.cancelAdmin(
+      input.activityId,
+      input.registrationId,
+      { cancelReason: '并发取消' },
+      manager,
+      META,
+    );
+  }
+  async function expectNoFactUnderCancelledRegistration() {
+    expect(
+      await dbA.attendancePunchEvent.count({
+        where: {
+          participationIdentity: {
+            registration: { OR: [{ statusCode: { not: 'pass' } }, { deletedAt: { not: null } }] },
+          },
+        },
+      }),
+    ).toBe(0);
+    expect(await dbA.attendanceRecord.count()).toBe(0);
+  }
+
+  it('uses separate application clients and PostgreSQL backends on the same database', async () => {
+    expect(dbA).not.toBe(dbB);
     const [[a], [b]] = await Promise.all([
-      prismaA.$queryRaw<Array<{ pid: number }>>`SELECT pg_backend_pid()::int AS pid`,
-      prismaB.$queryRaw<Array<{ pid: number }>>`SELECT pg_backend_pid()::int AS pid`,
+      dbA.$queryRaw<
+        Array<{ pid: number; db: string }>
+      >`SELECT pg_backend_pid()::int AS pid, current_database() AS db`,
+      dbB.$queryRaw<
+        Array<{ pid: number; db: string }>
+      >`SELECT pg_backend_pid()::int AS pid, current_database() AS db`,
     ]);
-    expect(a?.pid).not.toBe(b?.pid);
+    expect(a.db).toBe(b.db);
+    expect(a.pid).not.toBe(b.pid);
   });
 
   it(
-    'Admin edit 新增队员 vs 取消其 pass 报名:取消必须被 21033 拒,不得留下 cancelled 报名 + live 记录',
+    'managed punch first: cancel waits on its Activity lock, then refuses 21033 without cancellation writes',
     async () => {
-      const placeholder = await createMemberWithPassRegistration();
-      const target = await createMemberWithPassRegistration();
-      const sheetId = await createPendingSheet(placeholder.memberId);
-
-      // barrier 占住 target 的 member advisory 锁 —— edit 读完 registration、写 record 之前
-      // 必然停在这里。
-      const barrier = holdMemberAdvisoryLock(target.memberId);
-      await barrier.ready;
-
-      const dto: UpdateAttendanceSheetDto = {
-        records: [record(target.memberId, target.registrationId)],
-      };
-      const editing = attendancesB.edit(sheetId, dto, admin, META);
-      await waitForAdvisoryLockWaiter();
-
-      // 此刻 edit 已经把 target 的报名读成 pass,但一条 record 都还没落库。
-      const cancelling = registrationsA.cancelAdmin(
-        activityId,
-        target.registrationId,
-        { cancelReason: '并发取消' },
-        admin,
-        META,
-      );
-      await untilSettledOrBlockedOnActivity(cancelling);
-
-      barrier.release();
-      await barrier.done;
-      const [editResult, cancelResult] = await Promise.allSettled([editing, cancelling]);
-
-      // 修复前:edit 既不取 Activity 锁也不认领 registration,取消一路跑完并提交;
-      // edit 醒来后按锁前快照 createMany —— 终局是 cancelled 报名 + live 考勤记录,
-      // 且此后再也取消不掉(21033 反向自锁)。
-      expect(editResult.status).toBe('fulfilled');
-      expect(cancelResult.status).toBe('rejected');
-      const reason = cancelResult.status === 'rejected' ? cancelResult.reason : undefined;
-      expect(reason).toBeInstanceOf(BizException);
-      expect((reason as BizException).biz).toBe(BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE);
-
-      expect(
-        await prismaA.activityRegistration.findUniqueOrThrow({
-          where: { id: target.registrationId },
-          select: { statusCode: true, cancelledAt: true },
-        }),
-      ).toEqual({ statusCode: 'pass', cancelledAt: null });
-      expect(
-        await prismaA.attendanceRecord.count({
-          where: { registrationId: target.registrationId, deletedAt: null },
-        }),
-      ).toBe(1);
-      await assertNoLiveRecordUnderDeadRegistration();
+      const input = await fixture();
+      const auditWhere = { event: 'registration.review', resourceId: input.registrationId };
+      const audits = await dbA.auditLog.findMany({ where: auditWhere, orderBy: { id: 'asc' } });
+      const reservations = await dbA.capacityReservation.findMany({
+        where: { identityId: input.identityId },
+        orderBy: { id: 'asc' },
+      });
+      expect(reservations).toHaveLength(2);
+      const barrier = holdRow('ActivitySession', input.sessionId);
+      const pending: Promise<unknown>[] = [];
+      try {
+        const blocker = await barrier.ready;
+        const writing = punches.managedPunch(input.input);
+        pending.push(writing);
+        const writerPid = await waiter(blocker, writing, 'ActivitySession');
+        const cancelling = cancel(input);
+        pending.push(cancelling);
+        await waiter(writerPid, cancelling, 'Activity');
+        barrier.release();
+        await barrier.done;
+        await writing;
+        await expect(cancelling).rejects.toMatchObject({
+          biz: BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE,
+        });
+        expect(
+          await dbA.activityRegistration.findUniqueOrThrow({
+            where: { id: input.registrationId },
+            select: { statusCode: true, cancelledAt: true },
+          }),
+        ).toEqual({ statusCode: 'pass', cancelledAt: null });
+        expect(
+          await dbA.attendancePunchEvent.count({
+            where: { participationIdentityId: input.identityId },
+          }),
+        ).toBe(1);
+        expect(await dbA.auditLog.findMany({ where: auditWhere, orderBy: { id: 'asc' } })).toEqual(
+          audits,
+        );
+        expect(
+          await dbA.capacityReservation.findMany({
+            where: { identityId: input.identityId },
+            orderBy: { id: 'asc' },
+          }),
+        ).toEqual(reservations);
+        await expectNoFactUnderCancelledRegistration();
+      } finally {
+        barrier.release();
+        await Promise.allSettled([barrier.done, ...pending]);
+      }
     },
     CASE_TIMEOUT_MS,
   );
 
   it(
-    'Admin edit 的 Activity 聚合锁是无条件取的:Activity 行锁被占住时必须等待,而不是径直提交',
+    'managed writes always wait for Activity, even with valid responsibility and identity',
     async () => {
-      const placeholder = await createMemberWithPassRegistration();
-      const target = await createMemberWithPassRegistration();
-      const sheetId = await createPendingSheet(placeholder.memberId);
-
-      const barrier = holdActivityRowLock(activityId);
-      await barrier.ready;
-
-      const dto: UpdateAttendanceSheetDto = {
-        records: [record(target.memberId, target.registrationId)],
-      };
-      const editing = attendancesB.edit(sheetId, dto, admin, META);
-
-      // 修复前:Admin 分支根本不取 Activity 锁,这里等不到任何 waiter → 直接红。
-      const observed = await pollActivityRowLockWaiter();
-      barrier.release();
-      await barrier.done;
-      await editing;
-      expect(observed).toBeGreaterThanOrEqual(1);
+      const input = await fixture();
+      const barrier = holdRow('Activity', input.activityId);
+      const pending: Promise<unknown>[] = [];
+      try {
+        const blocker = await barrier.ready;
+        const writing = punches.managedPunch(input.input);
+        pending.push(writing);
+        await waiter(blocker, writing, 'Activity');
+        expect(
+          await dbA.attendancePunchEvent.count({ where: { activityId: input.activityId } }),
+        ).toBe(0);
+        barrier.release();
+        await barrier.done;
+        await writing;
+        expect(
+          await dbA.attendancePunchEvent.count({ where: { activityId: input.activityId } }),
+        ).toBe(1);
+        await expectNoFactUnderCancelledRegistration();
+      } finally {
+        barrier.release();
+        await Promise.allSettled([barrier.done, ...pending]);
+      }
     },
     CASE_TIMEOUT_MS,
   );
 
   it(
-    'Admin softDelete 同样无条件取 Activity 聚合锁(A-Y1:与 edit/resubmit 三写法收敛为一种)',
+    'native void waits for Activity and appends a correction; it cannot erase evidence to unlock cancellation',
     async () => {
-      const placeholder = await createMemberWithPassRegistration();
-      const sheetId = await createPendingSheet(placeholder.memberId);
+      const input = await fixture();
+      await punches.managedPunch(input.input);
+      const original = await dbA.attendancePunchEvent.findUniqueOrThrow({
+        where: { eventKey: input.input.eventKey },
+      });
+      const barrier = holdRow('Activity', input.activityId);
+      const pending: Promise<unknown>[] = [];
+      try {
+        const blocker = await barrier.ready;
+        const correcting = punches.voidEvent({
+          activityId: input.activityId,
+          eventId: original.id,
+          actionCode: 'void',
+          reason: '现场纠错',
+          operationKey: `${input.input.eventKey}:void`,
+          currentUser: manager,
+          auditMeta: META,
+        });
+        pending.push(correcting);
+        await waiter(blocker, correcting, 'Activity');
+        expect(
+          await dbA.attendancePunchEvent.count({ where: { activityId: input.activityId } }),
+        ).toBe(1);
+        barrier.release();
+        await barrier.done;
+        await correcting;
+        expect(
+          await dbA.attendancePunchEvent.findUniqueOrThrow({ where: { id: original.id } }),
+        ).toEqual(original);
+        expect(
+          await dbA.attendancePunchEvent.findMany({
+            where: { supersedesEventId: original.id },
+            select: { eventTypeCode: true },
+          }),
+        ).toEqual([{ eventTypeCode: 'void' }]);
+        const auditsBeforeCancel = await dbA.auditLog.count();
+        await expect(cancel(input)).rejects.toMatchObject({
+          biz: BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE,
+        });
+        expect(await dbA.auditLog.count()).toBe(auditsBeforeCancel);
+        await expectNoFactUnderCancelledRegistration();
+      } finally {
+        barrier.release();
+        await Promise.allSettled([barrier.done, ...pending]);
+      }
+    },
+    CASE_TIMEOUT_MS,
+  );
 
-      const barrier = holdActivityRowLock(activityId);
-      await barrier.ready;
-
-      const removing = attendancesB.softDelete(sheetId, admin, META);
-
-      // 修复前:softDelete 的 Activity 锁同样只在 managed 分支内,Admin 面裸奔 ——
-      // 于是并发取消可能读到本事务未提交的 live records 而误报 21033。
-      const observed = await pollActivityRowLockWaiter();
-      barrier.release();
-      await barrier.done;
-      await removing;
-      expect(observed).toBeGreaterThanOrEqual(1);
-
-      expect(
-        (
-          await prismaA.attendanceSheet.findUniqueOrThrow({
-            where: { id: sheetId },
-            select: { deletedAt: true },
-          })
-        ).deletedAt,
-      ).not.toBeNull();
+  it(
+    'cancel first: managed punch waits then rechecks cancelled identity, with no event or segment',
+    async () => {
+      const input = await fixture();
+      const barrier = holdRow('ActivityRegistration', input.registrationId);
+      const pending: Promise<unknown>[] = [];
+      try {
+        const blocker = await barrier.ready;
+        const cancelling = cancel(input);
+        pending.push(cancelling);
+        const cancellingPid = await waiter(blocker, cancelling, 'ActivityRegistration');
+        const writing = punches.managedPunch(input.input);
+        pending.push(writing);
+        await waiter(cancellingPid, writing, 'Activity');
+        barrier.release();
+        await barrier.done;
+        await expect(cancelling).resolves.toMatchObject({ statusCode: 'cancelled' });
+        await expect(writing).rejects.toMatchObject({
+          biz: BizCode.ATTENDANCE_REGISTRATION_INVALID,
+        });
+        expect(
+          await dbA.attendancePunchEvent.count({ where: { activityId: input.activityId } }),
+        ).toBe(0);
+        expect(
+          await dbA.participantServiceSegmentRevision.count({
+            where: { participationIdentityId: input.identityId },
+          }),
+        ).toBe(0);
+        expect(
+          await dbA.activityParticipationIdentity.findUniqueOrThrow({
+            where: { id: input.identityId },
+            select: { currentStatusCode: true, populationIncluded: true },
+          }),
+        ).toEqual({ currentStatusCode: 'cancelled', populationIncluded: false });
+        await expectNoFactUnderCancelledRegistration();
+      } finally {
+        barrier.release();
+        await Promise.allSettled([barrier.done, ...pending]);
+      }
     },
     CASE_TIMEOUT_MS,
   );

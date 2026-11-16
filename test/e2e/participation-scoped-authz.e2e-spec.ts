@@ -19,6 +19,7 @@ import {
   grantLegacyActivityActionsToUser,
 } from '../fixtures/biz-admin.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
+import { seedParticipationReadState } from '../fixtures/contribution-ledger.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
@@ -31,29 +32,11 @@ const futureIso = (suffix: string): string => relativeIso(2, suffix);
 import { assertTestDatabaseUrl } from '../setup/test-db';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 
-// 终态 scoped-authz PR12(2026-07-02;冻结稿 §11 PR12+ 逐面迁移第一批;goal「PR12 —
-// 逐面迁移第一批(participation)」):activities / activity-registrations / attendances
-// 三模块 HTTP 面 scoped 生效矩阵 + NOT_FOUND 回退矩阵。角色 / 职务 / policy / 组织树(含 closure)
-// 用**真 seed**(子进程,沿 authz-three-source / attendances-final-review-authz 范式)—— scoped
-// 通路用的是真 seed 的 org-admin(team-leader policy)/ group-manager(group-leader policy)/
-// org-supervisor(分管推导),与生产逐字一致。
-//
-// **本文件只覆盖本刀新增的 scoped 生效面 + NOT_FOUND 回退**(goal DoD 3/4)。既有 GLOBAL 行为锁
-// 由既有 e2e(activities*/activity-registrations*/attendances* 22 个 spec)逐字不改验证,见
-// PR12 报告;本文件零涉及既有 spec 修改。
-//
-// 覆盖:
-//   ①team-leader@SMRT(经 policy→org-admin@TREE):本队活动 update/publish/cancel ALLOW,
-//     他队(SWRT)DENY 30100;本队活动嵌套 registrations 列表+approve ALLOW,他队 DENY;
-//     为本队活动 create attendance-sheet + 一级 approve ALLOW,他队 create DENY
-//   ②group-leader@SMRT-子组(经 policy→group-manager@TREE):本组 sheet 一级 approve ALLOW;
-//     activity.update DENY(角色无码,no_permission)
-//   ③org-supervisor(SupervisionAssignment@SMRT,TREE):分管树内单 sheet read ALLOW
-//     (BD-3 候选码②③关闭依据的活证),树外 DENY out_of_supervised_scope→30100
-//   ④v0.49:扁平跨轴列表按活动组织范围下推;member-axis 按 active PRIMARY 主归属点授权;
-//     GLOBAL 保持全量,有权限但空 scope 返回空集,无码者 30100
-//   ⑤NOT_FOUND 回退(沿 PR9 范式,三模块各一例):GLOBAL 持码者(biz-admin)→ 既有模块 NOT_FOUND
-//     BizCode;无码者(bare USER)→ 30100 防枚举
+// 真实 seed 的职务投影、显式一审绑定与分管派生覆盖三种 scope 来源。
+// 活动/报名仍验证本树允许、树外拒绝及既有资源缺失回退。
+// 旧 Sheet 入口退役；新结算审核/详情/版本列表验证组织范围与零越权写入。
+// member-axis 仅按当前 PRIMARY 主归属授权，不按历史参与活动所属组织裁剪。
+// GLOBAL 全量、空 scope 空集、无码拒绝；新版未知版本统一拒绝以防枚举。
 
 const SEED_ENV = {
   APP_ENV: 'test',
@@ -86,6 +69,7 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
 
   // HTTP 身份
   let teamLeaderAuth: string;
+  let teamLeaderUserId: string;
   let groupLeaderAuth: string;
   let supervisorAuth: string;
   let bizAdminAuth: string;
@@ -96,20 +80,102 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
   // 目标资源
   let smrtActivityId: string; // update/publish/cancel ALLOW 链(draft)
   let swrtActivityId: string; // update/publish/cancel DENY(draft)
-  let smrtActivity2Id: string; // registrations + attendance create 载体(published,SMRT)
-  let swrtActivity2Id: string; // registrations + attendance create 载体(published,SWRT;他队)
-  let groupActivityId: string; // group-leader sheet 载体
+  let smrtActivity2Id: string; // registrations 载体(published,SMRT)
+  let swrtActivity2Id: string; // registrations 载体(published,SWRT;他队)
+  let groupActivityId: string; // group-leader 无 activity.update 权限的反向输入
   let smrtRegId: string; // pending registration @ smrtActivity2
   let swrtRegId: string; // pending registration @ swrtActivity2
-  let smrtSheetId: string; // 直造 sheet @ smrtActivity2(supervisor 树内读)
-  let swrtSheetId: string; // 直造 sheet @ swrtActivity2(supervisor 树外读)
-  let groupSheetId: string; // 直造 sheet @ groupActivity(group-leader approve)
+  let smrtSettlement: Awaited<ReturnType<typeof createSubmittedSettlement>>;
+  let swrtSettlement: Awaited<ReturnType<typeof createSubmittedSettlement>>;
+  let groupSettlement: Awaited<ReturnType<typeof createSubmittedSettlement>>;
+  let groupLedgerVersionId: string;
+  let groupLedgerRegistrationId: string;
+  let outsideLedgerVersionId: string;
+  let outsideLedgerActivityId: string;
   let regTargetMemberId: string;
   let attTargetMemberId: string;
   let groupTargetMemberId: string;
   let crossTargetMemberId: string;
+  const previousWorkflowGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+
+  async function createPastActivity(organizationId: string, title: string) {
+    return prisma.activity.create({
+      data: {
+        title,
+        organizationId,
+        activityTypeCode: 'training',
+        startAt: new Date(pastIso('06-01T01:00:00.000Z')),
+        endAt: new Date(pastIso('06-01T05:00:00.000Z')),
+        location: 'PSA native fixture',
+        statusCode: 'published',
+      },
+    });
+  }
+
+  // 与原生 HTTP 审核边界套件相同的不可变空人口提交输入。
+  // 创建者从一开始就是独立用户，不在审核前改写提交人来绕开人员隔离。
+  async function createSubmittedSettlement(organizationId: string) {
+    const activity = await createPastActivity(organizationId, `PSA review ${organizationId}`);
+    const sealedAt = new Date(pastIso('06-02T00:00:00.000Z'));
+    const seal = await prisma.evidenceSeal.create({
+      data: {
+        activityId: activity.id,
+        sealRevision: 1,
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        allWindowsClosedAt: activity.endAt,
+        openSegmentCount: 0,
+        manualReviewPendingCount: 0,
+        populationCountDistinct: 0,
+        populationCountBySession: {},
+        contentHash: `psa-seal-${activity.id}`,
+        statusCode: 'active',
+        sealedByUserId: bizAdminUserId,
+        sealedAt,
+      },
+    });
+    const run = await prisma.attendanceSettlementRun.create({
+      data: {
+        activityId: activity.id,
+        statusCode: 'pending_first_review',
+        currentSubmittedVersion: 1,
+      },
+    });
+    const version = await prisma.attendanceSettlementVersion.create({
+      data: {
+        settlementRunId: run.id,
+        version: 1,
+        evidenceSealId: seal.id,
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        contentHash: `psa-version-${activity.id}`,
+        personCount: 0,
+        sessionParticipationCount: 0,
+        serviceSegmentCount: 0,
+        createdByUserId: bizAdminUserId,
+        submittedAt: sealedAt,
+        statusCode: 'submitted',
+        operationKey: `psa-submit-${activity.id}`,
+        requestHash: `psa-submit-hash-${activity.id}`,
+      },
+    });
+    return {
+      activityId: activity.id,
+      versionId: version.id,
+      expectation: {
+        evidenceSealId: seal.id,
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        contentHash: version.contentHash,
+      },
+    };
+  }
 
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
     runSeed();
@@ -156,6 +222,7 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
       data: { memberId: teamLeaderMember.id },
     });
     teamLeaderAuth = (await loginAs(app, 'psa-team-leader')).authHeader;
+    teamLeaderUserId = teamLeaderUser.id;
 
     const groupLeaderUser = await createTestUser(app, {
       username: 'psa-group-leader',
@@ -355,64 +422,56 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
       })
     ).id;
 
-    smrtSheetId = (
-      await prisma.attendanceSheet.create({
-        data: {
-          activityId: smrtActivity2Id,
-          submitterUserId: bizAdminUser.id,
-          statusCode: 'pending',
+    smrtSettlement = await createSubmittedSettlement(smrtId);
+    swrtSettlement = await createSubmittedSettlement(swrtId);
+    groupSettlement = await createSubmittedSettlement(groupId);
+
+    // 队员主归属在 SMRT，正式参与发生在 SWRT，专门验证 member-axis 不按历史活动裁剪。
+    const outsideLedgerActivity = await createPastActivity(swrtId, 'PSA outside ledger');
+    outsideLedgerActivityId = outsideLedgerActivity.id;
+    await seedParticipationReadState(prisma, {
+      activityId: outsideLedgerActivityId,
+      actorUserId: bizAdminUserId,
+      participants: [
+        {
+          memberId: attTargetMemberId,
+          resultCode: 'present',
+          serviceHours: '4',
+          creditedPoints: '2',
         },
-        select: { id: true },
-      })
-    ).id;
-    swrtSheetId = (
-      await prisma.attendanceSheet.create({
-        data: {
-          activityId: swrtActivity2Id,
-          submitterUserId: bizAdminUser.id,
-          statusCode: 'pending',
-        },
-        select: { id: true },
-      })
-    ).id;
-    await prisma.attendanceSheet.create({
-      data: {
-        activityId: smrtActivity2Id,
-        submitterUserId: bizAdminUser.id,
-        statusCode: 'approved',
-        records: {
-          create: [
-            {
-              memberId: attTargetMemberId,
-              roleCode: 'member',
-              checkInAt: new Date('2099-06-02T01:00:00.000Z'),
-              checkOutAt: new Date('2099-06-02T05:00:00.000Z'),
-              serviceHours: 4,
-              attendanceStatusCode: 'present',
-              contributionPoints: 2,
-            },
-          ],
-        },
-      },
+      ],
     });
-    groupSheetId = (
-      await prisma.attendanceSheet.create({
-        data: {
-          activityId: groupActivityId,
-          submitterUserId: bizAdminUser.id,
-          statusCode: 'pending',
-          records: {
-            create: [
-              {
-                memberId: groupTargetMemberId,
-                roleCode: 'member',
-                checkInAt: new Date('2099-06-01T01:00:00.000Z'),
-                checkOutAt: new Date('2099-06-01T05:00:00.000Z'),
-                serviceHours: 4,
-                attendanceStatusCode: 'present',
-                contributionPoints: 1,
-              },
-            ],
+    const groupLedgerActivity = await createPastActivity(groupId, 'PSA group ledger');
+    await seedParticipationReadState(prisma, {
+      activityId: groupLedgerActivity.id,
+      actorUserId: bizAdminUserId,
+      participants: [
+        {
+          memberId: groupTargetMemberId,
+          resultCode: 'present',
+          serviceHours: '4',
+          creditedPoints: '1',
+        },
+      ],
+    });
+    outsideLedgerVersionId = (
+      await prisma.attendanceSettlementVersion.findFirstOrThrow({
+        where: { settlementRun: { activityId: outsideLedgerActivityId }, version: 1 },
+        select: { id: true },
+      })
+    ).id;
+    groupLedgerVersionId = (
+      await prisma.attendanceSettlementVersion.findFirstOrThrow({
+        where: { settlementRun: { activityId: groupLedgerActivity.id }, version: 1 },
+        select: { id: true },
+      })
+    ).id;
+    groupLedgerRegistrationId = (
+      await prisma.activityRegistration.findUniqueOrThrow({
+        where: {
+          activityId_memberId: {
+            activityId: groupLedgerActivity.id,
+            memberId: groupTargetMemberId,
           },
         },
         select: { id: true },
@@ -421,7 +480,12 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
   }, 120_000);
 
   afterAll(async () => {
-    await app.close();
+    try {
+      await app?.close();
+    } finally {
+      if (previousWorkflowGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousWorkflowGate;
+    }
   });
 
   // ============ ①team-leader:activity update/publish/cancel(本队 ALLOW / 他队 DENY) ============
@@ -508,71 +572,112 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
       );
     });
 
-    it('为本队活动 create attendance-sheet + 一级 approve ALLOW,为他队活动 create DENY 30100', async () => {
-      const createOwn = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${smrtActivity2Id}/attendance-sheets`)
-        .set('Authorization', teamLeaderAuth)
-        .send({
-          records: [
-            {
-              memberId: attTargetMemberId,
-              roleCode: 'member',
-              checkInAt: pastIso('06-01T01:00:00.000Z'),
-              checkOutAt: pastIso('06-01T05:00:00.000Z'),
-              attendanceStatusCode: 'present',
-            },
-          ],
-        });
-      expect(createOwn.status).toBe(201);
-      const createdSheetId: string = createOwn.body.data.id;
+    it('旧建单退役；职务不隐含新版一审，显式绑定后本树允许、树外零写', async () => {
+      for (const activityId of [smrtActivity2Id, swrtActivity2Id]) {
+        await request(httpServer(app))
+          .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
+          .set('Authorization', teamLeaderAuth)
+          .send({})
+          .expect(404);
+      }
 
-      // 本 case 同时锁 create 与 approve 两个 scope。一审不可审核初次或最近提交人，
-      // 因此在两个动作之间同时调整两项 fixture，避免把人员隔离拒绝误当 scope 失败。
-      await prisma.attendanceSheet.update({
-        where: { id: createdSheetId },
-        data: {
-          submitterUserId: bizAdminUserId,
-          lastSubmittedByUserId: bizAdminUserId,
-        },
+      const beforeGrant = await prisma.attendanceSettlementRun.findUniqueOrThrow({
+        where: { activityId: smrtSettlement.activityId },
       });
-
-      const approveOwn = await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${createdSheetId}/approve`)
-        .set('Authorization', teamLeaderAuth)
-        .send({});
-      expect(approveOwn.status).toBe(200);
-      expect(approveOwn.body.data.statusCode).toBe('pending_final_review');
-
       expectBizError(
         await request(httpServer(app))
-          .post(`/api/admin/v1/activities/${swrtActivity2Id}/attendance-sheets`)
+          .post(`/api/admin/v1/attendance-settlements/${smrtSettlement.versionId}/first-approve`)
           .set('Authorization', teamLeaderAuth)
-          .send({
-            records: [
-              {
-                memberId: attTargetMemberId,
-                roleCode: 'member',
-                checkInAt: pastIso('06-01T01:00:00.000Z'),
-                checkOutAt: pastIso('06-01T05:00:00.000Z'),
-                attendanceStatusCode: 'present',
-              },
-            ],
-          }),
+          .send({ operationKey: 'psa-team-first', ...smrtSettlement.expectation }),
         BizCode.RBAC_FORBIDDEN,
       );
+      await expect(
+        prisma.attendanceSettlementRun.findUniqueOrThrow({
+          where: { activityId: smrtSettlement.activityId },
+        }),
+      ).resolves.toEqual(beforeGrant);
+      expect(
+        await prisma.settlementReviewAction.count({
+          where: { settlementVersionId: smrtSettlement.versionId },
+        }),
+      ).toBe(0);
+      // 原职务/旧动作 grant 不授予新结算一审。只在夹具中明确绑定既有角色，
+      // 继续使用同一登录凭据，验证授权下一请求生效且不扩到其他组织。
+      const reviewerRole = await prisma.rbacRole.findFirstOrThrow({
+        where: { code: 'attendance-first-reviewer', deletedAt: null },
+        select: { id: true },
+      });
+      await prisma.roleBinding.create({
+        data: {
+          principalType: PrincipalType.USER,
+          principalId: teamLeaderUserId,
+          roleId: reviewerRole.id,
+          scopeType: BindingScopeType.ORGANIZATION_TREE,
+          scopeOrgId: smrtId,
+          status: 'ACTIVE',
+          startedAt: PAST_START,
+        },
+      });
+      const approveOwn = await request(httpServer(app))
+        .post(`/api/admin/v1/attendance-settlements/${smrtSettlement.versionId}/first-approve`)
+        .set('Authorization', teamLeaderAuth)
+        .send({ operationKey: 'psa-team-first', ...smrtSettlement.expectation });
+      expect(approveOwn.status).toBe(200);
+      expect(approveOwn.body.data).toMatchObject({
+        stageCode: 'first',
+        actionCode: 'approve',
+        runStatusAfter: 'pending_final_review',
+      });
+      await expect(
+        prisma.attendanceSettlementRun.findUniqueOrThrow({
+          where: { activityId: smrtSettlement.activityId },
+          select: { statusCode: true },
+        }),
+      ).resolves.toEqual({ statusCode: 'pending_final_review' });
+
+      const before = await prisma.attendanceSettlementRun.findUniqueOrThrow({
+        where: { activityId: swrtSettlement.activityId },
+      });
+      expectBizError(
+        await request(httpServer(app))
+          .post(`/api/admin/v1/attendance-settlements/${swrtSettlement.versionId}/first-approve`)
+          .set('Authorization', teamLeaderAuth)
+          .send({ operationKey: 'psa-outside-first', ...swrtSettlement.expectation }),
+        BizCode.RBAC_FORBIDDEN,
+      );
+      await expect(
+        prisma.attendanceSettlementRun.findUniqueOrThrow({
+          where: { activityId: swrtSettlement.activityId },
+        }),
+      ).resolves.toEqual(before);
+      expect(
+        await prisma.settlementReviewAction.count({
+          where: { settlementVersionId: swrtSettlement.versionId },
+        }),
+      ).toBe(0);
     });
   });
 
-  // ============ ②group-leader:本组 sheet approve ALLOW;activity.update DENY(角色无码) ============
+  // ============ ②group-leader:本组结算一审 ALLOW;activity.update DENY(角色无码) ============
 
   describe('②group-leader@SMRT 子组 → group-manager@TREE(子组)', () => {
-    it('本组 sheet 一级 approve → ALLOW', async () => {
+    it('本组原生结算一级审核 → ALLOW', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${groupSheetId}/approve`)
+        .post(`/api/admin/v1/attendance-settlements/${groupSettlement.versionId}/first-approve`)
         .set('Authorization', groupLeaderAuth)
-        .send({});
+        .send({ operationKey: 'psa-group-first', ...groupSettlement.expectation });
       expect(res.status).toBe(200);
-      expect(res.body.data.statusCode).toBe('pending_final_review');
+      expect(res.body.data).toMatchObject({
+        stageCode: 'first',
+        actionCode: 'approve',
+        runStatusAfter: 'pending_final_review',
+      });
+      await expect(
+        prisma.attendanceSettlementRun.findUniqueOrThrow({
+          where: { activityId: groupSettlement.activityId },
+          select: { statusCode: true },
+        }),
+      ).resolves.toEqual({ statusCode: 'pending_final_review' });
     });
 
     it('activity.update → DENY 30100(group-manager 角色不含 activity 写码,no_permission)', async () => {
@@ -586,21 +691,21 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
     });
   });
 
-  // ============ ③org-supervisor:分管树内单 sheet read ALLOW;树外 DENY ============
+  // ============ ③org-supervisor:分管树内结算详情 ALLOW;树外 DENY ============
 
   describe('③org-supervisor(SupervisionAssignment@SMRT,TREE)', () => {
-    it('分管树内(SMRT)单 sheet read → ALLOW(BD-3 候选码②③关闭依据的活证)', async () => {
+    it('分管树内(SMRT)结算版本详情 → ALLOW', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/admin/v1/attendance-sheets/${smrtSheetId}`)
+        .get(`/api/admin/v1/attendance-settlements/${smrtSettlement.versionId}/review-detail`)
         .set('Authorization', supervisorAuth);
       expect(res.status).toBe(200);
-      expect(res.body.data.id).toBe(smrtSheetId);
+      expect(res.body.data.version.id).toBe(smrtSettlement.versionId);
     });
 
-    it('分管树外(SWRT)单 sheet read → DENY 30100(out_of_supervised_scope)', async () => {
+    it('分管树外(SWRT)结算版本详情 → DENY 30100', async () => {
       expectBizError(
         await request(httpServer(app))
-          .get(`/api/admin/v1/attendance-sheets/${swrtSheetId}`)
+          .get(`/api/admin/v1/attendance-settlements/${swrtSettlement.versionId}/review-detail`)
           .set('Authorization', supervisorAuth),
         BizCode.RBAC_FORBIDDEN,
       );
@@ -612,8 +717,12 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
   describe('④v0.49 部门数据范围全面接线(participation 五入口)', () => {
     const idsOf = (res: request.Response): string[] =>
       res.body.data.items.map((item: { id: string }) => item.id);
+    const versionIdsOf = (res: request.Response): string[] =>
+      (res.body.data.items as Array<{ settlementVersionId: string }>).map(
+        (item) => item.settlementVersionId,
+      );
 
-    it('team-leader@SMRT:扁平报名/考勤仅返本树;用户组织筛选与授权范围取交集', async () => {
+    it('team-leader@SMRT:报名/结算仅返本树；报名组织筛选与授权范围取交集', async () => {
       const registrations = await request(httpServer(app))
         .get('/api/admin/v1/registrations')
         .query({ pageSize: 100 })
@@ -629,26 +738,36 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
       expect(crossRegistrations.status).toBe(200);
       expect(crossRegistrations.body.data).toMatchObject({ items: [], total: 0 });
 
-      const sheets = await request(httpServer(app))
-        .get('/api/admin/v1/attendance-sheets')
+      const settlements = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-settlements')
         .query({ pageSize: 100 })
         .set('Authorization', teamLeaderAuth);
-      expect(sheets.status).toBe(200);
-      expect(idsOf(sheets)).toEqual(expect.arrayContaining([smrtSheetId, groupSheetId]));
-      expect(idsOf(sheets)).not.toContain(swrtSheetId);
+      expect(settlements.status).toBe(200);
+      expect(versionIdsOf(settlements).sort()).toEqual(
+        [smrtSettlement.versionId, groupSettlement.versionId, groupLedgerVersionId].sort(),
+      );
+      expect(settlements.body.data.total).toBe(3);
 
-      const exactSmrtSheets = await request(httpServer(app))
-        .get('/api/admin/v1/attendance-sheets')
+      // 结算版本列表没有组织筛选参数，不能把旧 Sheet 的查询能力映射过去。
+      // 仍支持这些参数的报名面继续锁定精确组织/后代范围及交集行为。
+      const exactSmrtRegistrations = await request(httpServer(app))
+        .get('/api/admin/v1/registrations')
         .query({ organizationId: smrtId, pageSize: 100 })
         .set('Authorization', teamLeaderAuth);
-      expect(idsOf(exactSmrtSheets)).toContain(smrtSheetId);
-      expect(idsOf(exactSmrtSheets)).not.toContain(groupSheetId);
+      expect(exactSmrtRegistrations.status).toBe(200);
+      expect(idsOf(exactSmrtRegistrations)).toContain(smrtRegId);
+      expect(idsOf(exactSmrtRegistrations)).not.toContain(groupLedgerRegistrationId);
+      expect(idsOf(exactSmrtRegistrations)).not.toContain(swrtRegId);
 
-      const smrtTreeSheets = await request(httpServer(app))
-        .get('/api/admin/v1/attendance-sheets')
+      const smrtTreeRegistrations = await request(httpServer(app))
+        .get('/api/admin/v1/registrations')
         .query({ organizationId: smrtId, includeDescendants: true, pageSize: 100 })
         .set('Authorization', teamLeaderAuth);
-      expect(idsOf(smrtTreeSheets)).toEqual(expect.arrayContaining([smrtSheetId, groupSheetId]));
+      expect(smrtTreeRegistrations.status).toBe(200);
+      expect(idsOf(smrtTreeRegistrations)).toEqual(
+        expect.arrayContaining([smrtRegId, groupLedgerRegistrationId]),
+      );
+      expect(idsOf(smrtTreeRegistrations)).not.toContain(swrtRegId);
     });
 
     it('分管/组长/GLOBAL/空 scope/no-permission 扁平矩阵', async () => {
@@ -660,13 +779,15 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
       expect(idsOf(supervised)).toContain(smrtRegId);
       expect(idsOf(supervised)).not.toContain(swrtRegId);
 
-      const groupSheets = await request(httpServer(app))
-        .get('/api/admin/v1/attendance-sheets')
+      const groupSettlements = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-settlements')
         .query({ pageSize: 100 })
         .set('Authorization', groupLeaderAuth);
-      expect(groupSheets.status).toBe(200);
-      expect(idsOf(groupSheets)).toContain(groupSheetId);
-      expect(idsOf(groupSheets)).not.toContain(smrtSheetId);
+      expect(groupSettlements.status).toBe(200);
+      expect(versionIdsOf(groupSettlements).sort()).toEqual(
+        [groupSettlement.versionId, groupLedgerVersionId].sort(),
+      );
+      expect(groupSettlements.body.data.total).toBe(2);
 
       const globalRegistrations = await request(httpServer(app))
         .get('/api/admin/v1/registrations')
@@ -674,7 +795,22 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
         .set('Authorization', bizAdminAuth);
       expect(idsOf(globalRegistrations)).toEqual(expect.arrayContaining([smrtRegId, swrtRegId]));
 
-      for (const path of ['/api/admin/v1/registrations', '/api/admin/v1/attendance-sheets']) {
+      const globalSettlements = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-settlements')
+        .set('Authorization', bizAdminAuth);
+      expect(globalSettlements.status).toBe(200);
+      expect(versionIdsOf(globalSettlements).sort()).toEqual(
+        [
+          smrtSettlement.versionId,
+          groupSettlement.versionId,
+          swrtSettlement.versionId,
+          groupLedgerVersionId,
+          outsideLedgerVersionId,
+        ].sort(),
+      );
+      expect(globalSettlements.body.data.total).toBe(5);
+
+      for (const path of ['/api/admin/v1/registrations', '/api/admin/v1/attendance-settlements']) {
         const empty = await request(httpServer(app)).get(path).set('Authorization', emptyScopeAuth);
         expect(empty.status).toBe(200);
         expect(empty.body.data).toMatchObject({ items: [], total: 0 });
@@ -694,12 +830,25 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
       expect(registrations.status).toBe(200);
       expect(idsOf(registrations)).toEqual(expect.arrayContaining([smrtRegId, swrtRegId]));
 
-      const records = await request(httpServer(app))
-        .get(`/api/admin/v1/members/${attTargetMemberId}/attendance-records`)
+      const ledger = await request(httpServer(app))
+        .get(`/api/admin/v1/members/${attTargetMemberId}/participation-ledger`)
         .query({ pageSize: 100 })
         .set('Authorization', teamLeaderAuth);
-      expect(records.status).toBe(200);
-      expect(records.body.data.total).toBe(1);
+      expect(ledger.status).toBe(200);
+      expect(ledger.body.data.total).toBe(2);
+      expect(ledger.body.data.items).toHaveLength(2);
+      expect(ledger.body.data.items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            activityId: outsideLedgerActivityId,
+            entryTypeCode: 'service_credit',
+          }),
+          expect.objectContaining({
+            activityId: outsideLedgerActivityId,
+            entryTypeCode: 'contribution_credit',
+          }),
+        ]),
+      );
 
       const summary = await request(httpServer(app))
         .get(`/api/admin/v1/members/${attTargetMemberId}/contribution-summary`)
@@ -708,10 +857,9 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
       expect(summary.body.data).toEqual({
         memberId: attTargetMemberId,
         contributionPoints: '2',
-        // 第 7 批第 ②-a 刀纯加法新增;本夹具无账本分录,四个值恒 "0"。
         ledgerTotals: {
-          committedServiceHours: '0',
-          committedContributionPoints: '0',
+          committedServiceHours: '4',
+          committedContributionPoints: '2',
           inFlightServiceHours: '0',
           inFlightContributionPoints: '0',
         },
@@ -722,8 +870,9 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
         .set('Authorization', groupLeaderAuth);
       expect(groupSummary.status).toBe(200);
       expect(groupSummary.body.data.memberId).toBe(groupTargetMemberId);
+      expect(groupSummary.body.data.contributionPoints).toBe('1');
 
-      for (const suffix of ['registrations', 'attendance-records', 'contribution-summary']) {
+      for (const suffix of ['registrations', 'participation-ledger', 'contribution-summary']) {
         expectBizError(
           await request(httpServer(app))
             .get(`/api/admin/v1/members/${crossTargetMemberId}/${suffix}`)
@@ -790,19 +939,19 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
       );
     });
 
-    it('attendances.findOne:GLOBAL 持码者 → ATTENDANCE_SHEET_NOT_FOUND;无码者 → 30100', async () => {
-      expectBizError(
+    it('旧详情路由始终404；新版未知版本对 GLOBAL、scoped 与无码用户均防枚举', async () => {
+      for (const auth of [bizAdminAuth, teamLeaderAuth, bareUserAuth]) {
         await request(httpServer(app))
           .get('/api/admin/v1/attendance-sheets/no-such-sheet')
-          .set('Authorization', bizAdminAuth),
-        BizCode.ATTENDANCE_SHEET_NOT_FOUND,
-      );
-      expectBizError(
-        await request(httpServer(app))
-          .get('/api/admin/v1/attendance-sheets/no-such-sheet')
-          .set('Authorization', bareUserAuth),
-        BizCode.RBAC_FORBIDDEN,
-      );
+          .set('Authorization', auth)
+          .expect(404);
+        expectBizError(
+          await request(httpServer(app))
+            .get('/api/admin/v1/attendance-settlements/no-such-version/review-detail')
+            .set('Authorization', auth),
+          BizCode.RBAC_FORBIDDEN,
+        );
+      }
     });
   });
 });

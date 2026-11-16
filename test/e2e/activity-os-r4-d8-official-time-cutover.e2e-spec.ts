@@ -260,9 +260,21 @@ describe('D8-2 official participation time cutover', () => {
         sessionId: draft.sessionId,
         registrationId: registration.id,
         memberId: fixture.creator.memberId,
+        currentRevision: 1,
         currentStatusCode: 'pass',
         currentPositionId: draft.positionId,
         populationIncluded: true,
+      },
+    });
+    await fixture.db.activityParticipationRevision.create({
+      data: {
+        identityId: identity.id,
+        revision: 1,
+        statusCode: 'pass',
+        positionId: draft.positionId,
+        sourceCode: 'admin',
+        effectiveAt: START,
+        createdByUserId: actor.id,
       },
     });
     const events = [];
@@ -546,7 +558,7 @@ describe('D8-2 official participation time cutover', () => {
       expect.objectContaining({
         memberId: fixture.creator.memberId,
         recordCount: 1,
-        approvedRecordCount: 1,
+        postedResultCount: 1,
         totalServiceHours: '0',
       }),
     ]);

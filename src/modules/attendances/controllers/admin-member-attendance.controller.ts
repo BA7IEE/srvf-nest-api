@@ -1,70 +1,33 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
-  ApiWrappedPageResponse,
 } from '../../../common/decorators/api-response.decorator';
 import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../../common/decorators/current-user.decorator';
-import { PageResultDto, PaginationQueryDto } from '../../../common/dto/pagination.dto';
 import { BizCode } from '../../../common/exceptions/biz-code.constant';
-import { AdminMemberAttendanceRecordDto, MemberContributionSummaryDto } from '../attendances.dto';
-import { AttendancesService } from '../attendances.service';
+import { MemberContributionSummaryDto } from '../attendances.dto';
 import { MemberParticipationSummaryDto } from '../participation-summary.dto';
 import { ParticipationSummaryQueryService } from '../participation-summary-query.service';
 import { RequiresPermission } from '../../../common/decorators/route-authz.decorator';
 
-// 跨轴只读 admin controller(2026-06-23;队员/审批跨轴只读查询 goal · 队员 360 Tier3)。
-//
-// admin/v1/members/:memberId 轴下的三个 attendance 派生只读端点(队员 360):
-//   1. GET attendance-records:某队员跨 sheet 考勤记录(仅 approved;复用 attendance-presenter;
-//      item 带 activity 上下文);
-//   2. GET contribution-summary:生涯贡献随单闸选源；闸关旧考勤封顶，闸开 committed credited。
-//   3. GET participation-summary:时长/活动数/记录数 + 同一生涯贡献核，不叠加旧分与账本。
-//
-// 落 admin member 轴(贡献汇总是 attendance 派生读,非 contribution-rules 的 System surface 规则面;
-// 沿 api-surface-policy §9.1)。入口仅全局 JwtAuthGuard,判权下沉 service 层 rbac.can('attendance.read.sheet')
-// (复用现成 read 码,零新码);MEMBER_NOT_FOUND 守卫在 service 层(镜像 admin-member-insurances)。
-// certificates / department / profile / emergency-contacts / insurances 5 子资源已现成,本 goal 不动。
+// Member-axis summary endpoints retain the existing scoped authorization and member checks.
+// Legacy attendance records are retired; the participation ledger remains a separate API.
 
 @ApiTags('Admin - Attendances')
 @ApiBearerAuth()
 @Controller('admin/v1/members/:memberId')
 export class AdminMemberAttendanceController {
-  constructor(
-    private readonly service: AttendancesService,
-    private readonly participationQuery: ParticipationSummaryQueryService,
-  ) {}
-
-  @Get('attendance-records')
-  @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
-  @ApiOperation({
-    summary:
-      '某队员考勤记录(队员 360;分页;仅 approved Sheet 内 records;item 带 activity 上下文;不存在/软删 → MEMBER_NOT_FOUND) [rbac: attendance.read.sheet]',
-  })
-  @ApiWrappedPageResponse(AdminMemberAttendanceRecordDto)
-  @ApiBizErrorResponse(
-    BizCode.BAD_REQUEST,
-    BizCode.UNAUTHORIZED,
-    BizCode.RBAC_FORBIDDEN,
-    BizCode.MEMBER_NOT_FOUND,
-  )
-  attendanceRecords(
-    @Param('memberId') memberId: string,
-    @Query() query: PaginationQueryDto,
-    @CurrentUser() currentUser: CurrentUserPayload,
-  ): Promise<PageResultDto<AdminMemberAttendanceRecordDto>> {
-    return this.service.listRecordsForMemberAdmin(memberId, query, currentUser);
-  }
+  constructor(private readonly participationQuery: ParticipationSummaryQueryService) {}
 
   @Get('contribution-summary')
   @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
-      '某队员生涯贡献汇总(队员 360；闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff；不存在/软删 → MEMBER_NOT_FOUND) [rbac: attendance.read.sheet]',
+      '某队员生涯贡献汇总(队员 360；只取 committed 账本 credited 净额；不叠加、不再封顶；闸关返回 20153/503，无 cutoff；不存在/软删 → MEMBER_NOT_FOUND) [rbac: attendance.read.sheet]',
   })
   @ApiWrappedOkResponse(MemberContributionSummaryDto)
   @ApiBizErrorResponse(
@@ -72,19 +35,20 @@ export class AdminMemberAttendanceController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
+    BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
   )
   contributionSummary(
     @Param('memberId') memberId: string,
     @CurrentUser() currentUser: CurrentUserPayload,
   ): Promise<MemberContributionSummaryDto> {
-    return this.service.getMemberContributionSummary(memberId, currentUser);
+    return this.participationQuery.contributionForMemberAdmin(memberId, currentUser);
   }
 
   @Get('participation-summary')
   @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
-      '某队员参与累计(时长/活动次数/记录数；生涯贡献：闸关按 approved 考勤北京日封顶 3，闸开按 committed 账本已记分；不叠加，无 cutoff；member ref 点判) [rbac: attendance.read.sheet]',
+      '某队员参与累计(时长/活动次数/记录数；生涯贡献：只取 committed 账本 credited 净额；不叠加、不再封顶；闸关返回 20153/503，无 cutoff；member ref 点判) [rbac: attendance.read.sheet]',
   })
   @ApiWrappedOkResponse(MemberParticipationSummaryDto)
   @ApiBizErrorResponse(
@@ -92,6 +56,7 @@ export class AdminMemberAttendanceController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
+    BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
   )
   participationSummary(
     @Param('memberId') memberId: string,

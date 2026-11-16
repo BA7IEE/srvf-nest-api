@@ -6,8 +6,8 @@ import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { BizException } from '../../src/common/exceptions/biz.exception';
 import { PrismaService } from '../../src/database/prisma.service';
 import { SettlementDraftService } from '../../src/modules/activities/settlement-draft.service';
-import { SettlementSubmitAuditRecorder } from '../../src/modules/activities/settlement-submit-audit-recorder';
 import { SettlementSubmitService } from '../../src/modules/activities/settlement-submit.service';
+import { AuditLogsService } from '../../src/modules/audit-logs/audit-logs.service';
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -58,7 +58,6 @@ describe('settlement submit —— 提交不可变版本 (合同 §5.10)', () =>
   let prisma: PrismaService;
   let service: SettlementSubmitService;
   let draftService: SettlementDraftService;
-  let auditRecorder: SettlementSubmitAuditRecorder;
   let actor: CurrentUserPayload;
   let organizationId: string;
   let sequence = 0;
@@ -76,7 +75,6 @@ describe('settlement submit —— 提交不可变版本 (合同 §5.10)', () =>
     prisma = app.get(PrismaService);
     service = app.get(SettlementSubmitService);
     draftService = app.get(SettlementDraftService);
-    auditRecorder = app.get(SettlementSubmitAuditRecorder);
 
     const user = await createTestUser(app, {
       username: 'settlement-submit-actor',
@@ -975,6 +973,244 @@ describe('settlement submit —— 提交不可变版本 (合同 §5.10)', () =>
   // =========================================================================
 
   describe('DoD 8 —— 同事务副作用', () => {
+    // 迁移旧考勤 audit characterization A1/A2：提交审核不能暗改活动生命周期。
+    it.each(['published', 'completed'])('%s 提交不改生命周期', async (statusCode) => {
+      const fixture = await createSubmittable();
+      const activity = await prisma.activity.update({
+        where: { id: fixture.activityId },
+        data: { statusCode },
+      });
+      const draftRows = await prisma.participantSettlementResultRevision.findMany({
+        where: { settlementVersionId: fixture.draftVersionId },
+        orderBy: { id: 'asc' },
+      });
+      const input = submitInput(fixture);
+      const result = await service.submit(input, actor, auditMeta);
+      await expect(
+        prisma.activity.findUniqueOrThrow({
+          where: { id: fixture.activityId },
+        }),
+      ).resolves.toEqual(activity);
+      await expect(
+        prisma.participantSettlementResultRevision.findMany({
+          where: { settlementVersionId: fixture.draftVersionId },
+          orderBy: { id: 'asc' },
+        }),
+      ).resolves.toEqual(draftRows);
+      expect(
+        await prisma.participantSettlementResultRevision.count({
+          where: { settlementVersionId: result.settlementVersionId },
+        }),
+      ).toBe(2);
+      const audits = await prisma.auditLog.findMany({
+        where: { resourceId: fixture.activityId, event: 'activity.publish' },
+      });
+      expect(audits).toHaveLength(1);
+      expect(audits[0]).toMatchObject({
+        actorUserId: actor.id,
+        actorRoleSnap: actor.role,
+        resourceType: 'activity',
+        context: { requestId: auditMeta.requestId },
+      });
+      expect((audits[0].context as { extra: unknown }).extra).toEqual({
+        operation: 'settlement-submit',
+        settlementRunId: fixture.runId,
+        settlementVersionId: result.settlementVersionId,
+        settlementVersion: result.settlementVersion,
+        priorVersionId: null,
+        draftVersionId: fixture.draftVersionId,
+        evidenceSealId: fixture.sealId,
+        sealRevision: 1,
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        personCount: 2,
+        sessionParticipationCount: 2,
+        serviceSegmentCount: 0,
+        resultRowCount: 2,
+        contentHash: result.contentHash,
+        operationKey: input.operationKey,
+        requestHash: input.requestHash,
+        replayed: false,
+      });
+    });
+
+    it('人工认定审计保留前后修订与操作者，不记录自由文本原因', async () => {
+      const fixture = await createSubmittable();
+      await draftService.updateItem(
+        {
+          activityId: fixture.activityId,
+          participationIdentityId: fixture.identityIds[0],
+          expectedDraftVersion: 1,
+          resultCode: 'present',
+          recognizedServiceHours: 3,
+          recognizedContributionPoints: 1,
+          reason: 'private-adjustment-reason',
+        },
+        actor,
+        auditMeta,
+      );
+      const audits = await prisma.auditLog.findMany({
+        where: { resourceId: fixture.activityId, event: 'activity.publish' },
+      });
+      expect(audits).toHaveLength(1);
+      expect(audits[0]).toMatchObject({
+        actorUserId: actor.id,
+        actorRoleSnap: actor.role,
+        resourceType: 'activity',
+        context: {
+          requestId: auditMeta.requestId,
+          before: {
+            revision: 0,
+            resultCode: 'present',
+            recognizedServiceHours: '4',
+            recognizedContributionPoints: '1.5',
+          },
+          after: {
+            revision: 1,
+            resultCode: 'present',
+            recognizedServiceHours: '3',
+            recognizedContributionPoints: '1',
+          },
+          extra: {
+            operation: 'settlement-draft-item-update',
+            settlementVersionId: fixture.draftVersionId,
+            settlementVersion: 1,
+            participationIdentityId: fixture.identityIds[0],
+            adjustmentReasonChanged: true,
+          },
+        },
+      });
+      expect(JSON.stringify(audits[0].context)).not.toContain('private-adjustment-reason');
+    });
+
+    it('人工认定审计失败使草稿结果及所有指针整笔回滚', async () => {
+      const fixture = await createSubmittable();
+      const before = await prisma.attendanceSettlementRun.findUniqueOrThrow({
+        where: { id: fixture.runId },
+        include: {
+          versions: {
+            orderBy: { version: 'asc' },
+            include: { resultRevisions: { orderBy: { id: 'asc' } } },
+          },
+        },
+      });
+      const auditCount = await prisma.auditLog.count();
+      const auditService = app.get(AuditLogsService);
+      const appendAudit = auditService.log.bind(auditService);
+      jest.spyOn(auditService, 'log').mockImplementationOnce(async (input) => {
+        await appendAudit(input);
+        throw new Error('draft-item-audit-failed');
+      });
+      await expect(
+        draftService.updateItem(
+          {
+            activityId: fixture.activityId,
+            participationIdentityId: fixture.identityIds[0],
+            expectedDraftVersion: 1,
+            resultCode: 'present',
+            recognizedServiceHours: 3,
+            recognizedContributionPoints: 1,
+            reason: 'private-adjustment-reason',
+          },
+          actor,
+          auditMeta,
+        ),
+      ).rejects.toThrow('draft-item-audit-failed');
+      await expect(
+        prisma.attendanceSettlementRun.findUniqueOrThrow({
+          where: { id: fixture.runId },
+          include: {
+            versions: {
+              orderBy: { version: 'asc' },
+              include: { resultRevisions: { orderBy: { id: 'asc' } } },
+            },
+          },
+        }),
+      ).resolves.toEqual(before);
+      expect(await prisma.auditLog.count()).toBe(auditCount);
+    });
+
+    // 保留旧 B2 的记录不替换断言；新版认定须显式输入，不把旧空 DTO 当成命令。
+    it('仅改人工认定原因保留结果行和数值，并审计修订变化', async () => {
+      const fixture = await createSubmittable();
+      const before = await prisma.participantSettlementResultRevision.findMany({
+        where: { settlementVersionId: fixture.draftVersionId },
+        orderBy: { id: 'asc' },
+      });
+      await draftService.updateItem(
+        {
+          activityId: fixture.activityId,
+          participationIdentityId: fixture.identityIds[0],
+          expectedDraftVersion: 1,
+          resultCode: 'present',
+          recognizedServiceHours: 4,
+          recognizedContributionPoints: 1.5,
+          reason: 'private-note-only',
+        },
+        actor,
+        auditMeta,
+      );
+      const after = await prisma.participantSettlementResultRevision.findMany({
+        where: { settlementVersionId: fixture.draftVersionId },
+        orderBy: { id: 'asc' },
+      });
+      expect(after.map((row) => row.id)).toEqual(before.map((row) => row.id));
+      for (const [index, row] of after.entries()) {
+        if (row.participationIdentityId === fixture.identityIds[0]) {
+          expect(row).toEqual({
+            ...before[index],
+            revision: before[index].revision + 1,
+            adjustmentReason: 'private-note-only',
+            updatedAt: row.updatedAt,
+          });
+          expect(row.updatedAt.getTime()).toBeGreaterThanOrEqual(before[index].updatedAt.getTime());
+        } else expect(row).toEqual(before[index]);
+      }
+      expect(
+        await prisma.attendanceSettlementVersion.count({
+          where: { settlementRunId: fixture.runId },
+        }),
+      ).toBe(1);
+      const audits = await prisma.auditLog.findMany({ where: { resourceId: fixture.activityId } });
+      expect(audits).toHaveLength(1);
+      expect(audits[0].context).toMatchObject({
+        before: { revision: 0, recognizedServiceHours: '4', recognizedContributionPoints: '1.5' },
+        after: { revision: 1, recognizedServiceHours: '4', recognizedContributionPoints: '1.5' },
+        extra: { operation: 'settlement-draft-item-update', adjustmentReasonChanged: true },
+      });
+      expect(JSON.stringify(audits[0].context)).not.toContain('private-note-only');
+    });
+
+    it('待定项首次人工认定也写同事务审计，无虚构 before 快照', async () => {
+      const fixture = await createSubmittable({ missingResultsFor: 1 });
+      await draftService.updateItem(
+        {
+          activityId: fixture.activityId,
+          participationIdentityId: fixture.identityIds[0],
+          expectedDraftVersion: 1,
+          resultCode: 'absent',
+          recognizedServiceHours: 0,
+          recognizedContributionPoints: 0,
+          reason: '无参与证据',
+        },
+        actor,
+        auditMeta,
+      );
+      expect(
+        await prisma.participantSettlementResultRevision.count({
+          where: { settlementVersionId: fixture.draftVersionId },
+        }),
+      ).toBe(2);
+      const audits = await prisma.auditLog.findMany({ where: { resourceId: fixture.activityId } });
+      expect(audits).toHaveLength(1);
+      expect(audits[0].context).not.toHaveProperty('before');
+      expect(audits[0].context).toMatchObject({
+        after: { revision: 1, resultCode: 'absent', recognizedServiceHours: '0' },
+        extra: { operation: 'settlement-draft-item-update', adjustmentReasonChanged: true },
+      });
+    });
+
     it('提交成功 ⇒ 通知 intent 与 audit 都落下', async () => {
       const fixture = await createSubmittable();
       const result = await service.submit(submitInput(fixture), actor, auditMeta);
@@ -1008,7 +1244,25 @@ describe('settlement submit —— 提交不可变版本 (合同 §5.10)', () =>
     //    若 intent 是 commit 后直调 / 独立事务,它会活下来;在同一事务里,它必须一起回滚。
     it('enqueue 之后的步骤失败 ⇒ intent 与版本一起回滚(证明 intent 在事务内)', async () => {
       const fixture = await createSubmittable();
-      jest.spyOn(auditRecorder, 'log').mockRejectedValueOnce(new Error('boom-after-enqueue'));
+      const before = await prisma.attendanceSettlementRun.findUniqueOrThrow({
+        where: { id: fixture.runId },
+        include: {
+          versions: {
+            orderBy: { version: 'asc' },
+            include: { resultRevisions: { orderBy: { id: 'asc' } } },
+          },
+        },
+      });
+      const activity = await prisma.activity.findUniqueOrThrow({
+        where: { id: fixture.activityId },
+      });
+      const auditBefore = await prisma.auditLog.count();
+      const auditService = app.get(AuditLogsService);
+      const appendAudit = auditService.log.bind(auditService);
+      jest.spyOn(auditService, 'log').mockImplementationOnce(async (input) => {
+        await appendAudit(input);
+        throw new Error('boom-after-enqueue');
+      });
 
       await expect(service.submit(submitInput(fixture), actor, auditMeta)).rejects.toThrow(
         'boom-after-enqueue',
@@ -1027,6 +1281,23 @@ describe('settlement submit —— 提交不可变版本 (合同 §5.10)', () =>
         select: { statusCode: true },
       });
       expect(run.statusCode).toBe('drafting');
+      await expect(
+        prisma.attendanceSettlementRun.findUniqueOrThrow({
+          where: { id: fixture.runId },
+          include: {
+            versions: {
+              orderBy: { version: 'asc' },
+              include: { resultRevisions: { orderBy: { id: 'asc' } } },
+            },
+          },
+        }),
+      ).resolves.toEqual(before);
+      await expect(
+        prisma.activity.findUniqueOrThrow({
+          where: { id: fixture.activityId },
+        }),
+      ).resolves.toEqual(activity);
+      expect(await prisma.auditLog.count()).toBe(auditBefore);
     });
 
     it('没有 active owner 时跳过通知,但**不拒绝提交**(有意的降级)', async () => {

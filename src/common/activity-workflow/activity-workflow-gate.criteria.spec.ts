@@ -411,7 +411,9 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
     it('team-join进入C8读面闭包，calculator继续反向豁免', () => {
       const text = readSource(TEAM_JOIN_PROGRESS);
       expect(text).toContain('contributionPoints');
-      expect(text).toContain('attendanceRecord.findMany');
+      expect(text).not.toContain('attendanceRecord.findMany');
+      expect(text).toContain('sumCommittedCreditedPointsForMemberInTx');
+      expect(text).toContain('sumCommittedCreditedPointsForMembersInTx');
       expect(REVERSE_GATE_MARKERS.some((marker) => TEAM_JOIN_PROGRESS.includes(marker))).toBe(
         false,
       );
@@ -430,8 +432,8 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
           original
             .slice(boundary)
             .replace(
-              'activityWorkflowGate.participationReadSource()',
-              "('approved-attendance' as const)",
+              'assertCommittedContributionSource(activityWorkflowGate);',
+              'void activityWorkflowGate;',
             );
         expect(mutated).not.toBe(original);
         const c8 = runCriteria({ [TEAM_JOIN_PROGRESS]: mutated }).findings.filter(
@@ -469,6 +471,25 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
       );
       expect(c8.some((f) => f.detail.includes('ungatedReader()'))).toBe(true);
       expect(c8.some((f) => f.detail.includes('的 gatedReader()'))).toBe(false);
+    });
+
+    it('新目录中的账本端口读者同样自动进入 C8，不依赖旧表或文件清单', () => {
+      const baseline = runCriteria();
+      const mutated = `${readSource(NEUTRAL_UTIL)}
+        export function nativeContributionReader(reader: any, tx: any, memberId: string) {
+          return reader.sumCommittedCreditedPointsForMemberInTx(tx, memberId, null);
+        }`;
+      const { findings, counts } = runCriteria({ [NEUTRAL_UTIL]: mutated });
+      expect(counts.settlementReadFaces).toBe(baseline.counts.settlementReadFaces + 1);
+      expect(
+        findings.some(
+          (finding) =>
+            finding.criterion === 'C8' &&
+            finding.detail.includes(NEUTRAL_UTIL) &&
+            finding.detail.includes('nativeContributionReader()') &&
+            finding.detail.includes('contributionPoints'),
+        ),
+      ).toBe(true);
     });
 
     it.each([

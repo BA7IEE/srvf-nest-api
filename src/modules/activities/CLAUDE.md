@@ -29,8 +29,9 @@
   assignment与system:activity-responsibility:{assignmentId} binding同事务建/终结，
   只由projector写system-managed角色，通用API含SA不能代写。
   managed活动与报名历史surface分开；draft仅initiator直改，published仅active owner提变更。
-  cancelled优先于声明/考勤，closure=cancelled/null、nextAction=null；
-  completed+已声明+有效Sheet全approved才closed。
+  managed列表/详情不再读旧Sheet；生命周期workflow与结算摘要分离。
+  无权、关闸、写后未请求摘要不能显示为零待办；nextAction=null不代表已关账，
+  workbenchPath不代表操作许可，详情合同见handoff/miniapp。
 
 ## 审核、表单与版本
 
@@ -107,6 +108,11 @@ prepare/commit含replay复用GLOBAL settlement-final-review，
 
 ## 容量、候补与到点
 
+- 离队预检：未删published且尚未结束的活动，pass报名头即使已有旧参与证据，
+  仍核同头未结束scheduled场次的pending/waitlisted/pass身份；存在则保留历史摘要并阻断。
+  hasParticipationEvidence仍只表示旧GPS/考勤，不含新版punch。
+  整单取消可能因其他场次新版打卡返21033；仅有旧签到时取消可能改变历史身份投影。
+  个人逐场取消、软删报名头、并发写方及身份级历史分类仍未闭合，不宣称逐场清理完成。
 - Activity父capacity永为硬上限，岗位只收紧；有效capacity取父与岗位合计交集。
   变容锁Activity后重读全pass/live岗位，同父有限上限内岗位合计不得超；
   岗位容量不另加行锁。活动时间与岗位create/update/delete同根锁，
@@ -150,6 +156,8 @@ HTTP标签gate先身份/权限后503，不影响通用字典/legacy approval，�
 多业务锚表指向同链对象用复合FK，例外须有权威依据；
 schema闭合检查不代替真实PG23503及约束名负例。
 活动岗位字段/参数/relation用activityPositionId/activityPosition，仅URL保留positions段。
-list includeStats用批量groupBy；participation-summary评价复用feedback aggregate，
+list includeStats批量统计未软删报名头；settlementStats.submittedVersionCount仅给有审核台
+GLOBAL读码且在组织范围内的调用者，开闸时只计曾提交、非draft版本。
+participation-summary评价复用feedback aggregate，
 不复制统计核或增加N+1。按改动跑发布/责任并发、父子窗/容量与共享候补、
 Form/V7/资格、模板成果与切换定向验收；契约改动再跑contract。

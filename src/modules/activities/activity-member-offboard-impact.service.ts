@@ -102,6 +102,18 @@ export class ActivityMemberOffboardImpactService {
               take: 1,
               select: { id: true },
             },
+            participationIdentities: {
+              where: {
+                memberId,
+                currentStatusCode: { in: ['pending', 'waitlisted', 'pass'] },
+                // A different session's legacy evidence must not hide a still-open identity.
+                // Include an already-started session until it ends; cancelling it is a separate
+                // operation and may be prohibited by its own evidence/finality checks.
+                session: { deletedAt: null, statusCode: 'scheduled', endAt: { gte: now } },
+              },
+              take: 1,
+              select: { id: true },
+            },
           },
         },
         attendanceSheets: {
@@ -199,7 +211,8 @@ export class ActivityMemberOffboardImpactService {
           activity.endAt.getTime() >= now.getTime() &&
           (registration.statusCode === 'pending' ||
             registration.statusCode === 'waitlisted' ||
-            (registration.statusCode === 'pass' && !hasParticipationEvidence))
+            (registration.statusCode === 'pass' &&
+              (!hasParticipationEvidence || registration.participationIdentities.length > 0)))
         ) {
           futureRegistrations.push(summary);
         }

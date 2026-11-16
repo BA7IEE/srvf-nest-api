@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import type { AppManagedActivityClosureDto } from './dto/app/app-managed-activity.dto';
 
 export type ActivityAttendanceWorkflowCounts = {
   total: number;
@@ -17,7 +16,22 @@ export type ActivityClosureInput = {
   attendance: ActivityAttendanceWorkflowCounts;
 };
 
-export type ActivityClosureDecision = Pick<AppManagedActivityClosureDto, 'status' | 'nextAction'>;
+// Legacy policy remains in use by member-offboarding until that protection is
+// migrated separately. Its internal decisions are no longer an App response DTO.
+export type ActivityClosureDecision = {
+  status:
+    | 'draft'
+    | 'publish-review-pending'
+    | 'published'
+    | 'cancelled'
+    | 'waiting-attendance-declaration'
+    | 'attendance-first-review'
+    | 'attendance-returned'
+    | 'attendance-final-review'
+    | 'closed'
+    | 'archived';
+  nextAction: string | null;
+};
 
 @Injectable()
 export class ActivityClosurePolicy {

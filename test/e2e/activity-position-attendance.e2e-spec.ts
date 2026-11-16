@@ -1,227 +1,380 @@
 import type { INestApplication } from '@nestjs/common';
-import { MemberStatus, Role } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { Role } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
+import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import type { JwtConfig } from '../../src/config/jwt.config';
 import { PrismaService } from '../../src/database/prisma.service';
+import { EvidenceSealService } from '../../src/modules/activities/evidence-seal.service';
+import { AttendancePunchCommandService } from '../../src/modules/attendances/attendance-punch-command.service';
+import {
+  digestAttendanceQrToken,
+  signAttendanceQrToken,
+} from '../../src/modules/attendances/attendance-qr-token';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
-import { memberIdentityData } from '../helpers/member-identity.fixture';
 
-describe('ActivityPosition attendance wiring (F4)', () => {
+// Preserve position-window and role-prefill acceptance on native facts.
+// Native missing checkout is unresolved: it must not be invented from endAt.
+const BASE = new Date('2020-07-01T00:00:00Z');
+const at = (hours: number) => new Date(BASE.getTime() + hours * 3_600_000);
+const META = { requestId: 'native-position-acceptance', ip: null, ua: null };
+type Action = 'check_in' | 'check_out';
+interface Fixture {
+  activityId: string;
+  activityTypeCode: string;
+  sessionId: string;
+  positionId: string;
+  identityId: string;
+  tokens: Record<Action, string>;
+}
+
+describe('Native position attendance wiring — migrated F4 acceptance', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let adminAuth: string;
-  let appAuth: string;
-  let activityId: string;
-  let activityPositionId: string;
-  let registrationId: string;
-  let memberId: string;
-  let now: Date;
-  let activityPositionEndAt: Date;
+  let owner: CurrentUserPayload;
+  let ownerAuth: string;
+  let participantId: string;
+  let participantAuth: string;
+  let organizationId: string;
+  let sequence = 0;
+  const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
 
-  const checkInPath = (): string => `/api/app/v1/my/activities/${activityId}/check-in`;
-  const draftPath = (): string => `/api/admin/v1/activities/${activityId}/attendance-sheet-draft`;
-  const sheetsPath = (): string => `/api/admin/v1/activities/${activityId}/attendance-sheets`;
-
+  function clock(hours: number) {
+    jest.useFakeTimers({
+      doNotFake: [
+        'hrtime',
+        'nextTick',
+        'performance',
+        'queueMicrotask',
+        'setImmediate',
+        'clearImmediate',
+        'setInterval',
+        'clearInterval',
+        'setTimeout',
+        'clearTimeout',
+      ],
+    });
+    jest.setSystemTime(at(hours));
+  }
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
-
-    const admin = await createTestUser(app, {
-      username: 'activitypositionf4admin',
+    const ownerUser = await createTestUser(app, {
+      username: 'native-position-owner',
       role: Role.SUPER_ADMIN,
     });
-    adminAuth = (await loginAs(app, admin.username)).authHeader;
-
-    const appUser = await createTestUser(app, { username: 'activitypositionf4app' });
-    const member = await prisma.member.create({
+    const ownerMember = await prisma.member.create({
       data: {
-        memberNo: 'ACTIVITY-POSITION-F4',
-        ...memberIdentityData('岗位考勤队员'),
-        status: MemberStatus.ACTIVE,
+        memberNo: 'NATIVE-POSITION-OWNER',
+        ...memberIdentityData('岗位负责人'),
+        gradeCode: 'level-2',
       },
-      select: { id: true },
     });
-    memberId = member.id;
-    await prisma.user.update({ where: { id: appUser.id }, data: { memberId } });
-    appAuth = (await loginAs(app, appUser.username)).authHeader;
+    owner = await prisma.user.update({
+      where: { id: ownerUser.id },
+      data: { memberId: ownerMember.id },
+      select: { id: true, username: true, memberId: true, role: true, status: true },
+    });
+    ownerAuth = (await loginAs(app, owner.username)).authHeader;
+    const user = await createTestUser(app, { username: 'native-position-participant' });
+    participantId = (
+      await prisma.member.create({
+        data: {
+          memberNo: 'NATIVE-POSITION-MEMBER',
+          ...memberIdentityData('岗位参加者'),
+          gradeCode: 'level-2',
+        },
+      })
+    ).id;
+    await prisma.user.update({ where: { id: user.id }, data: { memberId: participantId } });
+    participantAuth = (await loginAs(app, user.username)).authHeader;
+    organizationId = (
+      await prisma.organization.create({ data: { name: '岗位验收', nodeTypeCode: 'team' } })
+    ).id;
+  });
+  beforeEach(() => clock(2));
+  afterEach(() => jest.useRealTimers());
+  afterAll(async () => {
+    jest.useRealTimers();
+    try {
+      await app?.close();
+    } finally {
+      if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
+    }
+  });
 
-    const attendanceRole = await prisma.dictType.create({
-      data: { code: 'attendance_role', label: '考勤角色' },
-      select: { id: true },
+  async function fixture(): Promise<Fixture> {
+    const tag = `native-position-${++sequence}`;
+    const activity = await prisma.activity.create({
+      data: {
+        title: tag,
+        activityTypeCode: tag,
+        organizationId,
+        startAt: BASE,
+        endAt: at(12),
+        location: '岗位',
+        statusCode: 'published',
+      },
     });
-    await prisma.dictItem.createMany({
+    const session = await prisma.activitySession.create({
+      data: {
+        activityId: activity.id,
+        code: tag,
+        name: tag,
+        startAt: BASE,
+        endAt: at(12),
+        locationText: '岗位',
+        statusCode: 'scheduled',
+        locationRequired: false,
+        locationPolicySourceCode: 'session',
+        checkInOpenAt: BASE,
+        checkInCloseAt: at(11),
+        checkOutOpenAt: BASE,
+        checkOutCloseAt: at(12),
+      },
+    });
+    const slot = await prisma.activitySessionPosition.create({
+      data: {
+        activityId: activity.id,
+        sessionId: session.id,
+        code: tag,
+        name: tag,
+        attendanceRoleCode: 'instructor',
+        startAt: at(1),
+        endAt: at(3),
+      },
+    });
+    const registration = await prisma.activityRegistration.create({
+      data: { activityId: activity.id, memberId: participantId, statusCode: 'pass' },
+    });
+    const identity = await prisma.activityParticipationIdentity.create({
+      data: {
+        activityId: activity.id,
+        sessionId: session.id,
+        memberId: participantId,
+        registrationId: registration.id,
+        currentPositionId: slot.id,
+        currentStatusCode: 'pass',
+        populationIncluded: true,
+      },
+    });
+    await prisma.activityEvidenceState.create({ data: { activityId: activity.id } });
+    await prisma.activityResponsibilityAssignment.create({
+      data: {
+        activityId: activity.id,
+        memberId: owner.memberId!,
+        responsibilityType: 'owner',
+        canManageRegistrations: true,
+        canManageAttendance: true,
+        status: 'active',
+        source: 'publish',
+        assignedByUserId: owner.id,
+      },
+    });
+    const tokens = {} as Record<Action, string>;
+    for (const actionCode of ['check_in', 'check_out'] as const) {
+      const payload = {
+        credentialId: randomUUID(),
+        activityId: activity.id,
+        sessionId: session.id,
+        actionCode,
+        credentialVersion: 1,
+        validFrom: BASE,
+        validUntil: at(12),
+      };
+      tokens[actionCode] = signAttendanceQrToken(
+        payload,
+        app.get(ConfigService).getOrThrow<JwtConfig>('jwt').secret,
+      );
+      await prisma.attendanceQrCredential.create({
+        data: {
+          id: payload.credentialId,
+          activityId: activity.id,
+          sessionId: session.id,
+          actionCode,
+          credentialVersion: 1,
+          validFrom: BASE,
+          validUntil: at(12),
+          statusCode: 'active',
+          tokenDigest: digestAttendanceQrToken(tokens[actionCode]),
+          signingKeyVersion: 0,
+          issuedAt: BASE,
+          issuedByUserId: owner.id,
+        },
+      });
+    }
+    return {
+      activityId: activity.id,
+      activityTypeCode: tag,
+      sessionId: session.id,
+      positionId: slot.id,
+      identityId: identity.id,
+      tokens,
+    };
+  }
+  const punch = (f: Fixture, action: Action) =>
+    request(httpServer(app))
+      .post(
+        `/api/app/v1/activities/${f.activityId}/sessions/${f.sessionId}/punches/${action === 'check_in' ? 'check-in' : 'check-out'}`,
+      )
+      .set('Authorization', participantAuth)
+      .send({ qrToken: f.tokens[action], eventKey: `${f.activityId}:${action}` });
+  async function snapshot(f: Fixture) {
+    return {
+      events: await prisma.attendancePunchEvent.findMany({
+        where: { activityId: f.activityId },
+        orderBy: { id: 'asc' },
+      }),
+      segments: await prisma.participantServiceSegmentRevision.findMany({
+        where: { participationIdentityId: f.identityId },
+        orderBy: { id: 'asc' },
+      }),
+      evidence: await prisma.activityEvidenceState.findUnique({
+        where: { activityId: f.activityId },
+      }),
+      audit: await prisma.auditLog.count({ where: { resourceId: f.activityId } }),
+      intents: await prisma.notificationOutboxIntent.count(),
+    };
+  }
+
+  it('活动/场次窗内但岗位窗外拒绝；岗位窗内真实 QR 签到保留岗位锚点', async () => {
+    const f = await fixture();
+    await prisma.activitySessionPosition.update({
+      where: { id: f.positionId },
+      data: { startAt: at(5), endAt: at(6) },
+    });
+    const before = await snapshot(f);
+    expectBizError(await punch(f, 'check_in'), BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW);
+    expect(await snapshot(f)).toEqual(before);
+    await prisma.activitySessionPosition.update({
+      where: { id: f.positionId },
+      data: { startAt: at(1), endAt: at(3) },
+    });
+    const response = await punch(f, 'check_in').expect(201);
+    const event = await prisma.attendancePunchEvent.findUniqueOrThrow({
+      where: { id: response.body.data.eventId },
+    });
+    expect(event).toMatchObject({
+      positionId: f.positionId,
+      participationIdentityId: f.identityId,
+      memberId: participantId,
+    });
+  });
+
+  it('导入写核不能以场次范围代替岗位范围，失败事件/投影/审计均零写', async () => {
+    const f = await fixture();
+    const before = await snapshot(f);
+    await expect(
+      app.get(AttendancePunchCommandService).managedPunch({
+        activityId: f.activityId,
+        sessionId: f.sessionId,
+        participationIdentityId: f.identityId,
+        memberCredential: null,
+        actionCode: 'check_in',
+        sourceCode: 'import',
+        eventKey: `${f.activityId}:import`,
+        reason: '岗位时段验收',
+        deviceId: null,
+        longitude: null,
+        latitude: null,
+        accuracy: null,
+        occurredAt: at(0.5),
+        currentUser: owner,
+        auditMeta: META,
+      }),
+    ).rejects.toMatchObject({ biz: BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW });
+    expect(await snapshot(f)).toEqual(before);
+  });
+
+  it('真实成对打卡经封场/生成/送审按岗位角色预填贡献，不能回落 member 规则', async () => {
+    const f = await fixture();
+    await prisma.contributionRule.createMany({
       data: [
-        { typeId: attendanceRole.id, code: 'member', label: '队员' },
-        { typeId: attendanceRole.id, code: 'instructor', label: '教练' },
+        {
+          activityTypeCode: f.activityTypeCode,
+          attendanceRoleCode: 'instructor',
+          pointsBelow: 2.5,
+          status: 'ACTIVE',
+        },
+        {
+          activityTypeCode: f.activityTypeCode,
+          attendanceRoleCode: 'member',
+          pointsBelow: 0.5,
+          status: 'ACTIVE',
+        },
       ],
     });
-    const attendanceStatus = await prisma.dictType.create({
-      data: { code: 'attendance_status', label: '考勤状态' },
-      select: { id: true },
+    await punch(f, 'check_in').expect(201);
+    clock(2.5);
+    await punch(f, 'check_out').expect(201);
+    // Seal uses PostgreSQL's clock; return the HTTP submit clock to the same
+    // real, post-activity time instead of pretending the session is still live.
+    jest.useRealTimers();
+    const seal = await app.get(EvidenceSealService).seal(f.activityId, owner, META);
+    const base = `/api/app/v1/my/managed-activities/${f.activityId}/settlement`;
+    const generated = await request(httpServer(app))
+      .post(`${base}/generate`)
+      .set('Authorization', ownerAuth)
+      .send({ operationKey: `${f.activityId}:generate` })
+      .expect(200);
+    const items = await request(httpServer(app))
+      .get(`${base}/items`)
+      .set('Authorization', ownerAuth)
+      .expect(200);
+    expect(items.body.data.items).toHaveLength(1);
+    expect(items.body.data.items[0]).toMatchObject({
+      identityId: f.identityId,
+      calculatedServiceHours: 0.5,
+      calculatedContributionPoints: 2.5,
     });
-    await prisma.dictItem.create({
-      data: { typeId: attendanceStatus.id, code: 'present', label: '出勤' },
-    });
-
-    const organization = await prisma.organization.create({
-      data: { name: '活动岗位 F4 组织', nodeTypeCode: 'team' },
-      select: { id: true },
-    });
-    now = new Date();
-    activityId = (
-      await prisma.activity.create({
-        data: {
-          title: '活动岗位 F4 考勤活动',
-          activityTypeCode: 'activity-position-f4',
-          organizationId: organization.id,
-          startAt: new Date(now.getTime() - 24 * 3_600_000),
-          endAt: new Date(now.getTime() + 24 * 3_600_000),
-          location: '活动岗位 F4 场地',
-          locationLongitude: '114.0000000',
-          locationLatitude: '22.0000000',
-          statusCode: 'published',
-          isPublicRegistration: true,
-          publishedAt: new Date(now.getTime() - 60_000),
-        },
-        select: { id: true },
-      })
-    ).id;
-    activityPositionEndAt = new Date(now.getTime() + 3_600_000);
-    activityPositionId = (
-      await prisma.activityPosition.create({
-        data: {
-          activityId,
-          name: '岗位考勤教练',
-          attendanceRoleCode: 'instructor',
-          startAt: new Date(now.getTime() - 3_600_000),
-          endAt: activityPositionEndAt,
-        },
-        select: { id: true },
-      })
-    ).id;
-    registrationId = (
-      await prisma.activityRegistration.create({
-        data: {
-          activityId,
-          activityPositionId,
-          memberId,
-          statusCode: 'pass',
-          reviewedAt: now,
-        },
-        select: { id: true },
-      })
-    ).id;
-  });
-
-  afterAll(async () => {
-    await app.close();
-  });
-
-  it('活动窗内但岗位窗外拒绝签到，岗位窗内可签到', async () => {
-    await prisma.activityPosition.update({
-      where: { id: activityPositionId },
-      data: {
-        startAt: new Date(now.getTime() + 5 * 3_600_000),
-        endAt: new Date(now.getTime() + 6 * 3_600_000),
-      },
-    });
-
-    expectBizError(
-      await request(httpServer(app))
-        .post(checkInPath())
-        .set('Authorization', appAuth)
-        .send({ longitude: 114, latitude: 22 }),
-      BizCode.ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW,
-    );
-
-    await prisma.activityPosition.update({
-      where: { id: activityPositionId },
-      data: {
-        startAt: new Date(now.getTime() - 3_600_000),
-        endAt: activityPositionEndAt,
-      },
-    });
-    const success = await request(httpServer(app))
-      .post(checkInPath())
-      .set('Authorization', appAuth)
-      .send({ longitude: 114, latitude: 22 });
-
-    expect(success.status).toBe(200);
-    expect(success.body.data.registrationId).toBe(registrationId);
-  });
-
-  it('考勤记录虽在活动窗内但超出岗位窗加既有容差时拒绝', async () => {
-    const response = await request(httpServer(app))
-      .post(sheetsPath())
-      .set('Authorization', adminAuth)
-      .send({
-        records: [
-          {
-            memberId,
-            roleCode: 'instructor',
-            checkInAt: new Date(now.getTime() - 10 * 3_600_000).toISOString(),
-            checkOutAt: new Date(now.getTime() - 9 * 3_600_000).toISOString(),
-            attendanceStatusCode: 'present',
-            registrationId,
-          },
-        ],
-      });
-
-    expectBizError(response, BizCode.ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW);
-  });
-
-  it('草稿带出岗位角色与岗位 endAt，提交后按既有岗位角色规则预填贡献值', async () => {
-    const serverNow = Date.now();
-    activityPositionEndAt = new Date(serverNow - 3_600_000);
-    await prisma.activityPosition.update({
-      where: { id: activityPositionId },
-      data: {
-        startAt: new Date(serverNow - 3 * 3_600_000),
-        endAt: activityPositionEndAt,
-      },
-    });
-    await prisma.activityCheckIn.updateMany({
-      where: { registrationId, deletedAt: null },
-      data: { checkInAt: new Date(serverNow - 2 * 3_600_000) },
-    });
-    await prisma.contributionRule.create({
-      data: {
-        activityTypeCode: 'activity-position-f4',
-        attendanceRoleCode: 'instructor',
-        durationThreshold: null,
-        pointsBelow: '2.50',
-        pointsAbove: null,
-        dailyCap: null,
-      },
-    });
-
-    const draft = await request(httpServer(app)).get(draftPath()).set('Authorization', adminAuth);
-    expect(draft.status).toBe(200);
-    expect(draft.body.data.records).toHaveLength(1);
-    expect(draft.body.data.records[0]).toMatchObject({
-      memberId,
-      registrationId,
-      roleCode: 'instructor',
-      checkOutAt: activityPositionEndAt.toISOString(),
-    });
-
     const submitted = await request(httpServer(app))
-      .post(sheetsPath())
-      .set('Authorization', adminAuth)
-      .send({ records: draft.body.data.records });
-    expect(submitted.status).toBe(201);
-
-    const record = await prisma.attendanceRecord.findFirstOrThrow({
-      where: { sheetId: submitted.body.data.id, registrationId },
-      select: { roleCode: true, contributionPoints: true },
+      .post(`${base}/submit`)
+      .set('Authorization', ownerAuth)
+      .send({
+        operationKey: `${f.activityId}:submit`,
+        evidenceSealId: seal.sealId,
+        expectedDraftVersion: generated.body.data.settlementVersion,
+        confirmation: true,
+      })
+      .expect(200);
+    const result = await prisma.participantSettlementResultRevision.findFirstOrThrow({
+      where: {
+        settlementVersionId: submitted.body.data.settlementVersionId,
+        participationIdentityId: f.identityId,
+      },
     });
-    expect(record.roleCode).toBe('instructor');
-    expect(record.contributionPoints?.toString()).toBe('2.5');
+    expect(Number(result.calculatedContributionPoints)).toBe(2.5);
+    expect(Number(result.recognizedContributionPoints)).toBe(2.5);
+    expect(await prisma.attendanceRecord.count()).toBe(0);
+    expect(
+      await prisma.participationLedgerEntry.count({ where: { activityId: f.activityId } }),
+    ).toBe(0);
+  });
+
+  it('未签退不再自动补到岗位 endAt；开放服务段阻断封场且原事实不变', async () => {
+    const f = await fixture();
+    await punch(f, 'check_in').expect(201);
+    const before = await snapshot(f);
+    await expect(
+      app.get(EvidenceSealService).seal(f.activityId, owner, META),
+    ).rejects.toMatchObject({ biz: BizCode.EVIDENCE_SEAL_OPEN_SEGMENT_EXISTS });
+    expect(await snapshot(f)).toEqual(before);
+    expect(await prisma.evidenceSeal.count({ where: { activityId: f.activityId } })).toBe(0);
+    expect(
+      await prisma.attendanceSettlementVersion.count({
+        where: { settlementRun: { activityId: f.activityId } },
+      }),
+    ).toBe(0);
   });
 });

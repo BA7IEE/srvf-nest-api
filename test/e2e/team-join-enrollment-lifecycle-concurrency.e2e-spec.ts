@@ -9,6 +9,7 @@ import { AppMeTeamJoinService } from '../../src/modules/team-join/team-join-appl
 import { TeamJoinApplicationsService } from '../../src/modules/team-join/team-join-applications.service';
 import { TeamJoinEnrollmentService } from '../../src/modules/team-join/team-join-enrollment.service';
 import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
+import { seedContributionCredit } from '../fixtures/contribution-ledger.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
@@ -64,6 +65,7 @@ describe('team join submit × final join 生命周期并发(K2 · B-F4/B-F5)', (
   let adminUserId: string;
   let orgSeq = 0;
   let memberSeq = 0;
+  const previousWorkflowGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
 
   async function countWaiters(pattern: string): Promise<number> {
     const [row] = await prismaB.$queryRaw<Array<{ n: number }>>(Prisma.sql`
@@ -248,35 +250,13 @@ describe('team join submit × final join 生命周期并发(K2 · B-F4/B-F5)', (
   /** 贡献值:每北京日封顶 3,故 5 分摊成 3 + 2 两天,且都落在 cutoff 之前。 */
   async function giveContribution(memberId: string, points: string[]): Promise<void> {
     const organizationId = await makeOrg();
-    const activity = await prismaA.activity.create({
-      data: {
-        title: 'TJC 贡献值活动',
-        activityTypeCode: 'tjc-act',
-        organizationId,
-        startAt: BEFORE_CUTOFF,
-        endAt: BEFORE_CUTOFF,
-        location: '深圳',
-        statusCode: 'completed',
-      },
-      select: { id: true },
-    });
-    const sheet = await prismaA.attendanceSheet.create({
-      data: { activityId: activity.id, submitterUserId: adminUserId, statusCode: 'approved' },
-      select: { id: true },
-    });
     for (const [index, value] of points.entries()) {
-      const checkInAt = new Date(BEFORE_CUTOFF.getTime() - index * 86_400_000);
-      await prismaA.attendanceRecord.create({
-        data: {
-          sheetId: sheet.id,
-          memberId,
-          roleCode: 'member',
-          checkInAt,
-          checkOutAt: new Date(checkInAt.getTime() + 4 * 3600_000),
-          serviceHours: '4.00',
-          attendanceStatusCode: 'present',
-          contributionPoints: value,
-        },
+      await seedContributionCredit(prismaA, {
+        memberId,
+        actorUserId: adminUserId,
+        organizationId,
+        occurredAt: new Date(BEFORE_CUTOFF.getTime() - index * 86_400_000),
+        creditedPoints: value,
       });
     }
   }
@@ -312,6 +292,7 @@ describe('team join submit × final join 生命周期并发(K2 · B-F4/B-F5)', (
   }
 
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     appA = await createTestApp();
     appB = await createTestApp();
     await resetDb(appA);
@@ -350,7 +331,12 @@ describe('team join submit × final join 生命周期并发(K2 · B-F4/B-F5)', (
   });
 
   afterAll(async () => {
-    await Promise.all([appA.close(), appB.close()]);
+    try {
+      await Promise.all([appA.close(), appB.close()]);
+    } finally {
+      if (previousWorkflowGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousWorkflowGate;
+    }
   });
 
   it('两个 app 确实是两条独立连接(否则下面的锁等待全是自欺)', async () => {

@@ -340,15 +340,19 @@ describe('D4 classified settlement: real App HTTP and immutable PostgreSQL truth
     } else
       generated = await f.app.get(SettlementDraftService).generate(draft.activityId, actor, meta);
     if (options.noEvents) {
-      await f.app.get(SettlementDraftService).updateItem({
-        activityId: draft.activityId,
-        participationIdentityId: identity.id,
-        expectedDraftVersion: generated.settlementVersion,
-        resultCode: 'absent',
-        recognizedServiceHours: 0,
-        recognizedContributionPoints: 0,
-        reason: '明确无参与证据',
-      });
+      await f.app.get(SettlementDraftService).updateItem(
+        {
+          activityId: draft.activityId,
+          participationIdentityId: identity.id,
+          expectedDraftVersion: generated.settlementVersion,
+          resultCode: 'absent',
+          recognizedServiceHours: 0,
+          recognizedContributionPoints: 0,
+          reason: '明确无参与证据',
+        },
+        actor,
+        meta,
+      );
       const version = await f.db.attendanceSettlementVersion.findFirstOrThrow({
         where: { settlementRunId: generated.settlementRunId, statusCode: 'draft' },
         orderBy: { version: 'desc' },

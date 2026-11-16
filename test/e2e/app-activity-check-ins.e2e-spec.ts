@@ -1,977 +1,994 @@
-import { LedgerQueryService } from '../../src/modules/activities/ledger-query.service';
-import { ActivityWorkflowGate } from '../../src/common/activity-workflow/activity-workflow.gate';
 import type { INestApplication } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { MemberStatus, Role } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
+import { ActivityWorkflowGate } from '../../src/common/activity-workflow/activity-workflow.gate';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import appConfig, { type AppConfig } from '../../src/config/app.config';
+import type { JwtConfig } from '../../src/config/jwt.config';
 import { PrismaService } from '../../src/database/prisma.service';
+import { LedgerQueryService } from '../../src/modules/activities/ledger-query.service';
+import { AttendancePunchCommandService } from '../../src/modules/attendances/attendance-punch-command.service';
+import {
+  digestAttendanceQrToken,
+  signAttendanceQrToken,
+} from '../../src/modules/attendances/attendance-qr-token';
 import { computeContribution } from '../../src/modules/team-join/team-join-progress';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
-import { memberIdentityData } from '../helpers/member-identity.fixture';
 
-interface SuccessBody {
-  code: number;
-  message: string;
-  data: Record<string, unknown>;
+// Preserve the former GPS suite's admission, geometry, time, replay, race and
+// privacy obligations on the existing native session protocol. Native contracts
+// differ explicitly: signed QR + eventKey, session windows, 30-minute segments,
+// immutable events and audited writes. Old 36-second/header/CAS semantics are
+// not aliases. Rejected writes and self reads still have no derived effects.
+const START = new Date('2020-03-01T01:00:00Z');
+const time = (minutes: number) => new Date(START.getTime() + minutes * 60_000);
+const LOCATION = { longitude: 114, latitude: 22, accuracy: 5.5 };
+const RECEIPT_KEYS = [
+  'eventId',
+  'eventTypeCode',
+  'occurredAt',
+  'segmentStatusCode',
+  'serverTime',
+  'distanceMeters',
+  'geoVerified',
+  'lowAccuracy',
+  'nextAllowedAction',
+].sort();
+const STATE_KEYS = [
+  'isPresent',
+  'checkInAt',
+  'checkOutAllowedAt',
+  'distanceMeters',
+  'geoVerified',
+  'lowAccuracy',
+  'serverTime',
+  'nextAllowedAction',
+].sort();
+type Action = 'check_in' | 'check_out';
+interface Actor {
+  memberId: string | null;
+  userId: string;
+  auth: string;
+}
+interface Scene {
+  activityId: string;
+  sessionId: string;
+  registrationId: string;
+  identityId: string;
+  tokens: Record<Action, string>;
+  credentials: Record<Action, string>;
 }
 
-const APP_RESPONSE_KEYS = [
-  'id',
-  'activityId',
-  'registrationId',
-  'checkInAt',
-  'checkOutAt',
-  'checkInDistance',
-  'checkOutDistance',
-  'geoVerified',
-  'outOfRange',
-  'createdAt',
-  'updatedAt',
-].sort();
+function freeze(now: Date) {
+  jest.useFakeTimers({
+    doNotFake: [
+      'hrtime',
+      'nextTick',
+      'performance',
+      'queueMicrotask',
+      'setImmediate',
+      'clearImmediate',
+      'setInterval',
+      'clearInterval',
+      'setTimeout',
+      'clearTimeout',
+    ],
+  });
+  jest.setSystemTime(now);
+}
 
-const RAW_OR_DENIED_KEYS = [
-  'memberId',
-  'checkInLongitude',
-  'checkInLatitude',
-  'checkInAccuracy',
-  'checkOutLongitude',
-  'checkOutLatitude',
-  'checkOutAccuracy',
-  'deletedAt',
-];
-
-describe('App activity GPS self check-in (F2)', () => {
+describe('App native self punches — migrated GPS business acceptance', () => {
   let app: INestApplication;
-  let prisma: PrismaService;
+  let appB: INestApplication;
+  let db: PrismaService;
+  let dbB: PrismaService;
   let organizationId: string;
-  let activityTypeCode: string;
-  let main: { memberId: string; authHeader: string };
-  let seq = 0;
+  let main: Actor;
+  let sequence = 0;
+  const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
 
-  const next = (): string => `f2${++seq}`;
-  const location = { longitude: 114, latitude: 22, accuracy: 5.5 };
-  const checkInPath = (activityId: string): string =>
-    `/api/app/v1/my/activities/${activityId}/check-in`;
-  const checkOutPath = (activityId: string): string =>
-    `/api/app/v1/my/activities/${activityId}/check-out`;
-  const statusPath = (activityId: string): string =>
-    `/api/app/v1/my/activities/${activityId}/check-in`;
-
+  async function actor(role: Role = Role.USER, linked = true): Promise<Actor> {
+    const name = `gps-native-${++sequence}`;
+    const user = await createTestUser(app, { username: name, role });
+    const member = linked
+      ? await db.member.create({
+          data: {
+            memberNo: name,
+            ...memberIdentityData(name),
+            status: MemberStatus.ACTIVE,
+            gradeCode: 'level-2',
+          },
+        })
+      : null;
+    if (member) await db.user.update({ where: { id: user.id }, data: { memberId: member.id } });
+    return {
+      userId: user.id,
+      memberId: member?.id ?? null,
+      auth: (await loginAs(app, name)).authHeader,
+    };
+  }
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
-    prisma = app.get(PrismaService);
-
-    const nodeType = await prisma.dictType.create({
-      data: { code: 'node_type', label: '节点类型' },
-      select: { id: true },
-    });
-    await prisma.dictItem.create({
-      data: { typeId: nodeType.id, code: 'f2-checkin-node', label: '活动节点' },
-    });
+    appB = await createTestApp();
+    db = app.get(PrismaService);
+    dbB = appB.get(PrismaService);
     organizationId = (
-      await prisma.organization.create({
-        data: { name: 'F2 Check-in Org', nodeTypeCode: 'f2-checkin-node' },
-        select: { id: true },
-      })
+      await db.organization.create({ data: { name: 'Native GPS', nodeTypeCode: 'team' } })
     ).id;
-
-    const activityType = await prisma.dictType.create({
-      data: { code: 'activity_type', label: '活动类型' },
-      select: { id: true },
-    });
-    activityTypeCode = (
-      await prisma.dictItem.create({
-        data: { typeId: activityType.id, code: 'f2-checkin', label: '签到测试' },
-        select: { code: true },
-      })
-    ).code;
-
-    main = await setupLinkedUser('f2checkinmain', 'F2-MAIN');
+    main = await actor();
   });
-
+  beforeEach(() => freeze(START));
+  afterEach(() => jest.useRealTimers());
   afterAll(async () => {
-    await app.close();
-  });
-
-  afterEach(() => {
     jest.useRealTimers();
+    try {
+      const results = await Promise.allSettled([app?.close(), appB?.close()]);
+      expect(results.every((result) => result.status === 'fulfilled')).toBe(true);
+    } finally {
+      if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
+    }
   });
 
-  function freezeSystemTime(now: Date): void {
-    // 只伪造 Date；HTTP/Prisma/Node 调度计时器保持真实，避免 supertest transport 被 fake timer 挂起。
-    jest.useFakeTimers({
-      doNotFake: [
-        'hrtime',
-        'nextTick',
-        'performance',
-        'queueMicrotask',
-        'setImmediate',
-        'clearImmediate',
-        'setInterval',
-        'clearInterval',
-        'setTimeout',
-        'clearTimeout',
-      ],
+  async function addIdentity(input: Pick<Scene, 'activityId' | 'sessionId'>, memberId: string) {
+    const registration = await db.activityRegistration.create({
+      data: { activityId: input.activityId, memberId, statusCode: 'pass' },
     });
-    jest.setSystemTime(now);
-  }
-
-  async function setupLinkedUser(
-    username: string,
-    memberNo: string,
-    role: Role = Role.USER,
-  ): Promise<{ memberId: string; authHeader: string }> {
-    const user = await createTestUser(app, { username, role });
-    const member = await prisma.member.create({
-      data: { memberNo, ...memberIdentityData(username), status: MemberStatus.ACTIVE },
-      select: { id: true },
-    });
-    await prisma.user.update({ where: { id: user.id }, data: { memberId: member.id } });
-    const { authHeader } = await loginAs(app, username);
-    return { memberId: member.id, authHeader };
-  }
-
-  async function setupUnlinkedUser(username: string): Promise<{ authHeader: string }> {
-    await createTestUser(app, { username });
-    return loginAs(app, username);
-  }
-
-  async function createActivity(
-    opts: {
-      statusCode?: 'draft' | 'published' | 'completed' | 'cancelled';
-      startAt?: Date;
-      endAt?: Date;
-      longitude?: string | null;
-      latitude?: string | null;
-      deletedAt?: Date | null;
-    } = {},
-  ): Promise<{ id: string }> {
-    const now = Date.now();
-    const statusCode = opts.statusCode ?? 'published';
-    return prisma.activity.create({
+    const identity = await db.activityParticipationIdentity.create({
       data: {
-        title: `F2 GPS ${next()}`,
-        activityTypeCode,
+        ...input,
+        registrationId: registration.id,
+        memberId,
+        currentStatusCode: 'pass',
+        populationIncluded: true,
+      },
+    });
+    return { registrationId: registration.id, identityId: identity.id };
+  }
+  async function scene(subject = main): Promise<Scene> {
+    const tag = `gps-native-scene-${++sequence}`;
+    const activity = await db.activity.create({
+      data: {
+        title: tag,
+        activityTypeCode: 'gps-native',
         organizationId,
-        startAt: opts.startAt ?? new Date(now - 60 * 60_000),
-        endAt: opts.endAt ?? new Date(now + 60 * 60_000),
-        location: 'F2 geofence',
-        statusCode,
-        publishedAt: statusCode === 'published' ? new Date(now - 60_000) : null,
-        cancelledAt: statusCode === 'cancelled' ? new Date(now - 30_000) : null,
-        cancelReason: statusCode === 'cancelled' ? 'test cancel' : null,
-        locationLongitude: opts.longitude === undefined ? '114.0000000' : opts.longitude,
-        locationLatitude: opts.latitude === undefined ? '22.0000000' : opts.latitude,
-        deletedAt: opts.deletedAt ?? null,
+        startAt: START,
+        endAt: time(240),
+        location: 'GPS',
+        statusCode: 'published',
       },
-      select: { id: true },
     });
-  }
-
-  async function createRegistration(
-    activityId: string,
-    memberId: string,
-    statusCode: 'pending' | 'pass' | 'reject' | 'cancelled' = 'pass',
-  ): Promise<{ id: string }> {
-    return prisma.activityRegistration.create({
+    const session = await db.activitySession.create({
       data: {
-        activityId,
-        memberId,
-        statusCode,
-        reviewedAt: statusCode === 'pass' || statusCode === 'reject' ? new Date() : null,
-        cancelledAt: statusCode === 'cancelled' ? new Date() : null,
+        activityId: activity.id,
+        code: tag,
+        name: tag,
+        startAt: START,
+        endAt: time(240),
+        locationText: 'GPS',
+        statusCode: 'scheduled',
+        locationRequired: true,
+        longitude: LOCATION.longitude,
+        latitude: LOCATION.latitude,
+        radiusMeters: 500,
+        locationPolicySourceCode: 'session',
+        accuracyWarningMeters: 100,
+        checkInOpenAt: time(-30),
+        checkInCloseAt: time(60),
+        checkOutOpenAt: START,
+        checkOutCloseAt: time(270),
       },
-      select: { id: true },
     });
+    if (subject.memberId === null) throw new Error('Native punch scene needs a member');
+    const anchor = { activityId: activity.id, sessionId: session.id };
+    const identity = await addIdentity(anchor, subject.memberId);
+    await db.activityEvidenceState.create({ data: { activityId: activity.id } });
+    const tokens = {} as Record<Action, string>;
+    const credentials = {} as Record<Action, string>;
+    for (const actionCode of ['check_in', 'check_out'] as const) {
+      const payload = {
+        ...anchor,
+        credentialId: randomUUID(),
+        actionCode,
+        credentialVersion: 1,
+        // Broad fixture credential validity isolates session-window assertions.
+        validFrom: time(-120),
+        validUntil: time(480),
+      };
+      const secret = app.get(ConfigService).getOrThrow<JwtConfig>('jwt').secret;
+      tokens[actionCode] = signAttendanceQrToken(payload, secret);
+      credentials[actionCode] = payload.credentialId;
+      await db.attendanceQrCredential.create({
+        data: {
+          id: payload.credentialId,
+          ...anchor,
+          actionCode,
+          credentialVersion: 1,
+          validFrom: payload.validFrom,
+          validUntil: payload.validUntil,
+          statusCode: 'active',
+          tokenDigest: digestAttendanceQrToken(tokens[actionCode]),
+          signingKeyVersion: 0,
+          issuedByUserId: main.userId,
+          issuedAt: time(-120),
+        },
+      });
+    }
+    return { ...anchor, ...identity, tokens, credentials };
   }
-
-  async function seedEvidence(
-    activityId: string,
-    memberId: string,
-    registrationId: string,
-    opts: { checkInAt?: Date; checkOutAt?: Date | null } = {},
+  const path = (input: Pick<Scene, 'activityId' | 'sessionId'>, action: Action) =>
+    `/api/app/v1/activities/${input.activityId}/sessions/${input.sessionId}/punches/${action === 'check_in' ? 'check-in' : 'check-out'}`;
+  const statePath = (input: Pick<Scene, 'activityId' | 'sessionId'>) =>
+    `/api/app/v1/activities/${input.activityId}/sessions/${input.sessionId}/my-punch-state`;
+  const body = (input: Scene, action: Action, overrides: Record<string, unknown> = {}) => ({
+    ...LOCATION,
+    qrToken: input.tokens[action],
+    eventKey: `${input.activityId}:${action}`,
+    ...overrides,
+  });
+  const punch = (
+    input: Scene,
+    action: Action = 'check_in',
+    overrides: Record<string, unknown> = {},
+    auth = main.auth,
+    server = app,
+  ) =>
+    request(httpServer(server))
+      .post(path(input, action))
+      .set('Authorization', auth)
+      .send(body(input, action, overrides));
+  const state = (input: Scene, auth = main.auth) =>
+    request(httpServer(app)).get(statePath(input)).set('Authorization', auth);
+  async function footprint(input: Scene) {
+    return {
+      events: await db.attendancePunchEvent.findMany({
+        where: { activityId: input.activityId },
+        orderBy: { id: 'asc' },
+      }),
+      segments: await db.participantServiceSegmentRevision.findMany({
+        where: { identity: { activityId: input.activityId } },
+        orderBy: { id: 'asc' },
+      }),
+      evidence: await db.activityEvidenceState.findUnique({
+        where: { activityId: input.activityId },
+      }),
+      audit: await db.auditLog.findMany({
+        where: { resourceId: input.activityId },
+        orderBy: { id: 'asc' },
+      }),
+      ledger: await db.participationLedgerEntry.count({ where: { activityId: input.activityId } }),
+      sheets: await db.attendanceSheet.count({ where: { activityId: input.activityId } }),
+      oldGps: await db.activityCheckIn.count({ where: { activityId: input.activityId } }),
+      intents: await db.notificationOutboxIntent.count(),
+    };
+  }
+  async function position(input: Scene, from: number, until: number) {
+    const slot = await db.activitySessionPosition.create({
+      data: {
+        activityId: input.activityId,
+        sessionId: input.sessionId,
+        code: `gps-slot-${++sequence}`,
+        name: `GPS slot ${sequence}`,
+        attendanceRoleCode: 'member',
+        startAt: time(from),
+        endAt: time(until),
+      },
+    });
+    await db.activityParticipationIdentity.update({
+      where: { id: input.identityId },
+      data: { currentPositionId: slot.id },
+    });
+    return slot;
+  }
+  async function rejectUnchanged(
+    input: Scene,
+    operation: PromiseLike<request.Response>,
+    biz: (typeof BizCode)[keyof typeof BizCode],
   ) {
-    return prisma.activityCheckIn.create({
-      data: {
-        activityId,
-        memberId,
-        registrationId,
-        checkInAt: opts.checkInAt ?? new Date(Date.now() - 60_000),
-        checkOutAt: opts.checkOutAt ?? null,
-        checkInLongitude: '114.0000000',
-        checkInLatitude: '22.0000000',
-        checkInAccuracy: '5.50',
-        checkInDistance: '0.00',
-        geoVerified: true,
-        outOfRange: false,
-      },
-    });
+    const before = await footprint(input);
+    expectBizError(await operation, biz, { strictMessage: false });
+    expect(await footprint(input)).toEqual(before);
+  }
+  function safeReceipt(response: request.Response) {
+    expect(response.status).toBe(201);
+    expect(response.body.code).toBe(0);
+    expect(Object.keys(response.body.data as Record<string, unknown>).sort()).toEqual(RECEIPT_KEYS);
+    return response.body.data as Record<string, unknown>;
   }
 
-  const post = (path: string, body: object, authHeader?: string) => {
-    const pending = request(httpServer(app)).post(path).send(body);
-    return authHeader ? pending.set('Authorization', authHeader) : pending;
-  };
+  it.each(['check_in', 'check_out', 'state'] as const)(
+    '%s requires login before business lookup',
+    async (action) => {
+      const input = { activityId: 'cmissingactivity0000', sessionId: 'cmissingsession0000' };
+      const response =
+        action === 'state'
+          ? await request(httpServer(app)).get(statePath(input))
+          : await request(httpServer(app)).post(path(input, action)).send({});
+      expectBizError(response, BizCode.UNAUTHORIZED);
+    },
+  );
 
-  const get = (path: string, authHeader?: string) => {
-    const pending = request(httpServer(app)).get(path);
-    return authHeader ? pending.set('Authorization', authHeader) : pending;
-  };
-
-  function expectSafeSuccess(body: SuccessBody): Record<string, unknown> {
-    expect(body.code).toBe(0);
-    expect(body.message).toBe('ok');
-    expect(Object.keys(body.data).sort()).toEqual(APP_RESPONSE_KEYS);
-    for (const key of RAW_OR_DENIED_KEYS) expect(body.data).not.toHaveProperty(key);
-    return body.data;
-  }
-
-  async function mutationFootprint(activityId: string) {
-    const [checkIns, sheets, records, audits] = await Promise.all([
-      prisma.activityCheckIn.count({ where: { activityId } }),
-      prisma.attendanceSheet.count({ where: { activityId } }),
-      prisma.attendanceRecord.count({ where: { sheet: { activityId } } }),
-      prisma.auditLog.count(),
-    ]);
-    return { checkIns, sheets, records, audits };
-  }
-
-  it.each([
-    ['POST check-in', 'post', '/api/app/v1/my/activities/cmissing000000/check-in'],
-    ['POST check-out', 'post', '/api/app/v1/my/activities/cmissing000000/check-out'],
-    ['GET status', 'get', '/api/app/v1/my/activities/cmissing000000/check-in'],
-  ] as const)('%s 未登录先返回 UNAUTHORIZED', async (_label, method, path) => {
-    const res = method === 'post' ? await post(path, location) : await get(path);
-    expectBizError(res, BizCode.UNAUTHORIZED);
-  });
-
-  it('未关联 / inactive / 软删 Member 均返回 FORBIDDEN，linked ADMIN 仍是本人视角', async () => {
-    const activity = await createActivity();
-    const unlinked = await setupUnlinkedUser(`unlinked${next()}`);
-    expectBizError(
-      await post(checkInPath(activity.id), location, unlinked.authHeader),
-      BizCode.FORBIDDEN,
+  it('unlinked/inactive/deleted members fail D5; a linked ADMIN can only punch for their own identity', async () => {
+    const input = await scene();
+    const unlinked = await actor(Role.USER, false);
+    await rejectUnchanged(input, punch(input, 'check_in', {}, unlinked.auth), BizCode.FORBIDDEN);
+    for (const change of [{ status: MemberStatus.INACTIVE }, { deletedAt: START }]) {
+      const subject = await actor();
+      await db.member.update({ where: { id: subject.memberId! }, data: change });
+      await rejectUnchanged(input, punch(input, 'check_in', {}, subject.auth), BizCode.FORBIDDEN);
+      await rejectUnchanged(input, state(input, subject.auth), BizCode.FORBIDDEN);
+    }
+    const admin = await actor(Role.ADMIN);
+    await rejectUnchanged(
+      input,
+      punch(input, 'check_in', {}, admin.auth),
+      BizCode.ATTENDANCE_REGISTRATION_INVALID,
     );
-
-    const inactive = await setupLinkedUser(`inactive${next()}`, `F2-I-${next()}`);
-    await prisma.member.update({
-      where: { id: inactive.memberId },
-      data: { status: MemberStatus.INACTIVE },
-    });
-    expectBizError(
-      await post(checkInPath(activity.id), location, inactive.authHeader),
-      BizCode.FORBIDDEN,
-    );
-
-    const deleted = await setupLinkedUser(`deleted${next()}`, `F2-D-${next()}`);
-    await prisma.member.update({
-      where: { id: deleted.memberId },
-      data: { deletedAt: new Date() },
-    });
-    expectBizError(
-      await post(checkInPath(activity.id), location, deleted.authHeader),
-      BizCode.FORBIDDEN,
-    );
-
-    const admin = await setupLinkedUser(`admin${next()}`, `F2-A-${next()}`, Role.ADMIN);
-    const adminActivity = await createActivity();
-    const adminRegistration = await createRegistration(adminActivity.id, admin.memberId);
-    const adminResult = await post(checkInPath(adminActivity.id), location, admin.authHeader);
-    expect(adminResult.status).toBe(200);
-    expect(expectSafeSuccess(adminResult.body as SuccessBody).registrationId).toBe(
-      adminRegistration.id,
-    );
+    const own = await scene(admin);
+    const receipt = safeReceipt(await punch(own, 'check_in', {}, admin.auth));
+    expect(
+      (
+        await db.attendancePunchEvent.findUniqueOrThrow({
+          where: { id: receipt.eventId as string },
+        })
+      ).memberId,
+    ).toBe(admin.memberId);
   });
 
   it.each([
-    ['缺 longitude', { latitude: 22 }],
-    ['缺 latitude', { longitude: 114 }],
-    ['longitude 越界', { longitude: 180.1, latitude: 22 }],
-    ['latitude 小数超过 7 位', { longitude: 114, latitude: 22.12345678 }],
-    ['accuracy 为负', { longitude: 114, latitude: 22, accuracy: -0.01 }],
-    ['accuracy 小数超过 2 位', { longitude: 114, latitude: 22, accuracy: 1.234 }],
-    ['accuracy 越界', { longitude: 114, latitude: 22, accuracy: 100_000_000 }],
-    ['夹带 memberId', { longitude: 114, latitude: 22, memberId: 'other' }],
-  ])('%s 由严格 DTO 返回 BAD_REQUEST', async (_label, body) => {
-    const activity = await createActivity();
-    await createRegistration(activity.id, main.memberId);
-    const before = await mutationFootprint(activity.id);
-    const response = await post(checkInPath(activity.id), body, main.authHeader);
-    expectBizError(response, BizCode.BAD_REQUEST, { strictMessage: false });
-    expect(await mutationFootprint(activity.id)).toEqual(before);
+    ['longitude range', { longitude: 180.1 }],
+    ['latitude precision', { latitude: 22.12345678 }],
+    ['negative accuracy', { accuracy: -0.01 }],
+    ['accuracy precision', { accuracy: 1.234 }],
+    ['accuracy range', { accuracy: 100_000_000 }],
+    ['member override', { memberId: 'other' }],
+    ['missing QR', { qrToken: undefined }],
+    ['missing key', { eventKey: undefined }],
+    ['null coordinate', { longitude: null }],
+  ])('%s fails strict DTO validation without writes', async (_label, overrides) => {
+    const input = await scene();
+    await rejectUnchanged(input, punch(input, 'check_in', overrides), BizCode.BAD_REQUEST);
   });
 
-  it('DTO 接受经纬度闭区间端点与 accuracy 最大值，accuracy 不缩小半径', async () => {
-    const activity = await createActivity({ longitude: '180', latitude: '-90' });
-    await createRegistration(activity.id, main.memberId);
-    const accepted = await post(
-      checkInPath(activity.id),
-      { longitude: 180, latitude: -90, accuracy: 99_999_999.99 },
-      main.authHeader,
-    );
-    expect(accepted.status).toBe(200);
-    expect(expectSafeSuccess(accepted.body as SuccessBody)).toMatchObject({
-      checkInDistance: '0',
-      geoVerified: true,
-      outOfRange: false,
+  it('closed coordinate bounds and maximum accuracy are accepted without shrinking the radius', async () => {
+    const input = await scene();
+    await db.activitySession.update({
+      where: { id: input.sessionId },
+      data: { longitude: 180, latitude: -90 },
     });
+    const result = safeReceipt(
+      await punch(input, 'check_in', { longitude: 180, latitude: -90, accuracy: 99_999_999.99 }),
+    );
+    expect(result).toMatchObject({ distanceMeters: '0.00', geoVerified: true, lowAccuracy: true });
     expectBizError(
-      await post('/api/app/v1/my/activities/short/check-in', location, main.authHeader),
+      await request(httpServer(app))
+        .post(path({ ...input, activityId: 'short' }, 'check_in'))
+        .set('Authorization', main.auth)
+        .send(body(input, 'check_in')),
       BizCode.BAD_REQUEST,
       { strictMessage: false },
     );
   });
 
-  it.each(['pending', 'reject', 'cancelled'] as const)(
-    '%s 报名不能签到或签退，统一 ATTENDANCE_REGISTRATION_INVALID',
+  it.each(['pending', 'waitlisted', 'rejected', 'cancelled'])(
+    '%s native identity cannot start a segment',
+    async (currentStatusCode) => {
+      const input = await scene();
+      await db.activityParticipationIdentity.update({
+        where: { id: input.identityId },
+        data: { currentStatusCode, populationIncluded: false },
+      });
+      await rejectUnchanged(input, punch(input), BizCode.ATTENDANCE_REGISTRATION_INVALID);
+    },
+  );
+
+  it('missing native identity stays generic; a deleted activity cannot accept new facts', async () => {
+    const input = await scene();
+    const other = await actor();
+    await rejectUnchanged(
+      input,
+      punch(input, 'check_in', {}, other.auth),
+      BizCode.ATTENDANCE_REGISTRATION_INVALID,
+    );
+    await rejectUnchanged(input, state(input, other.auth), BizCode.ATTENDANCE_REGISTRATION_INVALID);
+    await db.activity.update({ where: { id: input.activityId }, data: { deletedAt: START } });
+    await rejectUnchanged(input, punch(input), BizCode.ACTIVITY_NOT_FOUND);
+  });
+
+  it('legacy GPS history cannot stand in for a native participation identity or an open segment', async () => {
+    const input = await scene();
+    await db.activityCheckIn.create({
+      data: {
+        activityId: input.activityId,
+        registrationId: input.registrationId,
+        memberId: main.memberId!,
+        checkInAt: time(-60),
+        geoVerified: true,
+        outOfRange: false,
+      },
+    });
+    await rejectUnchanged(
+      input,
+      punch(input, 'check_out'),
+      BizCode.ATTENDANCE_PUNCH_CHECK_OUT_REQUIRES_OPEN_SEGMENT,
+    );
+    const before = await footprint(input);
+    const read = await state(input);
+    expect(read.status).toBe(200);
+    expect(read.body.data.isPresent).toBe(false);
+    expect(await footprint(input)).toEqual(before);
+    safeReceipt(await punch(input));
+    expect(await db.activityCheckIn.count({ where: { activityId: input.activityId } })).toBe(1);
+  });
+
+  it.each(['draft', 'completed', 'cancelled', 'terminated'])(
+    '%s activity rejects a first check-in without side effects',
     async (statusCode) => {
-      const activity = await createActivity();
-      await createRegistration(activity.id, main.memberId, statusCode);
-      expectBizError(
-        await post(checkInPath(activity.id), location, main.authHeader),
-        BizCode.ATTENDANCE_REGISTRATION_INVALID,
-      );
-      expectBizError(
-        await post(checkOutPath(activity.id), location, main.authHeader),
-        BizCode.ATTENDANCE_REGISTRATION_INVALID,
+      const input = await scene();
+      await db.activity.update({ where: { id: input.activityId }, data: { statusCode } });
+      await rejectUnchanged(input, punch(input), BizCode.ACTIVITY_STATUS_INVALID);
+    },
+  );
+
+  it('closed activity status is checked before replay; the historical event cannot be overwritten', async () => {
+    const input = await scene();
+    safeReceipt(await punch(input));
+    await db.activity.update({
+      where: { id: input.activityId },
+      data: { statusCode: 'completed' },
+    });
+    await rejectUnchanged(input, punch(input), BizCode.ACTIVITY_STATUS_INVALID);
+  });
+
+  it('published check-in can finish after termination within its explicit checkout deadline', async () => {
+    const input = await scene();
+    safeReceipt(await punch(input));
+    await db.activity.update({
+      where: { id: input.activityId },
+      data: { statusCode: 'terminated' },
+    });
+    await db.activitySession.update({
+      where: { id: input.sessionId },
+      data: { terminationCheckOutDeadline: time(60) },
+    });
+    freeze(time(30));
+    expect(safeReceipt(await punch(input, 'check_out')).segmentStatusCode).toBe('closed_valid');
+  });
+
+  it('self punches intersect the session window with the assigned position interval, including exact boundaries', async () => {
+    const input = await scene();
+    await position(input, 20, 90);
+    await rejectUnchanged(input, punch(input), BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW);
+    freeze(time(20));
+    const first = safeReceipt(await punch(input));
+    freeze(new Date(time(90).getTime() + 1));
+    await rejectUnchanged(
+      input,
+      punch(input, 'check_out'),
+      BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW,
+    );
+    const beforeReplay = await footprint(input);
+    expect(safeReceipt(await punch(input))).toEqual(first);
+    expect(await footprint(input)).toEqual(beforeReplay);
+    freeze(time(90));
+    expect(safeReceipt(await punch(input, 'check_out')).segmentStatusCode).toBe('closed_valid');
+  });
+
+  it('managed proxy punches enforce the same position intersection before any event, projection or audit write', async () => {
+    const input = await scene();
+    const slot = await position(input, 20, 90);
+    await db.activityResponsibilityAssignment.create({
+      data: {
+        activityId: input.activityId,
+        memberId: main.memberId!,
+        responsibilityType: 'owner',
+        canManageRegistrations: true,
+        canManageAttendance: true,
+        status: 'active',
+        assignedByUserId: main.userId,
+        source: 'publish',
+      },
+    });
+    const currentUser = await db.user.findUniqueOrThrow({
+      where: { id: main.userId },
+      select: { id: true, username: true, memberId: true, role: true, status: true },
+    });
+    const command = {
+      activityId: input.activityId,
+      sessionId: input.sessionId,
+      participationIdentityId: input.identityId,
+      memberCredential: null,
+      actionCode: 'check_in' as const,
+      sourceCode: 'proxy' as const,
+      eventKey: `${input.activityId}:proxy`,
+      reason: '岗位窗口验收',
+      deviceId: null,
+      ...LOCATION,
+      currentUser,
+      auditMeta: { requestId: 'native-position-window', ip: null, ua: null },
+    };
+    const service = app.get(AttendancePunchCommandService);
+    const before = await footprint(input);
+    await expect(service.managedPunch(command)).rejects.toMatchObject({
+      biz: BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW,
+    });
+    expect(await footprint(input)).toEqual(before);
+    freeze(time(20));
+    const receipt = await service.managedPunch(command);
+    expect(
+      (await db.attendancePunchEvent.findUniqueOrThrow({ where: { id: receipt.eventId } }))
+        .positionId,
+    ).toBe(slot.id);
+  });
+
+  it('checkout uses the position captured by the open check-in, not a later identity assignment', async () => {
+    const input = await scene();
+    const original = await position(input, 20, 90);
+    freeze(time(20));
+    safeReceipt(await punch(input));
+    await position(input, 120, 240);
+    freeze(time(70));
+    const receipt = safeReceipt(await punch(input, 'check_out'));
+    expect(
+      (
+        await db.attendancePunchEvent.findUniqueOrThrow({
+          where: { id: receipt.eventId as string },
+        })
+      ).positionId,
+    ).toBe(original.id);
+  });
+
+  it('the explicit termination checkout deadline preserves closure even after the ordinary position end', async () => {
+    const input = await scene();
+    await position(input, 20, 60);
+    freeze(time(20));
+    safeReceipt(await punch(input));
+    await db.activity.update({
+      where: { id: input.activityId },
+      data: { statusCode: 'terminated' },
+    });
+    await db.activitySession.update({
+      where: { id: input.sessionId },
+      data: { terminationCheckOutDeadline: time(80) },
+    });
+    freeze(time(70));
+    expect(safeReceipt(await punch(input, 'check_out')).segmentStatusCode).toBe('closed_valid');
+  });
+
+  it.each([
+    { label: 'before open', now: new Date(time(-30).getTime() - 1), accepted: false },
+    { label: 'at open', now: time(-30), accepted: true },
+    { label: 'at close', now: time(60), accepted: true },
+    { label: 'after close', now: new Date(time(60).getTime() + 1), accepted: false },
+  ])(
+    'check-in $label uses the server clock and exact session boundary',
+    async ({ now, accepted }) => {
+      const input = await scene();
+      freeze(now);
+      if (accepted) expect(safeReceipt(await punch(input)).occurredAt).toBe(now.toISOString());
+      else await rejectUnchanged(input, punch(input), BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW);
+    },
+  );
+
+  it('checkout enforces its own window independently of an already-sufficient duration', async () => {
+    const input = await scene();
+    safeReceipt(await punch(input));
+    await db.activitySession.update({
+      where: { id: input.sessionId },
+      data: { checkOutOpenAt: time(60), checkOutCloseAt: time(120) },
+    });
+    freeze(new Date(time(60).getTime() - 1));
+    await rejectUnchanged(
+      input,
+      punch(input, 'check_out'),
+      BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW,
+    );
+    freeze(new Date(time(120).getTime() + 1));
+    await rejectUnchanged(
+      input,
+      punch(input, 'check_out'),
+      BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW,
+    );
+    freeze(time(120));
+    expect(safeReceipt(await punch(input, 'check_out')).occurredAt).toBe(time(120).toISOString());
+  });
+
+  it('29:59.999 rejects; exactly 30:00 closes a valid segment without altering the original check-in', async () => {
+    const input = await scene();
+    const first = safeReceipt(await punch(input));
+    const stored = await db.attendancePunchEvent.findUniqueOrThrow({
+      where: { id: first.eventId as string },
+    });
+    freeze(new Date(time(30).getTime() - 1));
+    await rejectUnchanged(
+      input,
+      punch(input, 'check_out'),
+      BizCode.ATTENDANCE_PUNCH_MIN_DURATION_NOT_REACHED,
+    );
+    freeze(time(30));
+    expect(safeReceipt(await punch(input, 'check_out')).segmentStatusCode).toBe('closed_valid');
+    expect(await db.attendancePunchEvent.findUniqueOrThrow({ where: { id: stored.id } })).toEqual(
+      stored,
+    );
+  });
+
+  it('exact replay outside the window returns the first immutable receipt with no new audit/evidence', async () => {
+    const input = await scene();
+    const first = safeReceipt(await punch(input));
+    freeze(time(30));
+    const last = safeReceipt(await punch(input, 'check_out'));
+    const before = await footprint(input);
+    freeze(time(300));
+    expect(safeReceipt(await punch(input))).toEqual(first);
+    expect(safeReceipt(await punch(input, 'check_out'))).toEqual(last);
+    expect(await footprint(input)).toEqual(before);
+  });
+
+  it.each([
+    { longitude: undefined, latitude: undefined },
+    { longitude: undefined },
+    { latitude: undefined },
+  ])(
+    'required location rejects incomplete coordinates %# without derived writes',
+    async (overrides) => {
+      const input = await scene();
+      await rejectUnchanged(
+        input,
+        punch(input, 'check_in', overrides),
+        BizCode.ATTENDANCE_PUNCH_LOCATION_REQUIRED,
       );
     },
   );
 
-  it('无报名同样拒绝，活动不存在或软删则更早返回 ACTIVITY_NOT_FOUND', async () => {
-    const activity = await createActivity();
-    expectBizError(
-      await post(checkInPath(activity.id), location, main.authHeader),
-      BizCode.ATTENDANCE_REGISTRATION_INVALID,
+  it('Haversine accepts same-point/just-inside and rejects even a sub-rounding distance beyond 500m', async () => {
+    const same = await scene();
+    expect(safeReceipt(await punch(same)).distanceMeters).toBe('0.00');
+    const inside = await scene();
+    const accepted = safeReceipt(
+      await punch(inside, 'check_in', { latitude: 22.0044966, accuracy: 99_999_999.99 }),
     );
-    expectBizError(
-      await post(checkInPath('cmissing000000'), location, main.authHeader),
-      BizCode.ACTIVITY_NOT_FOUND,
+    expect(Number(accepted.distanceMeters)).toBeLessThanOrEqual(500);
+    const outside = await scene();
+    // Valid seven-decimal coordinates; raw distance is just above 500m even
+    // though a rounded storage/display value could read 500.
+    await rejectUnchanged(
+      outside,
+      punch(outside, 'check_in', { longitude: 114.00001, latitude: 22.0044966, accuracy: 0 }),
+      BizCode.ATTENDANCE_PUNCH_LOCATION_OUT_OF_RANGE,
     );
-    const deleted = await createActivity({ deletedAt: new Date() });
-    expectBizError(
-      await post(checkInPath(deleted.id), location, main.authHeader),
-      BizCode.ACTIVITY_NOT_FOUND,
-    );
-  });
-
-  it('软删 pass registration 对写为 22076、对 GET 为 22002', async () => {
-    const activity = await createActivity();
-    const registration = await createRegistration(activity.id, main.memberId);
-    await prisma.activityRegistration.update({
-      where: { id: registration.id },
-      data: { deletedAt: new Date() },
-    });
-    expectBizError(
-      await post(checkInPath(activity.id), location, main.authHeader),
-      BizCode.ATTENDANCE_REGISTRATION_INVALID,
-    );
-    expectBizError(
-      await get(statusPath(activity.id), main.authHeader),
-      BizCode.ACTIVITY_CHECK_IN_NOT_FOUND,
+    await rejectUnchanged(
+      outside,
+      punch(outside, 'check_in', { latitude: 22.0044967, accuracy: 99_999_999.99 }),
+      BizCode.ATTENDANCE_PUNCH_LOCATION_OUT_OF_RANGE,
     );
   });
 
   it.each([
-    ['draft', BizCode.ACTIVITY_NOT_PUBLISHED_PARTICIPATION_FORBIDDEN],
-    ['cancelled', BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN],
-    ['completed', BizCode.ACTIVITY_STATUS_INVALID],
-  ] as const)('%s 新签到按冻结状态矩阵拒绝', async (statusCode, biz) => {
-    const activity = await createActivity({ statusCode });
-    await createRegistration(activity.id, main.memberId);
-    expectBizError(await post(checkInPath(activity.id), location, main.authHeader), biz);
+    { data: { longitude: null }, constraint: 'activity_session_coordinate_pair_check' },
+    { data: { latitude: null }, constraint: 'activity_session_coordinate_pair_check' },
+    { data: { radiusMeters: null }, constraint: 'activity_session_location_policy_check' },
+  ])(
+    'incomplete required session configuration %# is rejected by PostgreSQL before it can affect punches',
+    async ({ data, constraint }) => {
+      const input = await scene();
+      const original = await db.activitySession.findUniqueOrThrow({
+        where: { id: input.sessionId },
+      });
+      const before = await footprint(input);
+      await expect(
+        db.activitySession.update({ where: { id: input.sessionId }, data }),
+      ).rejects.toThrow(new RegExp(`23514.*violates check constraint.*${constraint}`));
+      expect(
+        await db.activitySession.findUniqueOrThrow({ where: { id: input.sessionId } }),
+      ).toEqual(original);
+      expect(await footprint(input)).toEqual(before);
+    },
+  );
+  it('out-of-range session coordinates are rejected by the runtime policy without derived facts', async () => {
+    const input = await scene();
+    await db.activitySession.update({ where: { id: input.sessionId }, data: { longitude: 181 } });
+    await rejectUnchanged(input, punch(input), BizCode.ATTENDANCE_PUNCH_LOCATION_OUT_OF_RANGE);
   });
 
-  it.each([
-    ['draft', BizCode.ACTIVITY_NOT_PUBLISHED_PARTICIPATION_FORBIDDEN],
-    ['cancelled', BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN],
-  ] as const)('%s 即使已有证据也不能用幂等绕过签退状态闸', async (statusCode, biz) => {
-    const activity = await createActivity({ statusCode });
-    const registration = await createRegistration(activity.id, main.memberId);
-    await seedEvidence(activity.id, main.memberId, registration.id, {
-      checkOutAt: new Date(Date.now() - 10_000),
-    });
-    expectBizError(await post(checkOutPath(activity.id), location, main.authHeader), biz);
-  });
-
-  it('状态与当前 pass 闸严格先于幂等 winner', async () => {
-    const cancelled = await createActivity();
-    const cancelledRegistration = await createRegistration(cancelled.id, main.memberId);
-    await seedEvidence(cancelled.id, main.memberId, cancelledRegistration.id);
-    await prisma.activity.update({
-      where: { id: cancelled.id },
-      data: { statusCode: 'cancelled', cancelledAt: new Date(), cancelReason: 'race test' },
-    });
-    expectBizError(
-      await post(checkInPath(cancelled.id), location, main.authHeader),
-      BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN,
+  it('neither a rejected location nor an accepted punch supplies formal contribution credit', async () => {
+    const input = await scene();
+    await rejectUnchanged(
+      input,
+      punch(input, 'check_in', { longitude: 115 }),
+      BizCode.ATTENDANCE_PUNCH_LOCATION_OUT_OF_RANGE,
     );
-
-    const noPass = await createActivity();
-    const noPassRegistration = await createRegistration(noPass.id, main.memberId);
-    await seedEvidence(noPass.id, main.memberId, noPassRegistration.id);
-    await prisma.activityRegistration.update({
-      where: { id: noPassRegistration.id },
-      data: { statusCode: 'cancelled', cancelledAt: new Date() },
-    });
-    expectBizError(
-      await post(checkInPath(noPass.id), location, main.authHeader),
-      BizCode.ATTENDANCE_REGISTRATION_INVALID,
-    );
-
-    const completed = await createActivity({ statusCode: 'completed' });
-    const completedRegistration = await createRegistration(completed.id, main.memberId);
-    await seedEvidence(completed.id, main.memberId, completedRegistration.id);
-    expectBizError(
-      await post(checkInPath(completed.id), location, main.authHeader),
-      BizCode.ACTIVITY_STATUS_INVALID,
-    );
-  });
-
-  it('published 可签到；completed 已签到可首次签退', async () => {
-    const published = await createActivity();
-    await createRegistration(published.id, main.memberId);
-    const checkIn = await post(checkInPath(published.id), location, main.authHeader);
-    expect(checkIn.status).toBe(200);
-    expectSafeSuccess(checkIn.body as SuccessBody);
-
-    const completed = await createActivity({ statusCode: 'completed' });
-    const registration = await createRegistration(completed.id, main.memberId);
-    await seedEvidence(completed.id, main.memberId, registration.id, {
-      checkInAt: new Date(Date.now() - 60_000),
-    });
-    const checkOut = await post(checkOutPath(completed.id), location, main.authHeader);
-    expect(checkOut.status).toBe(200);
-    expect(expectSafeSuccess(checkOut.body as SuccessBody).checkOutAt).not.toBeNull();
-  });
-
-  it('签到时间窗前后硬拒，并在 endAt-36s 边界两侧表现稳定', async () => {
-    const now = Date.now();
-    const before = await createActivity({
-      startAt: new Date(now + 3 * 60 * 60_000),
-      endAt: new Date(now + 4 * 60 * 60_000),
-    });
-    await createRegistration(before.id, main.memberId);
-    expectBizError(
-      await post(checkInPath(before.id), location, main.authHeader),
-      BizCode.ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW,
-    );
-
-    const after = await createActivity({
-      startAt: new Date(now - 4 * 60 * 60_000),
-      endAt: new Date(now - 3 * 60 * 60_000),
-    });
-    await createRegistration(after.id, main.memberId);
-    expectBizError(
-      await post(checkInPath(after.id), location, main.authHeader),
-      BizCode.ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW,
-    );
-
-    const tooLateForFallback = await createActivity({ endAt: new Date(Date.now() + 35_000) });
-    await createRegistration(tooLateForFallback.id, main.memberId);
-    expectBizError(
-      await post(checkInPath(tooLateForFallback.id), location, main.authHeader),
-      BizCode.ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW,
-    );
-
-    const justInside = await createActivity({ endAt: new Date(Date.now() + 41_000) });
-    await createRegistration(justInside.id, main.memberId);
-    expect((await post(checkInPath(justInside.id), location, main.authHeader)).status).toBe(200);
-  });
-
-  it('首次签退同时执行总时间窗与 checkInAt+36s floor', async () => {
-    const afterWindow = await createActivity({
-      startAt: new Date(Date.now() - 4 * 60 * 60_000),
-      endAt: new Date(Date.now() - 3 * 60 * 60_000),
-    });
-    const afterReg = await createRegistration(afterWindow.id, main.memberId);
-    await seedEvidence(afterWindow.id, main.memberId, afterReg.id, {
-      checkInAt: new Date(Date.now() - 4 * 60 * 60_000),
-    });
-    expectBizError(
-      await post(checkOutPath(afterWindow.id), location, main.authHeader),
-      BizCode.ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW,
-    );
-
-    const short = await createActivity();
-    const shortReg = await createRegistration(short.id, main.memberId);
-    await seedEvidence(short.id, main.memberId, shortReg.id, {
-      checkInAt: new Date(Date.now() - 35_000),
-    });
-    expectBizError(
-      await post(checkOutPath(short.id), location, main.authHeader),
-      BizCode.ATTENDANCE_SERVICE_HOURS_INVALID,
-    );
-
-    const enough = await createActivity();
-    const enoughReg = await createRegistration(enough.id, main.memberId);
-    await seedEvidence(enough.id, main.memberId, enoughReg.id, {
-      checkInAt: new Date(Date.now() - 40_000),
-    });
-    expect((await post(checkOutPath(enough.id), location, main.authHeader)).status).toBe(200);
-  });
-
-  it('固定 authoritative now 精确锁定 endAt-36s、endAt+tolerance 与 36s floor 边界', async () => {
-    const fixed = new Date();
-    freezeSystemTime(fixed);
-
-    const checkInExact = await createActivity({
-      startAt: new Date(fixed.getTime() - 60_000),
-      endAt: new Date(fixed.getTime() + 36_000),
-    });
-    await createRegistration(checkInExact.id, main.memberId);
-    expect((await post(checkInPath(checkInExact.id), location, main.authHeader)).status).toBe(200);
-
-    const checkInOneMsLate = await createActivity({
-      startAt: new Date(fixed.getTime() - 60_000),
-      endAt: new Date(fixed.getTime() + 35_999),
-    });
-    await createRegistration(checkInOneMsLate.id, main.memberId);
-    expectBizError(
-      await post(checkInPath(checkInOneMsLate.id), location, main.authHeader),
-      BizCode.ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW,
-    );
-
-    const checkOutExactEnd = await createActivity({
-      startAt: new Date(fixed.getTime() - 3 * 60 * 60_000),
-      endAt: new Date(fixed.getTime() - 2 * 60 * 60_000),
-    });
-    const exactEndRegistration = await createRegistration(checkOutExactEnd.id, main.memberId);
-    await seedEvidence(checkOutExactEnd.id, main.memberId, exactEndRegistration.id, {
-      checkInAt: new Date(fixed.getTime() - 60_000),
-    });
-    expect((await post(checkOutPath(checkOutExactEnd.id), location, main.authHeader)).status).toBe(
-      200,
-    );
-
-    const checkOutOneMsLate = await createActivity({
-      startAt: new Date(fixed.getTime() - 3 * 60 * 60_000),
-      endAt: new Date(fixed.getTime() - 2 * 60 * 60_000 - 1),
-    });
-    const lateRegistration = await createRegistration(checkOutOneMsLate.id, main.memberId);
-    await seedEvidence(checkOutOneMsLate.id, main.memberId, lateRegistration.id, {
-      checkInAt: new Date(fixed.getTime() - 60_000),
-    });
-    expectBizError(
-      await post(checkOutPath(checkOutOneMsLate.id), location, main.authHeader),
-      BizCode.ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW,
-    );
-
-    const floorExact = await createActivity();
-    const floorExactRegistration = await createRegistration(floorExact.id, main.memberId);
-    await seedEvidence(floorExact.id, main.memberId, floorExactRegistration.id, {
-      checkInAt: new Date(fixed.getTime() - 36_000),
-    });
-    expect((await post(checkOutPath(floorExact.id), location, main.authHeader)).status).toBe(200);
-
-    const floorOneMsShort = await createActivity();
-    const floorShortRegistration = await createRegistration(floorOneMsShort.id, main.memberId);
-    await seedEvidence(floorOneMsShort.id, main.memberId, floorShortRegistration.id, {
-      checkInAt: new Date(fixed.getTime() - 35_999),
-    });
-    expectBizError(
-      await post(checkOutPath(floorOneMsShort.id), location, main.authHeader),
-      BizCode.ATTENDANCE_SERVICE_HOURS_INVALID,
-    );
-  });
-
-  it('时间窗只约束首次写：已完成同动作在窗口外仍幂等 200', async () => {
-    const checkedIn = await createActivity();
-    const checkedInRegistration = await createRegistration(checkedIn.id, main.memberId);
-    await seedEvidence(checkedIn.id, main.memberId, checkedInRegistration.id);
-    await prisma.activity.update({
-      where: { id: checkedIn.id },
-      data: {
-        startAt: new Date(Date.now() - 4 * 60 * 60_000),
-        endAt: new Date(Date.now() - 3 * 60 * 60_000),
-      },
-    });
-    expect((await post(checkInPath(checkedIn.id), location, main.authHeader)).status).toBe(200);
-
-    const checkedOut = await createActivity({ statusCode: 'completed' });
-    const checkedOutRegistration = await createRegistration(checkedOut.id, main.memberId);
-    await seedEvidence(checkedOut.id, main.memberId, checkedOutRegistration.id, {
-      checkInAt: new Date(Date.now() - 4 * 60 * 60_000),
-      checkOutAt: new Date(Date.now() - 3 * 60 * 60_000),
-    });
-    await prisma.activity.update({
-      where: { id: checkedOut.id },
-      data: {
-        startAt: new Date(Date.now() - 5 * 60 * 60_000),
-        endAt: new Date(Date.now() - 4 * 60 * 60_000),
-      },
-    });
-    expect((await post(checkOutPath(checkedOut.id), location, main.authHeader)).status).toBe(200);
-  });
-
-  it.each([
-    ['无坐标', null, null],
-    ['只有经度', '114.0000000', null],
-    ['历史非法经度', '181.0000000', '22.0000000'],
-  ] as const)('%s 时首次签到 fail closed，且所有派生表零写', async (_label, lon, lat) => {
-    const activity = await createActivity({ longitude: lon, latitude: lat });
-    await createRegistration(activity.id, main.memberId);
-    const before = await mutationFootprint(activity.id);
-
-    expectBizError(
-      await post(checkInPath(activity.id), location, main.authHeader),
-      BizCode.ACTIVITY_CHECK_IN_LOCATION_VERIFICATION_FAILED,
-    );
-    expect(await mutationFootprint(activity.id)).toEqual(before);
-  });
-
-  it('Haversine 生产调用点覆盖同点、500m 原始边界两侧，略超即零写拒绝', async () => {
-    const same = await createActivity({ longitude: '0', latitude: '0' });
-    await createRegistration(same.id, main.memberId);
-    const sameData = expectSafeSuccess(
-      (await post(checkInPath(same.id), { longitude: 0, latitude: 0 }, main.authHeader))
-        .body as SuccessBody,
-    );
-    expect(sameData).toMatchObject({
-      checkInDistance: '0',
-      geoVerified: true,
-      outOfRange: false,
-    });
-
-    const within = await createActivity({ longitude: '0', latitude: '0' });
-    await createRegistration(within.id, main.memberId);
-    const withinData = expectSafeSuccess(
-      (await post(checkInPath(within.id), { longitude: 0, latitude: 0.0044966 }, main.authHeader))
-        .body as SuccessBody,
-    );
-    expect(withinData.checkInDistance).toBe('500');
-    expect(withinData.geoVerified).toBe(true);
-    expect(withinData.outOfRange).toBe(false);
-
-    const outside = await createActivity({ longitude: '0', latitude: '0' });
-    await createRegistration(outside.id, main.memberId);
-    const before = await mutationFootprint(outside.id);
-    expectBizError(
-      await post(
-        checkInPath(outside.id),
-        { longitude: 0, latitude: 0.0044967, accuracy: 99_999_999.99 },
-        main.authHeader,
-      ),
-      BizCode.ACTIVITY_CHECK_IN_LOCATION_VERIFICATION_FAILED,
-    );
-    expect(await mutationFootprint(outside.id)).toEqual(before);
-  });
-
-  it.each([
-    ['活动坐标缺失', { longitude: null, latitude: null }, location],
-    ['原始距离超半径', {}, { longitude: 115, latitude: 22, accuracy: 99_999_999.99 }],
-  ] as const)('%s 时首次签退沿同一 location policy fail closed', async (_label, opts, body) => {
-    const activity = await createActivity(opts);
-    const registration = await createRegistration(activity.id, main.memberId);
-    const evidence = await seedEvidence(activity.id, main.memberId, registration.id, {
-      checkInAt: new Date(Date.now() - 60_000),
-    });
-    const before = await mutationFootprint(activity.id);
-
-    expectBizError(
-      await post(checkOutPath(activity.id), body, main.authHeader),
-      BizCode.ACTIVITY_CHECK_IN_LOCATION_VERIFICATION_FAILED,
-    );
-    expect(await mutationFootprint(activity.id)).toEqual(before);
+    safeReceipt(await punch(input));
     expect(
-      (
-        await prisma.activityCheckIn.findUniqueOrThrow({
-          where: { id: evidence.id },
-          select: { checkOutAt: true },
-        })
-      ).checkOutAt,
-    ).toBeNull();
-  });
-
-  it('定位拒绝不会产生考勤、贡献或审计派生写，也不能满足入队贡献 gate', async () => {
-    const isolated = await setupLinkedUser(`rejected${next()}`, `F2-R-${next()}`);
-    const activity = await createActivity();
-    await createRegistration(activity.id, isolated.memberId);
-    const before = await mutationFootprint(activity.id);
-
-    expectBizError(
-      await post(checkInPath(activity.id), { longitude: 115, latitude: 22 }, isolated.authHeader),
-      BizCode.ACTIVITY_CHECK_IN_LOCATION_VERIFICATION_FAILED,
-    );
-    expect(await mutationFootprint(activity.id)).toEqual(before);
-
+      await db.participationLedgerEntry.count({ where: { activityId: input.activityId } }),
+    ).toBe(0);
     const contribution = await computeContribution(
-      prisma,
-      isolated.memberId,
-      new Date().getUTCFullYear() + 1,
+      db,
+      main.memberId!,
+      2020,
       app.get(ActivityWorkflowGate),
       LedgerQueryService,
     );
-    expect(contribution.points.toString()).toBe('0');
+    expect(contribution.points.toNumber()).toBe(0);
     expect(contribution.satisfied).toBe(false);
   });
 
-  it('重复签到和签退均返回首次 winner，后续位置不得覆盖 snapshot', async () => {
-    const activity = await createActivity();
-    const registration = await createRegistration(activity.id, main.memberId);
-    const first = await post(checkInPath(activity.id), location, main.authHeader);
-    const retry = await post(
-      checkInPath(activity.id),
-      { longitude: -10, latitude: -10, accuracy: 99 },
-      main.authHeader,
+  it('changed payload under a successful key is rejected, while a new key cannot duplicate an open check-in', async () => {
+    const input = await scene();
+    const first = safeReceipt(await punch(input));
+    const before = await footprint(input);
+    await rejectUnchanged(
+      input,
+      punch(input, 'check_in', { longitude: 115 }),
+      BizCode.ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT,
     );
-    expect(first.status).toBe(200);
-    expect(retry.status).toBe(200);
-    const firstData = expectSafeSuccess(first.body as SuccessBody);
-    const retryData = expectSafeSuccess(retry.body as SuccessBody);
-    expect(retryData.id).toBe(firstData.id);
-    expect(firstData).toMatchObject({ geoVerified: true, outOfRange: false });
-
-    await prisma.activityCheckIn.update({
-      where: { id: firstData.id as string },
-      data: { checkInAt: new Date(Date.now() - 60_000) },
-    });
-    const outFirst = await post(checkOutPath(activity.id), location, main.authHeader);
-    const outRetry = await post(
-      checkOutPath(activity.id),
-      { longitude: -20, latitude: -20, accuracy: 88 },
-      main.authHeader,
+    await rejectUnchanged(
+      input,
+      punch(input, 'check_in', { eventKey: `${input.activityId}:another` }),
+      BizCode.ATTENDANCE_PUNCH_OPEN_SEGMENT_EXISTS,
     );
-    const outFirstData = expectSafeSuccess(outFirst.body as SuccessBody);
-    const outRetryData = expectSafeSuccess(outRetry.body as SuccessBody);
-    expect(outRetryData.id).toBe(outFirstData.id);
-    expect(outRetryData.checkOutAt).toBe(outFirstData.checkOutAt);
-    expect(outRetryData).toMatchObject({ geoVerified: true, outOfRange: false });
-
-    const stored = await prisma.activityCheckIn.findFirstOrThrow({
-      where: { registrationId: registration.id },
-    });
-    expect(stored.checkInLongitude?.toString()).toBe('114');
-    expect(stored.checkOutLongitude?.toString()).toBe('114');
-    expect(stored.geoVerified).toBe(true);
-    expect(stored.outOfRange).toBe(false);
+    expect(safeReceipt(await punch(input))).toEqual(first);
+    expect(await footprint(input)).toEqual(before);
   });
 
-  it('8 路并发 check-in 全 200、同 winner，DB live row=1', async () => {
-    const activity = await createActivity();
-    const registration = await createRegistration(activity.id, main.memberId);
+  it('eight concurrent check-ins share one event, one segment and one audit', async () => {
+    const input = await scene();
     const responses = await Promise.all(
-      Array.from({ length: 8 }, (_, index) =>
-        post(
-          checkInPath(activity.id),
-          { longitude: 114 + index / 100_000, latitude: 22, accuracy: index },
-          main.authHeader,
-        ),
+      Array.from({ length: 8 }, (_, i) =>
+        punch(input, 'check_in', {}, main.auth, i % 2 ? appB : app),
       ),
     );
-    expect(responses.every((res) => res.status === 200)).toBe(true);
-    const ids = new Set(
-      responses.map((res) => expectSafeSuccess(res.body as SuccessBody).id as string),
+    const receipts = responses.map(safeReceipt);
+    expect(new Set(receipts.map((row) => row.eventId)).size).toBe(1);
+    expect(await db.attendancePunchEvent.count({ where: { activityId: input.activityId } })).toBe(
+      1,
     );
-    expect(ids.size).toBe(1);
     expect(
-      await prisma.activityCheckIn.count({
-        where: { registrationId: registration.id, deletedAt: null },
+      await db.participantServiceSegmentRevision.count({
+        where: { participationIdentityId: input.identityId },
       }),
     ).toBe(1);
-  });
-
-  it('真实 PG 并发中非法请求不能成为 winner；合法/非法混跑只留下合法唯一行', async () => {
-    const rejectedActivity = await createActivity();
-    const rejectedRegistration = await createRegistration(rejectedActivity.id, main.memberId);
-    const rejected = await Promise.all(
-      Array.from({ length: 4 }, () =>
-        post(
-          checkInPath(rejectedActivity.id),
-          { longitude: 115, latitude: 22, accuracy: 99_999_999.99 },
-          main.authHeader,
-        ),
-      ),
-    );
-    for (const response of rejected) {
-      expectBizError(response, BizCode.ACTIVITY_CHECK_IN_LOCATION_VERIFICATION_FAILED);
-    }
-    expect(
-      await prisma.activityCheckIn.count({
-        where: { registrationId: rejectedRegistration.id, deletedAt: null },
-      }),
-    ).toBe(0);
-
-    const mixedActivity = await createActivity();
-    const mixedRegistration = await createRegistration(mixedActivity.id, main.memberId);
-    const mixed = await Promise.all(
-      Array.from({ length: 8 }, (_, index) =>
-        post(
-          checkInPath(mixedActivity.id),
-          index % 2 === 0
-            ? { longitude: 114, latitude: 22, accuracy: index }
-            : { longitude: 115, latitude: 22, accuracy: index },
-          main.authHeader,
-        ),
-      ),
-    );
-    const successes = mixed.filter((response) => response.status === 200);
-    const failures = mixed.filter((response) => response.status !== 200);
-    expect(successes.length).toBeGreaterThan(0);
-    expect(
-      new Set(
-        successes.map((response) => expectSafeSuccess(response.body as SuccessBody).id as string),
-      ).size,
-    ).toBe(1);
-    for (const response of failures) {
-      expectBizError(response, BizCode.ACTIVITY_CHECK_IN_LOCATION_VERIFICATION_FAILED);
-    }
-
-    const winner = await prisma.activityCheckIn.findFirstOrThrow({
-      where: { registrationId: mixedRegistration.id, deletedAt: null },
-    });
-    expect(winner.checkInLongitude?.toString()).toBe('114');
-    expect(winner.checkInLatitude?.toString()).toBe('22');
-    expect(winner.geoVerified).toBe(true);
-    expect(winner.outOfRange).toBe(false);
-    expect(
-      await prisma.activityCheckIn.count({
-        where: { registrationId: mixedRegistration.id, deletedAt: null },
-      }),
-    ).toBe(1);
-  });
-
-  it('并发 check-out 只有一个 CAS winner，全部重读同一首次签退', async () => {
-    const activity = await createActivity();
-    const registration = await createRegistration(activity.id, main.memberId);
-    await seedEvidence(activity.id, main.memberId, registration.id, {
-      checkInAt: new Date(Date.now() - 60_000),
-    });
-    const responses = await Promise.all(
-      Array.from({ length: 8 }, (_, index) =>
-        post(
-          checkOutPath(activity.id),
-          { longitude: 114 + index / 100_000, latitude: 22 },
-          main.authHeader,
-        ),
-      ),
-    );
-    expect(responses.every((res) => res.status === 200)).toBe(true);
-    const data = responses.map((res) => expectSafeSuccess(res.body as SuccessBody));
-    expect(new Set(data.map((item) => item.id)).size).toBe(1);
-    expect(new Set(data.map((item) => item.checkOutAt)).size).toBe(1);
+    expect(await db.auditLog.count({ where: { resourceId: input.activityId } })).toBe(1);
     expect(
       (
-        await prisma.activityCheckIn.findFirstOrThrow({
-          where: { registrationId: registration.id },
+        await db.activityEvidenceState.findUniqueOrThrow({
+          where: { activityId: input.activityId },
         })
-      ).checkOutAt,
-    ).not.toBeNull();
+      ).evidenceRevision,
+    ).toBe(1);
   });
 
-  it('GET 仅返回本人当前 pass registration 行；无行和他人行均 22002', async () => {
-    const activity = await createActivity();
-    const mine = await createRegistration(activity.id, main.memberId);
-    expectBizError(
-      await get(statusPath(activity.id), main.authHeader),
-      BizCode.ACTIVITY_CHECK_IN_NOT_FOUND,
+  async function waiter(
+    blockerPid: number,
+    pending: Promise<unknown>,
+    table: string,
+  ): Promise<number> {
+    let finished = false;
+    void pending.then(
+      () => {
+        finished = true;
+      },
+      () => {
+        finished = true;
+      },
     );
-
-    const other = await setupLinkedUser(`other${next()}`, `F2-O-${next()}`);
-    const otherRegistration = await createRegistration(activity.id, other.memberId);
-    await seedEvidence(activity.id, other.memberId, otherRegistration.id);
-    expectBizError(
-      await get(statusPath(activity.id), main.authHeader),
-      BizCode.ACTIVITY_CHECK_IN_NOT_FOUND,
+    const deadline = performance.now() + 1_200;
+    while (performance.now() < deadline) {
+      if (finished) throw new Error('HTTP mutation finished before required database wait');
+      const rows = await dbB.$queryRaw<Array<{ pid: number }>>`
+        SELECT pid FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock'
+          AND CAST(${blockerPid} AS integer) = ANY(pg_blocking_pids(pid))
+          AND query LIKE ${`%FROM "${table}"%FOR UPDATE%`}
+      `;
+      if (rows[0]) return rows[0].pid;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(`No native ${table} waiter observed`);
+  }
+  it('an illegal location holding Activity first cannot win the key against a valid queued request', async () => {
+    const input = await scene();
+    let release!: () => void;
+    let acquired!: (pid: number) => void;
+    let failed!: (error: unknown) => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const reached = new Promise<number>((resolve, reject) => {
+      acquired = resolve;
+      failed = reject;
+    });
+    const blocker = dbB.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "AttendanceQrCredential" WHERE id = ${input.credentials.check_in} FOR UPDATE`;
+        const [row] = await tx.$queryRaw<
+          Array<{ pid: number }>
+        >`SELECT pg_backend_pid()::int AS pid`;
+        acquired(row.pid);
+        await gate;
+      },
+      { timeout: 20_000 },
     );
+    void blocker.catch(failed);
+    const pending: Promise<request.Response>[] = [];
+    try {
+      const pid = await reached;
+      const invalid = Promise.resolve(punch(input, 'check_in', { longitude: 115 }));
+      pending.push(invalid);
+      const invalidPid = await waiter(pid, invalid, 'AttendanceQrCredential');
+      const valid = Promise.resolve(punch(input, 'check_in', {}, main.auth, appB));
+      pending.push(valid);
+      await waiter(invalidPid, valid, 'Activity');
+      release();
+      await blocker;
+      expectBizError(await invalid, BizCode.ATTENDANCE_PUNCH_LOCATION_OUT_OF_RANGE);
+      const receipt = safeReceipt(await valid);
+      const rows = await db.attendancePunchEvent.findMany({
+        where: { activityId: input.activityId },
+      });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe(receipt.eventId);
+      expect(Number(rows[0].longitude)).toBe(LOCATION.longitude);
+      expect(rows[0]).toMatchObject({ geoVerified: true, outOfRange: false });
+      expect(await db.auditLog.count({ where: { resourceId: input.activityId } })).toBe(1);
+    } finally {
+      release();
+      await Promise.allSettled([blocker, ...pending]);
+    }
+  }, 60_000);
 
-    await seedEvidence(activity.id, main.memberId, mine.id);
-    const res = await get(statusPath(activity.id), main.authHeader);
-    expect(res.status).toBe(200);
-    expect(expectSafeSuccess(res.body as SuccessBody).registrationId).toBe(mine.id);
+  it('eight concurrent checkouts append one checkout and preserve the original check-in', async () => {
+    const input = await scene();
+    const first = safeReceipt(await punch(input));
+    freeze(time(30));
+    const receipts = (
+      await Promise.all(
+        Array.from({ length: 8 }, (_, i) =>
+          punch(input, 'check_out', {}, main.auth, i % 2 ? appB : app),
+        ),
+      )
+    ).map(safeReceipt);
+    expect(new Set(receipts.map((row) => row.eventId)).size).toBe(1);
+    expect(await db.attendancePunchEvent.count({ where: { activityId: input.activityId } })).toBe(
+      2,
+    );
+    expect(
+      await db.attendancePunchEvent.count({
+        where: { id: first.eventId as string, eventTypeCode: 'check_in' },
+      }),
+    ).toBe(1);
+    expect(await db.auditLog.count({ where: { resourceId: input.activityId } })).toBe(2);
+    expect((await state(input)).body.data.isPresent).toBe(false);
   });
 
-  it('GET 不做 Activity 状态闸；同一报名头取消后复用时旧行出局，新 pass 仍可写新证据', async () => {
-    const activity = await createActivity({ statusCode: 'draft' });
-    const oldRegistration = await createRegistration(activity.id, main.memberId);
-    const oldEvidence = await seedEvidence(activity.id, main.memberId, oldRegistration.id);
-    expect((await get(statusPath(activity.id), main.authHeader)).status).toBe(200);
-
-    await prisma.activityRegistration.update({
-      where: { id: oldRegistration.id },
-      data: { statusCode: 'cancelled', cancelledAt: new Date() },
-    });
-    expectBizError(
-      await get(statusPath(activity.id), main.authHeader),
-      BizCode.ACTIVITY_CHECK_IN_NOT_FOUND,
+  it('self state is read-only and isolated across members and activities, including no-fact states', async () => {
+    const input = await scene();
+    safeReceipt(await punch(input));
+    const other = await actor();
+    await addIdentity(
+      { activityId: input.activityId, sessionId: input.sessionId },
+      other.memberId!,
     );
-
-    await prisma.activityCheckIn.update({
-      where: { id: oldEvidence.id },
-      data: { deletedAt: new Date() },
+    const anotherActivity = await scene();
+    const before = await footprint(input);
+    const own = await state(input);
+    expect(own.status).toBe(200);
+    expect(Object.keys(own.body.data as Record<string, unknown>).sort()).toEqual(STATE_KEYS);
+    expect(own.body.data).toMatchObject({
+      isPresent: true,
+      checkInAt: START.toISOString(),
+      checkOutAllowedAt: time(30).toISOString(),
     });
-    const current = await prisma.activityRegistration.update({
-      where: { id: oldRegistration.id },
-      data: { statusCode: 'pass', cancelledAt: null },
-      select: { id: true },
+    expect((await state(input, other.auth)).body.data).toMatchObject({
+      isPresent: false,
+      checkInAt: null,
     });
-    expect(current.id).toBe(oldRegistration.id);
-    await prisma.activity.update({
-      where: { id: activity.id },
-      data: { statusCode: 'published', publishedAt: new Date() },
-    });
-    const created = await post(checkInPath(activity.id), location, main.authHeader);
-    expect(created.status).toBe(200);
-    const currentData = expectSafeSuccess(created.body as SuccessBody);
-    expect(currentData.registrationId).toBe(current.id);
-    expect(currentData.id).not.toBe(oldEvidence.id);
-    expect(await prisma.activityCheckIn.count({ where: { activityId: activity.id } })).toBe(2);
+    expect((await state(anotherActivity)).body.data.isPresent).toBe(false);
+    expect(await footprint(input)).toEqual(before);
+    // This endpoint declares no query DTO: an ignored query parameter cannot
+    // replace the member resolved from the authenticated principal.
+    const attemptedOverride = await request(httpServer(app))
+      .get(statePath(input))
+      .query({ memberId: other.memberId })
+      .set('Authorization', main.auth);
+    expect(attemptedOverride.status).toBe(200);
+    expect(attemptedOverride.body.data).toEqual(own.body.data);
+    expect(await footprint(input)).toEqual(before);
   });
 
-  it.each(['draft', 'published', 'completed', 'cancelled'] as const)(
-    'GET 在 Activity %s 状态下均只按当前 pass + 当前行返回 200',
+  it.each(['draft', 'published', 'completed', 'cancelled'])(
+    'historical self state on %s is safe and read-only, not a write permission',
     async (statusCode) => {
-      const activity = await createActivity({ statusCode });
-      const registration = await createRegistration(activity.id, main.memberId);
-      await seedEvidence(activity.id, main.memberId, registration.id);
-
-      const res = await get(statusPath(activity.id), main.authHeader);
-      expect(res.status).toBe(200);
-      expect(expectSafeSuccess(res.body as SuccessBody).registrationId).toBe(registration.id);
+      const input = await scene();
+      safeReceipt(await punch(input));
+      await db.activity.update({ where: { id: input.activityId }, data: { statusCode } });
+      const before = await footprint(input);
+      const read = await state(input);
+      expect(read.status).toBe(200);
+      expect(read.body.data.isPresent).toBe(true);
+      expect(Object.keys(read.body.data as Record<string, unknown>).sort()).toEqual(STATE_KEYS);
+      expect(await footprint(input)).toEqual(before);
     },
   );
 
-  it('签退前无签到返回 22078；合法打卡不产生 AuditLog 且 raw GPS 只在 DB', async () => {
-    const activity = await createActivity();
-    const registration = await createRegistration(activity.id, main.memberId);
-    expectBizError(
-      await post(checkOutPath(activity.id), location, main.authHeader),
-      BizCode.ACTIVITY_CHECK_OUT_REQUIRES_CHECK_IN,
+  it('checkout without native check-in fails; accepted events audit safe anchors and keep raw GPS only in storage', async () => {
+    const input = await scene();
+    await rejectUnchanged(
+      input,
+      punch(input, 'check_out'),
+      BizCode.ATTENDANCE_PUNCH_CHECK_OUT_REQUIRES_OPEN_SEGMENT,
     );
-
-    const beforeAudit = await prisma.auditLog.count();
-    const checkIn = await post(
-      checkInPath(activity.id),
-      { longitude: 114.0012345, latitude: 22.0012345, accuracy: 12.34 },
-      main.authHeader,
+    const first = safeReceipt(
+      await punch(input, 'check_in', {
+        longitude: 114.0012345,
+        latitude: 22.0012345,
+        accuracy: 12.34,
+      }),
     );
-    const checkInData = expectSafeSuccess(checkIn.body as SuccessBody);
-    await prisma.activityCheckIn.update({
-      where: { id: checkInData.id as string },
-      data: { checkInAt: new Date(Date.now() - 60_000) },
+    freeze(time(30));
+    const last = safeReceipt(
+      await punch(input, 'check_out', {
+        longitude: 113.9988889,
+        latitude: 21.9997778,
+        accuracy: 56.78,
+      }),
+    );
+    const stored = await db.attendancePunchEvent.findMany({
+      where: { id: { in: [first.eventId as string, last.eventId as string] } },
+      orderBy: { occurredAt: 'asc' },
     });
-    const checkOut = await post(
-      checkOutPath(activity.id),
-      { longitude: 113.9988889, latitude: 21.9997778, accuracy: 56.78 },
-      main.authHeader,
-    );
-    expectSafeSuccess(checkOut.body as SuccessBody);
-    expect(await prisma.auditLog.count()).toBe(beforeAudit);
+    expect(
+      stored.map((row) => [Number(row.longitude), Number(row.latitude), Number(row.accuracy)]),
+    ).toEqual([
+      [114.0012345, 22.0012345, 12.34],
+      [113.9988889, 21.9997778, 56.78],
+    ]);
+    const audits = await db.auditLog.findMany({ where: { resourceId: input.activityId } });
+    expect(audits).toHaveLength(2);
+    for (const audit of audits) {
+      const extra = (audit.context as { extra: Record<string, unknown> }).extra;
+      expect(extra).toMatchObject({
+        operation: 'attendance-punch.create',
+        sourceCode: 'self_qr',
+      });
+      expect(Object.keys(extra).sort()).toEqual(
+        [
+          'operation',
+          'sessionId',
+          'participationIdentityId',
+          'eventId',
+          'eventTypeCode',
+          'sourceCode',
+          'evidenceRevision',
+          'supersedesEventId',
+        ].sort(),
+      );
+    }
+    expect(await db.activityCheckIn.count({ where: { activityId: input.activityId } })).toBe(0);
+    expect(await db.attendanceRecord.count()).toBe(0);
+    expect(await db.participationLedgerEntry.count()).toBe(0);
+  });
 
-    const stored = await prisma.activityCheckIn.findFirstOrThrow({
-      where: { registrationId: registration.id },
-    });
-    expect(stored.checkInLongitude?.toString()).toBe('114.0012345');
-    expect(stored.checkInLatitude?.toString()).toBe('22.0012345');
-    expect(stored.checkInAccuracy?.toString()).toBe('12.34');
-    expect(stored.checkOutLongitude?.toString()).toBe('113.9988889');
-    expect(stored.checkOutLatitude?.toString()).toBe('21.9997778');
-    expect(stored.checkOutAccuracy?.toString()).toBe('56.78');
+  it('the disabled workflow rejects a valid native write without facts, revisions, audit or notifications', async () => {
+    const input = await scene();
+    // Exercise the actual gate against this application's injected config.
+    // Changing process.env after boot does not change the existing instance.
+    const config = app.get<AppConfig>(appConfig.KEY);
+    const enabled = config.activityV11Workflow.enabled;
+    config.activityV11Workflow.enabled = false;
+    try {
+      await rejectUnchanged(input, punch(input), BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED);
+    } finally {
+      config.activityV11Workflow.enabled = enabled;
+    }
   });
 });

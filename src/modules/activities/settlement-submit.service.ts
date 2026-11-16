@@ -9,6 +9,7 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { SettlementNotificationProducer } from './settlement-notification-producer';
 import { freezeResponsibility } from './activity-recipient-freeze';
 import { SettlementSubmitAuditRecorder } from './settlement-submit-audit-recorder';
+import { ActivityParticipationPolicy } from './activity-participation-policy';
 import {
   computeSettlementContentHash,
   computeTimeSettlementContentHash,
@@ -180,6 +181,7 @@ export interface SettlementSubmitResult {
 
 interface LockedActivity {
   title: string;
+  statusCode: string;
   workflowRevision: number;
   endAt: Date;
 }
@@ -188,6 +190,7 @@ interface LockedRun {
   id: string;
   statusCode: string;
   version: number;
+  currentSubmittedVersion: number | null;
 }
 
 interface DraftVersionRow {
@@ -224,12 +227,13 @@ export class SettlementSubmitService {
     private readonly notifications: SettlementNotificationProducer,
     // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
+    private readonly participationPolicy: ActivityParticipationPolicy,
   ) {}
 
   // ===== ① Activity FOR UPDATE(§5.10 ①;锁序第一层)=====
   private async lockActivity(tx: PrismaTx, activityId: string): Promise<LockedActivity> {
     const rows = await tx.$queryRaw<Array<LockedActivity>>`
-      SELECT title, "workflowRevision", "endAt"
+      SELECT title, "workflowRevision", "endAt", "statusCode"
       FROM "Activity"
       WHERE id = ${activityId} AND "deletedAt" IS NULL
       FOR UPDATE
@@ -247,7 +251,7 @@ export class SettlementSubmitService {
   //    合法重放判成非法,幂等就名存实亡。
   private async lockRun(tx: PrismaTx, activityId: string): Promise<LockedRun> {
     const rows = await tx.$queryRaw<Array<LockedRun>>`
-      SELECT id, "statusCode", version
+      SELECT id, "statusCode", version, "currentSubmittedVersion"
       FROM "AttendanceSettlementRun"
       WHERE "activityId" = ${activityId}
       FOR UPDATE
@@ -738,6 +742,25 @@ export class SettlementSubmitService {
 
     // 不是重放 ⇒ 这是一次**真正的新提交**,状态闸在这里落下。
     this.assertRunDrafting(run);
+    const decision = this.participationPolicy.canSubmitAttendance(activity);
+    if (!decision.allowed) {
+      // 首次提交沿活动发布状态策略，已有事实重提仍保留。草稿生成/认定
+      // 已在同一根锁下禁止取消后改写；
+      // 这里只接受当前指针确实指向本 run 的退回版本，不能凭空创建首次提交。
+      const existing =
+        run.currentSubmittedVersion === null
+          ? null
+          : await tx.attendanceSettlementVersion.findUnique({
+              where: {
+                settlementRunId_version: {
+                  settlementRunId: run.id,
+                  version: run.currentSubmittedVersion,
+                },
+              },
+              select: { statusCode: true },
+            });
+      if (existing?.statusCode !== 'returned') throw new BizException(decision.biz);
+    }
     const draft = await this.readDraftVersion(tx, run.id);
     const regime = frozenContributionRegime(draft.contributionRegimeCode);
     const contribution = classified?.contributionProof;

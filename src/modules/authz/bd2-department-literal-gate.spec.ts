@@ -10,7 +10,7 @@ import * as path from 'node:path';
 // 口径(goal 前提校正,亲核 2026-07-02):goal 原文假设 src 内 'APD' 仅存在于 authz/CLAUDE.md
 // 禁令文本,实测 attendances 模块另有两类合法存量 —— 据此收敛检查面而不是改历史文本:
 // 1. **注释**(业务史称谓「APD 一级审」等):非代码,剥离后不参与断言;
-// 2. **OpenAPI 文档文案层**(下方 allowlist 3 文件):'APD' 只出现在 @ApiOperation summary /
+// 2. **OpenAPI 文档文案层**(下方 allowlist 2 文件):'APD' 只出现在 @ApiOperation summary /
 //    @ApiProperty description 的人读字符串里,属 contract-locked 契约文本(改动即破 openapi
 //    snapshot,api-surface-policy §8),且不是判权逻辑 —— 显式豁免并锁在 allowlist,新增文件不豁免。
 // *.spec.ts 同理豁免(测试标题/fixture 是描述,不是门控;生产判权路径不在其中)。
@@ -23,9 +23,8 @@ const MODULE_DIRS: ReadonlyArray<{ label: string; dir: string }> = [
   { label: 'src/modules/attendances', dir: path.resolve(__dirname, '../attendances') },
 ];
 
-// OpenAPI 文档文案层豁免(仅此 3 个存量文件;相对各自模块根):理由见文件头第 2 条。
+// OpenAPI 文案豁免仅保留尚存的两个 DTO；已退役的 controller 不再占豁免位。
 const OPENAPI_DOC_TEXT_ALLOWLIST: ReadonlySet<string> = new Set([
-  path.join('src/modules/attendances', 'attendances.controller.ts'),
   path.join('src/modules/attendances', 'attendances.dto.ts'),
   path.join('src/modules/attendances', 'dto', 'app', 'app-my-attendance-record.dto.ts'),
 ]);
@@ -50,7 +49,7 @@ function stripComments(source: string): string {
 }
 
 describe('BD-2 无部门字面量门控(PR9 决断④ CI 断言)', () => {
-  it("authz + attendances 生产 .ts 剥离注释后不含 'APD'(OpenAPI 文案层 3 文件显式豁免)", () => {
+  it("authz + attendances 生产 .ts 剥离注释后不含 'APD'(OpenAPI 文案层 2 文件显式豁免)", () => {
     const violations: string[] = [];
     for (const { label, dir } of MODULE_DIRS) {
       for (const file of listTsFilesRecursively(dir)) {
@@ -70,7 +69,7 @@ describe('BD-2 无部门字面量门控(PR9 决断④ CI 断言)', () => {
     expect(violations).toEqual([]);
   });
 
-  it('豁免清单未悄悄扩张,且 3 个豁免文件真实存在(防拼写漂移让豁免落空)', () => {
+  it('豁免清单未悄悄扩张,且 2 个豁免文件真实存在(防拼写漂移让豁免落空)', () => {
     const repoRoot = path.resolve(__dirname, '../../..');
     for (const rel of OPENAPI_DOC_TEXT_ALLOWLIST) {
       expect({ rel, exists: fs.existsSync(path.join(repoRoot, rel)) }).toEqual({
@@ -78,6 +77,6 @@ describe('BD-2 无部门字面量门控(PR9 决断④ CI 断言)', () => {
         exists: true,
       });
     }
-    expect(OPENAPI_DOC_TEXT_ALLOWLIST.size).toBe(3);
+    expect(OPENAPI_DOC_TEXT_ALLOWLIST.size).toBe(2);
   });
 });

@@ -3,6 +3,9 @@ import { BindingScopeType, BindingStatus, MemberStatus, PrincipalType, Role } fr
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { LedgerPreparationService } from '../../src/modules/activities/ledger-preparation.service';
+import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
+import { ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED } from '../../src/modules/permissions/permission-catalog';
 import { seedActivityResponsibilitySystemRoles } from '../fixtures/activity-responsibility.fixture';
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
@@ -26,16 +29,11 @@ const PUBLISH_REVIEWER_PERMISSIONS = [
 ] as const;
 const FIRST_REVIEWER_PERMISSIONS = [
   'attendance.read.sheet',
-  'attendance.approve.sheet',
-  'attendance.reject.sheet',
-  'attendance.return.sheet',
+  'activity.settlement-first-review.record',
 ] as const;
 const FINAL_REVIEWER_PERMISSIONS = [
   'attendance.read.sheet',
-  'attendance.final-approve.sheet',
-  'attendance.final-reject.sheet',
-  'attendance.reopen.sheet',
-  'attendance.final-return.sheet',
+  'activity.settlement-final-review.record',
 ] as const;
 
 describe('activity responsibility workflow local acceptance', () => {
@@ -53,14 +51,47 @@ describe('activity responsibility workflow local acceptance', () => {
   let sequence = 0;
   let sessionSequence = 0;
   const previousGate = process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
+  const previousV11 = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
 
   beforeAll(async () => {
     process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED = 'true';
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
 
-    await seedActivityResponsibilitySystemRoles(app);
+    const roles = await seedActivityResponsibilitySystemRoles(app);
+    await prisma.permission.createMany({
+      data: ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED.filter((row) =>
+        row.code.startsWith('activity.settlement-'),
+      ).map((row) => ({ ...row })),
+      skipDuplicates: true,
+    });
+    const nativePermissions = await prisma.permission.findMany({
+      where: {
+        code: {
+          in: [
+            'activity.settlement-generate.record',
+            'activity.settlement-update-draft.record',
+            'activity.settlement-submit.record',
+            'activity.settlement-close.record',
+          ],
+        },
+      },
+    });
+    // Match the production owner/collaborator grants without granting
+    // native writes or review rights to the unrelated global biz-admin.
+    for (const code of ['activity-owner', 'activity-attendance-collaborator']) {
+      await prisma.rolePermission.createMany({
+        data: nativePermissions
+          .filter(
+            (permission) =>
+              code === 'activity-owner' || permission.code !== 'activity.settlement-close.record',
+          )
+          .map((permission) => ({ roleId: roles[code], permissionId: permission.id })),
+        skipDuplicates: true,
+      });
+    }
     bizAdminRoleId = (await seedBizAdminPermissionsAndRole(app)).bizAdminRoleId;
     await prisma.permission.createMany({
       data: [
@@ -182,11 +213,16 @@ describe('activity responsibility workflow local acceptance', () => {
   });
 
   afterAll(async () => {
-    await app.close();
-    if (previousGate === undefined) {
-      delete process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
-    } else {
-      process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED = previousGate;
+    try {
+      await app?.close();
+    } finally {
+      if (previousGate === undefined) {
+        delete process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
+      } else {
+        process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED = previousGate;
+      }
+      if (previousV11 === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousV11;
     }
   });
 
@@ -356,15 +392,45 @@ describe('activity responsibility workflow local acceptance', () => {
   async function selfRegister(
     actor: LocalActor,
     activityId: string,
-    activityPositionId: string,
+    sessionId: string,
+    positionId: string,
   ): Promise<string> {
+    expect(typeof sessionId).toBe('string');
+    expect(typeof positionId).toBe('string');
+    expect(
+      await prisma.activitySession.findUnique({
+        where: { id: sessionId },
+        select: { activityId: true, statusCode: true, deletedAt: true },
+      }),
+    ).toEqual({ activityId, statusCode: 'scheduled', deletedAt: null });
+    expect(
+      await prisma.activitySessionPosition.findUnique({
+        where: { id: positionId },
+        select: { activityId: true, sessionId: true, deletedAt: true },
+      }),
+    ).toEqual({ activityId, sessionId, deletedAt: null });
     const response = await request(httpServer(app))
-      .post('/api/app/v1/my/registrations')
+      .post(`/api/app/v1/activities/${activityId}/registrations`)
       .set('Authorization', actor.auth)
-      .send({ activityId, activityPositionId })
-      .expect(201);
-    expect(response.body.data.statusCode).toBe('pending');
-    return response.body.data.id as string;
+      .send({
+        operationKey: `local-register-${actor.userId}`,
+        formVersion: null,
+        answers: [],
+        preferences: [{ sessionId, positionIds: [positionId] }],
+      })
+      .expect((res) => {
+        expect({ status: res.status, code: res.body.code, message: res.body.message }).toEqual({
+          status: 201,
+          code: 0,
+          message: 'ok',
+        });
+      });
+    const registrationId = response.body.data.registrationId as string;
+    expect(
+      (await prisma.activityRegistration.findUniqueOrThrow({ where: { id: registrationId } }))
+        .statusCode,
+    ).toBe('pending');
+    return registrationId;
   }
 
   async function addCollaborator(
@@ -503,7 +569,7 @@ describe('activity responsibility workflow local acceptance', () => {
     });
   });
 
-  it('runs registration, delegated attendance, two returns, owner transfer, and closure through HTTP', async () => {
+  it('runs registration, delegated attendance, two returns, owner transfer and closure through HTTP plus the real ledger preparation/commit core', async () => {
     const owner = await createActor('Local Direct Publish Owner');
     const registrationCollaborator = await createActor('Local Registration Collaborator');
     const attendanceCollaborator = await createActor('Local Attendance Collaborator');
@@ -541,8 +607,23 @@ describe('activity responsibility workflow local acceptance', () => {
     ).resolves.toBe(0);
 
     const activityId = await createManagedDraft(owner, 'Local Complete Workflow Activity');
-    const activityPositionId = await addPosition(owner, activityId);
     const sessionId = await addLiveSession(owner, activityId);
+    await request(httpServer(app))
+      .patch(`/api/app/v1/my/managed-activities/${activityId}`)
+      .set('Authorization', owner.auth)
+      .send({ allocationModeCode: 'qualification_rank' })
+      .expect(200);
+    const nativePosition = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${activityId}/sessions/${sessionId}/positions`)
+      .set('Authorization', owner.auth)
+      .send({
+        code: 'local-native-position',
+        name: 'Local Native Position',
+        attendanceRoleCode,
+        capacity: 20,
+      })
+      .expect(201);
+    const positionId = nativePosition.body.data.positionId as string;
     const directResponse = await request(httpServer(app))
       .post(`/api/app/v1/my/managed-activities/${activityId}/direct-publish`)
       .set('Authorization', owner.auth)
@@ -571,13 +652,6 @@ describe('activity responsibility workflow local acceptance', () => {
       .set('Authorization', publishReviewer.auth)
       .send({ requiresInsuranceConfirmed: true, operationKey: 'local-complete-approve-0001' })
       .expect(200);
-    // This fixture exercises the legacy ActivityPosition → attendance workflow.  The session is
-    // required to publish the draft, but is no longer live before the legacy registration step;
-    // live v1.1 sessions are covered by the canonical-command fail-closed E2E.
-    await prisma.activitySession.update({
-      where: { id: sessionId },
-      data: { statusCode: 'cancelled' },
-    });
     const directAudit = await prisma.auditLog.findFirstOrThrow({
       where: {
         event: 'activity.publish',
@@ -600,107 +674,240 @@ describe('activity responsibility workflow local acceptance', () => {
       canManageAttendance: true,
     });
 
-    const registrationId = await selfRegister(participant, activityId, activityPositionId);
+    const registrationId = await selfRegister(participant, activityId, sessionId, positionId);
     const secondRegistrationId = await selfRegister(
       secondParticipant,
       activityId,
-      activityPositionId,
+      sessionId,
+      positionId,
     );
+    // Ranking allocation replaces legacy per-header approve: the owner freezes
+    // candidates and the registration collaborator commits the same batch.
+    await prisma.activity.update({
+      where: { id: activityId },
+      data: { registrationDeadline: new Date('2020-07-19T12:00:00Z') },
+    });
+    const allocationBase = `/api/app/v1/my/managed-activities/${activityId}/allocation-batches`;
+    const prepareCommand = { operationKey: 'local-native-allocate', sessionId, positionId };
     expectBizError(
       await request(httpServer(app))
-        .patch(
-          `/api/app/v1/my/managed-activities/${activityId}/registrations/${registrationId}/approve`,
-        )
+        .post(allocationBase)
         .set('Authorization', unrelatedAdmin.auth)
-        .send({ reviewNote: 'must not pass' }),
+        .send(prepareCommand),
       BizCode.RBAC_FORBIDDEN,
     );
-    await request(httpServer(app))
-      .patch(
-        `/api/app/v1/my/managed-activities/${activityId}/registrations/${registrationId}/approve`,
-      )
+    expect(await prisma.activityAllocationBatch.count({ where: { activityId } })).toBe(0);
+    const prepared = await request(httpServer(app))
+      .post(allocationBase)
       .set('Authorization', owner.auth)
-      .send({ reviewNote: 'Local owner approved registration' })
-      .expect(200);
+      .send(prepareCommand)
+      .expect(201);
     await request(httpServer(app))
-      .patch(
-        `/api/app/v1/my/managed-activities/${activityId}/registrations/${secondRegistrationId}/approve`,
-      )
+      .post(`${allocationBase}/${prepared.body.data.batch.batchId}/commit`)
       .set('Authorization', registrationCollaborator.auth)
-      .send({ reviewNote: 'Local collaborator approved registration' })
+      .send({ operationKey: 'local-native-allocate-commit' })
       .expect(200);
+    expect(
+      await prisma.activityRegistration.count({
+        where: { id: { in: [registrationId, secondRegistrationId] }, statusCode: 'pass' },
+      }),
+    ).toBe(2);
+    const settlementBase = `/api/app/v1/my/managed-activities/${activityId}/settlement`;
 
     for (const auth of [registrationCollaborator.auth, unrelatedAdmin.auth]) {
       expectBizError(
-        await request(httpServer(app))
-          .get(`/api/app/v1/my/managed-activities/${activityId}/attendance-sheets`)
-          .set('Authorization', auth),
+        await request(httpServer(app)).get(settlementBase).set('Authorization', auth),
         BizCode.RBAC_FORBIDDEN,
       );
     }
 
     // Local fixture-only clock advance: business statuses and reviews still move only through HTTP.
-    const localStartAt = new Date('2026-07-20T01:00:00.000Z');
-    const localEndAt = new Date('2026-07-20T05:00:00.000Z');
+    const localStartAt = new Date('2020-07-20T01:00:00.000Z');
+    const localEndAt = new Date('2020-07-20T05:00:00.000Z');
     await prisma.activity.update({
       where: { id: activityId },
       data: {
         startAt: localStartAt,
         endAt: localEndAt,
-        registrationDeadline: new Date('2026-07-19T12:00:00.000Z'),
+        registrationDeadline: new Date('2020-07-19T12:00:00.000Z'),
       },
     });
-    for (const registration of [
-      { id: registrationId, memberId: participant.memberId },
-      { id: secondRegistrationId, memberId: secondParticipant.memberId },
-    ]) {
-      await prisma.activityCheckIn.create({
-        data: {
-          activityId,
-          memberId: registration.memberId,
-          registrationId: registration.id,
-          checkInAt: new Date('2026-07-20T01:00:00.000Z'),
-          checkOutAt: new Date('2026-07-20T03:00:00.000Z'),
-          geoVerified: true,
-          outOfRange: false,
-          checkInDistance: 10,
-          checkOutDistance: 12,
-        },
+    await prisma.activitySession.update({
+      where: { id: sessionId },
+      data: {
+        startAt: localStartAt,
+        endAt: localEndAt,
+        checkInOpenAt: new Date('2020-07-20T00:30:00Z'),
+        checkInCloseAt: new Date('2020-07-20T02:00:00Z'),
+        checkOutOpenAt: new Date('2020-07-20T03:00:00Z'),
+        checkOutCloseAt: localEndAt,
+      },
+    });
+    const identities = await prisma.activityParticipationIdentity.findMany({
+      where: { activityId, memberId: { in: [participant.memberId, secondParticipant.memberId] } },
+    });
+    expect(identities).toHaveLength(2);
+    const participantIdentityId = identities.find(
+      (identity) => identity.memberId === participant.memberId,
+    )!.id;
+    try {
+      jest.useFakeTimers({
+        doNotFake: [
+          'hrtime',
+          'nextTick',
+          'performance',
+          'queueMicrotask',
+          'setImmediate',
+          'clearImmediate',
+          'setInterval',
+          'clearInterval',
+          'setTimeout',
+          'clearTimeout',
+        ],
       });
+      for (const [actionCode, now] of [
+        ['check_in', localStartAt],
+        ['check_out', new Date('2020-07-20T03:00:00Z')],
+      ] as const) {
+        jest.setSystemTime(now);
+        for (const identity of identities) {
+          await request(httpServer(app))
+            .post(
+              `/api/app/v1/my/managed-activities/${activityId}/onsite/sessions/${sessionId}/proxy-punch`,
+            )
+            .set('Authorization', attendanceCollaborator.auth)
+            .send({
+              participationIdentityId: identity.id,
+              actionCode,
+              eventKey: `local-${identity.id}-${actionCode}`,
+              reason: '现场确认',
+            })
+            .expect(201);
+        }
+      }
+    } finally {
+      jest.useRealTimers();
     }
-
-    const draft = await request(httpServer(app))
-      .get(`/api/app/v1/my/managed-activities/${activityId}/attendance-sheet-draft`)
+    const sealed = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${activityId}/evidence-seals`)
+      .set('Authorization', owner.auth)
+      .send({})
+      .expect(200);
+    const sealId = sealed.body.data.sealId as string;
+    await prisma.contributionRule.create({
+      data: { activityTypeCode, attendanceRoleCode, pointsBelow: 1, status: 'ACTIVE' },
+    });
+    const generated = await request(httpServer(app))
+      .post(`${settlementBase}/generate`)
+      .set('Authorization', attendanceCollaborator.auth)
+      .send({ operationKey: 'local-generate' })
+      .expect(200);
+    expect(generated.body.data.personCount).toBe(2);
+    const draftItems = await request(httpServer(app))
+      .get(`${settlementBase}/items`)
       .set('Authorization', attendanceCollaborator.auth)
       .expect(200);
-    expect(draft.body.data.records).toHaveLength(2);
-    const draftRecords = draft.body.data.records as Array<Record<string, unknown>>;
-    const submittedSheet = await request(httpServer(app))
-      .post(`/api/app/v1/my/managed-activities/${activityId}/attendance-sheets`)
+    expect(draftItems.body.data.total).toBe(2);
+    // Keep this journey's zero-credit outcome explicit. Native drafts correctly
+    // block a missing rule; a real rule supplies the machine baseline and the
+    // responsible person records the zero-credit adjudication with a reason.
+    async function editItem(actor: LocalActor, identityId: string, hours: number) {
+      const run = await prisma.attendanceSettlementRun.findUniqueOrThrow({ where: { activityId } });
+      return request(httpServer(app))
+        .patch(`${settlementBase}/items/${identityId}`)
+        .set('Authorization', actor.auth)
+        .send({
+          expectedDraftVersion: run.currentDraftVersion,
+          resultCode: 'present',
+          recognizedServiceHours: hours,
+          recognizedContributionPoints: 0,
+          reason: '核定服务时长，本次不计贡献',
+        })
+        .expect(200);
+    }
+    async function reviewCommand(versionId: string, operationKey: string) {
+      const version = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+        where: { id: versionId },
+      });
+      return {
+        operationKey,
+        note: operationKey,
+        evidenceSealId: version.evidenceSealId,
+        evidenceRevision: version.evidenceRevision,
+        populationRevision: version.populationRevision,
+        workflowRevision: version.workflowRevision,
+        contentHash: version.contentHash,
+      };
+    }
+    async function review(versionId: string, action: string, actor: LocalActor) {
+      return request(httpServer(app))
+        .post(`/api/admin/v1/attendance-settlements/${versionId}/${action}`)
+        .set('Authorization', actor.auth)
+        .send(await reviewCommand(versionId, `${versionId}:${action}`))
+        .expect(200);
+    }
+    async function resubmit(versionId: string, actor: LocalActor) {
+      const run = await prisma.attendanceSettlementRun.findUniqueOrThrow({ where: { activityId } });
+      const response = await request(httpServer(app))
+        .post(`${settlementBase}/versions/${versionId}/resubmit`)
+        .set('Authorization', actor.auth)
+        .send({
+          operationKey: `resubmit:${versionId}`,
+          expectedDraftVersion: run.currentDraftVersion,
+          evidenceSealId: sealId,
+          confirmation: true,
+        })
+        .expect(200);
+      const newVersionId = response.body.data.settlementVersionId as string;
+      expect(newVersionId).not.toBe(versionId);
+      expect(
+        await prisma.attendanceSettlementVersion.findUniqueOrThrow({ where: { id: newVersionId } }),
+      ).toMatchObject({
+        priorVersionId: versionId,
+        statusCode: 'submitted',
+        createdByUserId: actor.userId,
+        returnFromStage: null,
+        returnReason: null,
+      });
+      expect(
+        await prisma.settlementReviewAction.count({ where: { settlementVersionId: newVersionId } }),
+      ).toBe(0);
+      return newVersionId;
+    }
+    for (const identity of identities) await editItem(attendanceCollaborator, identity.id, 2);
+    const submitCommand = {
+      operationKey: 'local-submit',
+      expectedDraftVersion: generated.body.data.settlementVersion,
+      evidenceSealId: sealId,
+      confirmation: true,
+    };
+    const submitted = await request(httpServer(app))
+      .post(`${settlementBase}/submit`)
       .set('Authorization', attendanceCollaborator.auth)
-      .send({ records: draftRecords })
-      .expect(201);
-    const sheetId = submittedSheet.body.data.id as string;
-    expect(submittedSheet.body.data).toMatchObject({
-      statusCode: 'pending',
-      submitterUserId: attendanceCollaborator.userId,
-      lastSubmittedByUserId: attendanceCollaborator.userId,
+      .send(submitCommand)
+      .expect(200);
+    const firstVersionId = submitted.body.data.settlementVersionId as string;
+    expect(
+      await prisma.attendanceSettlementVersion.findUniqueOrThrow({ where: { id: firstVersionId } }),
+    ).toMatchObject({
+      statusCode: 'submitted',
+      createdByUserId: attendanceCollaborator.userId,
     });
 
     for (const auth of [registrationCollaborator.auth, unrelatedAdmin.auth]) {
       expectBizError(
         await request(httpServer(app))
-          .post(`/api/app/v1/my/managed-activities/${activityId}/attendance-sheets`)
+          .post(`${settlementBase}/submit`)
           .set('Authorization', auth)
-          .send({ records: draftRecords }),
+          .send(submitCommand),
         BizCode.RBAC_FORBIDDEN,
       );
     }
     expectBizError(
       await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/approve`)
+        .post(`/api/admin/v1/attendance-settlements/${firstVersionId}/first-approve`)
         .set('Authorization', attendanceCollaborator.auth)
-        .send({ reviewNote: 'submitter must not gain reviewer rights' }),
+        .send(await reviewCommand(firstVersionId, 'no-review-rights')),
       BizCode.RBAC_FORBIDDEN,
     );
 
@@ -803,106 +1010,87 @@ describe('activity responsibility workflow local acceptance', () => {
       .expect(200);
     expectBizError(
       await request(httpServer(app))
-        .post(`/api/app/v1/my/managed-activities/${activityId}/declare-attendance-complete`)
+        .post(`${settlementBase}/close`)
         .set('Authorization', owner.auth)
-        .send({}),
-      BizCode.ACTIVITY_NOT_FOUND,
+        .send({
+          operationKey: 'old-owner-close',
+          expectedSettlementVersionId: firstVersionId,
+          expectedPostingBatchId: 'local-not-yet-posted-batch',
+        }),
+      BizCode.RBAC_FORBIDDEN,
     );
-    const declared = await request(httpServer(app))
-      .post(`/api/app/v1/my/managed-activities/${activityId}/declare-attendance-complete`)
+    const prematureClose = await request(httpServer(app))
+      .post(`${settlementBase}/close`)
       .set('Authorization', newOwner.auth)
-      .send({})
-      .expect(200);
-    expect(declared.body.data.closure).toEqual(
-      expect.objectContaining({
-        status: 'attendance-first-review',
-        nextAction: '等待考勤一审',
-      }),
-    );
+      .send({
+        operationKey: 'new-owner-premature-close',
+        expectedSettlementVersionId: firstVersionId,
+        expectedPostingBatchId: 'local-not-yet-posted-batch',
+      });
+    expectBizError(prematureClose, BizCode.ACTIVITY_CLOSURE_EXPECTED_SETTLEMENT_VERSION_MISMATCH);
+    expect(await prisma.activitySettlementClosureRevision.count({ where: { activityId } })).toBe(0);
 
-    const firstReturned = await request(httpServer(app))
-      .post(`/api/admin/v1/attendance-sheets/${sheetId}/return`)
-      .set('Authorization', firstReviewerA.auth)
-      .send({ returnNote: 'Local first review return' })
-      .expect(200);
-    expect(firstReturned.body.data).toMatchObject({
+    await review(firstVersionId, 'first-return', firstReviewerA);
+    const firstReturned = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+      where: { id: firstVersionId },
+    });
+    expect(firstReturned).toMatchObject({
       statusCode: 'returned',
-      returnedFromStageCode: 'first',
-      returnNote: 'Local first review return',
+      returnFromStage: 'first',
+      returnReason: `${firstVersionId}:first-return`,
     });
     const firstReturnedDetail = await request(httpServer(app))
-      .get(`/api/app/v1/my/managed-activities/${activityId}/attendance-sheets/${sheetId}`)
+      .get(`${settlementBase}/versions/${firstVersionId}`)
       .set('Authorization', attendanceCollaborator.auth)
       .expect(200);
-    expect(firstReturnedDetail.body.data.records).toHaveLength(2);
-
-    const firstEditedRecords = draftRecords.map((record, index) =>
-      index === 0 ? { ...record, serviceHours: 1.5 } : record,
-    );
-    const firstEdited = await request(httpServer(app))
-      .patch(`/api/app/v1/my/managed-activities/${activityId}/attendance-sheets/${sheetId}`)
-      .set('Authorization', attendanceCollaborator.auth)
-      .send({ records: firstEditedRecords })
-      .expect(200);
-    expect(firstEdited.body.data.statusCode).toBe('returned');
-    const firstResubmitted = await request(httpServer(app))
-      .post(`/api/app/v1/my/managed-activities/${activityId}/attendance-sheets/${sheetId}/resubmit`)
-      .set('Authorization', attendanceCollaborator.auth)
-      .send({})
-      .expect(200);
-    expect(firstResubmitted.body.data).toMatchObject({
-      statusCode: 'pending',
-      reviewerUserId: null,
-      finalReviewerUserId: null,
-      returnedByUserId: null,
-      returnNote: null,
-      returnedFromStageCode: null,
-      lastSubmittedByUserId: attendanceCollaborator.userId,
-    });
-
-    await request(httpServer(app))
-      .patch(`/api/admin/v1/attendance-sheets/${sheetId}/approve`)
-      .set('Authorization', firstReviewerB.auth)
-      .send({ reviewNote: 'Local first review approved after resubmit' })
-      .expect(200);
-    const finalReturned = await request(httpServer(app))
-      .post(`/api/admin/v1/attendance-sheets/${sheetId}/final-return`)
-      .set('Authorization', finalReviewerA.auth)
-      .send({ returnNote: 'Local final review return' })
-      .expect(200);
-    expect(finalReturned.body.data).toMatchObject({
+    expect(firstReturnedDetail.body.data.version).toMatchObject({
+      id: firstVersionId,
+      personCount: 2,
       statusCode: 'returned',
-      returnedFromStageCode: 'final',
-      returnNote: 'Local final review return',
+      returnFromStage: 'first',
+    });
+    expect(
+      await prisma.participantSettlementResultRevision.count({
+        where: { settlementVersionId: firstVersionId },
+      }),
+    ).toBe(2);
+    await editItem(attendanceCollaborator, participantIdentityId, 1.5);
+    const secondVersionId = await resubmit(firstVersionId, attendanceCollaborator);
+    expect(
+      await prisma.attendanceSettlementVersion.findUniqueOrThrow({ where: { id: firstVersionId } }),
+    ).toEqual(firstReturned);
+    await review(secondVersionId, 'first-approve', firstReviewerB);
+    await review(secondVersionId, 'final-return', finalReviewerA);
+    const finalReturned = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+      where: { id: secondVersionId },
+    });
+    expect(finalReturned).toMatchObject({
+      statusCode: 'returned',
+      returnFromStage: 'final',
+      returnReason: `${secondVersionId}:final-return`,
     });
     const finalReturnedDetail = await request(httpServer(app))
-      .get(`/api/app/v1/my/managed-activities/${activityId}/attendance-sheets/${sheetId}`)
+      .get(`${settlementBase}/versions/${secondVersionId}`)
       .set('Authorization', attendanceCollaborator.auth)
       .expect(200);
-    expect(finalReturnedDetail.body.data.records).toHaveLength(2);
-
-    const finalEditedRecords = draftRecords.map((record, index) =>
-      index === 0 ? { ...record, serviceHours: 1.25 } : record,
-    );
-    await request(httpServer(app))
-      .patch(`/api/app/v1/my/managed-activities/${activityId}/attendance-sheets/${sheetId}`)
-      .set('Authorization', owner.auth)
-      .send({ records: finalEditedRecords })
-      .expect(200);
-    const finalResubmitted = await request(httpServer(app))
-      .post(`/api/app/v1/my/managed-activities/${activityId}/attendance-sheets/${sheetId}/resubmit`)
-      .set('Authorization', owner.auth)
-      .send({})
-      .expect(200);
-    expect(finalResubmitted.body.data).toMatchObject({
-      statusCode: 'pending',
-      reviewerUserId: null,
-      finalReviewerUserId: null,
-      returnedByUserId: null,
-      returnNote: null,
-      returnedFromStageCode: null,
-      lastSubmittedByUserId: owner.userId,
+    expect(finalReturnedDetail.body.data.version).toMatchObject({
+      id: secondVersionId,
+      personCount: 2,
+      statusCode: 'returned',
+      returnFromStage: 'final',
     });
+    expect(
+      await prisma.participantSettlementResultRevision.count({
+        where: { settlementVersionId: secondVersionId },
+      }),
+    ).toBe(2);
+    await editItem(owner, participantIdentityId, 1.25);
+    const finalVersionId = await resubmit(secondVersionId, owner);
+    expect(
+      await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+        where: { id: secondVersionId },
+      }),
+    ).toEqual(finalReturned);
 
     const beforeFinalApproval = await request(httpServer(app))
       .get('/api/app/v1/my/participation-summary')
@@ -914,21 +1102,55 @@ describe('activity responsibility workflow local acceptance', () => {
       contributionPoints: '0',
     });
 
-    await request(httpServer(app))
-      .patch(`/api/admin/v1/attendance-sheets/${sheetId}/approve`)
-      .set('Authorization', firstReviewerA.auth)
-      .send({ reviewNote: 'Local second first review approved' })
-      .expect(200);
-    const approved = await request(httpServer(app))
-      .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-approve`)
-      .set('Authorization', finalReviewerB.auth)
-      .send({ finalReviewNote: 'Local final review approved' })
-      .expect(200);
+    await review(finalVersionId, 'first-approve', firstReviewerA);
+    const approved = await review(finalVersionId, 'final-approve', finalReviewerB);
     expect(approved.body.data).toMatchObject({
-      statusCode: 'approved',
-      reviewerUserId: firstReviewerA.userId,
-      finalReviewerUserId: finalReviewerB.userId,
+      versionStatusAfter: 'approved',
+      runStatusAfter: 'posting',
     });
+    expect(
+      await prisma.settlementReviewAction.findMany({
+        where: { settlementVersionId: finalVersionId },
+        orderBy: { stageCode: 'asc' },
+        select: { stageCode: true, actorUserId: true, actionCode: true },
+      }),
+    ).toEqual([
+      { stageCode: 'final', actorUserId: finalReviewerB.userId, actionCode: 'approve' },
+      { stageCode: 'first', actorUserId: firstReviewerA.userId, actionCode: 'approve' },
+    ]);
+    const beforePosting = await request(httpServer(app))
+      .get('/api/app/v1/my/participation-summary')
+      .set('Authorization', participant.auth)
+      .expect(200);
+    expect(beforePosting.body.data).toMatchObject({
+      totalServiceHours: '0',
+      recordCount: 0,
+      contributionPoints: '0',
+    });
+    const batch = await prisma.ledgerPostingBatch.findFirstOrThrow({
+      where: { settlementVersionId: finalVersionId },
+    });
+    // Run the production background preparation/commit primitives. Review HTTP
+    // alone must never publish credit, and no fixture writes ledger outcomes.
+    const preparation = app.get(LedgerPreparationService);
+    const job = await preparation.ensurePrepareJob(batch.id);
+    for (const item of await prisma.activityBatchJobItem.findMany({
+      where: { jobId: job.jobId },
+    })) {
+      await preparation.prepareChunk(job.jobId, item.id);
+    }
+    expect((await preparation.finalize(job.jobId)).batchStatus).toBe('ready');
+    const postingActor = await prisma.user.findUniqueOrThrow({
+      where: { id: finalReviewerB.userId },
+      select: { id: true, username: true, memberId: true, role: true, status: true },
+    });
+    await app
+      .get(LedgerPostingService)
+      .commitBatch({ postingBatchId: batch.id, operationKey: 'local-post' }, postingActor, {
+        requestId: 'local-workflow-post',
+        ip: null,
+        ua: null,
+      });
 
     const afterFinalApproval = await request(httpServer(app))
       .get('/api/app/v1/my/participation-summary')
@@ -940,26 +1162,41 @@ describe('activity responsibility workflow local acceptance', () => {
       contributionPoints: '0',
     });
 
+    const closure = await request(httpServer(app))
+      .post(`${settlementBase}/close`)
+      .set('Authorization', newOwner.auth)
+      .send({
+        operationKey: 'new-owner-close',
+        expectedSettlementVersionId: finalVersionId,
+        expectedPostingBatchId: batch.id,
+      })
+      .expect(200);
+    expect(closure.body.data.outcome).toBe('closed');
     const closed = await request(httpServer(app))
       .get(`/api/app/v1/my/managed-activities/${activityId}`)
       .set('Authorization', newOwner.auth)
       .expect(200);
     expect(closed.body.data.activity.statusCode).toBe('completed');
-    expect(closed.body.data.closure).toEqual(
-      expect.objectContaining({ status: 'closed', nextAction: null }),
-    );
-    expect(closed.body.data.counts).toEqual(
-      expect.objectContaining({ unresolvedAttendanceSheets: 0 }),
-    );
-    await expect(
-      prisma.attendanceSheet.count({
-        where: {
-          activityId,
-          statusCode: { in: ['pending', 'pending_final_review', 'returned'] },
-          deletedAt: null,
-        },
+    expect(closed.body.data.settlement).toMatchObject({
+      availability: 'available',
+      runStatus: 'closed',
+      activeClosure: { revision: 1 },
+    });
+    expect(closed.body.data).not.toHaveProperty('closure');
+    expect(
+      await prisma.attendanceSettlementVersion.count({
+        where: { settlementRun: { activityId }, statusCode: 'submitted' },
       }),
-    ).resolves.toBe(0);
+    ).toBe(0);
+    expect(
+      await prisma.attendanceSettlementVersion.findUniqueOrThrow({ where: { id: firstVersionId } }),
+    ).toEqual(firstReturned);
+    expect(
+      await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+        where: { id: secondVersionId },
+      }),
+    ).toEqual(finalReturned);
+    expect(await prisma.attendanceSheet.count({ where: { activityId } })).toBe(0);
   });
 
   it('does not let a cross-organization initiation grant spill into management rights', async () => {
@@ -1010,7 +1247,7 @@ describe('activity responsibility workflow local acceptance', () => {
     );
     expectBizError(
       await request(httpServer(app))
-        .get(`/api/app/v1/my/managed-activities/${otherActivityId}/attendance-sheets`)
+        .get(`/api/app/v1/my/managed-activities/${otherActivityId}/settlement`)
         .set('Authorization', crossOrgInitiator.auth),
       BizCode.RBAC_FORBIDDEN,
     );

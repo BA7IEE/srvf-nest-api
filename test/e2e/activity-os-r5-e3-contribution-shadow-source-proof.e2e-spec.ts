@@ -3,12 +3,15 @@ import { cpSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync } fro
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
-import { Prisma, PrismaClient, Role, UserStatus } from '@prisma/client';
+import { Prisma, PrismaClient, Role } from '@prisma/client';
+import request from 'supertest';
 import { PrismaService } from '../../src/database/prisma.service';
-import { AttendancesService } from '../../src/modules/attendances/attendances.service';
+import { ContributionCalculator } from '../../src/modules/attendances/contribution-calculator';
 import { ContributionShadowEvidenceWriteService } from '../../src/modules/attendances/contribution-shadow-evidence.write.service';
 import { createTestApp } from '../setup/test-app';
-import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
+import { createTestUser } from '../fixtures/users.fixture';
+import { loginAs } from '../fixtures/auth.fixture';
+import { httpServer } from '../helpers/http-server';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 import { hashLegacySource } from '../../src/modules/attendances/contribution-shadow-evidence.write.service';
 import { loadTestEnv } from '../setup/load-env';
@@ -1089,30 +1092,22 @@ describe('E3-2 D2 source proof migration', () => {
     }
   }, 120_000);
 
-  it('real submit/edit preserve CUIDs, roll back source failure and complete a 2,000-record old write within 7 seconds', async () => {
+  it('historical source fixtures preserve CUIDs, rollback and the 2,000-record/7s budget without reopening retired writes', async () => {
     const previousMode = process.env.ACTIVITY_E3_CONTRIBUTION_SHADOW_MODE;
     process.env.ACTIVITY_E3_CONTRIBUTION_SHADOW_MODE = 'shadow';
     let app: INestApplication | undefined;
     try {
       app = await createTestApp();
       const prisma = app.get(PrismaService);
-      const service = app.get(AttendancesService);
-      const user = await prisma.user.create({
-        data: {
-          username: 'd2-runtime-user',
-          passwordHash: 'unused-fixture',
-          role: Role.ADMIN,
-        },
-      });
-      const seed = await seedBizAdminPermissionsAndRole(app);
-      await grantBizAdminToUser(app, user.id, seed.bizAdminRoleId);
-      const actor = {
-        id: user.id,
-        username: user.username,
+      // Historical proof validation is independent of retired HTTP/providers.
+      // Keep the real calculator, source matcher/hash writer and all database guards.
+      const calculator = new ContributionCalculator();
+      const evidence = new ContributionShadowEvidenceWriteService();
+      const user = await createTestUser(app, {
+        username: 'd2-runtime-user',
         role: Role.ADMIN,
-        status: UserStatus.ACTIVE,
-        memberId: null,
-      };
+      });
+      const auth = (await loginAs(app, user.username)).authHeader;
       const member = await prisma.member.create({
         data: {
           memberNo: 'D2-RUNTIME',
@@ -1194,10 +1189,98 @@ describe('E3-2 D2 source proof migration', () => {
           attendanceStatusCode: 'present',
         },
       ];
-      const meta = { requestId: 'd2-runtime-fixture', ip: null, ua: null };
-      const sheet = await service.submit(activity.id, { records }, actor, meta);
+      async function historicalSnapshot(
+        target: { id: string; activityTypeCode: string },
+        inputs: typeof records,
+        sheetId?: string,
+      ) {
+        return prisma.$transaction(
+          async (tx) => {
+            const calculation = await calculator.applyContributionRulePrefillWithSource(
+              inputs.map((record) => ({
+                ...record,
+                checkInAt: new Date(record.checkInAt),
+                checkOutAt: new Date(record.checkOutAt),
+                serviceHours:
+                  (Date.parse(record.checkOutAt) - Date.parse(record.checkInAt)) / 3_600_000,
+                note: null,
+                registrationId: null,
+              })),
+              target.activityTypeCode,
+              tx,
+            );
+            const version = sheetId
+              ? await tx.attendanceSheet.update({
+                  where: { id: sheetId },
+                  data: { version: { increment: 1 } },
+                })
+              : await tx.attendanceSheet.create({
+                  data: {
+                    activityId: target.id,
+                    submitterUserId: user.id,
+                    statusCode: 'pending',
+                    version: 1,
+                  },
+                });
+            if (sheetId) {
+              await tx.attendanceRecord.updateMany({
+                where: { sheetId, deletedAt: null },
+                data: { deletedAt: new Date() },
+              });
+            }
+            await tx.attendanceRecord.createMany({
+              data: calculation.records.map((record) => ({ ...record, sheetId: version.id })),
+            });
+            const stored = await tx.attendanceRecord.findMany({
+              where: { sheetId: version.id, deletedAt: null },
+              orderBy: { id: 'desc' },
+            });
+            const audit = await tx.auditLog.create({
+              data: {
+                actorUserId: user.id,
+                actorRoleSnap: user.role,
+                resourceType: 'attendance_sheet',
+                resourceId: version.id,
+                event: sheetId ? 'attendance-sheet.edit' : 'attendance-sheet.submit',
+                shadowProofRequired: true,
+                context: {
+                  after: {
+                    sheet: { id: version.id, activityId: target.id, version: version.version },
+                    records: stored.map((record) => ({
+                      id: record.id,
+                      memberId: record.memberId,
+                      roleCode: record.roleCode,
+                      serviceHours: record.serviceHours.toString(),
+                      contributionPoints: record.contributionPoints!.toString(),
+                    })),
+                  },
+                  extra: { operation: sheetId ? 'edit' : 'submit', recordsCount: stored.length },
+                },
+              },
+            });
+            await evidence.writeMatchedLegacySources(
+              tx,
+              {
+                windowId: window.id,
+                auditLogId: audit.id,
+                sheetId: version.id,
+                sheetVersion: version.version,
+                activityId: target.id,
+                activityTypeCode: target.activityTypeCode,
+              },
+              calculation.records,
+              calculation.sources,
+              stored,
+            );
+            return version;
+          },
+          { timeout: 7000 },
+        );
+      }
+
+      const sheet = await historicalSnapshot(activity, records);
       for (const version of [1, 2]) {
-        if (version === 2) await service.edit(sheet.id, { records }, actor, meta);
+        if (version === 2) await historicalSnapshot(activity, records, sheet.id);
         const audit = await prisma.auditLog.findFirstOrThrow({
           where: {
             resourceId: sheet.id,
@@ -1232,11 +1315,15 @@ describe('E3-2 D2 source proof migration', () => {
           orderBy: { id: 'asc' },
         })
       ).map((row) => row.id);
+      const writeSources = evidence.writeMatchedLegacySources.bind(evidence);
       const failure = jest
-        .spyOn(app.get(ContributionShadowEvidenceWriteService), 'writeMatchedLegacySources')
-        .mockRejectedValueOnce(new Error('isolated source failure'));
+        .spyOn(evidence, 'writeMatchedLegacySources')
+        .mockImplementationOnce(async (...args) => {
+          await writeSources(...args);
+          throw new Error('isolated source failure');
+        });
       try {
-        await expect(service.edit(sheet.id, { records }, actor, meta)).rejects.toThrow(
+        await expect(historicalSnapshot(activity, records, sheet.id)).rejects.toThrow(
           'isolated source failure',
         );
       } finally {
@@ -1259,6 +1346,36 @@ describe('E3-2 D2 source proof migration', () => {
       ).toBe(4);
       expect(await prisma.contributionShadowComparisonReceipt.count()).toBe(0);
 
+      const history = async () => ({
+        sheet: await prisma.attendanceSheet.findUniqueOrThrow({ where: { id: sheet.id } }),
+        records: await prisma.attendanceRecord.findMany({
+          where: { sheetId: sheet.id },
+          orderBy: { id: 'asc' },
+        }),
+        audits: await prisma.auditLog.findMany({
+          where: { resourceId: sheet.id },
+          orderBy: { id: 'asc' },
+        }),
+        anchors: await prisma.contributionShadowLegacySourceAnchor.findMany({
+          where: { sheetId: sheet.id },
+          orderBy: { id: 'asc' },
+        }),
+        sheets: await prisma.attendanceSheet.count({ where: { activityId: activity.id } }),
+        intents: await prisma.notificationOutboxIntent.count(),
+      });
+      const beforeRetiredCalls = await history();
+      await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${activity.id}/attendance-sheets`)
+        .set('Authorization', auth)
+        .send({ records })
+        .expect(404);
+      await request(httpServer(app))
+        .patch(`/api/admin/v1/attendance-sheets/${sheet.id}`)
+        .set('Authorization', auth)
+        .send({ records })
+        .expect(404);
+      expect(await history()).toEqual(beforeRetiredCalls);
+
       const bulkMembers = Array.from({ length: 2000 }, (_, index) => ({
         id: `d2-runtime-bulk-member-${index}`,
         memberNo: `D2-RUNTIME-BULK-${index}`,
@@ -1278,12 +1395,7 @@ describe('E3-2 D2 source proof migration', () => {
       });
       const bulkRecords = bulkMembers.map((row) => ({ ...records[0], memberId: row.id }));
       const started = performance.now();
-      const bulkSheet = await service.submit(
-        bulkActivity.id,
-        { records: bulkRecords },
-        actor,
-        meta,
-      );
+      const bulkSheet = await historicalSnapshot(bulkActivity, bulkRecords);
       const elapsed = performance.now() - started;
       console.info(`[shadow-w98-source-budget] elapsedMs=${Math.round(elapsed)} records=2000`);
       expect(elapsed).toBeLessThan(7000);

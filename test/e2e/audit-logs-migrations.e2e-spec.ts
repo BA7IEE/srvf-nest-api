@@ -13,6 +13,10 @@ import { resetDb } from '../setup/reset-db';
 import { assertConnectedTestDatabase } from '../setup/test-db';
 import { createTestApp } from '../setup/test-app';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
+import appConfig, { type AppConfig } from '../../src/config/app.config';
+import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import { expectBizError } from '../helpers/biz-code.assert';
+import { createSettlementDraftFixture } from '../helpers/settlement-draft.fixture';
 
 // V2 第一阶段批次 6 PR #2 / PR #3 e2e:
 // PR #2:验证 8 处 emergency-contacts / certificates 写操作迁移到 AuditLogsService.log()
@@ -30,9 +34,8 @@ describe('audit-logs 写入迁移', () => {
   let adminId: string;
   let attendanceSubmitterAuth: string;
   let attendanceSubmitterId: string;
-  // 终态 scoped-authz PR9:第二身份专职终审(submit/一级审是 adminAuth —— 自审 22074 /
-  // 同人 22075 约束后同一人不能终审到底);摘码微刀(2026-07-03):biz-admin 不再持终审两码,
-  // 终审身份换 SUPER_ADMIN(SA 兜底通路;audit 断言本身零修改)。
+  // 提交、一级审核与终审由三个不同用户执行；普通 ADMIN 需显式审核授权，
+  // 终审另用 SUPER_ADMIN。审计迁移不改变默认角色权限或审核人员隔离。
   let finalAdminAuth: string;
 
   let memberId: string;
@@ -1713,16 +1716,62 @@ describe('audit-logs 写入迁移', () => {
 
   // ============ PR #6:attendances 写操作迁移(第二波最后一批) ============
 
-  describe('attendances 写操作迁移(PR #6)', () => {
+  describe('新版结算审计与退役写面', () => {
     let attChildOrgId: string;
     let attMemberAId: string;
     let attMemberBId: string;
-    let attRoleCode: string;
-    let attStatusCode: string;
+    let restoreGate: (() => void) | undefined;
+    const fixtures = new Map<
+      string,
+      {
+        runId: string;
+        draftId: string;
+        identityId: string;
+        sealId: string;
+      }
+    >();
 
-    // PR #6 fixtures:复用外层 activityTypeCode;新建 attendance_role / attendance_status 字典 +
-    // child organization + 测试用 member。不复用 PR #4/PR #5 内的 organization(scope 隔离)。
+    async function grantNative(userId: string, actions: string[]) {
+      const role = await prisma.rbacRole.create({
+        data: { code: `audit-native-${userId}`, displayName: '审计验收显式授权' },
+      });
+      for (const action of actions) {
+        const code = `activity.${action}.record`;
+        const permission = await prisma.permission.upsert({
+          where: { code },
+          update: {},
+          create: { code, module: 'activity', action, resourceType: 'record' },
+        });
+        await prisma.rolePermission.create({
+          data: { roleId: role.id, permissionId: permission.id },
+        });
+      }
+      await prisma.roleBinding.create({
+        data: {
+          principalType: 'USER',
+          principalId: userId,
+          roleId: role.id,
+          scopeType: 'GLOBAL',
+          status: 'ACTIVE',
+        },
+      });
+    }
+
+    function fixture(activityId: string) {
+      const value = fixtures.get(activityId);
+      if (!value) throw new Error('Missing native audit fixture');
+      return value;
+    }
+
+    // 独立组织与两名成员；提交、初审、终审仍由三个不同的真实用户执行。
     beforeAll(async () => {
+      // 本组使用真实切换闸的开启配置；不 mock 守卫，也不影响前面其他模块的验收。
+      const workflow = app.get<AppConfig>(appConfig.KEY).activityV11Workflow;
+      const previous = workflow.enabled;
+      restoreGate = () => {
+        workflow.enabled = previous;
+      };
+      workflow.enabled = true;
       const nodeType = await prisma.dictType.create({
         data: { code: 'att-mig-node', label: 'Att Mig Node' },
         select: { id: true },
@@ -1747,32 +1796,14 @@ describe('audit-logs 写入迁移', () => {
       });
       attChildOrgId = childOrg.id;
 
-      // attendance_role 字典 dictType 已在外层 PR #3 fixtures 创建(共享 dictType),
-      // 这里复用 typeId 并在其下新建独立 dictItem,避免 P2002 dictType.code 唯一冲突
-      const roleType = await prisma.dictType.findUniqueOrThrow({
-        where: { code: 'attendance_role' },
-        select: { id: true },
-      });
-      const roleItem = await prisma.dictItem.create({
-        data: { typeId: roleType.id, code: 'att-mig-member', label: 'Member' },
-        select: { code: true },
-      });
-      attRoleCode = roleItem.code;
-
-      // attendance_status 字典
-      const statType = await prisma.dictType.create({
-        data: { code: 'attendance_status', label: '考勤状态' },
-        select: { id: true },
-      });
-      const statItem = await prisma.dictItem.create({
-        data: { typeId: statType.id, code: 'att-mig-present', label: 'Present' },
-        select: { code: true },
-      });
-      attStatusCode = statItem.code;
-
-      // 2 个 member(防止 records 时间冲突时换 member)
+      // A 是负责人及提交者，B 是被认定的参加人员。
       const ma = await prisma.member.create({
-        data: { memberNo: 'att-mig-a', ...memberIdentityData('Att A') },
+        data: {
+          memberNo: 'att-mig-a',
+          ...memberIdentityData('Att A'),
+          status: 'ACTIVE',
+          gradeCode: 'level-2',
+        },
         select: { id: true },
       });
       attMemberAId = ma.id;
@@ -1781,476 +1812,463 @@ describe('audit-logs 写入迁移', () => {
         select: { id: true },
       });
       attMemberBId = mb.id;
-    });
-
-    // 每个 it 前清 attendance + activity(activityRegistration 先清,FK 顺序);
-    // 外层 beforeEach 已清 audit_logs。
-    beforeEach(async () => {
-      await prisma.attendanceRecord.deleteMany({});
-      await prisma.attendanceSheet.deleteMany({});
-      // PR #5 测试留下的 ActivityRegistration 持有 activityId FK,必须先于 activity 清
-      await truncateActivityRegistrations();
-      await prisma.activity.deleteMany({});
-    });
-
-    const attendanceRelativeIso = (yearOffset: number, suffix: string): string =>
-      `${new Date().getUTCFullYear() + yearOffset}-${suffix}`;
-    const attendancePastIso = (suffix: string): string => attendanceRelativeIso(-1, suffix);
-    const attendanceFutureIso = (suffix: string): string => attendanceRelativeIso(2, suffix);
-
-    // 创建 published Activity,返回 id。直接 Prisma 写库(避免触发 activities audit log)。
-    const createActivity = async (overrides: { capacity?: number } = {}): Promise<string> => {
-      const a = await prisma.activity.create({
-        data: {
-          title: 'Att Mig Activity',
-          activityTypeCode,
-          organizationId: attChildOrgId,
-          startAt: new Date(attendancePastIso('06-01T08:00:00.000Z')),
-          endAt: new Date(attendanceFutureIso('06-01T18:00:00.000Z')),
-          location: 'Demo',
-          statusCode: 'published',
-          ...(overrides.capacity !== undefined ? { capacity: overrides.capacity } : {}),
-        },
-        select: { id: true },
+      await prisma.user.update({
+        where: { id: attendanceSubmitterId },
+        data: { memberId: attMemberAId },
       });
-      return a.id;
-    };
-
-    // 标准 record payload(必填:memberId / roleCode / checkInAt / checkOutAt / attendanceStatusCode)
-    const buildRecord = (
-      memberId: string,
-      checkInIso: string,
-      checkOutIso: string,
-      extras: Record<string, unknown> = {},
-    ): Record<string, unknown> => ({
-      memberId,
-      roleCode: attRoleCode,
-      checkInAt: checkInIso,
-      checkOutAt: checkOutIso,
-      attendanceStatusCode: attStatusCode,
-      ...extras,
+      await grantNative(attendanceSubmitterId, ['settlement-submit', 'settlement-update-draft']);
+      await grantNative(adminId, ['settlement-first-review']);
     });
 
-    // 提交一个 pending Sheet,返回 sheetId。无规则时服务端保守计算 contributionPoints=0。
-    const submitPendingSheet = async (
-      actId: string,
-      records: Record<string, unknown>[] = [
-        buildRecord(
-          attMemberAId,
-          attendancePastIso('06-01T09:00:00.000Z'),
-          attendancePastIso('06-01T11:00:00.000Z'),
-        ),
-      ],
-    ): Promise<string> => {
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${actId}/attendance-sheets`)
-        .set('Authorization', attendanceSubmitterAuth)
-        .send({ records });
-      expect(res.status).toBe(201);
-      return res.body.data.id;
+    // 每例独立活动，永久版本不做逐例删除；外层只清审计，worker 收尾回收隔离库。
+    afterAll(() => {
+      restoreGate?.();
+    });
+
+    // 直接构造合法 working draft；真正的提交/认定/审核均走 HTTP 与真实事务。
+    const createActivity = async (overrides: { missingResult?: boolean } = {}): Promise<string> => {
+      const created = await createSettlementDraftFixture(prisma, {
+        organizationId: attChildOrgId,
+        participantMemberIds: [attMemberBId],
+        ownerMemberId: attMemberAId,
+        actorUserId: attendanceSubmitterId,
+        activityTypeCode,
+        ...overrides,
+      });
+      fixtures.set(created.activityId, created);
+      return created.activityId;
     };
 
-    it('POST submit 触发 → audit_logs +1 attendance-sheet.submit', async () => {
+    const appSettlement = (id: string) => `/api/app/v1/my/managed-activities/${id}/settlement`;
+
+    async function submitVersion(activityId: string) {
+      const response = await request(httpServer(app))
+        .post(`${appSettlement(activityId)}/submit`)
+        .set('Authorization', attendanceSubmitterAuth)
+        .set('User-Agent', 'audit-native-migration')
+        .send({
+          operationKey: `submit-${activityId}`,
+          expectedDraftVersion: 1,
+          evidenceSealId: fixture(activityId).sealId,
+          confirmation: true,
+        });
+      expect({ status: response.status, code: response.body.code }).toEqual({
+        status: 200,
+        code: 0,
+      });
+      return response.body.data.settlementVersionId as string;
+    }
+
+    async function updateDraft(activityId: string, overrides: Record<string, unknown> = {}) {
+      return request(httpServer(app))
+        .patch(`${appSettlement(activityId)}/items/${fixture(activityId).identityId}`)
+        .set('Authorization', attendanceSubmitterAuth)
+        .send({
+          expectedDraftVersion: 1,
+          resultCode: 'present',
+          recognizedServiceHours: 3,
+          recognizedContributionPoints: 1,
+          reason: '不进入审计的人工原因',
+          ...overrides,
+        });
+    }
+
+    async function reviewVersion(
+      versionId: string,
+      stage: 'first' | 'final',
+      action: 'approve' | 'return',
+    ) {
+      const version = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+        where: { id: versionId },
+      });
+      return request(httpServer(app))
+        .post(`/api/admin/v1/attendance-settlements/${versionId}/${stage}-${action}`)
+        .set('Authorization', stage === 'first' ? adminAuth : finalAdminAuth)
+        .send({
+          operationKey: `${stage}-${action}-${versionId}`,
+          evidenceSealId: version.evidenceSealId,
+          evidenceRevision: version.evidenceRevision,
+          populationRevision: version.populationRevision,
+          workflowRevision: version.workflowRevision,
+          contentHash: version.contentHash,
+          ...(action === 'return' ? { note: '数据需要复核，保留在业务事实中' } : {}),
+        });
+    }
+
+    it('POST 新版 submit 触发一条审计且不代改活动生命周期', async () => {
       const actId = await createActivity();
-      const sheetId = await submitPendingSheet(actId);
+      const versionId = await submitVersion(actId);
 
       const logs = await prisma.auditLog.findMany();
       expect(logs).toHaveLength(1);
       const log = logs[0];
-      expect(log.event).toBe('attendance-sheet.submit');
-      expect(log.resourceType).toBe('attendance_sheet');
-      expect(log.resourceId).toBe(sheetId);
+      expect(log.event).toBe('activity.publish');
+      expect(log.resourceType).toBe('activity');
+      expect(log.resourceId).toBe(actId);
       expect(log.actorUserId).toBe(attendanceSubmitterId);
       expect(log.actorRoleSnap).toBe(Role.ADMIN);
       expect(log.success).toBe(true);
-      const extra = (
-        log.context as {
-          extra: {
-            operation: string;
-            activityId: string;
-            recordsCount: number;
-            activityPushedToCompleted: boolean;
-          };
-        }
-      ).extra;
-      expect(extra.operation).toBe('submit');
-      expect(extra.activityId).toBe(actId);
-      expect(extra.recordsCount).toBe(1);
-      expect(extra.activityPushedToCompleted).toBe(false); // D2-a:completed 仅由 activities.complete 推进
+      expect(log.context).toMatchObject({
+        extra: {
+          operation: 'settlement-submit',
+          settlementVersionId: versionId,
+          resultRowCount: 1,
+        },
+      });
+      expect(await prisma.activity.findUnique({ where: { id: actId } })).toMatchObject({
+        statusCode: 'published',
+      });
     });
 
-    it('PATCH edit(主路径)触发 → audit_logs +1(operation=edit,version+1)', async () => {
+    it('PATCH 人工认定留下一条修订审计，身份和行数保持', async () => {
       const actId = await createActivity();
-      const sheetId = await submitPendingSheet(actId);
-      await truncateAuditLogsTestOnly(app);
-
-      const res = await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sheetId}`)
-        .set('Authorization', adminAuth)
-        .send({
-          records: [
-            buildRecord(
-              attMemberBId,
-              attendancePastIso('06-01T10:00:00.000Z'),
-              attendancePastIso('06-01T12:00:00.000Z'),
-            ),
-          ],
-        });
+      const res = await updateDraft(actId);
       expect(res.status).toBe(200);
 
       const logs = await prisma.auditLog.findMany();
       expect(logs).toHaveLength(1);
-      expect(logs[0].event).toBe('attendance-sheet.edit');
-      const extra = (
-        logs[0].context as {
+      expect(logs[0]).toMatchObject({
+        event: 'activity.publish',
+        actorUserId: attendanceSubmitterId,
+        actorRoleSnap: Role.ADMIN,
+        resourceType: 'activity',
+        resourceId: actId,
+        context: {
+          before: { revision: 0 },
+          after: { revision: 1 },
           extra: {
-            operation: string;
-            oldRecordsCount: number;
-            newRecordsCount: number;
-            newVersion: number;
-          };
-        }
-      ).extra;
-      expect(extra.operation).toBe('edit');
-      expect(extra.oldRecordsCount).toBe(1);
-      expect(extra.newRecordsCount).toBe(1);
-      expect(extra.newVersion).toBe(2);
+            operation: 'settlement-draft-item-update',
+            participationIdentityId: fixture(actId).identityId,
+          },
+        },
+      });
+      const rows = await prisma.participantSettlementResultRevision.findMany({
+        where: { settlementVersionId: fixture(actId).draftId },
+      });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        participationIdentityId: fixture(actId).identityId,
+        revision: 1,
+      });
     });
 
-    it('PATCH edit(no-records 分支)触发 → audit_logs +1(operation=edit-no-records)', async () => {
+    it('PATCH 仅原因变化仍审计修订，不改变认定数值或复制自由文本', async () => {
       const actId = await createActivity();
-      const sheetId = await submitPendingSheet(actId);
-      await truncateAuditLogsTestOnly(app);
-
-      // 不传 records → 走 edit-no-records 分支
-      const res = await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sheetId}`)
-        .set('Authorization', adminAuth)
-        .send({});
+      const res = await updateDraft(actId, {
+        recognizedServiceHours: 2,
+        recognizedContributionPoints: 0,
+      });
       expect(res.status).toBe(200);
 
       const logs = await prisma.auditLog.findMany();
       expect(logs).toHaveLength(1);
-      const extra = (
-        logs[0].context as {
-          extra: { operation: string; recordsCount: number; newVersion: number };
-        }
-      ).extra;
-      expect(extra.operation).toBe('edit-no-records');
-      expect(extra.newVersion).toBe(2);
+      expect(logs[0].context).toMatchObject({
+        before: { revision: 0, recognizedServiceHours: '2', recognizedContributionPoints: '0' },
+        after: { revision: 1, recognizedServiceHours: '2', recognizedContributionPoints: '0' },
+        extra: { operation: 'settlement-draft-item-update', adjustmentReasonChanged: true },
+      });
+      expect(JSON.stringify(logs[0].context)).not.toContain('不进入审计的人工原因');
     });
 
-    it('DELETE softDelete 触发 → audit_logs +1(operation=delete,priorStatusCode=pending)', async () => {
+    it('退役 DELETE 不将新版版本当作旧单据删除，也不产生成功审计', async () => {
       const actId = await createActivity();
-      const sheetId = await submitPendingSheet(actId);
+      const versionId = await submitVersion(actId);
+      const before = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+        where: { id: versionId },
+      });
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .delete(`/api/admin/v1/attendance-sheets/${sheetId}`)
+        .delete(`/api/admin/v1/attendance-sheets/${versionId}`)
         .set('Authorization', adminAuth);
-      expect(res.status).toBe(200);
-
-      const logs = await prisma.auditLog.findMany();
-      expect(logs).toHaveLength(1);
-      expect(logs[0].event).toBe('attendance-sheet.delete');
-      const extra = (
-        logs[0].context as {
-          extra: { operation: string; priorStatusCode: string; recordsCount: number };
-        }
-      ).extra;
-      expect(extra.operation).toBe('delete');
-      expect(extra.priorStatusCode).toBe('pending');
-      expect(extra.recordsCount).toBe(1);
+      expect(res.status).toBe(404);
+      expect(await prisma.auditLog.count()).toBe(0);
+      expect(
+        await prisma.attendanceSettlementVersion.findUnique({ where: { id: versionId } }),
+      ).toEqual(before);
     });
 
-    it('PATCH approve 触发 → audit_logs +1(action=approve,pending → pending_final_review)', async () => {
+    it('一审通过审计记录动作、前后运行状态与版本', async () => {
       const actId = await createActivity();
-      const sheetId = await submitPendingSheet(actId);
+      const versionId = await submitVersion(actId);
       await truncateAuditLogsTestOnly(app);
 
-      const res = await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/approve`)
-        .set('Authorization', adminAuth)
-        .send({});
+      const res = await reviewVersion(versionId, 'first', 'approve');
       expect(res.status).toBe(200);
 
       const logs = await prisma.auditLog.findMany();
       expect(logs).toHaveLength(1);
-      expect(logs[0].event).toBe('attendance-sheet.review');
-      const extra = (
-        logs[0].context as {
+      expect(logs[0]).toMatchObject({
+        event: 'activity.publish',
+        actorUserId: adminId,
+        actorRoleSnap: Role.ADMIN,
+        context: {
           extra: {
-            operation: string;
-            action: string;
-            priorStatusCode: string;
-            nextStatusCode: string;
-            recordsCount: number;
-          };
-        }
-      ).extra;
-      expect(extra.operation).toBe('review');
-      expect(extra.action).toBe('approve');
-      expect(extra.priorStatusCode).toBe('pending');
-      expect(extra.nextStatusCode).toBe('pending_final_review');
-      expect(extra.recordsCount).toBe(1);
+            operation: 'settlement-first-review',
+            actionCode: 'approve',
+            settlementVersionId: versionId,
+            runStatusBefore: 'pending_first_review',
+            runStatusAfter: 'pending_final_review',
+          },
+        },
+      });
     });
 
-    it('PATCH reject 触发 → audit_logs +1(action=reject)', async () => {
+    it('一审退回记录审计与业务原因，原因不进入日志', async () => {
       const actId = await createActivity();
-      const sheetId = await submitPendingSheet(actId);
+      const versionId = await submitVersion(actId);
       await truncateAuditLogsTestOnly(app);
 
-      const res = await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/reject`)
-        .set('Authorization', adminAuth)
-        .send({ reviewNote: '材料不全' });
+      const res = await reviewVersion(versionId, 'first', 'return');
       expect(res.status).toBe(200);
 
       const logs = await prisma.auditLog.findMany();
       expect(logs).toHaveLength(1);
-      const extra = (logs[0].context as { extra: { action: string; nextStatusCode: string } })
-        .extra;
-      expect(extra.action).toBe('reject');
-      expect(extra.nextStatusCode).toBe('rejected');
+      expect(logs[0].context).toMatchObject({
+        extra: {
+          operation: 'settlement-first-review',
+          actionCode: 'return',
+          versionStatusAfter: 'returned',
+        },
+      });
+      expect(JSON.stringify(logs[0].context)).not.toContain('数据需要复核');
+      expect(
+        await prisma.attendanceSettlementVersion.findUnique({ where: { id: versionId } }),
+      ).toMatchObject({ statusCode: 'returned', returnReason: '数据需要复核，保留在业务事实中' });
     });
 
-    it('PATCH final-approve 触发 → audit_logs +1(action=final-approve,eventTriggered=true)', async () => {
+    it('终审通过审计关联准备批次，尚未提前入账或关账', async () => {
       const actId = await createActivity();
-      const sheetId = await submitPendingSheet(actId);
-      // 先 approve 进入 pending_final_review
-      await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/approve`)
-        .set('Authorization', adminAuth)
-        .send({})
-        .expect(200);
+      const versionId = await submitVersion(actId);
+      expect((await reviewVersion(versionId, 'first', 'approve')).status).toBe(200);
       await truncateAuditLogsTestOnly(app);
 
-      // PR9:终审换第二管理员(adminAuth 是 submitter+一级审,自审/同人约束下不可再终审)
-      const res = await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-approve`)
-        .set('Authorization', finalAdminAuth)
-        .send({});
+      const res = await reviewVersion(versionId, 'final', 'approve');
       expect(res.status).toBe(200);
 
       const logs = await prisma.auditLog.findMany();
       expect(logs).toHaveLength(1);
-      expect(logs[0].event).toBe('attendance-sheet.final-review');
-      const extra = (
-        logs[0].context as {
+      expect(logs[0]).toMatchObject({
+        event: 'activity.publish',
+        actorRoleSnap: Role.SUPER_ADMIN,
+        context: {
           extra: {
-            operation: string;
-            action: string;
-            nextStatusCode: string;
-            eventTriggered: boolean;
-          };
-        }
-      ).extra;
-      expect(extra.operation).toBe('final-review');
-      expect(extra.action).toBe('final-approve');
-      expect(extra.nextStatusCode).toBe('approved');
-      expect(extra.eventTriggered).toBe(true);
+            operation: 'settlement-final-review',
+            actionCode: 'approve',
+            versionStatusAfter: 'approved',
+            firstReviewerUserId: adminId,
+            ledgerPostingBatchId: res.body.data.ledgerPostingBatchId,
+            ledgerPostingBatchStatus: 'preparing',
+          },
+        },
+      });
+      expect(
+        await prisma.ledgerPostingBatch.findUnique({
+          where: { id: res.body.data.ledgerPostingBatchId },
+        }),
+      ).toMatchObject({ settlementVersionId: versionId, statusCode: 'preparing' });
+      expect(
+        await prisma.attendanceSettlementRun.findUnique({ where: { id: fixture(actId).runId } }),
+      ).not.toMatchObject({ statusCode: 'posted' });
     });
 
-    it('PATCH final-reject 触发 → audit_logs +1(action=final-reject,records 跟随软删)', async () => {
+    it('终审退回记录阶段与原因，保留版本的结果历史', async () => {
       const actId = await createActivity();
-      const sheetId = await submitPendingSheet(actId);
-      await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/approve`)
-        .set('Authorization', adminAuth)
-        .send({})
-        .expect(200);
+      const versionId = await submitVersion(actId);
+      expect((await reviewVersion(versionId, 'first', 'approve')).status).toBe(200);
+      const before = await prisma.participantSettlementResultRevision.findMany({
+        where: { settlementVersionId: versionId },
+      });
       await truncateAuditLogsTestOnly(app);
 
-      // 摘码微刀:final-reject 亦须持权身份(adminAuth 的 biz-admin 已无终审码)
-      const res = await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-reject`)
-        .set('Authorization', finalAdminAuth)
-        .send({ finalReviewNote: '数据不准' });
+      const res = await reviewVersion(versionId, 'final', 'return');
       expect(res.status).toBe(200);
 
       const logs = await prisma.auditLog.findMany();
       expect(logs).toHaveLength(1);
-      expect(logs[0].event).toBe('attendance-sheet.final-review');
-      const extra = (
-        logs[0].context as {
-          extra: {
-            action: string;
-            nextStatusCode: string;
-            recordsCount: number;
-            finalReviewNote: string;
-          };
-        }
-      ).extra;
-      expect(extra.action).toBe('final-reject');
-      expect(extra.nextStatusCode).toBe('final_rejected');
-      expect(extra.recordsCount).toBe(1);
-      expect(extra.finalReviewNote).toBe('数据不准');
+      expect(logs[0].context).toMatchObject({
+        extra: {
+          operation: 'settlement-final-review',
+          actionCode: 'return',
+          versionStatusAfter: 'returned',
+          firstReviewerUserId: adminId,
+        },
+      });
+      expect(
+        await prisma.participantSettlementResultRevision.findMany({
+          where: { settlementVersionId: versionId },
+        }),
+      ).toEqual(before);
+      expect(JSON.stringify(logs[0].context)).not.toContain('数据需要复核');
     });
 
     it('context 锁形:requestId 非空,ip / ua 字段存在', async () => {
       const actId = await createActivity();
-      const sheetId = await submitPendingSheet(actId);
+      await submitVersion(actId);
 
-      const log = (await prisma.auditLog.findFirst({ where: { resourceId: sheetId } }))!;
+      const log = (await prisma.auditLog.findFirst({ where: { resourceId: actId } }))!;
       const ctx = log.context as Record<string, unknown>;
       expect(typeof ctx.requestId).toBe('string');
       expect((ctx.requestId as string).length).toBeGreaterThan(0);
       expect('ip' in ctx).toBe(true);
-      expect('ua' in ctx).toBe(true);
+      expect(ctx.ua).toBe('audit-native-migration');
     });
 
-    it('submit:context 含 after(sheet+records),不含 before;after.sheet.statusCode=pending,after.records 长度匹配', async () => {
+    it('提交审计指向可还原的不可变版本、草稿和结果数量，不复制整行', async () => {
       const actId = await createActivity();
-      const sheetId = await submitPendingSheet(actId);
-      const log = (await prisma.auditLog.findFirst({ where: { resourceId: sheetId } }))!;
+      const versionId = await submitVersion(actId);
+      const version = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+        where: { id: versionId },
+        include: { resultRevisions: true },
+      });
+      const log = (await prisma.auditLog.findFirst({ where: { resourceId: actId } }))!;
       const ctx = log.context as Record<string, unknown>;
       expect(ctx.before).toBeUndefined();
-      expect(ctx.after).toBeDefined();
-      const after = ctx.after as {
-        sheet: { statusCode: string; version: number };
-        records: unknown[];
-      };
-      expect(after.sheet.statusCode).toBe('pending');
-      expect(after.sheet.version).toBe(1);
-      expect(after.records).toHaveLength(1);
-    });
-
-    it('edit:context 同时含 before+after,before.sheet.version=1 / after.sheet.version=2', async () => {
-      const actId = await createActivity();
-      const sheetId = await submitPendingSheet(actId);
-      await truncateAuditLogsTestOnly(app);
-
-      await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sheetId}`)
-        .set('Authorization', adminAuth)
-        .send({
-          records: [
-            buildRecord(
-              attMemberBId,
-              attendancePastIso('06-01T10:00:00.000Z'),
-              attendancePastIso('06-01T12:00:00.000Z'),
-            ),
-          ],
-        })
-        .expect(200);
-
-      const log = (await prisma.auditLog.findFirst({ where: { resourceId: sheetId } }))!;
-      const ctx = log.context as {
-        before: { sheet: { version: number; statusCode: string } };
-        after: { sheet: { version: number; statusCode: string } };
-      };
-      expect(ctx.before.sheet.version).toBe(1);
-      expect(ctx.after.sheet.version).toBe(2);
-      expect(ctx.before.sheet.statusCode).toBe('pending');
-      expect(ctx.after.sheet.statusCode).toBe('pending');
-    });
-
-    it('softDelete:context 含 before,不含 after;before.sheet.statusCode=pending', async () => {
-      const actId = await createActivity();
-      const sheetId = await submitPendingSheet(actId);
-      await truncateAuditLogsTestOnly(app);
-
-      await request(httpServer(app))
-        .delete(`/api/admin/v1/attendance-sheets/${sheetId}`)
-        .set('Authorization', adminAuth)
-        .expect(200);
-
-      const log = (await prisma.auditLog.findFirst({ where: { resourceId: sheetId } }))!;
-      const ctx = log.context as {
-        before: { sheet: { statusCode: string }; records: unknown[] };
-        after?: unknown;
-      };
-      expect(ctx.before.sheet.statusCode).toBe('pending');
-      expect(ctx.before.records).toHaveLength(1);
       expect(ctx.after).toBeUndefined();
+      expect(ctx.extra).toMatchObject({
+        settlementVersionId: versionId,
+        settlementVersion: version.version,
+        draftVersionId: fixture(actId).draftId,
+        contentHash: version.contentHash,
+        resultRowCount: version.resultRevisions.length,
+      });
+      expect(version.resultRevisions).toHaveLength(1);
+      expect(version.statusCode).toBe('submitted');
+      expect(version.version).toBe(2);
+      expect(JSON.stringify(ctx)).not.toContain(attMemberBId);
     });
 
-    it('finalReject:before 含 records / after 仅 sheet(records 已软删)', async () => {
+    it('认定审计保留完整结果前后差异和修订号', async () => {
       const actId = await createActivity();
-      const sheetId = await submitPendingSheet(actId);
-      await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/approve`)
-        .set('Authorization', adminAuth)
-        .send({})
-        .expect(200);
-      await truncateAuditLogsTestOnly(app);
+      expect((await updateDraft(actId)).status).toBe(200);
 
-      await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-reject`)
-        .set('Authorization', finalAdminAuth)
-        .send({ finalReviewNote: '数据不准' })
-        .expect(200);
-
-      const log = (await prisma.auditLog.findFirst({ where: { resourceId: sheetId } }))!;
-      const ctx = log.context as {
-        before: { sheet: { statusCode: string }; records: unknown[] };
-        after: { sheet: { statusCode: string }; records?: unknown };
-      };
-      expect(ctx.before.sheet.statusCode).toBe('pending_final_review');
-      expect(ctx.before.records).toHaveLength(1);
-      expect(ctx.after.sheet.statusCode).toBe('final_rejected');
-      expect(ctx.after.records).toBeUndefined();
+      const log = (await prisma.auditLog.findFirst({ where: { resourceId: actId } }))!;
+      const ctx = log.context as Record<string, unknown>;
+      expect(ctx.before).toEqual({
+        revision: 0,
+        resultCode: 'present',
+        recognizedServiceHours: '2',
+        recognizedContributionPoints: '0',
+      });
+      expect(ctx.after).toEqual({
+        revision: 1,
+        resultCode: 'present',
+        recognizedServiceHours: '3',
+        recognizedContributionPoints: '1',
+      });
     });
 
-    it('同事务回滚:submit 字典 invalid → audit 不入表 + sheet 不入表', async () => {
+    it('退役删除保留草稿、提交版本及全部结果历史', async () => {
       const actId = await createActivity();
-      const sheetBefore = await prisma.attendanceSheet.count();
-      const auditBefore = await prisma.auditLog.count();
-
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${actId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({
-          records: [
-            buildRecord(
-              attMemberAId,
-              attendancePastIso('06-01T09:00:00.000Z'),
-              attendancePastIso('06-01T11:00:00.000Z'),
-              { roleCode: 'invalid-role-code' },
-            ),
-          ],
+      const versionId = await submitVersion(actId);
+      const history = () =>
+        prisma.attendanceSettlementVersion.findMany({
+          where: { settlementRunId: fixture(actId).runId },
+          orderBy: { version: 'asc' },
+          include: { resultRevisions: true },
         });
-      expect(res.status).toBe(400);
-
-      expect(await prisma.attendanceSheet.count()).toBe(sheetBefore);
-      expect(await prisma.auditLog.count()).toBe(auditBefore);
-    });
-
-    it('R31 失败回滚:approve 时 records.contributionPoints null → 22072 → audit 不入表 + 状态不变', async () => {
-      const actId = await createActivity();
-      const sheetId = await submitPendingSheet(actId);
-      // 历史/运维异常行仍可为 null;R31 在 approve 时保持兜底校验。
-      await prisma.attendanceRecord.updateMany({
-        where: { sheetId, deletedAt: null },
-        data: { contributionPoints: null },
-      });
+      const before = await history();
+      expect(before).toHaveLength(2);
       await truncateAuditLogsTestOnly(app);
 
-      const res = await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/approve`)
-        .set('Authorization', adminAuth)
-        .send({});
-      expect(res.status).toBe(409); // ATTENDANCE_RECORD_CONTRIBUTION_POINTS_REQUIRED (22072, CONFLICT)
-
-      // 状态保持 pending,audit 不入表
-      const sheet = await prisma.attendanceSheet.findUnique({
-        where: { id: sheetId },
-        select: { statusCode: true },
-      });
-      expect(sheet?.statusCode).toBe('pending');
+      for (const id of [fixture(actId).draftId, versionId]) {
+        await request(httpServer(app))
+          .delete(`/api/admin/v1/attendance-sheets/${id}`)
+          .set('Authorization', adminAuth)
+          .expect(404);
+      }
+      expect(await history()).toEqual(before);
       expect(await prisma.auditLog.count()).toBe(0);
     });
 
-    it('GET list:恰好写入 1 条 attendance-sheet.read.other', async () => {
+    it('终审退回审计可还原前后状态，历史指针及内容摘要保留', async () => {
       const actId = await createActivity();
-      await submitPendingSheet(actId);
+      const versionId = await submitVersion(actId);
+      expect((await reviewVersion(versionId, 'first', 'approve')).status).toBe(200);
+      const before = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+        where: { id: versionId },
+      });
       await truncateAuditLogsTestOnly(app);
 
-      await request(httpServer(app))
-        .get(`/api/admin/v1/activities/${actId}/attendance-sheets`)
+      expect((await reviewVersion(versionId, 'final', 'return')).status).toBe(200);
+      const log = (await prisma.auditLog.findFirst({ where: { resourceId: actId } }))!;
+      expect(log.context).toMatchObject({
+        extra: {
+          runStatusBefore: 'pending_final_review',
+          runStatusAfter: 'drafting',
+          versionStatusAfter: 'returned',
+          settlementVersionId: versionId,
+          contentHash: before.contentHash,
+        },
+      });
+      expect(
+        await prisma.attendanceSettlementVersion.findUnique({ where: { id: versionId } }),
+      ).toMatchObject({
+        contentHash: before.contentHash,
+        returnFromStage: 'final',
+        statusCode: 'returned',
+      });
+      expect(
+        await prisma.attendanceSettlementRun.findUnique({ where: { id: fixture(actId).runId } }),
+      ).toMatchObject({ currentSubmittedVersion: before.version });
+    });
+
+    it('非法认定结果拒绝时草稿与审计均不改变', async () => {
+      const actId = await createActivity();
+      const rows = () =>
+        prisma.participantSettlementResultRevision.findMany({
+          where: { settlementVersionId: fixture(actId).draftId },
+        });
+      const before = await rows();
+      const auditBefore = await prisma.auditLog.count();
+
+      const res = await updateDraft(actId, { resultCode: 'invalid-result' });
+      expect(res.status).toBe(400);
+      expect(await rows()).toEqual(before);
+      expect(await prisma.auditLog.count()).toBe(auditBefore);
+    });
+
+    it('未完成认定不能进入审核：提交拒绝且版本、指针、审计零写', async () => {
+      const actId = await createActivity({ missingResult: true });
+      // 新结果数值不可为 NULL；未计算完的人口在提交边界即拒绝，不能进入审核链。
+      const runBefore = await prisma.attendanceSettlementRun.findUniqueOrThrow({
+        where: { id: fixture(actId).runId },
+      });
+      const versionBefore = await prisma.attendanceSettlementVersion.findMany({
+        where: { settlementRunId: runBefore.id },
+      });
+      const res = await request(httpServer(app))
+        .post(`${appSettlement(actId)}/submit`)
+        .set('Authorization', attendanceSubmitterAuth)
+        .send({
+          operationKey: `pending-${actId}`,
+          expectedDraftVersion: 1,
+          evidenceSealId: fixture(actId).sealId,
+          confirmation: true,
+        });
+      expectBizError(res, BizCode.SETTLEMENT_SUBMIT_PENDING_RESULT);
+      expect(
+        await prisma.attendanceSettlementRun.findUnique({ where: { id: runBefore.id } }),
+      ).toEqual(runBefore);
+      expect(
+        await prisma.attendanceSettlementVersion.findMany({
+          where: { settlementRunId: runBefore.id },
+        }),
+      ).toEqual(versionBefore);
+      expect(await prisma.auditLog.count()).toBe(0);
+    });
+
+    it('GET 活动账本：一条读取审计，未入账版本不作为正式记录返回', async () => {
+      const actId = await createActivity();
+      await submitVersion(actId);
+      await truncateAuditLogsTestOnly(app);
+
+      const response = await request(httpServer(app))
+        .get(`/api/admin/v1/activities/${actId}/participation-ledger`)
         .set('Authorization', adminAuth)
         .set('User-Agent', 'audit-migrations-attendance-read')
         .expect(200);
+      expect(response.body.data.items).toEqual([]);
 
       const logs = await prisma.auditLog.findMany();
       expect(logs).toHaveLength(1);
@@ -2272,7 +2290,7 @@ describe('audit-logs 写入迁移', () => {
         requestId: expect.any(String),
         ip: expect.any(String),
         ua: 'audit-migrations-attendance-read',
-        extra: { operation: 'list', count: 1, filterFields: [] },
+        extra: { operation: 'participation-ledger', count: 0, filterFields: [] },
       });
       expect(context.requestId.length).toBeGreaterThan(0);
       expect(JSON.stringify(context)).not.toMatch(
@@ -2280,16 +2298,17 @@ describe('audit-logs 写入迁移', () => {
       );
     });
 
-    it('GET detail:恰好写入 1 条 attendance-sheet.read.other', async () => {
+    it('GET 队员账本：恰好一条审计且不含参与者明细', async () => {
       const actId = await createActivity();
-      const sheetId = await submitPendingSheet(actId);
+      await submitVersion(actId);
       await truncateAuditLogsTestOnly(app);
 
-      await request(httpServer(app))
-        .get(`/api/admin/v1/attendance-sheets/${sheetId}`)
+      const response = await request(httpServer(app))
+        .get(`/api/admin/v1/members/${attMemberBId}/participation-ledger`)
         .set('Authorization', adminAuth)
         .set('User-Agent', 'audit-migrations-attendance-read')
         .expect(200);
+      expect(response.body.data.items).toEqual([]);
 
       const logs = await prisma.auditLog.findMany();
       expect(logs).toHaveLength(1);
@@ -2297,8 +2316,8 @@ describe('audit-logs 写入迁移', () => {
         event: 'attendance-sheet.read.other',
         actorUserId: adminId,
         actorRoleSnap: Role.ADMIN,
-        resourceType: 'attendance_sheet',
-        resourceId: sheetId,
+        resourceType: 'member',
+        resourceId: attMemberBId,
         success: true,
       });
       const context = logs[0].context as {
@@ -2311,7 +2330,7 @@ describe('audit-logs 写入迁移', () => {
         requestId: expect.any(String),
         ip: expect.any(String),
         ua: 'audit-migrations-attendance-read',
-        extra: { operation: 'detail' },
+        extra: { operation: 'participation-ledger', count: 0, filterFields: [] },
       });
       expect(context.requestId.length).toBeGreaterThan(0);
       expect(JSON.stringify(context)).not.toMatch(
@@ -2321,11 +2340,11 @@ describe('audit-logs 写入迁移', () => {
 
     it('GET review-detail:恰好写入 1 条 attendance-sheet.read.other', async () => {
       const actId = await createActivity();
-      const sheetId = await submitPendingSheet(actId);
+      const versionId = await submitVersion(actId);
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .get(`/api/admin/v1/attendance-sheets/${sheetId}/review-detail`)
+        .get(`/api/admin/v1/attendance-settlements/${versionId}/review-detail`)
         .set('Authorization', adminAuth)
         .set('User-Agent', 'audit-migrations-attendance-read')
         .expect(200);
@@ -2336,8 +2355,8 @@ describe('audit-logs 写入迁移', () => {
         event: 'attendance-sheet.read.other',
         actorUserId: adminId,
         actorRoleSnap: Role.ADMIN,
-        resourceType: 'attendance_sheet',
-        resourceId: sheetId,
+        resourceType: 'attendance_settlement_version',
+        resourceId: versionId,
         success: true,
       });
       const context = logs[0].context as {
@@ -2350,7 +2369,7 @@ describe('audit-logs 写入迁移', () => {
         requestId: expect.any(String),
         ip: expect.any(String),
         ua: 'audit-migrations-attendance-read',
-        extra: { operation: 'review-detail', count: 1 },
+        extra: { operation: 'settlement-review-detail', count: 1, filterFields: [] },
       });
       expect(context.requestId.length).toBeGreaterThan(0);
       expect(JSON.stringify(context)).not.toMatch(
@@ -2358,31 +2377,42 @@ describe('audit-logs 写入迁移', () => {
       );
     });
 
-    it('finalApprove 与 attendance.recorded 业务事件并存(eventPlaceholder 不入 audit 表;两套机制 OK)', async () => {
+    it('终审审计与真实审核动作、准备批次并存，不用事件标志代替业务事实', async () => {
       const actId = await createActivity();
-      const sheetId = await submitPendingSheet(actId);
-      await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/approve`)
-        .set('Authorization', adminAuth)
-        .send({})
-        .expect(200);
+      const versionId = await submitVersion(actId);
+      expect((await reviewVersion(versionId, 'first', 'approve')).status).toBe(200);
       await truncateAuditLogsTestOnly(app);
 
-      // PR9:终审换第二管理员(自审/同人约束)
-      await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-approve`)
-        .set('Authorization', finalAdminAuth)
-        .send({})
-        .expect(200);
+      const response = await reviewVersion(versionId, 'final', 'approve');
+      expect(response.status).toBe(200);
 
-      // audit_logs +1(finalApprove)且仅 1 条(business event 不入 audit 表)
+      // 旧 attendance.recorded 退出；实际业务记录与审计同存，通知决策另行验收。
       const logs = await prisma.auditLog.findMany();
       expect(logs).toHaveLength(1);
-      expect(logs[0].event).toBe('attendance-sheet.final-review');
-      // eventTriggered=true 标识 attendance.recorded 已被业务事件机制触发(由 service 控制,
-      // 不影响 audit_logs 表;两套机制独立并存)
-      const extra = (logs[0].context as { extra: { eventTriggered: boolean } }).extra;
-      expect(extra.eventTriggered).toBe(true);
+      expect(logs[0]).toMatchObject({
+        event: 'activity.publish',
+        context: {
+          extra: {
+            operation: 'settlement-final-review',
+            reviewActionId: response.body.data.reviewActionId,
+            ledgerPostingBatchId: response.body.data.ledgerPostingBatchId,
+          },
+        },
+      });
+      expect(
+        await prisma.settlementReviewAction.findUnique({
+          where: { id: response.body.data.reviewActionId },
+        }),
+      ).toMatchObject({
+        settlementVersionId: versionId,
+        stageCode: 'final',
+        actionCode: 'approve',
+      });
+      expect(
+        await prisma.ledgerPostingBatch.findUnique({
+          where: { id: response.body.data.ledgerPostingBatchId },
+        }),
+      ).toMatchObject({ settlementVersionId: versionId, statusCode: 'preparing' });
     });
   });
 });

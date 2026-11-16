@@ -712,8 +712,8 @@ export class OrganizationsService {
   // 给定 orgId,展开该组织及其全部后代组织 id(含自身)。读 organization_closure
   // WHERE ancestorId = orgId。**纯读、零 schema、仅供列表数据过滤展开,绝不进任何判权路径**
   // (closure 非 judge;判权路径见 authz/ 模块三源推导,本 helper 与之无关)。
-  async queryDescendantOrgIds(orgId: string): Promise<string[]> {
-    const rows = await this.prisma.organizationClosure.findMany({
+  async queryDescendantOrgIds(orgId: string, tx?: Prisma.TransactionClient): Promise<string[]> {
+    const rows = await (tx ?? this.prisma).organizationClosure.findMany({
       where: { ancestorId: orgId },
       select: { descendantId: true },
     });

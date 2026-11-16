@@ -3,6 +3,7 @@ import { MemberStatus, Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED } from '../../src/modules/permissions/permission-catalog';
 import { seedActivityResponsibilitySystemRoles } from '../fixtures/activity-responsibility.fixture';
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
@@ -13,7 +14,7 @@ import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 
-describe('App managed activity attendances', () => {
+describe('App managed native attendance and settlement responsibilities', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let organizationId: string;
@@ -21,13 +22,44 @@ describe('App managed activity attendances', () => {
   let reviewerAuth: string;
   let sequence = 0;
   const previousGate = process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
+  const previousV11 = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
 
   beforeAll(async () => {
     process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED = 'true';
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
-    await seedActivityResponsibilitySystemRoles(app);
+    const roles = await seedActivityResponsibilitySystemRoles(app);
+    // The shared legacy fixture predates native settlement permissions. Match
+    // prisma/seed.ts's existing owner/collaborator grants for this native suite;
+    // do not grant native actions to the ordinary global biz-admin.
+    const actions = [
+      'activity.settlement-generate.record',
+      'activity.settlement-update-draft.record',
+      'activity.settlement-submit.record',
+      'activity.settlement-close.record',
+    ];
+    await prisma.permission.createMany({
+      data: ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED.filter((row) =>
+        actions.includes(row.code),
+      ).map((row) => ({ ...row })),
+      skipDuplicates: true,
+    });
+    const nativePermissions = await prisma.permission.findMany({
+      where: { code: { in: actions } },
+    });
+    for (const code of ['activity-owner', 'activity-attendance-collaborator']) {
+      await prisma.rolePermission.createMany({
+        data: nativePermissions
+          .filter(
+            (permission) =>
+              code === 'activity-owner' || permission.code !== 'activity.settlement-close.record',
+          )
+          .map((permission) => ({ roleId: roles[code], permissionId: permission.id })),
+        skipDuplicates: true,
+      });
+    }
     bizAdminRoleId = (await seedBizAdminPermissionsAndRole(app)).bizAdminRoleId;
     const reviewer = await createTestUser(app, {
       username: 'managed-attendance-reviewer',
@@ -79,9 +111,14 @@ describe('App managed activity attendances', () => {
   });
 
   afterAll(async () => {
-    await app.close();
-    if (previousGate === undefined) delete process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
-    else process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED = previousGate;
+    try {
+      await app?.close();
+    } finally {
+      if (previousGate === undefined) delete process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED = previousGate;
+      if (previousV11 === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousV11;
+    }
   });
 
   async function memberUser(label: string, globalAdmin = false) {
@@ -108,7 +145,7 @@ describe('App managed activity attendances', () => {
     };
   }
 
-  it('exposes all 8 routes only to active attendance responsibility and revokes immediately', async () => {
+  it('native reads/writes follow active attendance responsibility; removal revokes every tested surface immediately', async () => {
     const owner = await memberUser('owner', true);
     const attendanceCollaborator = await memberUser('attendance');
     const registrationCollaborator = await memberUser('registration');
@@ -140,7 +177,7 @@ describe('App managed activity attendances', () => {
         metricSelectionRevision: 1,
       },
     });
-    await request(httpServer(app))
+    const createdSession = await request(httpServer(app))
       .post(`/api/app/v1/my/managed-activities/${activityId}/sessions`)
       .set('Authorization', owner.auth)
       .send({
@@ -172,9 +209,21 @@ describe('App managed activity attendances', () => {
     await prisma.activity.update({
       where: { id: activityId },
       data: {
-        startAt: new Date('2026-07-20T01:00:00.000Z'),
-        endAt: new Date('2026-07-20T05:00:00.000Z'),
-        registrationDeadline: new Date('2026-07-19T12:00:00.000Z'),
+        startAt: new Date('2020-07-20T01:00:00.000Z'),
+        endAt: new Date('2020-07-20T05:00:00.000Z'),
+        registrationDeadline: new Date('2020-07-19T12:00:00.000Z'),
+      },
+    });
+    const sessionId = createdSession.body.data.sessionId as string;
+    await prisma.activitySession.update({
+      where: { id: sessionId },
+      data: {
+        startAt: new Date('2020-07-20T01:00:00Z'),
+        endAt: new Date('2020-07-20T05:00:00Z'),
+        checkInOpenAt: new Date('2020-07-20T00:30:00Z'),
+        checkInCloseAt: new Date('2020-07-20T02:00:00Z'),
+        checkOutOpenAt: new Date('2020-07-20T03:00:00Z'),
+        checkOutCloseAt: new Date('2020-07-20T05:00:00Z'),
       },
     });
 
@@ -210,122 +259,276 @@ describe('App managed activity attendances', () => {
       },
       select: { id: true },
     });
-    await prisma.activityCheckIn.create({
+    const identity = await prisma.activityParticipationIdentity.create({
       data: {
         activityId,
+        sessionId,
         memberId: participant.memberId,
         registrationId: registration.id,
-        checkInAt: new Date('2026-07-20T01:00:00.000Z'),
-        checkOutAt: new Date('2026-07-20T03:00:00.000Z'),
-        geoVerified: true,
-        outOfRange: false,
-        checkInDistance: 12,
-        checkOutDistance: 15,
+        currentRevision: 1,
+        currentStatusCode: 'pass',
+        populationIncluded: true,
       },
     });
-
-    const checkIns = await request(httpServer(app))
-      .get(`/api/app/v1/my/managed-activities/${activityId}/check-ins`)
-      .set('Authorization', attendanceCollaborator.auth)
-      .expect(200);
-    expect(checkIns.body.data.items).toHaveLength(1);
-    expect(checkIns.body.data.items[0]).not.toHaveProperty('checkInLongitude');
-
-    const draft = await request(httpServer(app))
-      .get(`/api/app/v1/my/managed-activities/${activityId}/attendance-sheet-draft`)
-      .set('Authorization', owner.auth)
-      .expect(200);
-    expect(draft.body.data.records).toHaveLength(1);
-
-    const submitted = await request(httpServer(app))
-      .post(`/api/app/v1/my/managed-activities/${activityId}/attendance-sheets`)
-      .set('Authorization', attendanceCollaborator.auth)
-      .send({ records: draft.body.data.records });
-    if (submitted.status !== 201) throw new Error(JSON.stringify(submitted.body));
-    const sheetId = submitted.body.data.id as string;
-    expect(submitted.body.data).toMatchObject({
-      activityId,
-      statusCode: 'pending',
-      lastSubmittedByUserId: attendanceCollaborator.userId,
+    await prisma.activityParticipationRevision.create({
+      data: {
+        identityId: identity.id,
+        revision: 1,
+        statusCode: 'pass',
+        sourceCode: 'self',
+        effectiveAt: new Date('2020-07-19T01:00:00Z'),
+        createdByUserId: participant.userId,
+      },
     });
+    const evidence = await prisma.activityEvidenceState.findUnique({
+      where: { activityId },
+    });
+    const activity = await prisma.activity.findUniqueOrThrow({
+      where: { id: activityId },
+      select: { workflowRevision: true },
+    });
+    await prisma.attendancePunchEvent.createMany({
+      data: [
+        { eventTypeCode: 'check_in', occurredAt: new Date('2020-07-20T01:00:00Z') },
+        { eventTypeCode: 'check_out', occurredAt: new Date('2020-07-20T03:00:00Z') },
+      ].map((event) => ({
+        ...event,
+        activityId,
+        sessionId,
+        participationIdentityId: identity.id,
+        memberId: participant.memberId,
+        sourceCode: 'staff_scan',
+        receivedAt: event.occurredAt,
+        operatorUserId: owner.userId,
+        eventKey: `managed-native-${event.eventTypeCode}`,
+        requestHash: `managed-native-${event.eventTypeCode}`,
+        evidenceRevision: evidence?.evidenceRevision ?? 0,
+      })),
+    });
+    await prisma.contributionRule.create({
+      data: {
+        activityTypeCode: 'managed-attendance-training',
+        attendanceRoleCode: 'member',
+        status: 'ACTIVE',
+        pointsBelow: 1,
+      },
+    });
+    const seal = await prisma.evidenceSeal.create({
+      data: {
+        activityId,
+        sealRevision: 1,
+        evidenceRevision: evidence?.evidenceRevision ?? 0,
+        populationRevision: evidence?.populationRevision ?? 0,
+        workflowRevision: activity.workflowRevision,
+        allWindowsClosedAt: new Date('2020-07-20T06:00:00Z'),
+        openSegmentCount: 0,
+        manualReviewPendingCount: 0,
+        populationCountDistinct: 1,
+        populationCountBySession: { [sessionId]: 1 },
+        contentHash: 'managed-native-sealed-input',
+        statusCode: 'active',
+        sealedAt: new Date('2020-07-20T06:00:00Z'),
+        sealedByUserId: owner.userId,
+      },
+    });
+    const base = `/api/app/v1/my/managed-activities/${activityId}/settlement`;
+    const generated = await request(httpServer(app))
+      .post(`${base}/generate`)
+      .set('Authorization', attendanceCollaborator.auth)
+      .send({ operationKey: 'managed-native-generate' })
+      .expect((res) => {
+        expect({ status: res.status, code: res.body.code, message: res.body.message }).toEqual({
+          status: 200,
+          code: 0,
+          message: 'ok',
+        });
+      });
+    expect(generated.body.data).toMatchObject({ outcome: 'draft', personCount: 1 });
 
     const list = await request(httpServer(app))
-      .get(`/api/app/v1/my/managed-activities/${activityId}/attendance-sheets`)
+      .get(`${base}/items`)
       .set('Authorization', owner.auth)
       .expect(200);
     expect(list.body.data.total).toBe(1);
-
-    const detail = await request(httpServer(app))
-      .get(`/api/app/v1/my/managed-activities/${activityId}/attendance-sheets/${sheetId}`)
-      .set('Authorization', owner.auth)
+    expect(list.body.data.items[0]).toMatchObject({
+      identityId: identity.id,
+      calculatedServiceHours: 2,
+      calculatedContributionPoints: 1,
+    });
+    for (const field of [
+      'checkInLongitude',
+      'checkInLatitude',
+      'longitude',
+      'latitude',
+      'qrToken',
+    ]) {
+      expect(list.body.data.items[0]).not.toHaveProperty(field);
+    }
+    await request(httpServer(app))
+      .get(base)
+      .set('Authorization', attendanceCollaborator.auth)
       .expect(200);
-    expect(detail.body.data.records).toHaveLength(1);
-    expect(detail.body.data).not.toHaveProperty('activity');
 
     const edited = await request(httpServer(app))
-      .patch(`/api/app/v1/my/managed-activities/${activityId}/attendance-sheets/${sheetId}`)
+      .patch(`${base}/items/${identity.id}`)
       .set('Authorization', owner.auth)
-      .send({})
+      .send({
+        expectedDraftVersion: generated.body.data.settlementVersion,
+        resultCode: 'present',
+        recognizedServiceHours: 2,
+        recognizedContributionPoints: 1,
+        reason: '负责人复核',
+      })
       .expect(200);
-    expect(edited.body.data.version).toBe(2);
+    expect(edited.body.data.identityId).toBe(identity.id);
 
-    await prisma.attendanceSheet.update({
-      where: { id: sheetId },
-      data: {
-        statusCode: 'returned',
-        returnedByUserId: globalAdmin.userId,
-        returnedAt: new Date(),
-        returnNote: '补充说明',
-        returnedFromStageCode: 'first',
-      },
+    const submitted = await request(httpServer(app))
+      .post(`${base}/submit`)
+      .set('Authorization', attendanceCollaborator.auth)
+      .send({
+        operationKey: 'managed-native-submit',
+        expectedDraftVersion: edited.body.data.settlementVersion,
+        evidenceSealId: seal.id,
+        confirmation: true,
+      })
+      .expect(200);
+    const versionId = submitted.body.data.settlementVersionId as string;
+    const version = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+      where: { id: versionId },
+    });
+    expect(version.createdByUserId).toBe(attendanceCollaborator.userId);
+    const detail = await request(httpServer(app))
+      .get(`${base}/versions/${versionId}`)
+      .set('Authorization', owner.auth)
+      .expect(200);
+    expect(detail.body.data.version).toMatchObject({
+      id: versionId,
+      personCount: 1,
+      sessionParticipationCount: 1,
+    });
+    expect(detail.body.data).not.toHaveProperty('activity');
+    await request(httpServer(app))
+      .post(`/api/admin/v1/attendance-settlements/${versionId}/first-return`)
+      .set('Authorization', reviewerAuth)
+      .send({
+        operationKey: 'managed-native-return',
+        note: '补充说明',
+        evidenceSealId: version.evidenceSealId,
+        evidenceRevision: version.evidenceRevision,
+        populationRevision: version.populationRevision,
+        workflowRevision: version.workflowRevision,
+        contentHash: version.contentHash,
+      })
+      .expect(200);
+    const returned = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+      where: { id: versionId },
+    });
+    const working = await prisma.attendanceSettlementRun.findUniqueOrThrow({
+      where: { activityId },
     });
     const resubmitted = await request(httpServer(app))
-      .post(`/api/app/v1/my/managed-activities/${activityId}/attendance-sheets/${sheetId}/resubmit`)
+      .post(`${base}/versions/${versionId}/resubmit`)
       .set('Authorization', owner.auth)
-      .send({})
+      .send({
+        operationKey: 'managed-native-resubmit',
+        expectedDraftVersion: working.currentDraftVersion,
+        evidenceSealId: seal.id,
+        confirmation: true,
+      })
       .expect(200);
-    expect(resubmitted.body.data).toMatchObject({
-      statusCode: 'pending',
-      version: 3,
-      lastSubmittedByUserId: owner.userId,
-      returnedByUserId: null,
-      returnNote: null,
+    expect(resubmitted.body.data.settlementVersionId).not.toBe(versionId);
+    const latest = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+      where: { id: resubmitted.body.data.settlementVersionId },
     });
+    expect(latest).toMatchObject({
+      statusCode: 'submitted',
+      createdByUserId: owner.userId,
+      priorVersionId: versionId,
+    });
+    expect(
+      await prisma.attendanceSettlementVersion.findUniqueOrThrow({ where: { id: versionId } }),
+    ).toEqual(returned);
 
-    const secondSheet = await prisma.attendanceSheet.create({
+    const historicalSheet = await prisma.attendanceSheet.create({
       data: {
         activityId,
         submitterUserId: owner.userId,
         lastSubmittedByUserId: owner.userId,
         statusCode: 'pending',
       },
-      select: { id: true },
     });
-    await request(httpServer(app))
-      .delete(`/api/app/v1/my/managed-activities/${activityId}/attendance-sheets/${secondSheet.id}`)
-      .set('Authorization', owner.auth)
-      .expect(200);
-
-    for (const auth of [registrationCollaborator.auth, globalAdmin.auth]) {
-      expectBizError(
-        await request(httpServer(app))
-          .get(`/api/app/v1/my/managed-activities/${activityId}/attendance-sheets`)
-          .set('Authorization', auth),
-        BizCode.RBAC_FORBIDDEN,
-      );
+    for (const retiredId of [historicalSheet.id, latest.id]) {
+      await request(httpServer(app))
+        .delete(`/api/app/v1/my/managed-activities/${activityId}/attendance-sheets/${retiredId}`)
+        .set('Authorization', owner.auth)
+        .expect(404);
     }
+    expect(
+      await prisma.attendanceSheet.findUniqueOrThrow({ where: { id: historicalSheet.id } }),
+    ).toEqual(historicalSheet);
 
+    async function protectedState() {
+      return {
+        run: await prisma.attendanceSettlementRun.findUniqueOrThrow({ where: { activityId } }),
+        versions: await prisma.attendanceSettlementVersion.findMany({
+          where: { settlementRun: { activityId } },
+          orderBy: { id: 'asc' },
+        }),
+        results: await prisma.participantSettlementResultRevision.findMany({
+          where: { participationIdentityId: identity.id },
+          orderBy: { id: 'asc' },
+        }),
+        auditCount: await prisma.auditLog.count(),
+        intentCount: await prisma.notificationOutboxIntent.count(),
+      };
+    }
+    async function expectNoNativeAccess(auth: string) {
+      const before = await protectedState();
+      const common = {
+        expectedDraftVersion: working.currentDraftVersion,
+        evidenceSealId: seal.id,
+        confirmation: true,
+      };
+      const probes = [
+        request(httpServer(app)).get(base),
+        request(httpServer(app)).get(`${base}/items`),
+        request(httpServer(app)).get(`${base}/versions/${versionId}`),
+        request(httpServer(app))
+          .post(`${base}/generate`)
+          .send({ operationKey: 'managed-native-generate' }),
+        request(httpServer(app)).patch(`${base}/items/${identity.id}`).send({
+          expectedDraftVersion: working.currentDraftVersion,
+          resultCode: 'present',
+          recognizedServiceHours: 2,
+          recognizedContributionPoints: 1,
+          reason: '拒绝验收',
+        }),
+        request(httpServer(app))
+          .post(`${base}/submit`)
+          .send({ ...common, operationKey: 'managed-native-submit' }),
+        request(httpServer(app))
+          .post(`${base}/versions/${versionId}/resubmit`)
+          .send({ ...common, operationKey: 'managed-native-resubmit' }),
+      ];
+      for (const probe of probes) {
+        expectBizError(await probe.set('Authorization', auth), BizCode.RBAC_FORBIDDEN);
+      }
+      expect(await protectedState()).toEqual(before);
+    }
+    for (const auth of [registrationCollaborator.auth, globalAdmin.auth, participant.auth])
+      await expectNoNativeAccess(auth);
+
+    await request(httpServer(app))
+      .get(base)
+      .set('Authorization', attendanceCollaborator.auth)
+      .expect(200);
     await request(httpServer(app))
       .delete(
         `/api/app/v1/my/managed-activities/${activityId}/collaborators/${attendanceAssignmentId}`,
       )
       .set('Authorization', owner.auth)
       .expect(200);
-    expectBizError(
-      await request(httpServer(app))
-        .get(`/api/app/v1/my/managed-activities/${activityId}/attendance-sheets`)
-        .set('Authorization', attendanceCollaborator.auth),
-      BizCode.RBAC_FORBIDDEN,
-    );
+    await expectNoNativeAccess(attendanceCollaborator.auth);
+    await request(httpServer(app)).get(base).set('Authorization', owner.auth).expect(200);
   }, 60_000);
 });

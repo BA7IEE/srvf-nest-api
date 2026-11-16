@@ -91,6 +91,7 @@ export class TeamJoinApplicationsAdminController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.TEAM_JOIN_APPLICATION_NOT_FOUND,
+    BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
   )
   detail(
     @Param('id') id: string,
@@ -112,6 +113,7 @@ export class TeamJoinApplicationsAdminController {
     BizCode.RBAC_FORBIDDEN,
     BizCode.TEAM_JOIN_APPLICATION_NOT_FOUND,
     BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE,
+    BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
   )
   markGate(
     @Param('id') id: string,
@@ -139,6 +141,7 @@ export class TeamJoinApplicationsAdminController {
     BizCode.RBAC_FORBIDDEN,
     BizCode.TEAM_JOIN_APPLICATION_NOT_FOUND,
     BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE,
+    BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
   )
   evaluate(
     @Param('id') id: string,
@@ -175,6 +178,7 @@ export class TeamJoinApplicationsAdminController {
     BizCode.TEAM_JOIN_GATES_NOT_SATISFIED,
     BizCode.TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE,
     BizCode.TEAM_JOIN_INSURANCE_REQUIRED,
+    BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
   )
   join(
     @Param('id') id: string,

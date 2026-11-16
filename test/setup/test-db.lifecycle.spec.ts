@@ -33,6 +33,41 @@ describe('ordinary worker lifecycle (no database)', () => {
     expect(statements.some((value) => value.includes('CREATE DATABASE'))).toBe(true);
   });
 
+  it.each([
+    ['0|none', null],
+    ['0|autovacuum:active:1', 'autovacuum:active:1'],
+    ['1|client:idle:1', 'client:idle:1'],
+    ['1|parallel:active:1', 'parallel:active:1'],
+    ['1|other:other:1', 'other:other:1'],
+    ['0|client:idle:1', 'unavailable'],
+    ['0|private-query-or-identity', 'unavailable'],
+  ])(
+    'template check reports classified evidence while retaining zero-connection refusal (%#)',
+    (output, refusal) => {
+      jest.mocked(execSync).mockImplementation((command) => {
+        const sql = String(command);
+        statements.push(sql);
+        if (sql.includes('AS drop_snapshot')) {
+          expect(sql).toContain("WHERE datname='app_test' AND pid<>pg_backend_pid()");
+          expect(sql).not.toMatch(/application_name|client_addr|SELECT query/);
+          return output;
+        }
+        return 'postgres|';
+      });
+      if (refusal === null) expect(() => actual.assertTemplateHasNoConnections()).not.toThrow();
+      else
+        expect(() => actual.assertTemplateHasNoConnections()).toThrow(
+          `同一次判定快照）: ${refusal}`,
+        );
+      expect(statements.filter((value) => value.includes('pg_stat_activity'))).toHaveLength(1);
+      expect(
+        statements.some((value) =>
+          /DROP DATABASE|CREATE DATABASE|pg_terminate_backend/.test(value),
+        ),
+      ).toBe(false);
+    },
+  );
+
   it('active connections reject cleanup before DROP', () => {
     jest.mocked(execSync).mockImplementation((command) => {
       statements.push(String(command));

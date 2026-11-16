@@ -557,6 +557,52 @@ describe('activity batch6 offline package exact HTTP wire and writer', () => {
     expect(auditJson).not.toContain('latitude');
   }, 90_000);
 
+  it('a valid signed offline event inside the session but outside its position window rolls back without advancing the package', async () => {
+    const scenario = await createScenario();
+    const now = Date.now();
+    await prisma.activitySessionPosition.update({
+      where: { id: scenario.positionId },
+      data: { startAt: new Date(now + 20 * 60_000), endAt: new Date(now + 40 * 60_000) },
+    });
+    await submitApplicant(scenario);
+    const { data: issued } = await issuePackage(app, managerAuth, scenario);
+    const beforePackage = await prisma.offlinePackage.findUniqueOrThrow({
+      where: { id: issued.package.id },
+      select: { nextExpectedSequence: true, lastAcceptedHash: true, updatedAt: true },
+    });
+    const beforeEvidence = await prisma.activityEvidenceState.findUnique({
+      where: { activityId: scenario.activityId },
+    });
+    const beforeAudit = await prisma.auditLog.count({ where: { resourceId: scenario.activityId } });
+    const response = await upload(app, managerAuth, scenario, issued, signedUpload(issued));
+    expect(response.status).toBe(BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW.httpStatus);
+    expect(response.body.code).toBe(BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW.code);
+    expect(response.body.data).toBeNull();
+    expect(
+      await prisma.attendancePunchEvent.count({ where: { activityId: scenario.activityId } }),
+    ).toBe(0);
+    expect(
+      await prisma.participantServiceSegmentRevision.count({
+        where: { identity: { activityId: scenario.activityId } },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.offlinePunchReviewItem.count({ where: { offlinePackageId: issued.package.id } }),
+    ).toBe(0);
+    expect(
+      await prisma.offlinePackage.findUniqueOrThrow({
+        where: { id: issued.package.id },
+        select: { nextExpectedSequence: true, lastAcceptedHash: true, updatedAt: true },
+      }),
+    ).toEqual(beforePackage);
+    expect(
+      await prisma.activityEvidenceState.findUnique({ where: { activityId: scenario.activityId } }),
+    ).toEqual(beforeEvidence);
+    expect(await prisma.auditLog.count({ where: { resourceId: scenario.activityId } })).toBe(
+      beforeAudit,
+    );
+  });
+
   it('AC-015 accepts an already-issued offline checkout within the termination deadline', async () => {
     const scenario = await createScenario();
     const participationIdentityId = await submitApplicant(scenario);

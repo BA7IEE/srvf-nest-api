@@ -5,6 +5,8 @@
 
 ## 读取与边界
 
+- nonDeletedMemberExists只返回未软删成员是否存在，不校验ACTIVE；
+  调用方必须先完成自身资源范围与权限检查。
 - list/options取member.read.record的visible scope，与organizationId/includeDescendants求交；
   只active PRIMARY扩大范围，其他归属类型不算。持码但scope空返空列表，无码30100。
   除create无ref/GLOBAL-only外，详情/单项写用member ref，bulk每项独立判。

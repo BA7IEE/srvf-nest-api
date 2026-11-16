@@ -71,7 +71,7 @@ export class AdminActivityFeedbackSummaryDto extends ActivityFeedbackAggregateDt
 
   @ApiProperty({
     description:
-      '评价人数 / (当前 approved 考勤 distinct member ∪ 已提交评价 member)去重数；分母为 0 时为 0，四位小数',
+      '评价人数 /（当前正式关账中具备评价资格的成员 ∪ 已提交有效评价成员）的去重数；分母为 0 时为 0，四位小数；工作流关闭返回 20153/503',
     minimum: 0,
     maximum: 1,
   })
