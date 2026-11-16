@@ -502,6 +502,30 @@ describe('attendances 模块', () => {
     return response.body.data as AppManagedActivityOnsiteParticipationReceiptDto;
   }
 
+  async function nativeImportSource(
+    f: Awaited<ReturnType<typeof onsiteScenario>>,
+    memberId: string,
+  ) {
+    const admitted = await admitWithOwnAnchor(f, memberId);
+    return {
+      activityId: f.activityId,
+      sessionId: f.sessionId,
+      participationIdentityId: admitted.participationIdentityId,
+      memberCredential: null,
+      sourceCode: 'import' as const,
+      reason: '导入历史签到表',
+      deviceId: null,
+      longitude: null,
+      latitude: null,
+      accuracy: null,
+      currentUser: await prisma.user.findUniqueOrThrow({
+        where: { id: nativeUserId },
+        select: { id: true, username: true, memberId: true, role: true, status: true },
+      }),
+      auditMeta: { requestId: 'native-import-time', ip: null, ua: null },
+    };
+  }
+
   async function nativeDraft(
     memberIds: string[],
     hours = 2,
@@ -766,6 +790,7 @@ describe('attendances 模块', () => {
             });
     expectBizError(response, BizCode.BAD_REQUEST, { strictMessage: false });
     expect(await nativeSnapshot(f)).toEqual(before);
+    return f;
   }
 
   // These operations are explicitly retired, not aliases for native return or
@@ -1110,25 +1135,8 @@ describe('attendances 模块', () => {
     it('原生导入不得在允许窗口内伪造未来签退/签到，历史事实及精确重放仍可用', async () => {
       const now = Date.now();
       const f = await onsiteScenario(false, new Date(now - 3.5 * 3_600_000));
-      const admitted = await admitWithOwnAnchor(f, memberCId);
       const command = app.get(AttendancePunchCommandService);
-      const input = {
-        activityId: f.activityId,
-        sessionId: f.sessionId,
-        participationIdentityId: admitted.participationIdentityId,
-        memberCredential: null,
-        sourceCode: 'import' as const,
-        reason: '导入历史签到表',
-        deviceId: null,
-        longitude: null,
-        latitude: null,
-        accuracy: null,
-        currentUser: await prisma.user.findUniqueOrThrow({
-          where: { id: nativeUserId },
-          select: { id: true, username: true, memberId: true, role: true, status: true },
-        }),
-        auditMeta: { requestId: 'native-import-time', ip: null, ua: null },
-      };
+      const input = await nativeImportSource(f, memberCId);
       const checkIn = {
         ...input,
         actionCode: 'check_in' as const,
@@ -1139,7 +1147,7 @@ describe('attendances 模块', () => {
       const before = await onsiteSnapshot(f);
       const segments = () =>
         prisma.participantServiceSegmentRevision.findMany({
-          where: { participationIdentityId: admitted.participationIdentityId },
+          where: { participationIdentityId: input.participationIdentityId },
           orderBy: { id: 'asc' },
         });
       const beforeSegments = await segments();
@@ -1331,20 +1339,53 @@ describe('attendances 模块', () => {
       await expectNativeDtoRejection('edit', { attendanceStatusCode: 'absent' });
     });
 
-    it('checkOutAt <= checkInAt → CHECK_OUT_BEFORE_CHECK_IN', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({
-          records: [
-            baseRecord({
-              memberId: memberCId,
-              checkInAt: pastIso('06-01T10:00:00.000Z'),
-              checkOutAt: pastIso('06-01T10:00:00.000Z'),
-            }),
-          ],
+    it('原生签退不得等于或早于签到，拒绝零写；满30分钟可闭合真实段', async () => {
+      const start = Date.now() - 3.5 * 3_600_000;
+      const f = await onsiteScenario(false, new Date(start));
+      // Deliberately overlap the configured windows to exercise ordering/
+      // duration validation rather than fail at the earlier window guard.
+      await prisma.activitySession.update({
+        where: { id: f.sessionId },
+        data: { checkOutOpenAt: new Date(start - 30 * 60_000) },
+      });
+      const input = await nativeImportSource(f, memberCId);
+      const command = app.get(AttendancePunchCommandService);
+      await command.managedPunch({
+        ...input,
+        actionCode: 'check_in',
+        eventKey: `ordered-in:${f.activityId}`,
+        occurredAt: new Date(start),
+      });
+      const before = await onsiteSnapshot(f);
+      const segments = () =>
+        prisma.participantServiceSegmentRevision.findMany({
+          where: { participationIdentityId: input.participationIdentityId },
+          orderBy: { id: 'asc' },
         });
-      expectBizError(res, BizCode.CHECK_OUT_BEFORE_CHECK_IN);
+      const beforeSegments = await segments();
+      for (const offset of [0, -1]) {
+        await expect(
+          command.managedPunch({
+            ...input,
+            actionCode: 'check_out',
+            eventKey: `unordered-out:${f.activityId}:${offset}`,
+            occurredAt: new Date(start + offset),
+          }),
+        ).rejects.toMatchObject({ biz: BizCode.ATTENDANCE_PUNCH_MIN_DURATION_NOT_REACHED });
+        expect(await onsiteSnapshot(f)).toEqual(before);
+        expect(await segments()).toEqual(beforeSegments);
+      }
+      expect(
+        await command.managedPunch({
+          ...input,
+          actionCode: 'check_out',
+          eventKey: `ordered-out:${f.activityId}`,
+          occurredAt: new Date(start + 30 * 60_000),
+        }),
+      ).toMatchObject({ eventTypeCode: 'check_out', segmentStatusCode: 'closed_valid' });
+      expect(await prisma.attendancePunchEvent.count({ where: { activityId: f.activityId } })).toBe(
+        2,
+      );
     });
 
     it('serviceHours <= 0 → ATTENDANCE_SERVICE_HOURS_INVALID', async () => {
@@ -1468,31 +1509,100 @@ describe('attendances 模块', () => {
       }
     });
 
-    it.each([
-      ['before tolerance', pastIso('06-01T05:59:59.999Z'), pastIso('06-01T09:00:00.000Z')],
-      ['after tolerance', futureIso('07-31T16:00:00.000Z'), futureIso('07-31T20:00:00.001Z')],
-    ])('%s → ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW', async (_label, checkInAt, checkOutAt) => {
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({ records: [baseRecord({ memberId: memberCId, checkInAt, checkOutAt })] });
-      expectBizError(res, BizCode.ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW);
+    it.each(['check_in', 'check_out'] as const)(
+      '原生 %s 窗口外1ms拒绝零写，精确边界允许',
+      async (actionCode) => {
+        const now = Date.now();
+        const f = await onsiteScenario(false, new Date(now - 3.5 * 3_600_000));
+        const input = await nativeImportSource(f, memberCId);
+        const command = app.get(AttendancePunchCommandService);
+        const session = await prisma.activitySession.findUniqueOrThrow({
+          where: { id: f.sessionId },
+        });
+        if (actionCode === 'check_out') {
+          await command.managedPunch({
+            ...input,
+            actionCode: 'check_in',
+            eventKey: `window-in:${f.activityId}`,
+            occurredAt: session.startAt,
+          });
+        }
+        // Admit while the activity is open, then test historical import after
+        // both windows have ended. This keeps the future-time guard from masking
+        // the checkout upper-bound assertion. Only Date is faked, not DB/timers.
+        jest.useFakeTimers({
+          now: now + 6 * 3_600_000,
+          doNotFake: [
+            'hrtime',
+            'nextTick',
+            'performance',
+            'queueMicrotask',
+            'setImmediate',
+            'clearImmediate',
+            'setInterval',
+            'clearInterval',
+            'setTimeout',
+            'clearTimeout',
+          ],
+        });
+        try {
+          const boundary =
+            actionCode === 'check_in' ? session.checkInOpenAt : session.checkOutCloseAt;
+          const outside = new Date(boundary.getTime() + (actionCode === 'check_in' ? -1 : 1));
+          const before = await onsiteSnapshot(f);
+          const segments = () =>
+            prisma.participantServiceSegmentRevision.findMany({
+              where: { participationIdentityId: input.participationIdentityId },
+              orderBy: { id: 'asc' },
+            });
+          const beforeSegments = await segments();
+          await expect(
+            command.managedPunch({
+              ...input,
+              actionCode,
+              eventKey: `outside:${f.activityId}`,
+              occurredAt: outside,
+            }),
+          ).rejects.toMatchObject({ biz: BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW });
+          expect(await onsiteSnapshot(f)).toEqual(before);
+          expect(await segments()).toEqual(beforeSegments);
+          expect(
+            await command.managedPunch({
+              ...input,
+              actionCode,
+              eventKey: `boundary:${f.activityId}`,
+              occurredAt: boundary,
+            }),
+          ).toMatchObject({
+            eventTypeCode: actionCode,
+            segmentStatusCode: actionCode === 'check_in' ? 'open' : 'closed_valid',
+          });
+        } finally {
+          jest.useRealTimers();
+        }
+      },
+    );
+
+    it('原生提交拒绝夹带201条旧 records，正常提交仅冻结服务端人口', async () => {
+      // Native submit has no client-supplied records array. The retired
+      // transport's 200-row limit is not a limit on native settlement population.
+      const f = await expectNativeDtoRejection('submit', {
+        records: Array.from({ length: 201 }, () => baseRecord()),
+      });
+      const { version, results } = await nativeSubmit(f);
+      expect(version.personCount).toBe(1);
+      expect(results).toHaveLength(1);
+      expect(results[0].participationIdentityId).toBe(f.identityId);
     });
 
-    it('records 201 条 → 400 DTO 上限', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({ records: Array.from({ length: 201 }, () => baseRecord()) });
-      expect(res.status).toBe(400);
-    });
-
-    it('空 records 数组 → 400', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({ records: [] });
-      expect(res.status).toBe(400);
+    it('原生提交不能以空 records 清空已有事实，省略旧字段后认定完整保留', async () => {
+      const f = await expectNativeDtoRejection('submit', { records: [] });
+      const { version, results } = await nativeSubmit(f);
+      expect(version.personCount).toBe(1);
+      expect(results).toHaveLength(1);
+      expect(results[0].participationIdentityId).toBe(f.identityId);
+      expect(results[0].calculatedServiceHours.toString()).toBe('2');
+      expect(results[0].recognizedServiceHours.toString()).toBe('2');
     });
 
     it('原生 DTO submit: non-whitelisted statusCode → 400 且零写', async () => {
