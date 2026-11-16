@@ -341,6 +341,7 @@ describe('attendances 模块', () => {
     hours = 2,
     activityTypeCode = 'att-native',
     roleCode = 'member',
+    spans = [{ start: 0, end: hours }],
   ) {
     const f = await createSettlementDraftFixture(prisma, {
       organizationId: nativeOrganizationId,
@@ -348,7 +349,7 @@ describe('attendances 模块', () => {
       actorUserId: nativeUserId,
       participantMemberIds: memberIds,
       activityTypeCode,
-      sessionHours: Math.max(4, hours),
+      sessionHours: Math.max(4, ...spans.map((span) => span.end)),
     });
     await prisma.roleBinding.create({
       data: {
@@ -381,31 +382,41 @@ describe('attendances 模块', () => {
         data: { currentPositionId: positionId },
       });
     }
-    const startAt = new Date('2020-03-01T00:00:00Z');
-    const endAt = new Date(startAt.getTime() + hours * 3_600_000);
     // Explicit source facts, not prefilled expected results: generate must
     // replace the helper's two-hour draft with the time derived from punches.
-    await prisma.attendancePunchEvent.createMany({
-      data: identities.flatMap((identity) =>
-        [
-          { eventTypeCode: 'check_in', occurredAt: startAt },
-          { eventTypeCode: 'check_out', occurredAt: endAt },
-        ].map((event) => ({
-          ...event,
-          activityId: f.activityId,
-          sessionId: identity.sessionId,
-          participationIdentityId: identity.id,
-          memberId: identity.memberId,
-          positionId,
-          sourceCode: 'staff_scan',
-          operatorUserId: nativeUserId,
-          receivedAt: event.occurredAt,
-          eventKey: `${identity.id}-${event.eventTypeCode}`,
-          requestHash: `${identity.id}-${event.eventTypeCode}`,
-          evidenceRevision: 0,
-        })),
-      ),
-    });
+    const events = spans
+      .flatMap((span) => [
+        { eventTypeCode: 'check_in', hour: span.start },
+        { eventTypeCode: 'check_out', hour: span.end },
+      ])
+      .sort(
+        (a, b) =>
+          a.hour - b.hour ||
+          (a.eventTypeCode === b.eventTypeCode ? 0 : a.eventTypeCode === 'check_out' ? -1 : 1),
+      );
+    for (const identity of identities) {
+      // Preserve checkout-before-checkin ordering at an exact shared boundary.
+      for (const [index, event] of events.entries()) {
+        const occurredAt = new Date(Date.parse('2020-03-01T00:00:00Z') + event.hour * 3_600_000);
+        await prisma.attendancePunchEvent.create({
+          data: {
+            eventTypeCode: event.eventTypeCode,
+            occurredAt,
+            activityId: f.activityId,
+            sessionId: identity.sessionId,
+            participationIdentityId: identity.id,
+            memberId: identity.memberId,
+            positionId,
+            sourceCode: 'staff_scan',
+            operatorUserId: nativeUserId,
+            receivedAt: occurredAt,
+            eventKey: `${identity.id}-${index}`,
+            requestHash: `${identity.id}-${index}`,
+            evidenceRevision: 0,
+          },
+        });
+      }
+    }
     const base = `/api/app/v1/my/managed-activities/${f.activityId}/settlement`;
     const generated = await request(httpServer(app))
       .post(`${base}/generate`)
@@ -451,7 +462,9 @@ describe('attendances 模块', () => {
       results,
       batches,
       reviews,
-      ledgerCount,
+      entries,
+      segments,
+      punches,
       auditCount,
       intentCount,
     ] = await Promise.all([
@@ -473,7 +486,18 @@ describe('attendances 模块', () => {
         where: { settlementVersion: { settlementRunId: f.runId } },
         orderBy: { id: 'asc' },
       }),
-      prisma.participationLedgerEntry.count({ where: { activityId: f.activityId } }),
+      prisma.participationLedgerEntry.findMany({
+        where: { activityId: f.activityId },
+        orderBy: { id: 'asc' },
+      }),
+      prisma.participantServiceSegmentRevision.findMany({
+        where: { participationIdentityId: { in: f.identityIds } },
+        orderBy: { id: 'asc' },
+      }),
+      prisma.attendancePunchEvent.findMany({
+        where: { activityId: f.activityId },
+        orderBy: { id: 'asc' },
+      }),
       prisma.auditLog.count(),
       prisma.notificationOutboxIntent.count(),
     ]);
@@ -484,7 +508,10 @@ describe('attendances 模块', () => {
       results,
       batches,
       reviews,
-      ledgerCount,
+      ledgerCount: entries.length,
+      entries,
+      segments,
+      punches,
       auditCount,
       intentCount,
     };
@@ -508,6 +535,38 @@ describe('attendances 模块', () => {
         workflowRevision: version.workflowRevision,
         contentHash: version.contentHash,
       });
+  }
+
+  async function nativePrepare(versionId: string) {
+    const batch = await prisma.ledgerPostingBatch.findFirstOrThrow({
+      where: { settlementVersionId: versionId },
+    });
+    const preparation = app.get(LedgerPreparationService);
+    const { jobId } = await preparation.ensurePrepareJob(batch.id);
+    for (const item of await prisma.activityBatchJobItem.findMany({ where: { jobId } })) {
+      await preparation.prepareChunk(jobId, item.id);
+    }
+    expect((await preparation.finalize(jobId)).batchStatus).toBe('ready');
+    return batch;
+  }
+
+  async function nativeCommit(batchId: string) {
+    const actor = await prisma.user.findUniqueOrThrow({
+      where: { id: nativeFinalReviewerId },
+      select: { id: true, username: true, role: true, status: true, memberId: true },
+    });
+    expect(
+      (
+        await app.get(LedgerPostingService).commitBatch(
+          {
+            postingBatchId: batchId,
+            operationKey: `commit:${batchId}`,
+          },
+          actor,
+          { requestId: 'native-acceptance-post', ip: null, ua: 'jest' },
+        )
+      ).batchStatus,
+    ).toBe('committed');
   }
 
   async function expectNativeDtoRejection(
@@ -665,24 +724,6 @@ describe('attendances 模块', () => {
     if (res.status !== 200) {
       throw new Error(
         `approveToPendingFinalReview failed: ${res.status} ${JSON.stringify(res.body)}`,
-      );
-    }
-  }
-
-  // 批次 4-B helper:推到 approved 终态(APD 一级 approve + APD 部门部长 / 副部长 final-approve)。
-  // 沿决议表 v1.0 D5 候选 B + D-S6:approved 语义升级为"终审通过"。
-  // PR9/PR3:终审换 finalAdminAuth(submit 是 submitterAuth、一级审是 adminAuth,
-  // 自审 22074/22081 与同人 22075 约束生效后
-  // 同一人不能再终审)。
-  async function approveToTerminalApproved(sheetId: string): Promise<void> {
-    await approveToPendingFinalReview(sheetId);
-    const res = await request(httpServer(app))
-      .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-approve`)
-      .set('Authorization', finalAdminAuth)
-      .send({});
-    if (res.status !== 200) {
-      throw new Error(
-        `approveToTerminalApproved failed: ${res.status} ${JSON.stringify(res.body)}`,
       );
     }
   }
@@ -1220,116 +1261,116 @@ describe('attendances 模块', () => {
 
   // ============ 时间不重叠(R16 / Q-S15) ============
 
-  describe('时间不重叠校验', () => {
-    let overlapMember: string;
-
-    beforeAll(async () => {
-      // 单独 member 隔离本段干扰
-      const m = await prisma.member.create({
-        data: { memberNo: 'att-m-overlap', ...memberIdentityData('Overlap M') },
-        select: { id: true },
+  describe('原生时间不重叠校验', () => {
+    async function participant(label: string) {
+      return prisma.member.create({
+        data: {
+          memberNo: `att-overlap-${label}`,
+          ...memberIdentityData(`Overlap ${label}`),
+          status: 'ACTIVE',
+          gradeCode: 'level-2',
+        },
       });
-      overlapMember = m.id;
-      // 先入第一段:08:00 - 10:00
-      await createPendingSheet(activityId, [
-        baseRecord({
-          memberId: overlapMember,
-          checkInAt: pastIso('06-05T08:00:00.000Z'),
-          checkOutAt: pastIso('06-05T10:00:00.000Z'),
-        }),
+    }
+    async function ready(f: Awaited<ReturnType<typeof nativeDraft>>) {
+      const { version } = await nativeSubmit(f);
+      await nativeReview(version, 'first-approve').expect(200);
+      await nativeReview(version, 'final-approve').expect(200);
+      return nativePrepare(version.id);
+    }
+    async function conflict(label: string, spans: Array<{ start: number; end: number }>) {
+      const member = await participant(label);
+      const f = await nativeDraft([member.id], 2, 'att-native', 'member', spans);
+      const before = await nativeSnapshot(f);
+      const draftId = before.versions.find((row) => row.version === f.draftVersion)!.id;
+      expect(before.results.filter((row) => row.settlementVersionId === draftId)).toHaveLength(0);
+      expect(before.punches).toHaveLength(spans.length * 2);
+      const response = await request(httpServer(app))
+        .post(`${f.base}/submit`)
+        .set('Authorization', nativeAuth)
+        .send({
+          operationKey: `conflict:${f.activityId}`,
+          expectedDraftVersion: f.draftVersion,
+          evidenceSealId: f.sealId,
+          confirmation: true,
+        });
+      expectBizError(response, BizCode.SETTLEMENT_SUBMIT_PENDING_RESULT);
+      expect(await nativeSnapshot(f)).toEqual(before);
+      expect(before.ledgerCount).toBe(0);
+      return before;
+    }
+
+    it('完全重叠事实保持未决，不生成认定或正式时长，送审拒绝零写', async () => {
+      await conflict('full', [
+        { start: 0, end: 2 },
+        { start: 0, end: 2 },
       ]);
     });
 
-    it('完全重叠 → 22060', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({
-          records: [
-            baseRecord({
-              memberId: overlapMember,
-              checkInAt: pastIso('06-05T08:00:00.000Z'),
-              checkOutAt: pastIso('06-05T10:00:00.000Z'),
-            }),
-          ],
-        });
-      expectBizError(res, BizCode.ATTENDANCE_TIME_OVERLAP);
+    it('部分重叠事实不能静默选一段入账，送审拒绝且原始证据不变', async () => {
+      await conflict('partial', [
+        { start: 0, end: 2 },
+        { start: 1, end: 3 },
+      ]);
     });
 
-    it('部分重叠 → 22060', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({
-          records: [
-            baseRecord({
-              memberId: overlapMember,
-              checkInAt: pastIso('06-05T09:00:00.000Z'),
-              checkOutAt: pastIso('06-05T11:00:00.000Z'),
-            }),
-          ],
-        });
-      expectBizError(res, BizCode.ATTENDANCE_TIME_OVERLAP);
+    it('左闭右开：同一时刻签退/再签到允许，真实入账恰为两段之和', async () => {
+      const member = await participant('adjacent');
+      const f = await nativeDraft([member.id], 2, 'att-native', 'member', [
+        { start: 0, end: 2 },
+        { start: 2, end: 4 },
+      ]);
+      const batch = await ready(f);
+      await nativeCommit(batch.id);
+      const sum = await prisma.participationLedgerEntry.aggregate({
+        where: { postingBatchId: batch.id, entryTypeCode: 'service_credit' },
+        _sum: { serviceHoursDelta: true },
+      });
+      expect(sum._sum.serviceHoursDelta?.toString()).toBe('4');
+      const after = await nativeSnapshot(f);
+      expect(after.segments.filter((row) => row.statusCode !== 'superseded')).toHaveLength(2);
+      expect(after.punches).toHaveLength(4);
     });
 
-    it('Q-S15 左闭右开:紧邻 endAt = startAt 允许', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({
-          records: [
-            baseRecord({
-              memberId: overlapMember,
-              checkInAt: pastIso('06-05T10:00:00.000Z'),
-              checkOutAt: pastIso('06-05T12:00:00.000Z'),
-            }),
-          ],
-        });
-      expect(res.status).toBe(201);
+    it('跨活动同人重叠在正式提交拒绝22060，两个活动、分录与日累计均不变', async () => {
+      const member = await participant('cross');
+      const first = await nativeDraft([member.id]);
+      await nativeCommit((await ready(first)).id);
+      const second = await nativeDraft([member.id], 1, 'att-native', 'member', [
+        { start: 1.5, end: 2.5 },
+      ]);
+      const batch = await ready(second);
+      const before = await nativeSnapshot(second);
+      const firstBefore = await nativeSnapshot(first);
+      const totals = await prisma.memberContributionDayState.findMany({
+        where: { memberId: member.id },
+        orderBy: { id: 'asc' },
+      });
+      await expect(nativeCommit(batch.id)).rejects.toMatchObject({
+        biz: BizCode.ATTENDANCE_TIME_OVERLAP,
+      });
+      expect(await nativeSnapshot(second)).toEqual(before);
+      expect(await nativeSnapshot(first)).toEqual(firstBefore);
+      expect(
+        await prisma.memberContributionDayState.findMany({
+          where: { memberId: member.id },
+          orderBy: { id: 'asc' },
+        }),
+      ).toEqual(totals);
+      expect(
+        await prisma.participationLedgerEntry.count({
+          where: { activityId: second.activityId, postingBatch: { statusCode: 'committed' } },
+        }),
+      ).toBe(0);
     });
 
-    it('跨 Sheet 跨 Activity 全局校验:不同 activity 但同 memberId 时间重叠 → 22060', async () => {
-      // 在 activityOtherId 给 overlapMember 提交同时段 → 应被拒
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityOtherId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({
-          records: [
-            baseRecord({
-              memberId: overlapMember,
-              checkInAt: pastIso('06-05T09:30:00.000Z'),
-              checkOutAt: pastIso('06-05T10:30:00.000Z'),
-            }),
-          ],
-        });
-      expectBizError(res, BizCode.ATTENDANCE_TIME_OVERLAP);
-    });
-
-    it('数组内部重叠(同 batch 内同 memberId)→ 22060', async () => {
-      const otherM = (
-        await prisma.member.create({
-          data: { memberNo: 'att-m-internal', ...memberIdentityData('Internal') },
-          select: { id: true },
-        })
-      ).id;
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({
-          records: [
-            baseRecord({
-              memberId: otherM,
-              checkInAt: pastIso('06-06T08:00:00.000Z'),
-              checkOutAt: pastIso('06-06T10:00:00.000Z'),
-            }),
-            baseRecord({
-              memberId: otherM,
-              checkInAt: pastIso('06-06T09:00:00.000Z'),
-              checkOutAt: pastIso('06-06T11:00:00.000Z'),
-            }),
-          ],
-        });
-      expectBizError(res, BizCode.ATTENDANCE_TIME_OVERLAP);
+    it('同批既有有效段又有内部重叠时整笔阻断，不部分入账', async () => {
+      const before = await conflict('internal', [
+        { start: 0, end: 1 },
+        { start: 1, end: 3 },
+        { start: 2, end: 4 },
+      ]);
+      expect(before.segments.length).toBeGreaterThan(0);
     });
   });
 
@@ -1449,89 +1490,174 @@ describe('attendances 模块', () => {
   // ============ PATCH edit ============
 
   describe('PATCH edit', () => {
-    // Keep the still-unmigrated legacy fixtures from blocking independent
-    // native DTO checks. All legacy cases remain runnable and unchanged.
-    describe('旧编辑流程（待迁移）', () => {
-      let pendingId: string;
-      let approvedId: string;
-      let rejectedId: string;
-
-      beforeAll(async () => {
-        pendingId = await createPendingSheet(activityId, [
-          baseRecord({
-            memberId: memberCId,
-            checkInAt: pastIso('06-15T08:00:00.000Z'),
-            checkOutAt: pastIso('06-15T10:00:00.000Z'),
-          }),
-        ]);
-
-        // approved Sheet(批次 4-B 升级:approve + finalApprove 才到 approved 终态):
-        // create → fillContributionPoints → approveToTerminalApproved。
-        approvedId = await createPendingSheet(activityId, [
-          baseRecord({
-            memberId: memberCId,
-            checkInAt: pastIso('06-15T11:00:00.000Z'),
-            checkOutAt: pastIso('06-15T12:00:00.000Z'),
-          }),
-        ]);
-        await fillContributionPoints(approvedId);
-        await approveToTerminalApproved(approvedId);
-
-        // rejected Sheet(APD 一级驳回)
-        rejectedId = await createPendingSheet(activityId, [
-          baseRecord({
-            memberId: memberCId,
-            checkInAt: pastIso('06-15T13:00:00.000Z'),
-            checkOutAt: pastIso('06-15T14:00:00.000Z'),
-          }),
-        ]);
-        await request(httpServer(app))
-          .patch(`/api/admin/v1/attendance-sheets/${rejectedId}/reject`)
-          .set('Authorization', adminAuth)
-          .send({ reviewNote: 'fixture reject' });
-      });
-
-      it('edit pending Sheet(替换 records)→ 200,version+1,previousSnapshot 后端写入', async () => {
-        const before = await prisma.attendanceSheet.findUnique({ where: { id: pendingId } });
-        expect(before?.version).toBe(1);
-        expect(before?.previousSnapshot).toBeNull();
-
-        const res = await request(httpServer(app))
-          .patch(`/api/admin/v1/attendance-sheets/${pendingId}`)
-          .set('Authorization', adminAuth)
+    it('原生工作草稿认定递增 revision 并保留机器值与审计；送审后禁止原地改写', async () => {
+      const f = await nativeDraft([memberCId]);
+      const before = await nativeSnapshot(f);
+      const draftId = before.versions.find((row) => row.version === f.draftVersion)!.id;
+      const original = before.results.find((row) => row.settlementVersionId === draftId)!;
+      const edit = () =>
+        request(httpServer(app))
+          .patch(`${f.base}/items/${f.identityId}`)
+          .set('Authorization', nativeAuth)
           .send({
-            records: [
-              baseRecord({
-                memberId: memberCId,
-                checkInAt: pastIso('06-15T08:30:00.000Z'),
-                checkOutAt: pastIso('06-15T09:30:00.000Z'),
-              }),
-            ],
+            expectedDraftVersion: f.draftVersion,
+            resultCode: 'present',
+            recognizedServiceHours: 1.5,
+            recognizedContributionPoints: 1,
+            reason: '扣除半小时休息',
           });
-        expect(res.status).toBe(200);
-        expect(res.body.data.version).toBe(2);
-
-        const after = await prisma.attendanceSheet.findUnique({ where: { id: pendingId } });
-        expect(after?.version).toBe(2);
-        expect(after?.previousSnapshot).not.toBeNull();
-        // snapshot 含 sheet + records 字段(Q-S16)
-        const snap = after?.previousSnapshot as { sheet: unknown; records: unknown[] } | null;
-        expect(snap?.sheet).toBeDefined();
-        expect(Array.isArray(snap?.records)).toBe(true);
-        expect(snap?.records.length).toBe(1);
-
-        // 旧 records 软删,新 records 活跃 = 1
-        const activeRecords = await prisma.attendanceRecord.findMany({
-          where: { sheetId: pendingId, deletedAt: null },
-        });
-        expect(activeRecords.length).toBe(1);
-        expect(activeRecords[0].checkInAt.toISOString()).toBe(pastIso('06-15T08:30:00.000Z'));
-        const allRecords = await prisma.attendanceRecord.findMany({
-          where: { sheetId: pendingId },
-        });
-        expect(allRecords.length).toBe(2); // 1 旧软删 + 1 新
+      await edit().expect(200);
+      const updated = await prisma.participantSettlementResultRevision.findUniqueOrThrow({
+        where: { id: original.id },
       });
+      expect(updated.revision).toBe(original.revision + 1);
+      expect(updated.calculatedServiceHours.toString()).toBe('2');
+      expect(updated.recognizedServiceHours.toString()).toBe('1.5');
+      const audits = await prisma.auditLog.findMany({
+        where: {
+          resourceId: f.activityId,
+          event: 'activity.publish',
+          context: { path: ['extra', 'operation'], equals: 'settlement-draft-item-update' },
+        },
+      });
+      expect(audits).toHaveLength(1);
+      expect(audits[0]).toMatchObject({
+        actorUserId: nativeUserId,
+        resourceType: 'activity',
+        context: {
+          before: { revision: original.revision, recognizedServiceHours: '2' },
+          after: { revision: original.revision + 1, recognizedServiceHours: '1.5' },
+          extra: { settlementVersionId: draftId, participationIdentityId: f.identityId },
+        },
+      });
+      expect(JSON.stringify(audits[0].context)).not.toContain('扣除半小时休息');
+      const submitted = await nativeSubmit(f);
+      expect(submitted.results[0].recognizedServiceHours.toString()).toBe('1.5');
+      const frozen = await nativeSnapshot(f);
+      expectBizError(await edit(), BizCode.SETTLEMENT_DRAFT_UPDATE_RUN_STATUS_INVALID);
+      expect(await nativeSnapshot(f)).toEqual(frozen);
+    });
 
+    it('原生已终审及实际入账后均不能原地编辑，已生效分录保持不变', async () => {
+      const member = await prisma.member.create({
+        data: {
+          memberNo: 'att-native-frozen',
+          ...memberIdentityData('Frozen Participant'),
+          status: 'ACTIVE',
+          gradeCode: 'level-2',
+        },
+      });
+      const f = await nativeDraft([member.id]);
+      const { version } = await nativeSubmit(f);
+      await nativeReview(version, 'first-approve').expect(200);
+      await nativeReview(version, 'final-approve').expect(200);
+      const edit = () =>
+        request(httpServer(app))
+          .patch(`${f.base}/items/${f.identityId}`)
+          .set('Authorization', nativeAuth)
+          .send({
+            expectedDraftVersion: f.draftVersion,
+            resultCode: 'present',
+            recognizedServiceHours: 1.5,
+            recognizedContributionPoints: 1,
+            reason: '已审核后改写尝试',
+          });
+      const approved = await nativeSnapshot(f);
+      expectBizError(await edit(), BizCode.SETTLEMENT_DRAFT_UPDATE_RUN_STATUS_INVALID);
+      expect(await nativeSnapshot(f)).toEqual(approved);
+      const batch = await nativePrepare(version.id);
+      await nativeCommit(batch.id);
+      const ledger = await prisma.participationLedgerEntry.findMany({
+        where: { activityId: f.activityId },
+        orderBy: { id: 'asc' },
+      });
+      expect(ledger.length).toBeGreaterThan(0);
+      const posted = await nativeSnapshot(f);
+      expectBizError(await edit(), BizCode.SETTLEMENT_DRAFT_UPDATE_RUN_STATUS_INVALID);
+      expect(await nativeSnapshot(f)).toEqual(posted);
+      expect(
+        await prisma.participationLedgerEntry.findMany({
+          where: { activityId: f.activityId },
+          orderBy: { id: 'asc' },
+        }),
+      ).toEqual(ledger);
+    });
+
+    it('原生退回版本与旧 rejected 历史不接受旧编辑入口或 ID 别名', async () => {
+      await expectRetiredMutation({
+        action: 'edit',
+        legacyStatus: 'rejected',
+        nativeStage: 'first-returned',
+      });
+    });
+
+    it('原生编辑不存在或其他活动身份均拒绝，两边事实与审计不变', async () => {
+      const f = await nativeDraft([memberCId]);
+      const foreign = await nativeDraft([memberBId]);
+      const before = await nativeSnapshot(f);
+      const foreignBefore = await nativeSnapshot(foreign);
+      for (const identityId of ['cl0000000000000000000000', foreign.identityId]) {
+        const response = await request(httpServer(app))
+          .patch(`${f.base}/items/${identityId}`)
+          .set('Authorization', nativeAuth)
+          .send({
+            expectedDraftVersion: f.draftVersion,
+            resultCode: 'present',
+            recognizedServiceHours: 1.5,
+            recognizedContributionPoints: 1,
+            reason: '身份不存在',
+          });
+        expectBizError(response, BizCode.ACTIVITY_NOT_FOUND);
+        expect(await nativeSnapshot(f)).toEqual(before);
+        expect(await nativeSnapshot(foreign)).toEqual(foreignBefore);
+      }
+    });
+
+    it('原生重生成按当前 legacy 规则重算，旧草稿结果保留，新提交冻结新值', async () => {
+      const rule = await prisma.contributionRule.create({
+        data: {
+          activityTypeCode: 'att-demo',
+          attendanceRoleCode: 'info',
+          durationThreshold: null,
+          pointsBelow: 0.4,
+          pointsAbove: null,
+          dailyCap: null,
+          status: 'ACTIVE',
+        },
+      });
+      try {
+        const f = await nativeDraft([memberBId], 2, 'att-demo', 'info');
+        const before = await nativeSnapshot(f);
+        const draftId = before.versions.find((row) => row.version === f.draftVersion)!.id;
+        const original = before.results.filter((row) => row.settlementVersionId === draftId);
+        expect(original).toHaveLength(1);
+        expect(original[0].calculatedContributionPoints.toString()).toBe('0.4');
+        await prisma.contributionRule.update({
+          where: { id: rule.id },
+          data: { pointsBelow: 0.9 },
+        });
+        const generated = await request(httpServer(app))
+          .post(`${f.base}/generate`)
+          .set('Authorization', nativeAuth)
+          .send({ operationKey: `recalculate:${f.activityId}` })
+          .expect(200);
+        const nextVersion = generated.body.data.settlementVersion as number;
+        expect(nextVersion).toBeGreaterThan(f.draftVersion);
+        const after = await nativeSnapshot(f);
+        expect(after.results.filter((row) => row.settlementVersionId === draftId)).toEqual(
+          original,
+        );
+        const submitted = await nativeSubmit({ ...f, draftVersion: nextVersion });
+        expect(submitted.results[0].calculatedContributionPoints.toString()).toBe('0.9');
+        expect(submitted.results[0].recognizedContributionPoints.toString()).toBe('0.9');
+      } finally {
+        await prisma.contributionRule.delete({ where: { id: rule.id } });
+      }
+    });
+
+    // Insurance and field-evidence corrections still need their own native
+    // acceptance migration; keep those assertions separate from draft editing.
+    describe('旧编辑流程（待迁移）', () => {
       it('requiresInsurance=false 时 edit 显式 registrationId:null → 按未传处理并持久化 null', async () => {
         const id = await createPendingSheet(activityId, [
           baseRecord({
@@ -1596,57 +1722,6 @@ describe('attendances 模块', () => {
         }
       });
 
-      it('edit 替换 records 时重新按 ContributionRule 计算最终分值', async () => {
-        const rule = await prisma.contributionRule.create({
-          data: {
-            activityTypeCode: 'att-demo',
-            attendanceRoleCode: 'info',
-            durationThreshold: null,
-            pointsBelow: 0.4,
-            pointsAbove: null,
-            dailyCap: null,
-            status: 'ACTIVE',
-          },
-          select: { id: true },
-        });
-        try {
-          const id = await createPendingSheet(activityId, [
-            baseRecord({
-              memberId: memberBId,
-              roleCode: 'info',
-              checkInAt: pastIso('08-10T08:00:00.000Z'),
-              checkOutAt: pastIso('08-10T09:00:00.000Z'),
-            }),
-          ]);
-          await prisma.contributionRule.update({
-            where: { id: rule.id },
-            data: { pointsBelow: 0.9 },
-          });
-
-          const edited = await request(httpServer(app))
-            .patch(`/api/admin/v1/attendance-sheets/${id}`)
-            .set('Authorization', adminAuth)
-            .send({
-              records: [
-                baseRecord({
-                  memberId: memberBId,
-                  roleCode: 'info',
-                  checkInAt: pastIso('08-10T08:00:00.000Z'),
-                  checkOutAt: pastIso('08-10T09:00:00.000Z'),
-                }),
-              ],
-            });
-          expect(edited.status).toBe(200);
-          const record = await prisma.attendanceRecord.findFirstOrThrow({
-            where: { sheetId: id, deletedAt: null },
-            select: { contributionPoints: true },
-          });
-          expect(record.contributionPoints?.toString()).toBe('0.9');
-        } finally {
-          await prisma.contributionRule.delete({ where: { id: rule.id } });
-        }
-      });
-
       it('edit pending Sheet 记录越过活动时间窗 → ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW', async () => {
         const id = await createPendingSheet(activityId, [
           baseRecord({
@@ -1675,30 +1750,6 @@ describe('attendances 模块', () => {
         });
         expect(activeRecords).toHaveLength(1);
         expect(activeRecords[0].checkInAt.toISOString()).toBe(pastIso('06-17T08:00:00.000Z'));
-      });
-
-      it('edit approved Sheet → 22040 ATTENDANCE_SHEET_APPROVED_NOT_EDITABLE', async () => {
-        const res = await request(httpServer(app))
-          .patch(`/api/admin/v1/attendance-sheets/${approvedId}`)
-          .set('Authorization', adminAuth)
-          .send({ records: [baseRecord({ memberId: memberCId })] });
-        expectBizError(res, BizCode.ATTENDANCE_SHEET_APPROVED_NOT_EDITABLE);
-      });
-
-      it('edit rejected Sheet → 22041 ATTENDANCE_SHEET_REJECTED_NOT_EDITABLE', async () => {
-        const res = await request(httpServer(app))
-          .patch(`/api/admin/v1/attendance-sheets/${rejectedId}`)
-          .set('Authorization', adminAuth)
-          .send({ records: [baseRecord({ memberId: memberCId })] });
-        expectBizError(res, BizCode.ATTENDANCE_SHEET_REJECTED_NOT_EDITABLE);
-      });
-
-      it('edit Sheet 不存在 → 22001', async () => {
-        const res = await request(httpServer(app))
-          .patch('/api/admin/v1/attendance-sheets/cl0000000000000000000000')
-          .set('Authorization', adminAuth)
-          .send({});
-        expectBizError(res, BizCode.ATTENDANCE_SHEET_NOT_FOUND);
       });
     });
 
@@ -1985,34 +2036,12 @@ describe('attendances 模块', () => {
           .set('Authorization', userWithMemberAuth)
           .expect(200);
       expect((await read()).body.data.total).toBe(0);
-      const batch = await prisma.ledgerPostingBatch.findFirstOrThrow({
-        where: { settlementVersionId: version.id },
-      });
-      const preparation = app.get(LedgerPreparationService);
-      const { jobId } = await preparation.ensurePrepareJob(batch.id);
-      for (const item of await prisma.activityBatchJobItem.findMany({ where: { jobId } })) {
-        await preparation.prepareChunk(jobId, item.id);
-      }
-      expect((await preparation.finalize(jobId)).batchStatus).toBe('ready');
+      const batch = await nativePrepare(version.id);
       expect(
         await prisma.participationLedgerEntry.count({ where: { postingBatchId: batch.id } }),
       ).toBeGreaterThan(0);
       expect((await read()).body.data.total).toBe(0);
-      const actor = await prisma.user.findUniqueOrThrow({
-        where: { id: nativeFinalReviewerId },
-        select: { id: true, username: true, role: true, status: true, memberId: true },
-      });
-      expect(
-        (
-          await app
-            .get(LedgerPostingService)
-            .commitBatch({ postingBatchId: batch.id, operationKey: `commit:${batch.id}` }, actor, {
-              requestId: 'native-acceptance-post',
-              ip: null,
-              ua: 'jest',
-            })
-        ).batchStatus,
-      ).toBe('committed');
+      await nativeCommit(batch.id);
       const visible = await read();
       const rows = visible.body.data.items as Array<{
         activityId: string;
