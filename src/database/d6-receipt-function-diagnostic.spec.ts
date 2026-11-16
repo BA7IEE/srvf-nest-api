@@ -2,6 +2,12 @@ import {
   D6_RECEIPT_STATS_SQL as SQL,
   D6ReceiptFunctionDiagnostic,
 } from '../../test/helpers/d6-receipt-function-diagnostic';
+import {
+  deriveTemplateTestDbName,
+  deriveTestDbName,
+  deriveTestDbNameFrom,
+  deriveWorkerTestDbName,
+} from '../../test/setup/worktree-db';
 
 const env: NodeJS.ProcessEnv = {
   GITHUB_ACTIONS: 'true',
@@ -42,6 +48,7 @@ function state(setting: string, after: boolean) {
 function fixture(
   change?: (row: ReturnType<typeof state>, index: number) => unknown,
   fail?: (sql: string, calls: string[]) => boolean,
+  database = deriveTestDbName(),
 ) {
   let setting = 'none';
   let saved: string | undefined;
@@ -52,8 +59,9 @@ function fixture(
   const nativeReceivers: unknown[] = [];
   let nativeArgs: unknown[];
   const calls: string[] = [];
+  const stateParameters: unknown[][] = [];
   const tx = {
-    async $queryRawUnsafe(sql: string) {
+    async $queryRawUnsafe(sql: string, ...parameters: unknown[]) {
       await Promise.resolve();
       calls.push(sql);
       time += 1;
@@ -88,6 +96,10 @@ function fixture(
       if (sql !== SQL.state) throw new Error('unexpected diagnostic SQL');
       const index = states++;
       const row = state(setting, index >= 2);
+      stateParameters.push(parameters);
+      row.safeDatabase = sql.includes('current_database()=$1')
+        ? parameters.length === 1 && parameters[0] === database
+        : database === 'app_test';
       return [{ observation: change ? change(row, index) : row }];
     },
   };
@@ -112,6 +124,7 @@ function fixture(
     original,
     diagnostic,
     calls,
+    stateParameters,
     get nativeCalls() {
       return nativeCalls;
     },
@@ -343,6 +356,80 @@ describe('D6 receipt function diagnostic', () => {
       /auto_explain|EXPLAIN|pg_stat_reset|pg_stat_force|SET ROLE|GRANT |ALTER |CREATE |pg_control_system|pg_get_functiondef/iu,
     );
     expect(SQL.state).not.toMatch(/coalesce\(s\.(?:calls|total_time|self_time)/iu);
+  });
+
+  it('binds exact server equality to the protected checkout/worker derivation, not the URL', async () => {
+    const f = fixture();
+    expect(await f.target.receipt(f.tx)).toBe(f.result);
+    expect(SQL.state).toContain('current_database()=$1');
+    expect(f.stateParameters).toEqual([
+      [deriveTestDbName()],
+      [deriveTestDbName()],
+      [deriveTestDbName()],
+    ]);
+    expect(f.diagnostic.snapshot().status).toBe('OBSERVED');
+    expect(f.diagnostic.snapshot().checkpoint).toBe('READY');
+  });
+
+  it.each(['template', 'other worker', 'other checkout'])(
+    'rejects the %s rather than widening the current-worker fence',
+    async (kind) => {
+      const database =
+        kind === 'template'
+          ? deriveTemplateTestDbName()
+          : kind === 'other worker'
+            ? deriveWorkerTestDbName(deriveTestDbName() === deriveWorkerTestDbName('1') ? '2' : '1')
+            : `${deriveTestDbNameFrom('/independent-checkout', true)}_w1`;
+      const f = fixture(undefined, undefined, database);
+      expect(await f.target.receipt(f.tx)).toBe(f.result);
+      expect(f.calls).not.toContain(SQL.enable);
+      expect(f.calls).toContain(SQL.rollback);
+      expect(f.nativeCalls).toBe(1);
+      expect(f.diagnostic.snapshot().status).toBe('UNKNOWN');
+      expect(f.diagnostic.snapshot().checkpoint).toBe('DATABASE_SCOPE');
+      expect(JSON.stringify(f.diagnostic.snapshot())).not.toContain(database);
+    },
+  );
+
+  it.each([undefined, '0', '100', 'worker-1'])(
+    'does not install without an exact current Jest worker (%s)',
+    async (worker) => {
+      const f = fixture();
+      f.diagnostic.restore();
+      const replacement = jest.replaceProperty(process, 'env', {
+        ...env,
+        JEST_WORKER_ID: worker,
+      });
+      try {
+        const observer = new D6ReceiptFunctionDiagnostic(f.target, { env });
+        expect(Reflect.get(f.target, 'receipt')).toBe(f.original);
+        expect(await f.target.receipt(f.tx)).toBe(f.result);
+        expect(f.calls).toEqual([]);
+        expect(observer.snapshot().status).toBe('UNKNOWN');
+        observer.restore();
+      } finally {
+        replacement.restore();
+      }
+    },
+  );
+
+  it('never derives the expected fixture from DATABASE_URL', async () => {
+    const nextEnv: NodeJS.ProcessEnv = { ...env, JEST_WORKER_ID: '1' };
+    Object.defineProperty(nextEnv, 'DATABASE_URL', {
+      get() {
+        throw new Error('PRIVATE_DATABASE_URL_CANARY');
+      },
+    });
+    const replacement = jest.replaceProperty(process, 'env', nextEnv);
+    try {
+      const f = fixture();
+      expect(await f.target.receipt(f.tx)).toBe(f.result);
+      expect(f.diagnostic.snapshot().status).toBe('OBSERVED');
+      expect(f.stateParameters[0]).toEqual([deriveTestDbName()]);
+      f.diagnostic.restore();
+    } finally {
+      replacement.restore();
+    }
   });
 
   it.each(['proxy', 'getter'])(

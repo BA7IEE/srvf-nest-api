@@ -1,5 +1,6 @@
 import { performance } from 'node:perf_hooks';
 import { types } from 'node:util';
+import { deriveTestDbName } from '../setup/worktree-db';
 import { functionCounterDeltas } from './r5-main-function-stats';
 
 export const D6_RECEIPT_STATS_SQL = Object.freeze({
@@ -15,7 +16,7 @@ export const D6_RECEIPT_STATS_SQL = Object.freeze({
     ('BUCKET_HASH','public.astr_bucket_content_hash(text)'),
     ('CANONICAL','public.astr_canonical_json(jsonb)'))
   SELECT pg_catalog.jsonb_build_object(
-    'safeDatabase',current_database()='app_test' AND NOT pg_catalog.pg_is_in_recovery(),
+    'safeDatabase',current_database()=$1 AND NOT pg_catalog.pg_is_in_recovery(),
     'sameRole',current_user=session_user,
     'writable',current_setting('transaction_read_only')='off',
     'allowed',pg_catalog.has_parameter_privilege(current_user,'track_functions','SET'),
@@ -82,6 +83,22 @@ type Reason =
   | 'OWNERSHIP'
   | 'OUTPUT';
 const owners = new WeakMap<object, object>();
+const preflightChecks = {
+  safeDatabase: 'DATABASE_SCOPE',
+  sameRole: 'ROLE',
+  writable: 'WRITABLE',
+  allowed: 'PERMISSION',
+} as const;
+type Checkpoint =
+  | (typeof preflightChecks)[keyof typeof preflightChecks]
+  | 'NOT_RUN'
+  | 'STATE_SQL'
+  | 'RESPONSE_SHAPE'
+  | 'SETTING'
+  | 'FUNCTION_SHAPE'
+  | 'ENABLE'
+  | 'BASELINE'
+  | 'READY';
 
 function requireValue(condition: unknown): asserts condition {
   if (!condition) throw new Error('D6 receipt observation unavailable');
@@ -116,11 +133,20 @@ function time(value: unknown): number {
   );
   return value;
 }
-function state(rows: unknown, setting: 'none' | 'all'): State {
+function state(
+  rows: unknown,
+  setting: 'none' | 'all',
+  checkpoint: (value: Checkpoint) => void = () => {},
+): State {
+  checkpoint('RESPONSE_SHAPE');
   const value = observation(rows);
-  for (const key of ['safeDatabase', 'sameRole', 'writable', 'allowed'])
+  for (const key of ['safeDatabase', 'sameRole', 'writable', 'allowed'] as const) {
+    checkpoint(preflightChecks[key]);
     requireValue(own(value, key) === true);
+  }
+  checkpoint('SETTING');
   requireValue(own(value, 'setting') === setting);
+  checkpoint('FUNCTION_SHAPE');
   const counters = array(own(value, 'functions'), 5).map((row): Counter => {
     const label = own(row, 'label');
     requireValue(labels.includes(label as D6ReceiptFunctionLabel));
@@ -175,6 +201,8 @@ export class D6ReceiptFunctionDiagnostic {
   private settingRestored: boolean | null = null;
   private functions: D6ReceiptFunctionRow[] = [];
   private readonly clock: () => number;
+  private readonly database?: string;
+  private checkpoint: Checkpoint = 'NOT_RUN';
   private undo?: () => void;
   private lastTick = 0;
 
@@ -189,6 +217,8 @@ export class D6ReceiptFunctionDiagnostic {
     if (!enabled) return;
     try {
       requireValue(!owners.has(target));
+      requireValue(/^[1-9][0-9]?$/u.test(process.env.JEST_WORKER_ID ?? ''));
+      this.database = deriveTestDbName();
       let prototype: object | null = target;
       let descriptor: PropertyDescriptor | undefined;
       for (let i = 0; prototype && !descriptor && i < 16; i++) {
@@ -262,19 +292,29 @@ export class D6ReceiptFunctionDiagnostic {
         this.diagnosticQueries++;
         const started = this.tick();
         try {
-          return await Reflect.apply(method, tx, [sql]);
+          return await Reflect.apply(
+            method,
+            tx,
+            sql === D6_RECEIPT_STATS_SQL.state ? [sql, this.database] : [sql],
+          );
         } finally {
           const elapsed = this.tick() - started;
           if (this.diagnosticMs !== null) this.diagnosticMs += elapsed;
         }
       };
       prepared = await this.probe(query, 'BEFORE_PROBE', async () => {
-        const preflight = state(await query!(D6_RECEIPT_STATS_SQL.state), 'none');
+        this.checkpoint = 'STATE_SQL';
+        const preflight = state(await query!(D6_RECEIPT_STATS_SQL.state), 'none', (value) => {
+          this.checkpoint = value;
+        });
+        this.checkpoint = 'ENABLE';
         requireValue(
           own(array(await query!(D6_RECEIPT_STATS_SQL.enable), 1)[0], 'enabled') === true,
         );
+        this.checkpoint = 'BASELINE';
         before = state(await query!(D6_RECEIPT_STATS_SQL.state), 'all');
         requireValue(before.backend === preflight.backend && before.xact === preflight.xact);
+        this.checkpoint = 'READY';
       });
     } catch {
       this.unknown('BEFORE_PROBE');
@@ -395,6 +435,7 @@ export class D6ReceiptFunctionDiagnostic {
     const value = {
       status: this.status,
       reason: this.reason,
+      checkpoint: this.checkpoint,
       coverage:
         this.status !== 'OBSERVED'
           ? 'UNKNOWN'
