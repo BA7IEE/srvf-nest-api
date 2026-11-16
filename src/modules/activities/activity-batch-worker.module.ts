@@ -30,6 +30,7 @@ import { UsersModule } from '../users/users.module';
 import { ContributionCalculator } from '../attendances/contribution-calculator';
 import { SettlementDraftAuditRecorder } from './settlement-draft-audit-recorder';
 import { SettlementDraftService } from './settlement-draft.service';
+import { ActivityParticipationPolicy } from './activity-participation-policy';
 import { SettlementDraftBatchService } from './settlement-draft-batch.service';
 import { SettlementNotificationProducer } from './settlement-notification-producer';
 import { ActivityClosureService } from './activity-closure.service';
@@ -83,6 +84,7 @@ import { ActivityTimeCorrectionBackgroundService } from './activity-time-correct
     ContributionCalculator,
     SettlementDraftAuditRecorder,
     SettlementDraftService,
+    ActivityParticipationPolicy,
     SettlementDraftBatchService,
     ActivityClosureAuditRecorder,
     ActivityClosureNotificationProducer,

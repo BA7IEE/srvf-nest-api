@@ -16,6 +16,7 @@ import { memberIdentityData } from '../helpers/member-identity.fixture';
 import appConfig, { type AppConfig } from '../../src/config/app.config';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { expectBizError } from '../helpers/biz-code.assert';
+import { createSettlementDraftFixture } from '../helpers/settlement-draft.fixture';
 
 // V2 第一阶段批次 6 PR #2 / PR #3 e2e:
 // PR #2:验证 8 处 emergency-contacts / certificates 写操作迁移到 AuditLogsService.log()
@@ -1826,122 +1827,16 @@ describe('audit-logs 写入迁移', () => {
 
     // 直接构造合法 working draft；真正的提交/认定/审核均走 HTTP 与真实事务。
     const createActivity = async (overrides: { missingResult?: boolean } = {}): Promise<string> => {
-      const startAt = new Date('2020-03-01T00:00:00Z');
-      const endAt = new Date('2020-03-01T04:00:00Z');
-      const a = await prisma.activity.create({
-        data: {
-          title: 'Att Mig Activity',
-          activityTypeCode,
-          organizationId: attChildOrgId,
-          startAt,
-          endAt,
-          location: 'Demo',
-          statusCode: 'published',
-        },
-        select: { id: true },
+      const created = await createSettlementDraftFixture(prisma, {
+        organizationId: attChildOrgId,
+        participantMemberId: attMemberBId,
+        ownerMemberId: attMemberAId,
+        actorUserId: attendanceSubmitterId,
+        activityTypeCode,
+        ...overrides,
       });
-      const session = await prisma.activitySession.create({
-        data: {
-          activityId: a.id,
-          code: 'audit-session',
-          name: '审计场次',
-          startAt,
-          endAt,
-          locationText: 'Demo',
-          locationRequired: false,
-          locationPolicySourceCode: 'session',
-          checkInOpenAt: startAt,
-          checkInCloseAt: endAt,
-          checkOutOpenAt: startAt,
-          checkOutCloseAt: endAt,
-          statusCode: 'scheduled',
-        },
-      });
-      const registration = await prisma.activityRegistration.create({
-        data: { activityId: a.id, memberId: attMemberBId, statusCode: 'approved' },
-      });
-      const identity = await prisma.activityParticipationIdentity.create({
-        data: {
-          activityId: a.id,
-          sessionId: session.id,
-          registrationId: registration.id,
-          memberId: attMemberBId,
-          currentStatusCode: 'pass',
-          populationIncluded: true,
-        },
-      });
-      await prisma.activityResponsibilityAssignment.create({
-        data: {
-          activityId: a.id,
-          memberId: attMemberAId,
-          responsibilityType: 'owner',
-          canManageRegistrations: true,
-          canManageAttendance: true,
-          status: 'active',
-          source: 'admin',
-          assignedByUserId: attendanceSubmitterId,
-        },
-      });
-      const seal = await prisma.evidenceSeal.create({
-        data: {
-          activityId: a.id,
-          sealRevision: 1,
-          evidenceRevision: 0,
-          populationRevision: 0,
-          workflowRevision: 0,
-          allWindowsClosedAt: endAt,
-          openSegmentCount: 0,
-          manualReviewPendingCount: 0,
-          populationCountDistinct: 1,
-          populationCountBySession: {},
-          contentHash: 'audit-seal',
-          statusCode: 'active',
-          sealedByUserId: attendanceSubmitterId,
-          sealedAt: endAt,
-        },
-      });
-      const run = await prisma.attendanceSettlementRun.create({
-        data: { activityId: a.id, statusCode: 'drafting', currentDraftVersion: 1 },
-      });
-      const draft = await prisma.attendanceSettlementVersion.create({
-        data: {
-          settlementRunId: run.id,
-          version: 1,
-          evidenceSealId: seal.id,
-          evidenceRevision: 0,
-          populationRevision: 0,
-          workflowRevision: 0,
-          contentHash: 'audit-draft',
-          personCount: 1,
-          sessionParticipationCount: 1,
-          serviceSegmentCount: 0,
-          createdByUserId: attendanceSubmitterId,
-          statusCode: 'draft',
-        },
-      });
-      if (!overrides.missingResult)
-        await prisma.participantSettlementResultRevision.create({
-          data: {
-            settlementVersionId: draft.id,
-            participationIdentityId: identity.id,
-            revision: 0,
-            resultCode: 'present',
-            lateFlag: false,
-            earlyLeaveFlag: false,
-            recognizedServiceHours: 2,
-            recognizedContributionPoints: 0,
-            calculatedServiceHours: 2,
-            calculatedContributionPoints: 0,
-            statusCode: 'draft',
-          },
-        });
-      fixtures.set(a.id, {
-        runId: run.id,
-        draftId: draft.id,
-        identityId: identity.id,
-        sealId: seal.id,
-      });
-      return a.id;
+      fixtures.set(created.activityId, created);
+      return created.activityId;
     };
 
     const appSettlement = (id: string) => `/api/app/v1/my/managed-activities/${id}/settlement`;

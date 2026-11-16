@@ -1,263 +1,337 @@
 import type { INestApplication } from '@nestjs/common';
-import { MemberStatus, Prisma, Role, UserStatus } from '@prisma/client';
+import { Role, UserStatus } from '@prisma/client';
+import request from 'supertest';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
-import { BizException } from '../../src/common/exceptions/biz.exception';
 import { PrismaService } from '../../src/database/prisma.service';
-import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
-import { AttendancesService } from '../../src/modules/attendances/attendances.service';
-import type {
-  AttendanceRecordInputDto,
-  CreateAttendanceSheetDto,
-  UpdateAttendanceSheetDto,
-} from '../../src/modules/attendances/attendances.dto';
-import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
+import { SettlementDraftService } from '../../src/modules/activities/settlement-draft.service';
+import { SettlementReviewService } from '../../src/modules/activities/settlement-review.service';
+import { SettlementSubmitService } from '../../src/modules/activities/settlement-submit.service';
+import { createTestUser } from '../fixtures/users.fixture';
+import { loginAs } from '../fixtures/auth.fixture';
+import { expectBizError } from '../helpers/biz-code.assert';
+import { httpServer } from '../helpers/http-server';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
+import { createSettlementDraftFixture } from '../helpers/settlement-draft.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
-import { memberIdentityData } from '../helpers/member-identity.fixture';
 
-// A-R2 拍板落地(2026-07-31,**方案乙:放行存量、掐断增量**)。
-//
-// 修复前的事实:`activities.cancel` 只把 pending/waitlisted 报名改 cancelled,**完全不碰考勤单**;
-// 而 `submit` 之外的九个考勤写方法从不读 `Activity.statusCode` —— 已取消活动上的考勤单
-// 能一路走完审批、结算服务时长与贡献值,并喂进入队门槛。这条不需要并发就能到达。
-//
-// 拍板的语义是**两半**,少一半都不是方案乙,所以两半都得有执行位:
-//   放行存量:活动取消前已提交的考勤单,仍能 approve → finalApprove 并结算贡献值(工是真做了的)。
-//   掐断增量:活动取消后不得再新建考勤单(既有 20122),也不得改写既有单的 records
-//            —— 那是贡献值仅剩的另一条增量来源。
-//
-// 本 spec 是单连接的:被测的是状态闸,不是竞态。并发面由 K1 的 Activity 聚合锁承担
-// (edit 持 `FOR UPDATE`,cancel 必须排队,挤不进这道闸旁边)。
+// A-R2「放行存量、掐断增量」迁入唯一的结算真相链。
+// 仍用真实 PG 的三个独立用户；不恢复旧服务，不把审核/重放/原事实重提一并封死。
+// 此文件验证状态闸；并发写的共同 Activity 根锁另有并发验收。
+const META = { requestId: 'cancelled-settlement-increment', ip: null, ua: 'jest' };
+type Fixture = Awaited<ReturnType<typeof createSettlementDraftFixture>>;
 
-const META: AuditMeta = {
-  requestId: 'attendance-cancelled-activity-increment-gate',
-  ip: '127.0.0.1',
-  ua: 'jest/attendance-cancelled-activity-increment-gate',
-};
-
-const ROLE_MEMBER = 'member';
-const STATUS_PRESENT = 'present';
-// 考勤 record 的 checkOutAt 必须 <= 服务端 now,所以活动窗固定在过去(只会越来越过去,不腐烂)。
-const ACTIVITY_START = new Date('2026-01-03T01:00:00.000Z');
-const ACTIVITY_END = new Date('2026-01-03T09:00:00.000Z');
-
-describe('已取消活动的考勤增量闸(A-R2 · 方案乙)', () => {
+describe('已取消活动的结算增量闸(A-R2 · 方案乙)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let attendances: AttendancesService;
+  let drafts: SettlementDraftService;
+  let submissions: SettlementSubmitService;
+  let reviews: SettlementReviewService;
   let submitter: CurrentUserPayload;
   let reviewer: CurrentUserPayload;
   let finalReviewer: CurrentUserPayload;
   let organizationId: string;
-  let seq = 0;
-
-  function record(memberId: string): AttendanceRecordInputDto {
-    return {
-      memberId,
-      roleCode: ROLE_MEMBER,
-      checkInAt: '2026-01-03T02:00:00.000Z',
-      checkOutAt: '2026-01-03T05:00:00.000Z',
-      attendanceStatusCode: STATUS_PRESENT,
-    };
-  }
-
-  async function createMember(): Promise<string> {
-    seq += 1;
-    const member = await prisma.member.create({
-      data: {
-        memberNo: `ACG${String(seq).padStart(3, '0')}`,
-        ...memberIdentityData(`取消闸${seq}`),
-        status: MemberStatus.ACTIVE,
-      },
-      select: { id: true },
-    });
-    return member.id;
-  }
-
-  async function createPublishedActivity(): Promise<string> {
-    seq += 1;
-    const activity = await prisma.activity.create({
-      data: {
-        title: `ACG 活动${seq}`,
-        activityTypeCode: 'acg-act',
-        organizationId,
-        startAt: ACTIVITY_START,
-        endAt: ACTIVITY_END,
-        location: '深圳',
-        statusCode: 'published',
-        isPublicRegistration: true,
-      },
-      select: { id: true },
-    });
-    return activity.id;
-  }
-
-  /** 直接把活动置 cancelled —— 本 spec 测的是考勤侧的闸,不是 activities.cancel 的编排。 */
-  async function cancelActivity(activityId: string): Promise<void> {
-    await prisma.activity.update({
-      where: { id: activityId },
-      data: { statusCode: 'cancelled' },
-    });
-  }
+  let ownerMemberId: string;
+  let participantMemberId: string;
+  let submitterAuth: string;
+  const cancelled: Fixture[] = [];
+  const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
 
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
-    attendances = app.get(AttendancesService);
-
-    const make = async (username: string, role: Role): Promise<CurrentUserPayload> => {
-      const row = await prisma.user.create({
-        data: { username, passwordHash: TEST_PASSWORD_HASH, role, status: UserStatus.ACTIVE },
-        select: { id: true, username: true },
-      });
+    drafts = app.get(SettlementDraftService);
+    submissions = app.get(SettlementSubmitService);
+    reviews = app.get(SettlementReviewService);
+    const actor = async (username: string): Promise<CurrentUserPayload> => {
+      const row = await createTestUser(app, { username, role: Role.SUPER_ADMIN });
       return {
         id: row.id,
-        username: row.username,
-        role,
+        username,
+        role: Role.SUPER_ADMIN,
         status: UserStatus.ACTIVE,
         memberId: null,
       };
     };
-    submitter = await make('acg-submitter', Role.SUPER_ADMIN);
-    reviewer = await make('acg-reviewer', Role.SUPER_ADMIN);
-    finalReviewer = await make('acg-final-reviewer', Role.SUPER_ADMIN);
-
+    submitter = await actor('cancelled-settlement-submitter');
+    reviewer = await actor('cancelled-settlement-first');
+    finalReviewer = await actor('cancelled-settlement-final');
     organizationId = (
       await prisma.organization.create({
-        data: { name: 'ACG Org', nodeTypeCode: 'acg-node' },
-        select: { id: true },
+        data: { name: '取消闸组织', nodeTypeCode: 'cancelled-settlement-node' },
       })
     ).id;
-
-    const roleDict = await prisma.dictType.create({
-      data: { code: 'attendance_role', label: '考勤角色' },
-      select: { id: true },
+    const member = async (memberNo: string) =>
+      (
+        await prisma.member.create({
+          data: {
+            memberNo,
+            ...memberIdentityData(memberNo),
+            status: 'ACTIVE',
+            gradeCode: 'level-2',
+          },
+        })
+      ).id;
+    ownerMemberId = await member('cancelled-settlement-owner');
+    participantMemberId = await member('cancelled-settlement-participant');
+    await prisma.user.update({
+      where: { id: submitter.id },
+      data: { memberId: ownerMemberId },
     });
-    await prisma.dictItem.create({
-      data: { typeId: roleDict.id, code: ROLE_MEMBER, label: '队员' },
-    });
-    const statusDict = await prisma.dictType.create({
-      data: { code: 'attendance_status', label: '考勤状态' },
-      select: { id: true },
-    });
-    await prisma.dictItem.create({
-      data: { typeId: statusDict.id, code: STATUS_PRESENT, label: '出勤' },
-    });
+    submitter.memberId = ownerMemberId;
+    submitterAuth = (await loginAs(app, submitter.username)).authHeader;
   });
 
   afterAll(async () => {
-    await app.close();
+    if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+    else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
+    await app?.close();
   });
 
-  it('放行存量:取消前已提交的考勤单仍能走完 approve → finalApprove 并结算贡献值', async () => {
-    const activityId = await createPublishedActivity();
-    const memberId = await createMember();
-    const dto: CreateAttendanceSheetDto = { records: [record(memberId)] };
-    const sheet = await attendances.submit(activityId, dto, submitter, META);
-
-    await cancelActivity(activityId);
-
-    // 拍板的「放行」这一半:工是真做了的,不因活动取消而作废。
-    await attendances.approve(sheet.id, {}, reviewer, META);
-    await attendances.finalApprove(sheet.id, {}, finalReviewer, META);
-
-    const after = await prisma.attendanceSheet.findUniqueOrThrow({
-      where: { id: sheet.id },
-      select: { statusCode: true },
+  function fixture() {
+    return createSettlementDraftFixture(prisma, {
+      organizationId,
+      ownerMemberId,
+      participantMemberId,
+      actorUserId: submitter.id,
+      activityTypeCode: 'cancelled-settlement-type',
     });
-    expect(after.statusCode).toBe('approved');
-    expect(
-      await prisma.attendanceRecord.count({ where: { sheetId: sheet.id, deletedAt: null } }),
-    ).toBe(1);
-  });
+  }
 
-  it('掐断增量①:已取消活动不得新建考勤单(既有 20122 闸)', async () => {
-    const activityId = await createPublishedActivity();
-    const memberId = await createMember();
-    await cancelActivity(activityId);
-
-    const dto: CreateAttendanceSheetDto = { records: [record(memberId)] };
-    await expect(attendances.submit(activityId, dto, submitter, META)).rejects.toMatchObject({
-      biz: BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN,
-    });
-    expect(await prisma.attendanceSheet.count({ where: { activityId } })).toBe(0);
-  });
-
-  it('掐断增量②:已取消活动不得再改写既有考勤单的 records —— 修复前这里能把新队员写进去', async () => {
-    const activityId = await createPublishedActivity();
-    const memberId = await createMember();
-    const sheet = await attendances.submit(
-      activityId,
-      { records: [record(memberId)] },
-      submitter,
-      META,
-    );
-    await cancelActivity(activityId);
-
-    const newcomer = await createMember();
-    const editDto: UpdateAttendanceSheetDto = {
-      records: [record(memberId), record(newcomer)],
-    };
-    const editing = attendances.edit(sheet.id, editDto, submitter, META);
-    await expect(editing).rejects.toBeInstanceOf(BizException);
-    await expect(editing).rejects.toMatchObject({
-      biz: BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN,
-    });
-
-    // 整个事务回滚:records 与 version 都不动。
-    const [records, after] = await Promise.all([
-      prisma.attendanceRecord.findMany({
-        where: { sheetId: sheet.id, deletedAt: null },
-        select: { memberId: true },
-      }),
-      prisma.attendanceSheet.findUniqueOrThrow({
-        where: { id: sheet.id },
-        select: { version: true },
-      }),
-    ]);
-    expect(records).toEqual([{ memberId }]);
-    expect(after.version).toBe(1);
-  });
-
-  it('闸只拦 cancelled:completed 活动的既有考勤单照旧可编辑(不扩大到别的状态)', async () => {
-    const activityId = await createPublishedActivity();
-    const memberId = await createMember();
-    const sheet = await attendances.submit(
-      activityId,
-      { records: [record(memberId)] },
-      submitter,
-      META,
-    );
+  async function cancel(f: Fixture) {
+    // 与原验收一样，直接置状态以隔离结算侧守卫，不用活动取消编排代替被测条件。
     await prisma.activity.update({
-      where: { id: activityId },
+      where: { id: f.activityId },
+      data: { statusCode: 'cancelled' },
+    });
+    cancelled.push(f);
+  }
+
+  function submit(f: Fixture, key = 'initial') {
+    return submissions.submit(
+      {
+        activityId: f.activityId,
+        operationKey: `${key}-${f.activityId}`,
+        requestHash: `${key}-hash-${f.activityId}`,
+        expectedDraftVersion: 1,
+        expectedEvidenceSealId: f.sealId,
+      },
+      submitter,
+      META,
+    );
+  }
+
+  function update(f: Fixture) {
+    return drafts.updateItem(
+      {
+        activityId: f.activityId,
+        participationIdentityId: f.identityId,
+        expectedDraftVersion: 1,
+        resultCode: 'present',
+        recognizedServiceHours: 3,
+        recognizedContributionPoints: 0,
+        reason: '人工调整',
+      },
+      submitter,
+      META,
+    );
+  }
+
+  async function review(
+    f: Fixture,
+    versionId: string,
+    stage: 'first' | 'final',
+    action: 'approve' | 'return',
+  ) {
+    const version = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+      where: { id: versionId },
+    });
+    const input = {
+      activityId: f.activityId,
+      actionCode: action,
+      operationKey: `${stage}-${action}-${versionId}`,
+      requestHash: `${stage}-${action}-hash`,
+      returnReason: action === 'return' ? '复核原有事实' : undefined,
+      expectedSettlementVersionId: versionId,
+      expectation: {
+        evidenceSealId: version.evidenceSealId,
+        evidenceRevision: version.evidenceRevision,
+        populationRevision: version.populationRevision,
+        workflowRevision: version.workflowRevision,
+        contentHash: version.contentHash,
+      },
+    };
+    return stage === 'first'
+      ? reviews.firstReview(input, reviewer, META)
+      : reviews.finalReview(input, finalReviewer, META);
+  }
+
+  async function snapshot(f: Fixture) {
+    return {
+      run: await prisma.attendanceSettlementRun.findUnique({ where: { id: f.runId } }),
+      versions: await prisma.attendanceSettlementVersion.findMany({
+        where: { settlementRunId: f.runId },
+        orderBy: { version: 'asc' },
+        include: { resultRevisions: { orderBy: { id: 'asc' } } },
+      }),
+      audits: await prisma.auditLog.count({ where: { resourceId: f.activityId } }),
+      intents: await prisma.notificationOutboxIntent.count({
+        where: { aggregateId: f.activityId },
+      }),
+    };
+  }
+
+  it('放行存量：取消前提交的不可变版本仍可初审、终审，原认定保留', async () => {
+    const f = await fixture();
+    const submitted = await submit(f);
+    const rows = await prisma.participantSettlementResultRevision.findMany({
+      where: { settlementVersionId: submitted.settlementVersionId },
+    });
+    await cancel(f);
+    await review(f, submitted.settlementVersionId, 'first', 'approve');
+    const approved = await review(f, submitted.settlementVersionId, 'final', 'approve');
+    expect(approved.versionStatusAfter).toBe('approved');
+    expect(approved.ledgerPostingBatchStatus).toBe('preparing');
+    expect(rows).toHaveLength(1);
+    expect(
+      await prisma.participantSettlementResultRevision.findMany({
+        where: { settlementVersionId: submitted.settlementVersionId },
+      }),
+    ).toEqual(rows);
+  });
+
+  it('掐断增量①：取消后首次提交拒绝，版本、指针、审计、通知均不写', async () => {
+    const f = await fixture();
+    await cancel(f);
+    const before = await snapshot(f);
+    await expect(submit(f)).rejects.toMatchObject({
+      biz: BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN,
+    });
+    expect(await snapshot(f)).toEqual(before);
+  });
+
+  it('掐断增量②：取消后不能改写可编辑草稿，原版本与认定整体保留', async () => {
+    const f = await fixture();
+    const submitted = await submit(f);
+    await review(f, submitted.settlementVersionId, 'first', 'return');
+    await cancel(f);
+    const before = await snapshot(f);
+    await expect(update(f)).rejects.toMatchObject({
+      biz: BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN,
+    });
+    expect(await snapshot(f)).toEqual(before);
+  });
+
+  it('掐断生成旁路：取消后不能重建草稿或服务段', async () => {
+    const f = await fixture();
+    await cancel(f);
+    const before = await snapshot(f);
+    await expect(drafts.generate(f.activityId, submitter, META)).rejects.toMatchObject({
+      biz: BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN,
+    });
+    expect(await snapshot(f)).toEqual(before);
+    expect(
+      await prisma.participantServiceSegmentRevision.count({
+        where: { participationIdentityId: f.identityId },
+      }),
+    ).toBe(0);
+  });
+
+  it('不扩大闸范围：completed 活动仍可认定已有草稿', async () => {
+    const f = await fixture();
+    await prisma.activity.update({
+      where: { id: f.activityId },
       data: { statusCode: 'completed' },
     });
-
-    const newcomer = await createMember();
-    await attendances.edit(
-      sheet.id,
-      { records: [record(memberId), record(newcomer)] },
-      submitter,
-      META,
-    );
-    expect(
-      await prisma.attendanceRecord.count({ where: { sheetId: sheet.id, deletedAt: null } }),
-    ).toBe(2);
+    await update(f);
+    const row = await prisma.participantSettlementResultRevision.findFirstOrThrow({
+      where: { settlementVersionId: f.draftId },
+    });
+    expect(row.recognizedServiceHours.toString()).toBe('3');
+    expect(row.revision).toBe(1);
   });
 
-  it('全库巡检:已取消活动上不得存在**新增**的考勤事实 —— 本 spec 跑完后 records 计数与提交时一致', async () => {
-    const rows = await prisma.$queryRaw<Array<{ activityId: string; n: number }>>(Prisma.sql`
-      SELECT a."id" AS "activityId", count(r."id")::int AS n
-      FROM "Activity" a
-      JOIN "AttendanceSheet" s ON s."activityId" = a."id" AND s."deletedAt" IS NULL
-      JOIN "AttendanceRecord" r ON r."sheetId" = s."id" AND r."deletedAt" IS NULL
-      WHERE a."statusCode" = 'cancelled' AND a."deletedAt" IS NULL
-      GROUP BY a."id"
-    `);
-    // 方案乙刻意允许「取消前已存在的单」留在已取消活动上(那正是被放行的存量),
-    // 但每张单的 records 数必须还是提交时那一条 —— 没有任何一条是取消之后加进去的。
-    expect(rows.every((row) => row.n === 1)).toBe(true);
+  it('取消后同键提交仍可精确重放，不复制版本或通知意图', async () => {
+    const f = await fixture();
+    const original = await submit(f);
+    await cancel(f);
+    const before = await snapshot(f);
+    expect(await submit(f)).toMatchObject({
+      settlementVersionId: original.settlementVersionId,
+      replayed: true,
+    });
+    const after = await snapshot(f);
+    expect(after.versions).toEqual(before.versions);
+    expect(after.run).toEqual(before.run);
+    expect(after.intents).toBe(before.intents);
+    expect(after.audits).toBe(before.audits + 1);
+  });
+
+  it('放行已有退回版本的原事实重提，不强迫修改已取消活动', async () => {
+    const f = await fixture();
+    const original = await submit(f);
+    await review(f, original.settlementVersionId, 'first', 'return');
+    await cancel(f);
+    const resubmitted = await submit(f, 'resubmit');
+    const version = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+      where: { id: resubmitted.settlementVersionId },
+      include: { resultRevisions: true },
+    });
+    expect(version.priorVersionId).toBe(original.settlementVersionId);
+    expect(version.statusCode).toBe('submitted');
+    expect(version.resultRevisions).toHaveLength(1);
+    expect(version.resultRevisions[0].recognizedServiceHours.toString()).toBe('2');
+  });
+
+  it('真实 App HTTP 将取消守卫映射为 20122/409，不返回数据或留下写入', async () => {
+    const f = await fixture();
+    await cancel(f);
+    const before = await snapshot(f);
+    const base = `/api/app/v1/my/managed-activities/${f.activityId}/settlement`;
+    const generated = await request(httpServer(app))
+      .post(`${base}/generate`)
+      .set('Authorization', submitterAuth)
+      .send({ operationKey: `generate-${f.activityId}` });
+    expectBizError(generated, BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN);
+    const edited = await request(httpServer(app))
+      .patch(`${base}/items/${f.identityId}`)
+      .set('Authorization', submitterAuth)
+      .send({
+        expectedDraftVersion: 1,
+        resultCode: 'present',
+        recognizedServiceHours: 3,
+        recognizedContributionPoints: 0,
+        reason: '已取消不应再改写',
+      });
+    expectBizError(edited, BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN);
+    const submitted = await request(httpServer(app))
+      .post(`${base}/submit`)
+      .set('Authorization', submitterAuth)
+      .send({
+        operationKey: `submit-${f.activityId}`,
+        expectedDraftVersion: 1,
+        evidenceSealId: f.sealId,
+        confirmation: true,
+      });
+    expectBizError(submitted, BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN);
+    expect(await snapshot(f)).toEqual(before);
+  });
+
+  it('全库巡检：所有已取消活动的人口与认定均未增长', async () => {
+    expect(cancelled.length).toBeGreaterThan(0);
+    for (const f of cancelled) {
+      const rows = await prisma.participantSettlementResultRevision.findMany({
+        where: { settlementVersion: { settlementRunId: f.runId } },
+      });
+      expect(rows.length).toBeGreaterThan(0);
+      expect([...new Set(rows.map((row) => row.participationIdentityId))]).toEqual([f.identityId]);
+      for (const row of rows) {
+        expect(row.recognizedServiceHours.toString()).toBe('2');
+        expect(row.recognizedContributionPoints.toString()).toBe('0');
+      }
+    }
   });
 });

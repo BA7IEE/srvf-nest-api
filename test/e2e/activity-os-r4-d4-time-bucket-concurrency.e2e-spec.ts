@@ -10,6 +10,7 @@ import { ActivityTimeSettlementAuditRecorder } from '../../src/modules/activitie
 import { ActivityTimeSettlementQueryService } from '../../src/modules/activities/activity-time-settlement-query.service';
 import { ActivityTimeSettlementService } from '../../src/modules/activities/activity-time-settlement.service';
 import { SettlementSubmitService } from '../../src/modules/activities/settlement-submit.service';
+import { ActivityParticipationPolicy } from '../../src/modules/activities/activity-participation-policy';
 import { SettlementSubmitAuditRecorder } from '../../src/modules/activities/settlement-submit-audit-recorder';
 import { SettlementNotificationProducer } from '../../src/modules/activities/settlement-notification-producer';
 import { ParticipationSegmentFacade } from '../../src/modules/attendances/participation-segment.facade';
@@ -364,6 +365,7 @@ describe('D4 real transaction races and bounded SQL', () => {
         f.app.get(SettlementSubmitAuditRecorder),
         f.app.get(SettlementNotificationProducer),
         f.app.get(ActivityWorkflowGate),
+        f.app.get(ActivityParticipationPolicy),
       );
       const measured = new ActivityTimeSettlementService(
         observed,

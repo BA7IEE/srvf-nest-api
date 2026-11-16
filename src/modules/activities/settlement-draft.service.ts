@@ -9,6 +9,7 @@ import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ContributionCalculator } from '../attendances/contribution-calculator';
 import { SettlementDraftAuditRecorder } from './settlement-draft-audit-recorder';
+import { ActivityParticipationPolicy } from './activity-participation-policy';
 import {
   rebuildServiceSegments,
   type ProjectedSegment,
@@ -258,6 +259,7 @@ export class SettlementDraftService {
     private readonly audit: SettlementDraftAuditRecorder,
     // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
+    private readonly participationPolicy: ActivityParticipationPolicy,
     @Optional() private readonly contributions?: ActivityContributionSettlementService,
   ) {}
 
@@ -266,14 +268,19 @@ export class SettlementDraftService {
     tx: PrismaTx,
     activityId: string,
   ): Promise<{ activityTypeCode: string; workflowRevision: number }> {
-    const rows = await tx.$queryRaw<Array<{ activityTypeCode: string; workflowRevision: number }>>`
-      SELECT "activityTypeCode", "workflowRevision"
+    const rows = await tx.$queryRaw<
+      Array<{ activityTypeCode: string; workflowRevision: number; statusCode: string }>
+    >`
+      SELECT "activityTypeCode", "workflowRevision", "statusCode"
       FROM "Activity"
       WHERE id = ${activityId} AND "deletedAt" IS NULL
       FOR UPDATE
     `;
     const row = rows[0];
     if (row === undefined) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+    // 取消与认定/生成共用 Activity 根锁；等待后按当前状态拒绝事实改写。
+    const decision = this.participationPolicy.canChangeAttendanceRecords(row);
+    if (!decision.allowed) throw new BizException(decision.biz);
     return row;
   }
 
