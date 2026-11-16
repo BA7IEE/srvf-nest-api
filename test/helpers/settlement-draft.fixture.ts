@@ -1,17 +1,19 @@
 import type { PrismaService } from '../../src/database/prisma.service';
 
-/** 合法的单人 working draft；提交、审核、认定由调用者驱动真实服务或 HTTP。 */
+/** 合法的 working draft；提交、审核、认定由调用者驱动真实服务或 HTTP。 */
 export async function createSettlementDraftFixture(
   prisma: PrismaService,
   input: {
     organizationId: string;
-    participantMemberId: string;
+    participantMemberIds: string[];
     ownerMemberId: string;
     actorUserId: string;
     activityTypeCode: string;
     missingResult?: boolean;
   },
 ) {
+  if (input.participantMemberIds.length === 0)
+    throw new Error('A draft fixture needs participants');
   const startAt = new Date('2020-03-01T00:00:00Z');
   const endAt = new Date('2020-03-01T04:00:00Z');
   const activity = await prisma.activity.create({
@@ -43,23 +45,23 @@ export async function createSettlementDraftFixture(
       statusCode: 'scheduled',
     },
   });
-  const registration = await prisma.activityRegistration.create({
-    data: {
-      activityId: activity.id,
-      memberId: input.participantMemberId,
-      statusCode: 'approved',
-    },
-  });
-  const identity = await prisma.activityParticipationIdentity.create({
-    data: {
-      activityId: activity.id,
-      sessionId: session.id,
-      registrationId: registration.id,
-      memberId: input.participantMemberId,
-      currentStatusCode: 'pass',
-      populationIncluded: true,
-    },
-  });
+  const identities = await Promise.all(
+    input.participantMemberIds.map(async (memberId) => {
+      const registration = await prisma.activityRegistration.create({
+        data: { activityId: activity.id, memberId, statusCode: 'approved' },
+      });
+      return prisma.activityParticipationIdentity.create({
+        data: {
+          activityId: activity.id,
+          sessionId: session.id,
+          registrationId: registration.id,
+          memberId,
+          currentStatusCode: 'pass',
+          populationIncluded: true,
+        },
+      });
+    }),
+  );
   await prisma.activityResponsibilityAssignment.create({
     data: {
       activityId: activity.id,
@@ -82,7 +84,7 @@ export async function createSettlementDraftFixture(
       allWindowsClosedAt: endAt,
       openSegmentCount: 0,
       manualReviewPendingCount: 0,
-      populationCountDistinct: 1,
+      populationCountDistinct: identities.length,
       populationCountBySession: {},
       contentHash: 'fixture-seal',
       statusCode: 'active',
@@ -102,16 +104,16 @@ export async function createSettlementDraftFixture(
       populationRevision: 0,
       workflowRevision: 0,
       contentHash: 'fixture-draft',
-      personCount: 1,
-      sessionParticipationCount: 1,
+      personCount: identities.length,
+      sessionParticipationCount: identities.length,
       serviceSegmentCount: 0,
       createdByUserId: input.actorUserId,
       statusCode: 'draft',
     },
   });
   if (!input.missingResult) {
-    await prisma.participantSettlementResultRevision.create({
-      data: {
+    await prisma.participantSettlementResultRevision.createMany({
+      data: identities.map((identity) => ({
         settlementVersionId: draft.id,
         participationIdentityId: identity.id,
         revision: 0,
@@ -123,14 +125,15 @@ export async function createSettlementDraftFixture(
         calculatedServiceHours: 2,
         calculatedContributionPoints: 0,
         statusCode: 'draft',
-      },
+      })),
     });
   }
   return {
     activityId: activity.id,
     runId: run.id,
     draftId: draft.id,
-    identityId: identity.id,
+    identityId: identities[0].id,
+    identityIds: identities.map((identity) => identity.id),
     sealId: seal.id,
   };
 }

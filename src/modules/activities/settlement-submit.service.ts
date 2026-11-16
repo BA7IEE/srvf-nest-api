@@ -742,9 +742,10 @@ export class SettlementSubmitService {
 
     // 不是重放 ⇒ 这是一次**真正的新提交**,状态闸在这里落下。
     this.assertRunDrafting(run);
-    const decision = this.participationPolicy.canChangeAttendanceRecords(activity);
+    const decision = this.participationPolicy.canSubmitAttendance(activity);
     if (!decision.allowed) {
-      // A-R2 保留原事实重提。草稿生成/认定已在同一根锁下禁止取消后改写；
+      // 首次提交沿活动发布状态策略，已有事实重提仍保留。草稿生成/认定
+      // 已在同一根锁下禁止取消后改写；
       // 这里只接受当前指针确实指向本 run 的退回版本，不能凭空创建首次提交。
       const existing =
         run.currentSubmittedVersion === null

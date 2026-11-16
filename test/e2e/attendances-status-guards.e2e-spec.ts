@@ -1,558 +1,279 @@
 import type { INestApplication } from '@nestjs/common';
 import { Role, UserStatus } from '@prisma/client';
-import { BizCode, type BizCodeEntry } from '../../src/common/exceptions/biz-code.constant';
+import request from 'supertest';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
+import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
-import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
-import { AttendancesService } from '../../src/modules/attendances/attendances.service';
-import type {
-  AttendanceRecordInputDto,
-  CreateAttendanceSheetDto,
-  UpdateAttendanceSheetDto,
-} from '../../src/modules/attendances/attendances.dto';
-import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
+import { SettlementDraftService } from '../../src/modules/activities/settlement-draft.service';
+import { SettlementReviewService } from '../../src/modules/activities/settlement-review.service';
+import { SettlementSubmitService } from '../../src/modules/activities/settlement-submit.service';
+import { loginAs } from '../fixtures/auth.fixture';
+import { createTestUser } from '../fixtures/users.fixture';
+import { httpServer } from '../helpers/http-server';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
+import { createSettlementDraftFixture } from '../helpers/settlement-draft.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
-import { memberIdentityData } from '../helpers/member-identity.fixture';
 
-// attendances status guards characterization tests(StateMachine 抽离前置之一)。
-//
-// 目标:在抽 `StateMachine` 前显式锁定 `attendances.service.ts` 三个公共写入入口的
-// 状态护栏与状态副作用现状行为(零行为变化的搬家前置):
-//
-//   submit(activityId, dto, currentUser, auditMeta):
-//     - Activity.statusCode === 'cancelled' → 拒(ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN)
-//     - Activity.statusCode === 'published' → submit 成功，Activity 保持 published(D2-a)
-//     - Activity.statusCode === 'completed' → 当前实装仅 cancelled 拒,completed 仍接受 submit;
-//       Activity 不再 update(已是 completed,published 判定不命中)
-//
-//   edit(id, dto, currentUser, auditMeta):
-//     - pending                 → 成功(version+1;旧 records 软删 + 新 records 创建)
-//     - pending_final_review    → ATTENDANCE_SHEET_STATUS_INVALID
-//     - approved                → ATTENDANCE_SHEET_APPROVED_NOT_EDITABLE
-//     - rejected                → ATTENDANCE_SHEET_REJECTED_NOT_EDITABLE
-//     - final_rejected          → ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE
-//
-//   softDelete(id, currentUser, auditMeta):
-//     - pending                 → 成功;Sheet.deletedAt 与全部 records.deletedAt 同事务设置(cascade)
-//     - pending_final_review    → ATTENDANCE_SHEET_STATUS_INVALID
-//     - approved                → ATTENDANCE_SHEET_APPROVED_NOT_EDITABLE
-//     - rejected                → ATTENDANCE_SHEET_REJECTED_NOT_EDITABLE
-//     - final_rejected          → ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE
-//
-// 注意 BizCode 在 edit/softDelete 路径上**因来源状态而异**(非统一 STATUS_INVALID);本 spec 通过
-// it.each([status, biz]) 表覆盖,**显式锁定每个状态映射的当前 BizCode**(不假设统一)。
-//
-// 沿 `attendances-state-transition.e2e-spec.ts` / `attendances-time-overlap.e2e-spec.ts`
-// / `attendances-contribution-prefill.e2e-spec.ts` 范式:
-//   - createTestApp + resetDb + 真实 PrismaService(test database)
-//   - service-level e2e:绕过 HTTP / Guard / RolesGuard,直接调 service 方法
-//   - per-test `isolateFixtures()` 清 sheets / records / activities / audit_logs(保留 user/member/org/dict)
-//   - submit cases 用 service.submit 驱动;edit/softDelete 状态护栏直接 prisma seed Sheet
-//     至任意起始状态(包括非 pending 的 4 种),供护栏路径校验
-//   - 时间统一 UTC fixed 字面量,避免时区干扰
-//
-// 本 PR 范围:
-//   ❌ 不改 attendances.service.ts
-//   ❌ 不抽 StateMachine / TimeOverlapPolicy / ContributionCalculator / AuditRecorder
-//   ❌ 不拆 controller / DTO / schema / migration / OpenAPI snapshot
-//   ✅ 只新增本测试文件
+// 原状态验收迁入 working draft / 不可变提交版本：
+// 活动生命周期不被结算推进；非法状态整笔零写；退役删除不再级联清历史。
+// 新版没有旧 rejected/final_rejected 的删除语义。returned 只开放 working draft，
+// 旧提交版本仍不可变。状态闸单独 seed run 状态，完整审核迁移另由 review E2E 验证。
+const META = { requestId: 'settlement-state-characterization', ip: null, ua: 'jest' };
+type Fixture = Awaited<ReturnType<typeof createSettlementDraftFixture>>;
+const REVIEW_STATES = [
+  'pending_first_review',
+  'pending_final_review',
+  'posting',
+  'posted',
+] as const;
 
-type SheetStatus = 'pending' | 'pending_final_review' | 'approved' | 'rejected' | 'final_rejected';
-type ActivityStatus = 'draft' | 'published' | 'completed' | 'cancelled';
-
-const AUDIT_META: AuditMeta = {
-  requestId: 'sg-test-req-0000000000000000001',
-  ip: '127.0.0.1',
-  ua: 'jest/30 attendances-status-guards',
-};
-
-const ACTIVITY_TYPE_DEMO = 'sg-demo';
-const ROLE_MEMBER = 'member';
-const ATTENDANCE_STATUS_PRESENT = 'present';
-
-interface SeedContext {
-  prisma: PrismaService;
-  service: AttendancesService;
-  submitterUserId: string;
-  submitterPayload: CurrentUserPayload;
-  memberId: string;
-  organizationId: string;
-}
-
-describe('AttendancesService status guards (characterization)', () => {
+describe('结算状态与退役删除边界 (characterization)', () => {
   let app: INestApplication;
-  let ctx: SeedContext;
+  let prisma: PrismaService;
+  let drafts: SettlementDraftService;
+  let submissions: SettlementSubmitService;
+  let reviews: SettlementReviewService;
+  let actor: CurrentUserPayload;
+  let reviewer: CurrentUserPayload;
+  let auth: string;
+  let organizationId: string;
+  let ownerId: string;
+  let participantIds: string[];
+  const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
 
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
-
-    const prisma = app.get(PrismaService);
-    const service = app.get(AttendancesService);
-
-    const submitter = await prisma.user.create({
-      data: {
-        username: 'att-sg-submitter',
-        passwordHash: '$2a$10$dummy-hash-not-used-no-login',
-        role: Role.ADMIN,
-        status: UserStatus.ACTIVE,
-      },
-      select: { id: true },
-    });
-
-    // Slow-4 T3(评审稿 §8 / D-S4-6):本 spec 直调 service(绕过 Guard),判权已下沉
-    // service 层 rbac.can();给 ADMIN 测试用户 submitter 补挂 biz-admin(零漂移:对应迁移前
-    // @Roles(SUPER_ADMIN, ADMIN) 放行语义;断言零修改)。
-    const bizSeed = await seedBizAdminPermissionsAndRole(app);
-    await grantBizAdminToUser(app, submitter.id, bizSeed.bizAdminRoleId);
-
-    const member = await prisma.member.create({
-      data: { memberNo: 'att-sg-m-001', ...memberIdentityData('SG Member') },
-      select: { id: true },
-    });
-
-    // node_type dict + root org(Activity.organizationId FK,沿 Restrict)
-    const nodeDict = await prisma.dictType.create({
-      data: { code: 'node_type', label: '节点类型' },
-      select: { id: true },
-    });
-    await prisma.dictItem.create({
-      data: { typeId: nodeDict.id, code: 'sg-root', label: '根' },
-    });
-    const rootOrg = await prisma.organization.create({
-      data: { name: 'SG Root Org', nodeTypeCode: 'sg-root', parentId: null },
-      select: { id: true },
-    });
-
-    // activity_type 字典(activityTypeCode 是字符串,不做 FK 校验;dict 项仅作语义记录)
-    const actTypeDict = await prisma.dictType.create({
-      data: { code: 'activity_type', label: '活动类型' },
-      select: { id: true },
-    });
-    await prisma.dictItem.create({
-      data: { typeId: actTypeDict.id, code: ACTIVITY_TYPE_DEMO, label: 'demo' },
-    });
-
-    // attendance_role 字典(1 项即可)
-    const roleDict = await prisma.dictType.create({
-      data: { code: 'attendance_role', label: '考勤角色' },
-      select: { id: true },
-    });
-    await prisma.dictItem.create({
-      data: { typeId: roleDict.id, code: ROLE_MEMBER, label: 'member' },
-    });
-
-    // attendance_status 字典(1 项:present)
-    const statDict = await prisma.dictType.create({
-      data: { code: 'attendance_status', label: '考勤状态' },
-      select: { id: true },
-    });
-    await prisma.dictItem.create({
-      data: { typeId: statDict.id, code: ATTENDANCE_STATUS_PRESENT, label: 'present' },
-    });
-
-    ctx = {
-      prisma,
-      service,
-      submitterUserId: submitter.id,
-      submitterPayload: {
-        id: submitter.id,
-        username: 'att-sg-submitter',
-        role: Role.ADMIN,
+    prisma = app.get(PrismaService);
+    drafts = app.get(SettlementDraftService);
+    submissions = app.get(SettlementSubmitService);
+    reviews = app.get(SettlementReviewService);
+    const user = async (username: string): Promise<CurrentUserPayload> => {
+      const created = await createTestUser(app, { username, role: Role.SUPER_ADMIN });
+      return {
+        id: created.id,
+        username,
+        role: Role.SUPER_ADMIN,
         status: UserStatus.ACTIVE,
         memberId: null,
-      },
-      memberId: member.id,
-      organizationId: rootOrg.id,
+      };
     };
+    actor = await user('state-submit');
+    reviewer = await user('state-review');
+    auth = (await loginAs(app, actor.username)).authHeader;
+    organizationId = (
+      await prisma.organization.create({
+        data: { name: '状态验收组织', nodeTypeCode: 'settlement-state-node' },
+      })
+    ).id;
+    const member = async (memberNo: string) =>
+      (
+        await prisma.member.create({
+          data: {
+            memberNo,
+            ...memberIdentityData(memberNo),
+            status: 'ACTIVE',
+            gradeCode: 'level-2',
+          },
+        })
+      ).id;
+    ownerId = await member('settlement-state-owner');
+    participantIds = await Promise.all([
+      member('settlement-state-participant-1'),
+      member('settlement-state-participant-2'),
+    ]);
   });
 
   afterAll(async () => {
-    await app.close();
+    if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+    else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
+    await app?.close();
   });
 
-  // 每个 case 清:records → sheets → activities → audit_logs;
-  // 保留:user / member / org / dict(共享 seed)。
-  async function isolateFixtures(): Promise<void> {
-    await ctx.prisma.attendanceRecord.deleteMany({});
-    await ctx.prisma.attendanceSheet.deleteMany({});
-    await ctx.prisma.activity.deleteMany({});
-    await ctx.prisma.auditLog.deleteMany({});
-  }
-
-  // ============ helpers ============
-
-  async function createActivity(statusCode: ActivityStatus): Promise<string> {
-    const act = await ctx.prisma.activity.create({
-      data: {
-        title: `SG Activity ${statusCode}`,
-        activityTypeCode: ACTIVITY_TYPE_DEMO,
-        organizationId: ctx.organizationId,
-        // 跨度 10h:足以容纳任意 0 < serviceHours ≤ 10 的 case
-        startAt: new Date('2026-02-01T00:00:00.000Z'),
-        endAt: new Date('2026-02-01T23:59:59.000Z'),
-        location: 'sg',
-        statusCode,
-        isPublicRegistration: true,
-      },
-      select: { id: true },
+  async function fixture(statusCode = 'published', people = 1) {
+    const f = await createSettlementDraftFixture(prisma, {
+      organizationId,
+      ownerMemberId: ownerId,
+      actorUserId: actor.id,
+      participantMemberIds: participantIds.slice(0, people),
+      activityTypeCode: 'settlement-state-type',
     });
-    return act.id;
-  }
-
-  /**
-   * 直接 prisma seed AttendanceSheet + N records(绕过 submit 状态机);
-   * 用于初始化任意起始 Sheet 状态(包括非 pending 的 4 种),供 edit / softDelete 状态护栏校验。
-   * 沿 attendances-state-transition.e2e-spec.ts seedSheet 范式。
-   */
-  async function seedSheet(opts: {
-    activityId: string;
-    statusCode: SheetStatus;
-    recordCount?: number;
-    /** 不同 case 间错峰避免时间冲突(time-overlap 校验全局 by memberId,这里为安全) */
-    checkInOffsetHours?: number;
-  }): Promise<string> {
-    const recordCount = opts.recordCount ?? 1;
-    const offsetHours = opts.checkInOffsetHours ?? 0;
-    const sheet = await ctx.prisma.attendanceSheet.create({
-      data: {
-        activityId: opts.activityId,
-        submitterUserId: ctx.submitterUserId,
-        statusCode: opts.statusCode,
-        version: 1,
-      },
-      select: { id: true },
-    });
-    for (let i = 0; i < recordCount; i++) {
-      const checkIn = new Date(
-        new Date('2026-02-01T00:00:00.000Z').getTime() + (offsetHours + i * 6) * 60 * 60 * 1000,
-      );
-      const checkOut = new Date(checkIn.getTime() + 4 * 60 * 60 * 1000);
-      await ctx.prisma.attendanceRecord.create({
-        data: {
-          sheetId: sheet.id,
-          memberId: ctx.memberId,
-          roleCode: ROLE_MEMBER,
-          checkInAt: checkIn,
-          checkOutAt: checkOut,
-          serviceHours: 4,
-          attendanceStatusCode: ATTENDANCE_STATUS_PRESENT,
-          contributionPoints: 1, // 任意非 null,因为本 spec 不测 approve R31 校验
-        },
-      });
+    if (statusCode !== 'published') {
+      await prisma.activity.update({ where: { id: f.activityId }, data: { statusCode } });
     }
-    return sheet.id;
+    return f;
   }
 
-  function buildSubmitDto(opts?: {
-    checkInAt?: string;
-    checkOutAt?: string;
-  }): CreateAttendanceSheetDto {
-    const record: AttendanceRecordInputDto = {
-      memberId: ctx.memberId,
-      roleCode: ROLE_MEMBER,
-      checkInAt: opts?.checkInAt ?? '2026-02-01T08:00:00.000Z',
-      checkOutAt: opts?.checkOutAt ?? '2026-02-01T12:00:00.000Z',
-      attendanceStatusCode: ATTENDANCE_STATUS_PRESENT,
-    };
-    return { records: [record] };
-  }
-
-  function buildEditDto(opts?: {
-    checkInAt?: string;
-    checkOutAt?: string;
-  }): UpdateAttendanceSheetDto {
-    const record: AttendanceRecordInputDto = {
-      memberId: ctx.memberId,
-      roleCode: ROLE_MEMBER,
-      checkInAt: opts?.checkInAt ?? '2026-02-01T13:00:00.000Z',
-      checkOutAt: opts?.checkOutAt ?? '2026-02-01T17:00:00.000Z',
-      attendanceStatusCode: ATTENDANCE_STATUS_PRESENT,
-    };
-    return { records: [record] };
-  }
-
-  async function getActiveRecords(
-    sheetId: string,
-  ): Promise<Array<{ checkInAt: Date; deletedAt: Date | null }>> {
-    return ctx.prisma.attendanceRecord.findMany({
-      where: { sheetId, deletedAt: null },
-      select: { checkInAt: true, deletedAt: true },
-      orderBy: { checkInAt: 'asc' },
-    });
-  }
-
-  async function getAllRecords(
-    sheetId: string,
-  ): Promise<Array<{ checkInAt: Date; deletedAt: Date | null }>> {
-    return ctx.prisma.attendanceRecord.findMany({
-      where: { sheetId },
-      select: { checkInAt: true, deletedAt: true },
-      orderBy: { checkInAt: 'asc' },
-    });
-  }
-
-  async function getSheetState(sheetId: string): Promise<{
-    statusCode: string;
-    version: number;
-    deletedAt: Date | null;
-  }> {
-    return ctx.prisma.attendanceSheet.findUniqueOrThrow({
-      where: { id: sheetId },
-      select: { statusCode: true, version: true, deletedAt: true },
-    });
-  }
-
-  async function getActivityStatus(activityId: string): Promise<string> {
-    const a = await ctx.prisma.activity.findUniqueOrThrow({
-      where: { id: activityId },
-      select: { statusCode: true },
-    });
-    return a.statusCode;
-  }
-
-  // ============ Group A. submit(...) Activity 状态副作用 ============
-
-  describe('A. submit Activity status side effects', () => {
-    beforeEach(isolateFixtures);
-
-    it('Case A1:submit published Activity → submit 成功 + Sheet pending + Activity 保持 published', async () => {
-      const activityId = await createActivity('published');
-
-      const submitted = await ctx.service.submit(
-        activityId,
-        buildSubmitDto(),
-        ctx.submitterPayload,
-        AUDIT_META,
-      );
-
-      // Sheet 创建成功 + statusCode = pending
-      expect(submitted.statusCode).toBe('pending');
-      const sheet = await getSheetState(submitted.id);
-      expect(sheet.statusCode).toBe('pending');
-      expect(sheet.deletedAt).toBeNull();
-
-      // D2-a:completed 纯手动，首提考勤不再推进活动。
-      expect(await getActivityStatus(activityId)).toBe('published');
-
-      // audit log:存在 attendance-sheet.submit(沿 D-S7;不过度断字段)
-      const audits = await ctx.prisma.auditLog.findMany({
-        where: { resourceId: submitted.id, event: 'attendance-sheet.submit' },
-      });
-      expect(audits.length).toBeGreaterThanOrEqual(1);
-    });
-
-    it('Case A2:submit completed Activity → 当前实装仍允许(只拒 cancelled);Activity 仍 completed', async () => {
-      // 现状锁定:findActivityForSubmissionFull 只在 cancelled 时抛 ACTIVITY_CANCELLED_*;
-      // completed 状态不在拒绝集合内,因此 submit 成功;Activity 已是 completed,
-      // completed 允许补录，且 D2-a 下 submit 不写 Activity 状态。
-      const activityId = await createActivity('completed');
-
-      const submitted = await ctx.service.submit(
-        activityId,
-        buildSubmitDto(),
-        ctx.submitterPayload,
-        AUDIT_META,
-      );
-
-      expect(submitted.statusCode).toBe('pending');
-      expect(await getActivityStatus(activityId)).toBe('completed');
-    });
-
-    it('Case A3:submit draft Activity → ACTIVITY_NOT_PUBLISHED_PARTICIPATION_FORBIDDEN', async () => {
-      const activityId = await createActivity('draft');
-      await expect(
-        ctx.service.submit(activityId, buildSubmitDto(), ctx.submitterPayload, AUDIT_META),
-      ).rejects.toMatchObject({
-        biz: BizCode.ACTIVITY_NOT_PUBLISHED_PARTICIPATION_FORBIDDEN,
-      });
-      expect(await getActivityStatus(activityId)).toBe('draft');
-    });
-
-    it('Case A3:submit cancelled Activity → ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN;无 Sheet/Records;Activity 仍 cancelled', async () => {
-      const activityId = await createActivity('cancelled');
-
-      await expect(
-        ctx.service.submit(activityId, buildSubmitDto(), ctx.submitterPayload, AUDIT_META),
-      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN });
-
-      // 事务整体回滚:无 Sheet / Records
-      expect(await ctx.prisma.attendanceSheet.count()).toBe(0);
-      expect(await ctx.prisma.attendanceRecord.count()).toBe(0);
-      // Activity 不变
-      expect(await getActivityStatus(activityId)).toBe('cancelled');
-    });
-  });
-
-  // ============ Group B. edit(...) Sheet 状态护栏 ============
-
-  describe('B. edit Sheet status guards (pending-only)', () => {
-    beforeEach(isolateFixtures);
-
-    it('Case B1:edit pending → 成功;version+1;旧 records 软删 + 新 records 创建', async () => {
-      // 用 completed Activity 直接 seed pending Sheet，锁定 completed 补录语义。
-      const activityId = await createActivity('completed');
-      const sheetId = await seedSheet({
-        activityId,
-        statusCode: 'pending',
-        recordCount: 1,
-      });
-      const before = await getSheetState(sheetId);
-      expect(before.version).toBe(1);
-      expect(before.statusCode).toBe('pending');
-
-      const result = await ctx.service.edit(
-        sheetId,
-        buildEditDto(),
-        ctx.submitterPayload,
-        AUDIT_META,
-      );
-
-      // version +1,statusCode 仍 pending
-      expect(result.statusCode).toBe('pending');
-      expect(result.version).toBe(2);
-      const after = await getSheetState(sheetId);
-      expect(after.statusCode).toBe('pending');
-      expect(after.version).toBe(2);
-      expect(after.deletedAt).toBeNull();
-
-      // 旧 records 软删 + 新 records 创建(D38)
-      const all = await getAllRecords(sheetId);
-      expect(all).toHaveLength(2);
-      const softDeleted = all.filter((r) => r.deletedAt !== null);
-      const active = all.filter((r) => r.deletedAt === null);
-      expect(softDeleted).toHaveLength(1);
-      expect(active).toHaveLength(1);
-      // 新 active record 对应 buildEditDto 的活动窗内时间
-      expect(active[0].checkInAt.toISOString()).toBe('2026-02-01T13:00:00.000Z');
-    });
-
-    // it.each 显式表:status → 当前 BizCode(BizCode 因来源状态而异,沿 service.ts:673-690)
-    it.each<{ status: SheetStatus; biz: BizCodeEntry }>([
+  function submit(f: Fixture) {
+    return submissions.submit(
       {
-        status: 'pending_final_review',
-        biz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
+        activityId: f.activityId,
+        operationKey: `submit-${f.activityId}`,
+        requestHash: `state-hash-${f.activityId}`,
+        expectedDraftVersion: 1,
+        expectedEvidenceSealId: f.sealId,
       },
-      {
-        status: 'approved',
-        biz: BizCode.ATTENDANCE_SHEET_APPROVED_NOT_EDITABLE,
-      },
-      {
-        status: 'rejected',
-        biz: BizCode.ATTENDANCE_SHEET_REJECTED_NOT_EDITABLE,
-      },
-      {
-        status: 'final_rejected',
-        biz: BizCode.ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE,
-      },
-    ])('Case B2-B5(from $status):edit 拒;DB 状态/版本/records 不变', async ({ status, biz }) => {
-      const activityId = await createActivity('completed');
-      const sheetId = await seedSheet({
-        activityId,
-        statusCode: status,
-        recordCount: 1,
-      });
-      const before = await getSheetState(sheetId);
-      expect(before.version).toBe(1);
-      expect(before.statusCode).toBe(status);
-
-      await expect(
-        ctx.service.edit(sheetId, buildEditDto(), ctx.submitterPayload, AUDIT_META),
-      ).rejects.toMatchObject({ biz });
-
-      // 事务整体回滚:Sheet version / statusCode / deletedAt 不变
-      const after = await getSheetState(sheetId);
-      expect(after.version).toBe(1);
-      expect(after.statusCode).toBe(status);
-      expect(after.deletedAt).toBeNull();
-
-      // 原 record 仍 active,无新 record 创建
-      const all = await getAllRecords(sheetId);
-      expect(all).toHaveLength(1);
-      expect(all[0].deletedAt).toBeNull();
-    });
-  });
-
-  // ============ Group C. softDelete(...) Sheet 状态护栏 ============
-
-  describe('C. softDelete Sheet status guards (pending-only) + cascade soft-delete', () => {
-    beforeEach(isolateFixtures);
-
-    it('Case C1:softDelete pending → 成功;Sheet.deletedAt 非 null + 2 条 records 全部级联软删', async () => {
-      const activityId = await createActivity('completed');
-      const sheetId = await seedSheet({
-        activityId,
-        statusCode: 'pending',
-        recordCount: 2,
-      });
-      const before = await getSheetState(sheetId);
-      expect(before.statusCode).toBe('pending');
-      expect(before.deletedAt).toBeNull();
-      const activeBefore = await getActiveRecords(sheetId);
-      expect(activeBefore).toHaveLength(2);
-
-      await ctx.service.softDelete(sheetId, ctx.submitterPayload, AUDIT_META);
-
-      // Sheet.deletedAt 设置;statusCode 不变(软删主体,不改业务状态)
-      const after = await getSheetState(sheetId);
-      expect(after.deletedAt).not.toBeNull();
-      expect(after.statusCode).toBe('pending');
-
-      // 所有 records 级联软删(R20:同事务批量 update)
-      const all = await getAllRecords(sheetId);
-      expect(all).toHaveLength(2);
-      expect(all.every((r) => r.deletedAt !== null)).toBe(true);
-
-      // audit log:存在 attendance-sheet.delete(沿 PR #6 D2;不过度断字段)
-      const audits = await ctx.prisma.auditLog.findMany({
-        where: { resourceId: sheetId, event: 'attendance-sheet.delete' },
-      });
-      expect(audits.length).toBeGreaterThanOrEqual(1);
-    });
-
-    // it.each 显式表:status → 当前 BizCode(softDelete 沿 edit 范式,BizCode 因状态而异)
-    it.each<{ status: SheetStatus; biz: BizCodeEntry }>([
-      {
-        status: 'pending_final_review',
-        biz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
-      },
-      {
-        status: 'approved',
-        biz: BizCode.ATTENDANCE_SHEET_APPROVED_NOT_EDITABLE,
-      },
-      {
-        status: 'rejected',
-        biz: BizCode.ATTENDANCE_SHEET_REJECTED_NOT_EDITABLE,
-      },
-      {
-        status: 'final_rejected',
-        biz: BizCode.ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE,
-      },
-    ])(
-      'Case C2-C5(from $status):softDelete 拒;Sheet.deletedAt 仍 null;records 全部仍 active',
-      async ({ status, biz }) => {
-        const activityId = await createActivity('completed');
-        const sheetId = await seedSheet({
-          activityId,
-          statusCode: status,
-          recordCount: 2,
-        });
-
-        await expect(
-          ctx.service.softDelete(sheetId, ctx.submitterPayload, AUDIT_META),
-        ).rejects.toMatchObject({ biz });
-
-        // 事务整体回滚:Sheet.deletedAt 仍 null;statusCode 不变
-        const after = await getSheetState(sheetId);
-        expect(after.deletedAt).toBeNull();
-        expect(after.statusCode).toBe(status);
-
-        // 所有 records 仍 active(护栏在级联软删之前抛错,事务回滚)
-        const all = await getAllRecords(sheetId);
-        expect(all).toHaveLength(2);
-        expect(all.every((r) => r.deletedAt === null)).toBe(true);
-      },
+      actor,
+      META,
     );
+  }
+
+  function edit(f: Fixture) {
+    return drafts.updateItem(
+      {
+        activityId: f.activityId,
+        participationIdentityId: f.identityId,
+        expectedDraftVersion: 1,
+        resultCode: 'present',
+        recognizedServiceHours: 4,
+        recognizedContributionPoints: 1,
+        reason: '复核后调整',
+      },
+      actor,
+      META,
+    );
+  }
+
+  async function snapshot(f: Fixture) {
+    return {
+      activity: await prisma.activity.findUniqueOrThrow({ where: { id: f.activityId } }),
+      run: await prisma.attendanceSettlementRun.findUniqueOrThrow({ where: { id: f.runId } }),
+      versions: await prisma.attendanceSettlementVersion.findMany({
+        where: { settlementRunId: f.runId },
+        orderBy: { version: 'asc' },
+        include: { resultRevisions: { orderBy: { id: 'asc' } } },
+      }),
+      audits: await prisma.auditLog.findMany({
+        where: { resourceId: f.activityId },
+        orderBy: { id: 'asc' },
+      }),
+      intents: await prisma.notificationOutboxIntent.count({
+        where: { aggregateId: f.activityId },
+      }),
+    };
+  }
+
+  it.each(['published', 'completed'])(
+    '提交 %s 活动只推进结算，不改活动生命周期',
+    async (status) => {
+      const f = await fixture(status);
+      const result = await submit(f);
+      const after = await snapshot(f);
+      expect(after.activity.statusCode).toBe(status);
+      expect(after.run.statusCode).toBe('pending_first_review');
+      expect(after.versions).toHaveLength(2);
+      expect(after.versions[1]).toMatchObject({
+        id: result.settlementVersionId,
+        statusCode: 'submitted',
+        version: 2,
+      });
+      expect(after.audits).toHaveLength(1);
+      expect(after.audits[0]).toMatchObject({
+        event: 'activity.publish',
+        actorUserId: actor.id,
+        context: { extra: { operation: 'settlement-submit' } },
+      });
+    },
+  );
+
+  it.each([
+    { status: 'draft', biz: BizCode.ACTIVITY_NOT_PUBLISHED_PARTICIPATION_FORBIDDEN },
+    { status: 'cancelled', biz: BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN },
+  ])('首次提交 $status 活动拒绝且活动、版本、结果、审计和意图不变', async ({ status, biz }) => {
+    const f = await fixture(status);
+    const before = await snapshot(f);
+    await expect(submit(f)).rejects.toMatchObject({ biz });
+    expect(await snapshot(f)).toEqual(before);
   });
+
+  it('completed 的 working draft 可认定，修订和审计留前后值，不改版本号', async () => {
+    const f = await fixture('completed');
+    await edit(f);
+    const after = await snapshot(f);
+    expect(after.activity.statusCode).toBe('completed');
+    expect(after.run.statusCode).toBe('drafting');
+    expect(after.versions).toHaveLength(1);
+    expect(after.versions[0]).toMatchObject({ id: f.draftId, version: 1, statusCode: 'draft' });
+    expect(after.versions[0].resultRevisions).toHaveLength(1);
+    expect(after.versions[0].resultRevisions[0].revision).toBe(1);
+    expect(after.versions[0].resultRevisions[0].recognizedServiceHours.toString()).toBe('4');
+    expect(after.audits).toHaveLength(1);
+    expect(after.audits[0].context).toMatchObject({
+      before: { revision: 0, recognizedServiceHours: '2' },
+      after: { revision: 1, recognizedServiceHours: '4' },
+      extra: { operation: 'settlement-draft-item-update' },
+    });
+  });
+
+  it.each(REVIEW_STATES)('%s 时禁止认定，草稿及已提交结果全部不变', async (statusCode) => {
+    const f = await fixture('completed');
+    await submit(f);
+    await prisma.attendanceSettlementRun.update({ where: { id: f.runId }, data: { statusCode } });
+    const before = await snapshot(f);
+    await expect(edit(f)).rejects.toMatchObject({
+      biz: BizCode.SETTLEMENT_DRAFT_UPDATE_RUN_STATUS_INVALID,
+    });
+    expect(await snapshot(f)).toEqual(before);
+  });
+
+  it('退回只允许修改 working draft，原提交版本的所有结果保持不变', async () => {
+    const f = await fixture('completed');
+    const result = await submit(f);
+    const version = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+      where: { id: result.settlementVersionId },
+    });
+    await reviews.firstReview(
+      {
+        activityId: f.activityId,
+        actionCode: 'return',
+        operationKey: `return-${f.activityId}`,
+        requestHash: 'return-state-hash',
+        returnReason: '重新核实',
+        expectation: {
+          evidenceSealId: version.evidenceSealId,
+          evidenceRevision: version.evidenceRevision,
+          populationRevision: version.populationRevision,
+          workflowRevision: version.workflowRevision,
+          contentHash: version.contentHash,
+        },
+      },
+      reviewer,
+      META,
+    );
+    const before = await snapshot(f);
+    await edit(f);
+    const after = await snapshot(f);
+    expect(after.versions[1]).toEqual(before.versions[1]);
+    expect(after.versions[1].statusCode).toBe('returned');
+    expect(after.versions[0].resultRevisions[0].revision).toBe(1);
+    expect(after.versions[0].resultRevisions[0].recognizedServiceHours.toString()).toBe('4');
+  });
+
+  it.each(['drafting', ...REVIEW_STATES])(
+    '%s 不重新开放旧删除，多个参与者及版本历史均保留',
+    async (statusCode) => {
+      const f = await fixture('completed', 2);
+      if (statusCode !== 'drafting') {
+        await submit(f);
+        await prisma.attendanceSettlementRun.update({
+          where: { id: f.runId },
+          data: { statusCode },
+        });
+      }
+      const before = await snapshot(f);
+      for (const version of before.versions) {
+        expect(version.resultRevisions).toHaveLength(2);
+        expect(
+          new Set(version.resultRevisions.map((row) => row.participationIdentityId)).size,
+        ).toBe(2);
+        await request(httpServer(app))
+          .delete(`/api/admin/v1/attendance-sheets/${version.id}`)
+          .set('Authorization', auth)
+          .expect(404);
+      }
+      expect(await snapshot(f)).toEqual(before);
+    },
+  );
 });

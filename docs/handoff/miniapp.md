@@ -20,6 +20,9 @@
 取消前已提交版本的审核、同键精确重放和已有退回版本的原事实重提继续保留，
 仍须通过权限、版本、证据与工作流检查；重提不是新增或改写事实的入口。
 `completed` 活动不受这条取消限制影响。此行为仍为本 PR 候选，未完成前端联调或部署。
+首次提交还须为已发布或已完成活动；未发布活动沿用
+`ACTIVITY_NOT_PUBLISHED_PARTICIPATION_FORBIDDEN` 拒绝，不能因已有草稿或封场凭证而送审。
+结算认定仅修改当前可编辑草稿；已送审版本永久保留，退回后修改草稿不覆盖原提交记录。
 
 **负责人活动列表／详情合同变更**：列表不再返回旧 `unresolvedAttendanceSheets`；详情移除 `counts.attendanceSheets`、`counts.unresolvedAttendanceSheets` 和旧 `closure`，改为活动生命周期 `workflow` 和结算摘要。`settlement.availability` 为 `forbidden`、`workflow-disabled`、`available` 或写后响应的 `not-requested`；只有 `available` 包含 run 状态、当前提交版本指针、只读态和 `workbenchPath`，有 active 关账时才包含 `activeClosure`。`available` 时 null run 或省略 active 关账表示缺少对应事实，不是零或失败；active 关账是该活动最新 active 记录，未核验正式账本指针且不排除更正进行中；提交版本指针不等于当前正式生效版本。`nextAction: null` 表示未推断下一步，不表示没有待办或已经关账；`workbenchPath` 是导航，不是操作许可。关闸、无权及写后响应仍可查看基础活动详情，不应渲染成零待办。写后需要结算摘要时重新读取详情；授权或读取发生错误时应显示错误，不能当作无权或零。独立详情在只读事务快照中复核当前用户和成员绑定后判断活动可见性与结算授权；身份失效时整个 GET 返回认证／准入错误；快照建立后的撤权不保证对当前请求即时生效。独立工作台 GET 在关闸时仍有自身的授权读语义，见退役对照。该变化尚未完成小程序回执或真实 HTTP 验证。
 

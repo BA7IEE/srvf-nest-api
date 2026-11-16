@@ -1829,7 +1829,7 @@ describe('audit-logs 写入迁移', () => {
     const createActivity = async (overrides: { missingResult?: boolean } = {}): Promise<string> => {
       const created = await createSettlementDraftFixture(prisma, {
         organizationId: attChildOrgId,
-        participantMemberId: attMemberBId,
+        participantMemberIds: [attMemberBId],
         ownerMemberId: attMemberAId,
         actorUserId: attendanceSubmitterId,
         activityTypeCode,

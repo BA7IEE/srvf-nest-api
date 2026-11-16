@@ -95,7 +95,7 @@ describe('已取消活动的结算增量闸(A-R2 · 方案乙)', () => {
     return createSettlementDraftFixture(prisma, {
       organizationId,
       ownerMemberId,
-      participantMemberId,
+      participantMemberIds: [participantMemberId],
       actorUserId: submitter.id,
       activityTypeCode: 'cancelled-settlement-type',
     });
