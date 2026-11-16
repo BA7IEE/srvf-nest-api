@@ -6,6 +6,7 @@ import { BindingScopeType, BindingStatus, MemberStatus, PrincipalType, Role } fr
 import request from 'supertest';
 
 import type { JwtConfig } from '../../src/config/jwt.config';
+import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { ActivitiesModule } from '../../src/modules/activities/activities.module';
 import { ActivityBatchWorker } from '../../src/modules/activities/activity-batch.worker';
@@ -93,7 +94,8 @@ const MEMBERSHIP_STARTED_AT = new Date('2019-01-01T00:00:00.000Z');
 /** 逐站前移的应用时钟锚点;推进的是时钟,不是数据。 */
 const T_BEFORE_DEADLINE = new Date('2020-02-01T00:00:00.000Z');
 const T_AFTER_DEADLINE = new Date('2020-03-02T00:00:00.000Z');
-const T_CHECK_IN = new Date('2020-03-10T07:45:00.000Z');
+const T_BEFORE_POSITION = new Date('2020-03-10T07:45:00.000Z');
+const T_CHECK_IN = SESSION_START;
 const T_CHECK_OUT = new Date('2020-03-10T11:30:00.000Z');
 const T_AFTER_END = new Date('2020-03-10T13:00:00.000Z');
 
@@ -716,6 +718,25 @@ describe('活动全链路贯通(14 站 · 8 条接缝)', () => {
     expect(checkOutCredentialId).not.toBe('');
 
     // ---------- 第 9 站:签到 ----------
+    // The QR's session window opens before the assigned position. That does not
+    // authorize an early position punch; retain the complete journey at the
+    // exact legal position boundary after proving the earlier attempt is inert.
+    freezeSystemTime(T_BEFORE_POSITION);
+    const earlyToken = await renderToken(checkInCredentialId);
+    const earlyAuth = (await loginAs(app, applicantUsername)).authHeader;
+    const beforeEarlyEvidence = await prisma.activityEvidenceState.findUnique({
+      where: { activityId },
+    });
+    const tooEarly = await request(httpServer(app))
+      .post(`/api/app/v1/activities/${activityId}/sessions/${sessionId}/punches/check-in`)
+      .set('Authorization', earlyAuth)
+      .send({ qrToken: earlyToken, eventKey: 'full-chain-punch-in-too-early' })
+      .expect(BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW.httpStatus);
+    expect(tooEarly.body.code).toBe(BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW.code);
+    expect(await prisma.attendancePunchEvent.count({ where: { participationIdentityId } })).toBe(0);
+    expect(await prisma.activityEvidenceState.findUnique({ where: { activityId } })).toEqual(
+      beforeEarlyEvidence,
+    );
     freezeSystemTime(T_CHECK_IN);
     const checkInToken = await renderToken(checkInCredentialId);
     const punchInAuth = (await loginAs(app, applicantUsername)).authHeader;
