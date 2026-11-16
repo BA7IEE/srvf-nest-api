@@ -336,13 +336,19 @@ describe('attendances 模块', () => {
 
   // ============ helpers ============
 
-  async function nativeDraft(memberIds: string[], hours = 2, activityTypeCode = 'att-native') {
+  async function nativeDraft(
+    memberIds: string[],
+    hours = 2,
+    activityTypeCode = 'att-native',
+    roleCode = 'member',
+  ) {
     const f = await createSettlementDraftFixture(prisma, {
       organizationId: nativeOrganizationId,
       ownerMemberId: nativeOwnerId,
       actorUserId: nativeUserId,
       participantMemberIds: memberIds,
       activityTypeCode,
+      sessionHours: Math.max(4, hours),
     });
     await prisma.roleBinding.create({
       data: {
@@ -357,6 +363,24 @@ describe('attendances 模块', () => {
     const identities = await prisma.activityParticipationIdentity.findMany({
       where: { id: { in: f.identityIds } },
     });
+    let positionId: string | null = null;
+    if (roleCode !== 'member') {
+      positionId = (
+        await prisma.activitySessionPosition.create({
+          data: {
+            activityId: f.activityId,
+            sessionId: identities[0].sessionId,
+            code: 'native-role',
+            name: roleCode,
+            attendanceRoleCode: roleCode,
+          },
+        })
+      ).id;
+      await prisma.activityParticipationIdentity.updateMany({
+        where: { id: { in: f.identityIds } },
+        data: { currentPositionId: positionId },
+      });
+    }
     const startAt = new Date('2020-03-01T00:00:00Z');
     const endAt = new Date(startAt.getTime() + hours * 3_600_000);
     // Explicit source facts, not prefilled expected results: generate must
@@ -372,6 +396,7 @@ describe('attendances 模块', () => {
           sessionId: identity.sessionId,
           participationIdentityId: identity.id,
           memberId: identity.memberId,
+          positionId,
           sourceCode: 'staff_scan',
           operatorUserId: nativeUserId,
           receivedAt: event.occurredAt,
@@ -2173,7 +2198,7 @@ describe('attendances 模块', () => {
   // 沿 D-S4 / D-A8 / 业务规则文档 §4
 
   describe('D14 ContributionRule 预填(批次 4-B)', () => {
-    it('ContributionRule 命中(同 activityType × roleCode):POST 时自动预填 contributionPoints', async () => {
+    it('原生生成/提交按活动类型与岗位角色匹配 pointsBelow', async () => {
       // 直接造一条 ACTIVE 规则:activityType=att-demo / role=member / >=6h 1.5 / <6h 0.5
       const rule = await prisma.contributionRule.create({
         data: {
@@ -2188,27 +2213,16 @@ describe('attendances 模块', () => {
         select: { id: true },
       });
       try {
-        const id = await createPendingSheet(activityId, [
-          baseRecord({
-            memberId: memberCId,
-            roleCode: 'member',
-            checkInAt: pastIso('07-02T08:00:00.000Z'),
-            checkOutAt: pastIso('07-02T09:00:00.000Z'), // 1h < 6h → 取 pointsBelow=0.5
-            // 不传 contributionPoints → 期望被预填
-          }),
-        ]);
-        const records = await prisma.attendanceRecord.findMany({
-          where: { sheetId: id, deletedAt: null },
-          select: { contributionPoints: true },
-        });
-        expect(records.length).toBe(1);
-        expect(records[0].contributionPoints?.toString()).toBe('0.5');
+        const { results } = await nativeSubmit(await nativeDraft([memberCId], 1, 'att-demo'));
+        expect(results).toHaveLength(1);
+        expect(results[0].calculatedContributionPoints.toString()).toBe('0.5');
+        expect(results[0].recognizedContributionPoints.toString()).toBe('0.5');
       } finally {
         await prisma.contributionRule.delete({ where: { id: rule.id } });
       }
     });
 
-    it('ContributionRule 命中:>=6h 取 pointsAbove(活动闭环硬化 2026-06-21:不再 per-record dailyCap 钳制 → 原始规则分)', async () => {
+    it('原生讲师岗位 8 小时取 pointsAbove，不按单条 dailyCap 截断规则原分', async () => {
       const rule = await prisma.contributionRule.create({
         data: {
           activityTypeCode: 'att-demo',
@@ -2222,39 +2236,38 @@ describe('attendances 模块', () => {
         select: { id: true },
       });
       try {
-        const id = await createPendingSheet(activityId, [
-          baseRecord({
-            memberId: memberCId,
-            roleCode: 'instructor',
-            checkInAt: pastIso('07-02T10:00:00.000Z'),
-            checkOutAt: pastIso('07-02T18:00:00.000Z'), // 8h >= 6h → pointsAbove=3;dailyCap 不再每条封顶
-          }),
-        ]);
-        const records = await prisma.attendanceRecord.findMany({
-          where: { sheetId: id, deletedAt: null },
-          select: { contributionPoints: true },
-        });
-        // 旧:MIN(3, dailyCap 1.25)=1.25;新:不每条封顶 → 原始规则分 3(全局每日封顶改落 team-join 汇总处)
-        expect(records[0].contributionPoints?.toString()).toBe('3');
+        const { results } = await nativeSubmit(
+          await nativeDraft([memberCId], 8, 'att-demo', 'instructor'),
+        );
+        expect(results).toHaveLength(1);
+        expect(results[0].calculatedServiceHours.toString()).toBe('8');
+        expect(results[0].calculatedContributionPoints.toString()).toBe('3');
+        expect(results[0].recognizedContributionPoints.toString()).toBe('3');
       } finally {
         await prisma.contributionRule.delete({ where: { id: rule.id } });
       }
     });
 
-    it('ContributionRule 未命中:contributionPoints 保守落 0(不抛错)', async () => {
-      const id = await createPendingSheet(activityId, [
-        baseRecord({
-          memberId: memberCId,
-          roleCode: 'coach', // 未配置规则
-          checkInAt: pastIso('07-02T20:00:00.000Z'),
-          checkOutAt: pastIso('07-02T21:00:00.000Z'),
-        }),
-      ]);
-      const records = await prisma.attendanceRecord.findMany({
-        where: { sheetId: id, deletedAt: null },
-        select: { contributionPoints: true },
+    it('原生未命中规则仍可生成零分草稿，必须显式标记 blocker', async () => {
+      const f = await nativeDraft([memberCId], 1, 'att-demo', 'coach');
+      const response = await request(httpServer(app))
+        .get(`${f.base}/items`)
+        .set('Authorization', nativeAuth)
+        .expect(200);
+      expect(response.body.data.items).toHaveLength(1);
+      expect(response.body.data.items[0]).toMatchObject({
+        calculatedContributionPoints: 0,
+        recognizedContributionPoints: 0,
       });
-      expect(records[0].contributionPoints?.toString()).toBe('0');
+      const result = await prisma.participantSettlementResultRevision.findFirstOrThrow({
+        where: {
+          participationIdentityId: f.identityId,
+          settlementVersion: { settlementRunId: f.runId, version: f.draftVersion },
+        },
+      });
+      expect(result.exceptionFlagsJson).toMatchObject({
+        blockers: ['contribution_points_zero_no_effective_rule'],
+      });
     });
 
     it('原生 DTO submit: 调用方不能夹带 contributionPoints 改写草稿认定', async () => {
@@ -2265,7 +2278,7 @@ describe('attendances 模块', () => {
       await expectNativeDtoRejection('submit', { contributionPoints: null });
     });
 
-    it('同 type×role 第二条 ACTIVE 被 DB pair unique 拒绝；合法单规则 submit 分值保持', async () => {
+    it('原生同 type×role 第二条 ACTIVE 被唯一约束拒绝，真实生成/提交保留原规则分', async () => {
       const rule1 = await prisma.contributionRule.create({
         data: {
           activityTypeCode: 'att-demo',
@@ -2293,20 +2306,11 @@ describe('attendances 模块', () => {
           }),
         ).rejects.toMatchObject({ code: 'P2002' });
 
-        const id = await createPendingSheet(activityId, [
-          baseRecord({
-            memberId: memberCId,
-            roleCode: 'front_command',
-            checkInAt: pastIso('07-04T08:00:00.000Z'),
-            checkOutAt: pastIso('07-04T09:00:00.000Z'),
-          }),
-        ]);
-        const records = await prisma.attendanceRecord.findMany({
-          where: { sheetId: id, deletedAt: null },
-          select: { contributionPoints: true },
-        });
-        // 合法单规则的既有 pointsBelow 计算保持。
-        expect(records[0].contributionPoints?.toString()).toBe('1');
+        const { results } = await nativeSubmit(
+          await nativeDraft([memberCId], 1, 'att-demo', 'front_command'),
+        );
+        expect(results[0].calculatedContributionPoints.toString()).toBe('1');
+        expect(results[0].recognizedContributionPoints.toString()).toBe('1');
       } finally {
         await prisma.contributionRule.delete({ where: { id: rule1.id } });
       }

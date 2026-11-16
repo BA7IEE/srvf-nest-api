@@ -10,12 +10,13 @@ export async function createSettlementDraftFixture(
     actorUserId: string;
     activityTypeCode: string;
     missingResult?: boolean;
+    sessionHours?: number;
   },
 ) {
   if (input.participantMemberIds.length === 0)
     throw new Error('A draft fixture needs participants');
   const startAt = new Date('2020-03-01T00:00:00Z');
-  const endAt = new Date('2020-03-01T04:00:00Z');
+  const endAt = new Date(startAt.getTime() + (input.sessionHours ?? 4) * 3_600_000);
   const activity = await prisma.activity.create({
     data: {
       title: '结算草稿验收活动',
