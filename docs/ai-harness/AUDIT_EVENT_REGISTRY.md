@@ -138,7 +138,7 @@
 | `attendance-sheet.review` | 1 |  |
 | `attendance-sheet.final-review` | 1 |  |
 | `attendance-sheet.reopen` | 1 |  |
-| `attendance-sheet.read.other` | 1 |  |
+| `attendance-sheet.read.other` | 2 | 旧考勤读取与新版 Admin 参与账本/时长证明，沿用事件名 |
 
 ## attachment
 

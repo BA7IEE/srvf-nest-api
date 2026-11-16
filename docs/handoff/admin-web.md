@@ -278,6 +278,10 @@ D4 八个新增入口全部在 Human App managed activity 面，详见 [小程�
 
 > 队员 360：`registrations` 分页；`contribution-summary` 在工作流开启时返回 committed credited 生涯净额，关闸返回 `20153`／503；不存在/软删队员返回 `MEMBER_NOT_FOUND`（15001）。`participation-ledger` 是分录，不应当作旧考勤记录或正式时长证明。
 
+管理员读取活动轴/队员轴 `participation-ledger` 与队员 `participation-time-proof` 时，
+服务端在授权和查询成功后记录敏感读取审计，审计失败不会返回数据。路径、权限与响应字段不变；
+App 本人读取不扩面。旧考勤读取事件名仅作审计分类沿用，不表示旧接口恢复。
+
 > **`participation-summary` 计数口径**：v1.1 闸开启时，`activityCount` 是当前正式版本有已入账日行的不同活动数，`recordCount` 是这些日行按参与身份×北京日去重的条数。合法零值日行仍计数；当前版本没有日行时，历史冲回分录不再计入。更正准备中继续显示先前正式版本，生效后以新版本计算。计数不是“出勤人数”，且计数与时长分开读取，并发更正时不保证来自同一数据库快照。`totalServiceHours` 沿既有正式时长证明优先规则，`contributionPoints` 按已入账 credited 正负净额计算，不回退旧数据或二次封顶。闸关时该汇总返回 `20153`／503。前端直接展示，不自行求和；此个人端点不返回 no-show。本说明是此分支的合同，合入或部署须另行核实。
 
 > **队员 360 统一保险概览**：保险 tab 的显示主数据源为 `GET /api/admin/v1/members/:memberId/insurances/overview`。`selfPurchased` 展示个人自购保险及审核动作；`teamProvided` 只读展示团队保险安全投影，不展示“核验通过 / 驳回”，也不返回保单号、备注、其他成员或 reviewer。UI 必须直接使用后端的 `dateStatus` 与 `summary.hasConfirmedCoverage`，不再仅以 `coverageEnd >= 当前时间` 自行推导日期状态。`summary` 只是按北京当前日的概览，不得替代某次活动审批或入队资格判定。旧 `GET /api/admin/v1/members/:memberId/insurances` 保留兼容，但队员 360 应迁移到 overview。

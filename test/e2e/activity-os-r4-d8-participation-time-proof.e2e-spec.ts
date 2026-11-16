@@ -13,6 +13,7 @@ import type { CurrentUserPayload } from '../../src/common/decorators/current-use
 import { EvidenceSealService } from '../../src/modules/activities/evidence-seal.service';
 import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
 import { LedgerPreparationService } from '../../src/modules/activities/ledger-preparation.service';
+import { AuditLogsService } from '../../src/modules/audit-logs/audit-logs.service';
 import { SettlementDraftService } from '../../src/modules/activities/settlement-draft.service';
 import type { TimePolicyDefinition } from '../../src/modules/activities/activity-time-policy-definition';
 import { ACTIVITY_TIME_CUTOVER_RECEIPT_ID } from '../../src/modules/activities/activity-time-cutover-command';
@@ -596,6 +597,11 @@ describe('D8-1 formal participation time proof', () => {
     await insertCutoverReceipt();
     await commitClassifiedRoot(timeRevision);
 
+    const readAuditWhere = {
+      event: 'attendance-sheet.read.other',
+      resourceId: fixture.creator.memberId,
+    };
+    const auditBefore = await fixture.db.auditLog.count({ where: readAuditWhere });
     const first = await request(httpServer(fixture.app))
       .get(appUrl)
       .query(query)
@@ -635,6 +641,7 @@ describe('D8-1 formal participation time proof', () => {
       items: [{ sourceMode: 'legacy_ledger', sourceCategoryCode: 'legacy_recognized_service' }],
     });
 
+    expect(await fixture.db.auditLog.count({ where: readAuditWhere })).toBe(auditBefore);
     const admin = await request(httpServer(fixture.app))
       .get(`/api/admin/v1/members/${fixture.creator.memberId}/participation-time-proof`)
       .query({ ...query, pageSize: 100 })
@@ -644,6 +651,18 @@ describe('D8-1 formal participation time proof', () => {
       proofSetHash: first.body.data.proofSetHash,
       eligibleServiceSeconds: 7200,
       total: 2,
+    });
+    const audit = await fixture.db.auditLog.findMany({ where: readAuditWhere });
+    expect(audit).toHaveLength(auditBefore + 1);
+    expect(audit[0]).toMatchObject({
+      actorUserId: fixture.creator.id,
+      resourceType: 'member',
+      resourceId: fixture.creator.memberId,
+    });
+    expect((audit[0].context as { extra: unknown }).extra).toEqual({
+      operation: 'participation-time-proof',
+      count: 2,
+      filterFields: ['dateFrom', 'dateTo'],
     });
 
     const scopedCrossMember = await request(httpServer(fixture.app))
@@ -666,6 +685,7 @@ describe('D8-1 formal participation time proof', () => {
       .set('Authorization', fixture.reviewer.auth)
       .expect(403)
       .expect(({ body }) => expect(body).toMatchObject({ code: 30100 }));
+    expect(await fixture.db.auditLog.count({ where: readAuditWhere })).toBe(auditBefore + 2);
 
     await fixture.db.roleBinding.create({
       data: {
@@ -684,6 +704,22 @@ describe('D8-1 formal participation time proof', () => {
       memberId: fixture.creator.memberId,
       proofSetHash: first.body.data.proofSetHash,
     });
+    expect(await fixture.db.auditLog.count({ where: readAuditWhere })).toBe(auditBefore + 3);
+    const auditFailure = jest
+      .spyOn(fixture.app.get(AuditLogsService), 'log')
+      .mockRejectedValueOnce(new Error('time proof read audit unavailable'));
+    try {
+      const failed = await request(httpServer(fixture.app))
+        .get(`/api/admin/v1/members/${fixture.creator.memberId}/participation-time-proof`)
+        .query({ ...query, pageSize: 100 })
+        .set('Authorization', fixture.reviewer.auth)
+        .expect(500);
+      expect(failed.body.data).toBeNull();
+      expect(auditFailure).toHaveBeenCalledTimes(1);
+      expect(await fixture.db.auditLog.count({ where: readAuditWhere })).toBe(auditBefore + 3);
+    } finally {
+      auditFailure.mockRestore();
+    }
 
     await request(httpServer(fixture.app))
       .get(appUrl)

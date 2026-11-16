@@ -1,5 +1,6 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
@@ -18,7 +19,7 @@ import {
 } from '../activity-participation.dto';
 import { ActivityParticipationQueryService } from '../activity-participation-query.service';
 import { AdminParticipationLedgerEntryDto } from '../dto/admin/admin-participation-ledger.dto';
-import { LedgerQueryService } from '../ledger-query.service';
+import { AdminParticipationReadService } from '../admin-participation-read.service';
 import { RequiresPermission } from '../../../common/decorators/route-authz.decorator';
 
 // 审计刀 5 F1/F2：活动级跨子表只读投影。独立 Controller + QueryService，保持
@@ -30,7 +31,7 @@ import { RequiresPermission } from '../../../common/decorators/route-authz.decor
 export class AdminActivityParticipationController {
   constructor(
     private readonly query: ActivityParticipationQueryService,
-    private readonly ledgerQuery: LedgerQueryService,
+    private readonly reads: AdminParticipationReadService,
   ) {}
 
   // 账本权限口径见 LedgerQueryService 的 LEDGER_READ_ACTION：合同 §6.11 空白，2026-08-06 显式接受复用考勤读码。
@@ -48,8 +49,13 @@ export class AdminActivityParticipationController {
     @Param() params: ActivityParticipationIdParamDto,
     @Query() query: PaginationQueryDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<PageResultDto<AdminParticipationLedgerEntryDto>> {
-    return this.ledgerQuery.listForAdminActivity(params.activityId, query, currentUser);
+    return this.reads.listForActivity(params.activityId, query, currentUser, {
+      requestId: req.id as string,
+      ip: req.ip ?? null,
+      ua: req.headers['user-agent'] ?? null,
+    });
   }
 
   @Get('reconciliation')
