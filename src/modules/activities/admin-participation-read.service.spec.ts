@@ -27,15 +27,21 @@ const result = {
 
 function harness() {
   const read = jest.fn().mockResolvedValue(result);
+  const review = jest.fn().mockResolvedValue({
+    version: { id: 'version' },
+    contributionProof: { evaluations: [{ participationIdentityId: 'private-person' }] },
+  });
   const log = jest.fn().mockResolvedValue(undefined);
   const recorder = new ParticipationReadAuditRecorder({ log } as never);
   return {
     read,
+    review,
     log,
     service: new AdminParticipationReadService(
       { listForAdminMember: read, listForAdminActivity: read } as never,
       { forAdminMember: read } as never,
       recorder,
+      { reviewDetail: review } as never,
     ),
   };
 }
@@ -112,6 +118,64 @@ describe.each(cases)('$method', ({ method, resourceType, operation, fields }) =>
     const error = new Error('query rejected');
     read.mockRejectedValueOnce(error);
     await expect(service[method]('resource', query, user, meta)).rejects.toBe(error);
+    expect(log).not.toHaveBeenCalled();
+  });
+});
+
+describe('settlement review detail', () => {
+  it('waits for audit and records only the returned version anchor, never proof contents', async () => {
+    const { service, review, log } = harness();
+    let enterAudit!: () => void;
+    let finishAudit!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enterAudit = resolve;
+    });
+    const auditing = new Promise<void>((resolve) => {
+      finishAudit = resolve;
+    });
+    log.mockImplementation(async () => {
+      enterAudit();
+      await auditing;
+    });
+    let returned = false;
+    const pending = service.reviewDetail('requested-version', user, meta).then((detail) => {
+      returned = true;
+      return detail;
+    });
+    await entered;
+    expect(returned).toBe(false);
+    expect(review).toHaveBeenCalledWith('requested-version', user);
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log).toHaveBeenCalledWith({
+      event: 'attendance-sheet.read.other',
+      actorUserId: user.id,
+      actorRoleSnap: user.role,
+      resourceType: 'attendance_settlement_version',
+      resourceId: 'version',
+      meta,
+      extra: { operation: 'settlement-review-detail', count: 1, filterFields: [] },
+    });
+    finishAudit();
+    await expect(pending).resolves.toEqual({
+      version: { id: 'version' },
+      contributionProof: { evaluations: [{ participationIdentityId: 'private-person' }] },
+    });
+  });
+
+  it('does not return the queried proof if audit fails', async () => {
+    const { service, review, log } = harness();
+    const error = new Error('review audit failed');
+    log.mockRejectedValueOnce(error);
+    await expect(service.reviewDetail('version', user, meta)).rejects.toBe(error);
+    expect(review).toHaveBeenCalledTimes(1);
+    expect(log).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not audit a denied, missing or unavailable version read', async () => {
+    const { service, review, log } = harness();
+    const error = new Error('version query rejected');
+    review.mockRejectedValueOnce(error);
+    await expect(service.reviewDetail('version', user, meta)).rejects.toBe(error);
     expect(log).not.toHaveBeenCalled();
   });
 });

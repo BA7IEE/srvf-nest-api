@@ -10,9 +10,9 @@ export class ParticipationReadAuditRecorder {
 
   async log(args: {
     currentUser: CurrentUserPayload;
-    resourceType: 'activity' | 'member';
+    resourceType: 'activity' | 'member' | 'attendance_settlement_version';
     resourceId: string;
-    operation: 'participation-ledger' | 'participation-time-proof';
+    operation: 'participation-ledger' | 'participation-time-proof' | 'settlement-review-detail';
     count: number;
     filterFields: Array<'dateFrom' | 'dateTo'>;
     auditMeta: AuditMeta;

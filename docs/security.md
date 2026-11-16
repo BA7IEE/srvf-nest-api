@@ -250,6 +250,7 @@ Admin 读取他人档案、紧急联系人、自购保险、证书、考勤与�
 | 资质布尔查询 | `certificate.read.qualification-flag` | `member` / member id |
 | 考勤单列表 / 详情 / 审核详情 | `attendance-sheet.read.other` | list=`activity`;detail=`attendance_sheet` |
 | 新版 Admin 参与账本 / 正式时长证明 | `attendance-sheet.read.other` | 活动轴=`activity`;队员轴/证明=`member` |
+| 新版 Admin 结算复核详情（含个人贡献证明） | `attendance-sheet.read.other` | `attendance_settlement_version` / 返回版本 id |
 | 活动报名 CSV | `registration.review` + `extra.operation='export'` | `activity` / activity id |
 | 招新列表 / 详情 / CSV / 证书图 / 发号预检 | `recruitment-application.read.other` | `recruitment_application` 或 `recruitment_cycle` |
 | 招新证件图 | `recruitment-application.id-card-image.read` | `recruitment_application` / application id |
@@ -260,6 +261,8 @@ Admin 读取他人档案、紧急联系人、自购保险、证书、考勤与�
 - 新版参与读面沿用历史读取事件名，`extra.operation` 区分 `participation-ledger` /
   `participation-time-proof`；只附本页返回数量与日期过滤字段名，不记录日期值、分录、时长、
   分数或证明正文。Admin HTTP 编排负责审计，共享账本查询与 App self 读取保持只读。
+- 结算复核详情使用 `settlement-review-detail`，只记录版本锚点与版本数 `1`，
+  不复制个人贡献证明、退回理由或差异内容；同样先完成授权和查询，再审计并返回。
 - CSV：必须在 controller 获得 generator / stream 前完成审计；不得在 generator 尾部补记，审计失败时不得发送首字节。
 - 签名 URL：完成资源与 key 存在性守卫后、任何 `generateDownloadUrl` 调用前完成审计；审计失败时 provider 调用次数必须为 0。
 - 每条记录显式保存 `actorUserId` / `actorRoleSnap` 与 controller 构造的 `AuditMeta(requestId/ip/ua)`。

@@ -333,7 +333,8 @@ describe('第 2 批第 ⑨b 刀 —— 审核与账本读面', () => {
 
     const response = await request(httpServer(app))
       .get(`/api/admin/v1/attendance-settlements/${fixture.versionId}/review-detail`)
-      .set('Authorization', adminAuthHeader);
+      .set('Authorization', adminAuthHeader)
+      .set('User-Agent', 'settlement-review-read');
 
     expect(response.status).toBe(200);
     expect(response.body.data).toMatchObject({
@@ -342,6 +343,51 @@ describe('第 2 批第 ⑨b 刀 —— 审核与账本读面', () => {
       sealRevisions: [expect.objectContaining({ statusCode: 'active', sealRevision: 1 })],
       gaps: expect.any(Array),
     });
+    const audits = await prisma.auditLog.findMany({
+      where: { event: 'attendance-sheet.read.other', resourceId: fixture.versionId },
+    });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      actorUserId: adminUserId,
+      resourceType: 'attendance_settlement_version',
+      context: {
+        requestId: expect.any(String),
+        ua: 'settlement-review-read',
+        extra: { operation: 'settlement-review-detail', count: 1, filterFields: [] },
+      },
+    });
+  });
+
+  it('GET review-detail 审计失败时不返回版本或个人贡献证明', async () => {
+    const fixture = await createLedgerFixture({ batchStatus: 'ready', ledgerDate: '2020-04-20' });
+    const audit = jest
+      .spyOn(app.get(AuditLogsService), 'log')
+      .mockRejectedValueOnce(new Error('review-read-audit-unavailable'));
+    try {
+      const response = await request(httpServer(app))
+        .get(`/api/admin/v1/attendance-settlements/${fixture.versionId}/review-detail`)
+        .set('Authorization', adminAuthHeader);
+      expect(response.status).toBe(500);
+      expect(response.body.data).toBeNull();
+      expect(audit).toHaveBeenCalledTimes(1);
+      expect(
+        await prisma.auditLog.count({
+          where: { event: 'attendance-sheet.read.other', resourceId: fixture.versionId },
+        }),
+      ).toBe(0);
+    } finally {
+      audit.mockRestore();
+    }
+  });
+
+  it('GET review-detail 不存在的版本不记成功读取审计', async () => {
+    const auditCount = await prisma.auditLog.count();
+    const response = await request(httpServer(app))
+      .get('/api/admin/v1/attendance-settlements/absent-version-activity-batch2-9b/review-detail')
+      .set('Authorization', adminAuthHeader);
+    // 版本解析的既有防枚举合同对缺失版本也统一拒绝，不新增 404 侧信道。
+    expectBizError(response, BizCode.RBAC_FORBIDDEN);
+    expect(await prisma.auditLog.count()).toBe(auditCount);
   });
 
   it.each(['preparing', 'ready', 'committed'] as const)(
@@ -576,6 +622,7 @@ describe('第 2 批第 ⑨b 刀 —— 审核与账本读面', () => {
 
   it('四个 Admin 读面均按 attendance.read.sheet 判权，版本与活动探测不泄露存在性', async () => {
     const fixture = await createLedgerFixture({ batchStatus: 'ready', ledgerDate: '2020-07-03' });
+    const auditCount = await prisma.auditLog.count();
 
     const [
       workbench,
@@ -626,6 +673,7 @@ describe('第 2 批第 ⑨b 刀 —— 审核与账本读面', () => {
     expect(detailExisting.body.code).toBe(detailMissing.body.code);
     expect(batchExisting.body.code).toBe(batchMissing.body.code);
     expect(activityExisting.body.code).toBe(activityMissing.body.code);
+    expect(await prisma.auditLog.count()).toBe(auditCount);
   });
 
   it.each(['activity', 'member'] as const)('%s 轴读取审计与拒绝零审计', async (axis) => {

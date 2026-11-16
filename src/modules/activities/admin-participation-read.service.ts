@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import type { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { ActivitySettlementHttpService } from './activity-settlement-http.service';
 import type { ListAdminMemberParticipationLedgerQueryDto } from './dto/admin/admin-settlement-read.dto';
 import { LedgerQueryService } from './ledger-query.service';
 import { ParticipationReadAuditRecorder } from './participation-read-audit-recorder';
@@ -17,6 +18,7 @@ export class AdminParticipationReadService {
     private readonly ledger: LedgerQueryService,
     private readonly timeProof: ParticipationTimeProofQueryService,
     private readonly audit: ParticipationReadAuditRecorder,
+    private readonly settlements: ActivitySettlementHttpService,
   ) {}
 
   async listForMember(
@@ -74,6 +76,25 @@ export class AdminParticipationReadService {
       auditMeta,
     });
     return proof;
+  }
+
+  async reviewDetail(
+    settlementVersionId: string,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ) {
+    const detail = await this.settlements.reviewDetail(settlementVersionId, currentUser);
+    // Native contributionProof 可含逐人认定；共享版本查询仍保持纯读。
+    await this.audit.log({
+      currentUser,
+      resourceType: 'attendance_settlement_version',
+      resourceId: detail.version.id,
+      operation: 'settlement-review-detail',
+      count: 1,
+      filterFields: [],
+      auditMeta,
+    });
+    return detail;
   }
 
   private dateFilterFields(query: {
