@@ -2,6 +2,7 @@ import { BindingScopeType, PrincipalType, Role, UserStatus, Prisma } from '@pris
 import { performance } from 'node:perf_hooks';
 import appConfig, { type AppConfig } from '../../src/config/app.config';
 import { E4EngineRequestWaitDiagnostic } from '../helpers/e4-engine-request-wait-diagnostic';
+import { observeD6ReceiptPredicatePlans } from '../helpers/d6-receipt-predicate-plan-diagnostic';
 import { observeTestEngineTransactions } from '../helpers/engine-transaction-observation';
 import request from 'supertest';
 import { PrismaClient } from '@prisma/client';
@@ -854,6 +855,12 @@ describe('D6 classified ledger through real preparation and commit', () => {
         prepared = await post(p.url + '/prepare', prepareCommand(p));
       } finally {
         observeMaximumPrepare = false;
+      }
+      if (population === 2000) {
+        // Outside native prepare and its counters; independent read-only samples,
+        // not the trigger's original statements, transaction or cached plans.
+        const predicatePlans = await observeD6ReceiptPredicatePlans(f.db, prepared.timeRevisionId);
+        console.info('D6 post-prepare readonly predicate plans', JSON.stringify(predicatePlans));
       }
       const submitted = await post(p.url + '/submit', {
         operationKey: f.key('scale_submit'),
