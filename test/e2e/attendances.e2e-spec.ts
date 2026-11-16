@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { BindingScopeType, PrincipalType, Role } from '@prisma/client';
+import { BindingScopeType, Prisma, PrincipalType, Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -16,6 +16,8 @@ import { createSettlementDraftFixture } from '../helpers/settlement-draft.fixtur
 import { ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED } from '../../src/modules/permissions/permission-catalog';
 import { LedgerPreparationService } from '../../src/modules/activities/ledger-preparation.service';
 import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
+import type { AppManagedActivityOnsiteParticipationReceiptDto } from '../../src/modules/activity-registrations/dto/app/app-onsite-participation.dto';
+import { AttendancePunchCommandService } from '../../src/modules/attendances/attendance-punch-command.service';
 
 const relativeIso = (yearOffset: number, suffix: string): string =>
   `${new Date().getUTCFullYear() + yearOffset}-${suffix}`;
@@ -74,10 +76,8 @@ describe('attendances 模块', () => {
 
   let activityId: string; // 主测试活动(published)
   let activityCancelledId: string; // 已取消活动
-  let activityOtherId: string; // 另一活动(用于跨 activity 不重叠 + registration mismatch)
 
   let registrationAId: string; // memberA 在 activityId 的报名(用于 R23 正向)
-  let registrationOtherActivityId: string; // memberA 在 activityOtherId 的报名(用于 R23 反向)
 
   beforeAll(async () => {
     process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
@@ -240,25 +240,6 @@ describe('attendances 模块', () => {
       .set('Authorization', adminAuth)
       .send({});
 
-    // 另一活动(用于跨 activity 时间冲突 + R23 mismatch)
-    const actOther = await request(httpServer(app))
-      .post('/api/admin/v1/activities')
-      .set('Authorization', adminAuth)
-      .send({
-        title: 'ATT-OTHER',
-        activityTypeCode: ti.code,
-        organizationId: childOrg.id,
-        startAt: pastIso('06-02T08:00:00.000Z'),
-        endAt: futureIso('06-30T18:00:00.000Z'),
-        location: '演示',
-        allocationModeCode: 'first_come',
-      });
-    activityOtherId = actOther.body.data.id;
-    await request(httpServer(app))
-      .patch(`/api/admin/v1/activities/${activityOtherId}/publish`)
-      .set('Authorization', adminAuth)
-      .send({ requiresInsuranceConfirmed: true });
-
     // 报名 memberA 到 activityId(R23 正向)
     const reg1 = await request(httpServer(app))
       .post(`/api/admin/v1/activities/${activityId}/registrations`)
@@ -269,13 +250,6 @@ describe('attendances 模块', () => {
       .patch(`/api/admin/v1/activities/${activityId}/registrations/${registrationAId}/approve`)
       .set('Authorization', adminAuth)
       .send({});
-
-    // 报名 memberA 到 activityOtherId(R23 反向:registration.activityId !== sheet.activityId)
-    const reg2 = await request(httpServer(app))
-      .post(`/api/admin/v1/activities/${activityOtherId}/registrations`)
-      .set('Authorization', adminAuth)
-      .send({ memberId: memberAId });
-    registrationOtherActivityId = reg2.body.data.id;
 
     nativeOrganizationId = childOrg.id;
     const nativeOwner = await prisma.member.create({
@@ -341,8 +315,10 @@ describe('attendances 模块', () => {
 
   // ============ helpers ============
 
-  async function onsiteScenario(requiresInsurance = false) {
-    const startAt = new Date(Date.now() + 3_600_000);
+  async function onsiteScenario(
+    requiresInsurance = false,
+    startAt = new Date(Date.now() + 3_600_000),
+  ) {
     const endAt = new Date(startAt.getTime() + 4 * 3_600_000);
     const activity = await prisma.activity.create({
       data: {
@@ -461,11 +437,69 @@ describe('attendances 模块', () => {
         orderBy: { id: 'asc' },
       }),
       prisma.activityEvidenceState.findUniqueOrThrow({ where: { activityId } }),
-      prisma.attendancePunchEvent.count({ where: { activityId } }),
+      prisma.attendancePunchEvent.findMany({ where: { activityId }, orderBy: { id: 'asc' } }),
       prisma.participationLedgerEntry.count({ where: { activityId } }),
       prisma.auditLog.count(),
       prisma.notificationOutboxIntent.count(),
     ]);
+  }
+
+  async function expectInvalidOnsiteAnchor(
+    f: Awaited<ReturnType<typeof onsiteScenario>>,
+    memberId: string,
+    registrationId: string,
+  ) {
+    const before = await onsiteSnapshot(f);
+    expectBizError(await onsite(f, memberId, { registrationId }), BizCode.BAD_REQUEST, {
+      strictMessage: false,
+    });
+    expect(await onsiteSnapshot(f)).toEqual(before);
+    // The native identity cannot carry a foreign/missing head even below HTTP.
+    // Assert the exact composite FK, not an unrelated constraint or DTO error.
+    await expect(
+      prisma.$executeRaw(Prisma.sql`
+      INSERT INTO "ActivityParticipationIdentity"
+        ("id", "updatedAt", "activityId", "sessionId", "registrationId", "memberId", "currentStatusCode")
+      VALUES (${`invalid-${f.activityId}-${memberId}`}, CURRENT_TIMESTAMP,
+        ${f.activityId}, ${f.sessionId}, ${registrationId}, ${memberId}, 'cancelled')
+    `),
+    ).rejects.toMatchObject({
+      code: 'P2010',
+      meta: {
+        code: '23503',
+        message: expect.stringContaining(
+          'ActivityParticipationIdentity_registrationId_activityId_me_fkey',
+        ),
+      },
+    });
+    expect(await onsiteSnapshot(f)).toEqual(before);
+  }
+
+  async function admitWithOwnAnchor(
+    f: Awaited<ReturnType<typeof onsiteScenario>>,
+    memberId: string,
+  ) {
+    const response = await onsite(f, memberId).expect(201);
+    const identity = await prisma.activityParticipationIdentity.findUniqueOrThrow({
+      where: { id: response.body.data.participationIdentityId },
+      include: { registration: true },
+    });
+    expect(identity).toMatchObject({
+      activityId: f.activityId,
+      memberId,
+      registrationId: response.body.data.registrationId,
+      currentStatusCode: 'pass',
+      populationIncluded: true,
+      // Canonical admission lives on the identity/revision/reservation, not
+      // the legacy header statusCode (which may remain pending).
+      registration: {
+        activityId: f.activityId,
+        memberId,
+        sourceCode: 'onsite',
+        statusSummaryCode: 'active',
+      },
+    });
+    return response.body.data as AppManagedActivityOnsiteParticipationReceiptDto;
   }
 
   async function nativeDraft(
@@ -1073,22 +1107,82 @@ describe('attendances 模块', () => {
       ).toBe(0);
     });
 
-    it('当前时刻提交未来考勤记录 → 22079', async () => {
-      const checkInAt = new Date(Date.now() + 3_600_000);
-      const checkOutAt = new Date(checkInAt.getTime() + 3_600_000);
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({
-          records: [
-            baseRecord({
-              memberId: memberBId,
-              checkInAt: checkInAt.toISOString(),
-              checkOutAt: checkOutAt.toISOString(),
-            }),
-          ],
+    it('原生导入不得在允许窗口内伪造未来签退/签到，历史事实及精确重放仍可用', async () => {
+      const now = Date.now();
+      const f = await onsiteScenario(false, new Date(now - 3.5 * 3_600_000));
+      const admitted = await admitWithOwnAnchor(f, memberCId);
+      const command = app.get(AttendancePunchCommandService);
+      const input = {
+        activityId: f.activityId,
+        sessionId: f.sessionId,
+        participationIdentityId: admitted.participationIdentityId,
+        memberCredential: null,
+        sourceCode: 'import' as const,
+        reason: '导入历史签到表',
+        deviceId: null,
+        longitude: null,
+        latitude: null,
+        accuracy: null,
+        currentUser: await prisma.user.findUniqueOrThrow({
+          where: { id: nativeUserId },
+          select: { id: true, username: true, memberId: true, role: true, status: true },
+        }),
+        auditMeta: { requestId: 'native-import-time', ip: null, ua: null },
+      };
+      const checkIn = {
+        ...input,
+        actionCode: 'check_in' as const,
+        eventKey: `past-in:${f.activityId}`,
+        occurredAt: new Date(now - 3.5 * 3_600_000),
+      };
+      const first = await command.managedPunch(checkIn);
+      const before = await onsiteSnapshot(f);
+      const segments = () =>
+        prisma.participantServiceSegmentRevision.findMany({
+          where: { participationIdentityId: admitted.participationIdentityId },
+          orderBy: { id: 'asc' },
         });
-      expectBizError(res, BizCode.ATTENDANCE_CHECK_OUT_IN_FUTURE);
+      const beforeSegments = await segments();
+      // This is within checkOutOpenAt/checkOutCloseAt, so the session-window
+      // guard alone cannot establish that the claimed event has already happened.
+      await expect(
+        command.managedPunch({
+          ...input,
+          actionCode: 'check_out',
+          eventKey: `future-out:${f.activityId}`,
+          occurredAt: new Date(now + 10 * 60_000),
+        }),
+      ).rejects.toMatchObject({ biz: BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW });
+      expect(await onsiteSnapshot(f)).toEqual(before);
+      expect(await segments()).toEqual(beforeSegments);
+      await command.managedPunch({
+        ...input,
+        actionCode: 'check_out',
+        eventKey: `past-out:${f.activityId}`,
+        occurredAt: new Date(now - 10 * 60_000),
+      });
+      const committedFacts = await onsiteSnapshot(f);
+      expect(await command.managedPunch(checkIn)).toMatchObject({ eventId: first.eventId });
+      expect(await onsiteSnapshot(f)).toEqual(committedFacts);
+
+      const future = await onsiteScenario();
+      const futureAdmitted = await admitWithOwnAnchor(future, memberBId);
+      const futureSession = await prisma.activitySession.findUniqueOrThrow({
+        where: { id: future.sessionId },
+      });
+      const futureBefore = await onsiteSnapshot(future);
+      await expect(
+        command.managedPunch({
+          ...input,
+          activityId: future.activityId,
+          sessionId: future.sessionId,
+          participationIdentityId: futureAdmitted.participationIdentityId,
+          actionCode: 'check_in',
+          eventKey: `future-in:${future.activityId}`,
+          occurredAt: futureSession.startAt,
+        }),
+      ).rejects.toMatchObject({ biz: BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW });
+      expect(await onsiteSnapshot(future)).toEqual(futureBefore);
     });
 
     it('原生需保险的现场参加先核验真实来源，无来源零写，有来源按同人同活动留证', async () => {
@@ -1288,76 +1382,90 @@ describe('attendances 模块', () => {
       expectBizError(res, BizCode.ATTENDANCE_SERVICE_HOURS_EXCEEDS_SPAN);
     });
 
-    it('R23 跨表:registrationId 不属于本活动 → ATTENDANCE_REGISTRATION_ACTIVITY_MISMATCH', async () => {
-      // memberA 在 activityOtherId 有 reg,但 sheet 父活动是 activityId
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({
-          records: [
-            baseRecord({
-              memberId: memberAId,
-              checkInAt: pastIso('06-01T16:00:00.000Z'),
-              checkOutAt: pastIso('06-01T17:00:00.000Z'),
-              registrationId: registrationOtherActivityId,
-            }),
-          ],
-        });
-      expectBizError(res, BizCode.ATTENDANCE_REGISTRATION_ACTIVITY_MISMATCH);
+    it('原生 R23：同成员的外活动报名头被复合外键拒绝，外活动场次也不可混用', async () => {
+      const f = await onsiteScenario();
+      const foreign = await onsiteScenario();
+      const foreignReceipt = await admitWithOwnAnchor(foreign, memberAId);
+      const foreignBefore = await onsiteSnapshot(foreign);
+      await expectInvalidOnsiteAnchor(f, memberAId, foreignReceipt.registrationId);
+      const before = await onsiteSnapshot(f);
+      expectBizError(
+        await onsite(f, memberAId, { sessionId: foreign.sessionId }),
+        BizCode.BAD_REQUEST,
+        { strictMessage: false },
+      );
+      expect(await onsiteSnapshot(f)).toEqual(before);
+      expect(await onsiteSnapshot(foreign)).toEqual(foreignBefore);
+      const accepted = await admitWithOwnAnchor(f, memberAId);
+      expect(accepted.registrationId).not.toBe(foreignReceipt.registrationId);
     });
 
-    it('R23 跨表:registrationId 不存在 → MISMATCH', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({
-          records: [
-            baseRecord({
-              memberId: memberAId,
-              checkInAt: pastIso('06-03T10:00:00.000Z'),
-              checkOutAt: pastIso('06-03T12:00:00.000Z'),
-              registrationId: 'cl0000000000000000000000',
-            }),
-          ],
-        });
-      expectBizError(res, BizCode.ATTENDANCE_REGISTRATION_ACTIVITY_MISMATCH);
+    it('原生 R23：不存在的报名头不能形成身份；正常准入建立真实锚点', async () => {
+      const f = await onsiteScenario();
+      await expectInvalidOnsiteAnchor(f, memberAId, 'cl0000000000000000000000');
+      await admitWithOwnAnchor(f, memberAId);
     });
 
-    it('registrationId 属于其他 member → ATTENDANCE_REGISTRATION_INVALID', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({
-          records: [
-            baseRecord({
-              memberId: memberBId,
-              registrationId: registrationAId,
-            }),
-          ],
-        });
-      expectBizError(res, BizCode.ATTENDANCE_REGISTRATION_INVALID);
+    it('原生 R23：同活动内不能借用其他成员的报名头，失败零写且正向对照可准入', async () => {
+      const f = await onsiteScenario();
+      const first = await admitWithOwnAnchor(f, memberAId);
+      await expectInvalidOnsiteAnchor(f, memberBId, first.registrationId);
+      const second = await admitWithOwnAnchor(f, memberBId);
+      expect(second.registrationId).not.toBe(first.registrationId);
     });
 
-    it('registrationId 对应报名非 pass → ATTENDANCE_REGISTRATION_INVALID', async () => {
+    it('原生 pending 报名不是参加凭据，须通过现场准入追加 pass 修订和占位', async () => {
+      const f = await onsiteScenario();
       const pending = await prisma.activityRegistration.create({
-        data: { activityId, memberId: memberBId, statusCode: 'pending' },
+        data: { activityId: f.activityId, memberId: memberBId, statusCode: 'pending' },
         select: { id: true },
       });
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({
-          records: [baseRecord({ memberId: memberBId, registrationId: pending.id })],
-        });
-      expectBizError(res, BizCode.ATTENDANCE_REGISTRATION_INVALID);
+      const before = await onsiteSnapshot(f);
+      expect(
+        await prisma.activityParticipationIdentity.count({
+          where: { registrationId: pending.id },
+        }),
+      ).toBe(0);
+      expectBizError(
+        await onsite(f, memberBId, { registrationId: pending.id }),
+        BizCode.BAD_REQUEST,
+        { strictMessage: false },
+      );
+      expect(await onsiteSnapshot(f)).toEqual(before);
+      const admitted = await admitWithOwnAnchor(f, memberBId);
+      expect(admitted.registrationId).toBe(pending.id);
+      expect(
+        await prisma.activityRegistration.count({
+          where: { activityId: f.activityId, memberId: memberBId },
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.activityParticipationRevision.findUniqueOrThrow({
+          where: { id: admitted.participationRevisionId },
+        }),
+      ).toMatchObject({ statusCode: 'pass', sourceCode: 'onsite' });
+      expect(
+        await prisma.capacityReservation.count({
+          where: { identityId: admitted.participationIdentityId, status: 'active' },
+        }),
+      ).toBe(2);
+      expect(await prisma.attendancePunchEvent.count({ where: { activityId: f.activityId } })).toBe(
+        0,
+      );
+      expect(
+        await prisma.participationLedgerEntry.count({ where: { activityId: f.activityId } }),
+      ).toBe(0);
     });
 
-    it('registrationId 空字符串 → ValidationPipe BAD_REQUEST', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({ records: [baseRecord({ memberId: memberBId, registrationId: '' })] });
-      expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
+    it('原生空报名锚点或空场次 ID 均在 DTO 拒绝，不能生成孤立身份', async () => {
+      const f = await onsiteScenario();
+      const before = await onsiteSnapshot(f);
+      for (const extra of [{ registrationId: '' }, { sessionId: '' }]) {
+        expectBizError(await onsite(f, memberBId, extra), BizCode.BAD_REQUEST, {
+          strictMessage: false,
+        });
+        expect(await onsiteSnapshot(f)).toEqual(before);
+      }
     });
 
     it.each([

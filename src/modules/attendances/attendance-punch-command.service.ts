@@ -658,6 +658,11 @@ export class AttendancePunchCommandService {
     if (occurredAt === null || !Number.isFinite(occurredAt.getTime())) {
       throw new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
     }
+    // A configured future window is not evidence that an imported event has
+    // already happened. Exact replay was resolved above without a new write.
+    if (occurredAt > receivedAt) {
+      throw new BizException(BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW);
+    }
     this.assertSessionWindow(session, input.actionCode, occurredAt);
     const priorEvents = await this.eventsForIdentity(tx, identity.id);
     const projection = this.project(priorEvents, session);
