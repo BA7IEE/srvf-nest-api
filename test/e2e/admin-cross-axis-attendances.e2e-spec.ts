@@ -263,9 +263,34 @@ describe('跨轴只读:考勤 + 贡献值(Tier2 跨活动 + Tier3 队员 360)', 
   });
 
   describe('GET /api/admin/v1/attendance-sheets(Tier2 跨活动横扫)', () => {
-    it('存在:返回全部单据(3),item 带 activity 上下文(activityId/title)', async () => {
+    it('原生列表返回全部3个不可变结算版本，带活动上下文且不回退旧 Sheet', async () => {
+      const member = await prisma.member.create({
+        data: {
+          memberNo: 'XAtt-native-extra',
+          ...memberIdentityData('Native Extra'),
+          status: 'ACTIVE',
+        },
+      });
+      const activity = await prisma.activity.create({
+        data: {
+          title: 'Native Extra Activity',
+          activityTypeCode: 'xatt',
+          organizationId: rootOrgId,
+          statusCode: 'completed',
+          location: 'Test',
+          startAt: new Date('2020-03-01T00:00:00Z'),
+          endAt: new Date('2020-03-01T02:00:00Z'),
+        },
+      });
+      await seedParticipationReadState(prisma, {
+        activityId: activity.id,
+        actorUserId: suUserId,
+        participants: [
+          { memberId: member.id, resultCode: 'present', serviceHours: '2', creditedPoints: '1' },
+        ],
+      });
       const res = await request(httpServer(app))
-        .get('/api/admin/v1/attendance-sheets')
+        .get('/api/admin/v1/attendance-settlements')
         .set('Authorization', adminAuth);
 
       expect(res.status).toBe(200);
@@ -279,6 +304,23 @@ describe('跨轴只读:考勤 + 贡献值(Tier2 跨活动 + Tier3 队员 360)', 
       const activityIds = new Set(items.map((i) => i.activityId));
       expect(activityIds.has(act1Id)).toBe(true);
       expect(activityIds.has(act2Id)).toBe(true);
+      expect(activityIds.has(activity.id)).toBe(true);
+      const versions = await prisma.attendanceSettlementVersion.findMany({
+        where: { statusCode: { not: 'draft' } },
+        select: { id: true },
+      });
+      expect(
+        (res.body.data.items as Array<{ settlementVersionId: string }>)
+          .map((item) => item.settlementVersionId)
+          .sort(),
+      ).toEqual(versions.map((row) => row.id).sort());
+      const secondPage = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-settlements')
+        .query({ page: 2, pageSize: 1 })
+        .set('Authorization', adminAuth)
+        .expect(200);
+      expect(secondPage.body.data).toMatchObject({ total: 3, page: 2, pageSize: 1 });
+      expect(secondPage.body.data.items).toEqual([res.body.data.items[1]]);
     });
 
     it('statusCode 过滤:?statusCode=approved → 2 条', async () => {
@@ -303,9 +345,9 @@ describe('跨轴只读:考勤 + 贡献值(Tier2 跨活动 + Tier3 队员 360)', 
       expect(res.body.data.items).toEqual([]);
     });
 
-    it('RBAC_FORBIDDEN:无 biz-admin → 30100', async () => {
+    it('原生结算列表无读权限 → 30100', async () => {
       const res = await request(httpServer(app))
-        .get('/api/admin/v1/attendance-sheets')
+        .get('/api/admin/v1/attendance-settlements')
         .set('Authorization', noPermAuth);
 
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -586,24 +628,28 @@ describe('跨轴只读:考勤 + 贡献值(Tier2 跨活动 + Tier3 队员 360)', 
       });
     });
 
-    it('expand 默认关闭:响应形状逐字不变(不含 activity 键)', async () => {
+    it('原生列表默认使用扁平活动上下文，不附加 activity 嵌套块', async () => {
       const res = await request(httpServer(app))
-        .get('/api/admin/v1/attendance-sheets')
-        .query({ activityQ: 'Activity 2' })
+        .get('/api/admin/v1/attendance-settlements')
         .set('Authorization', adminAuth);
 
       expect(res.status).toBe(200);
-      const item = res.body.data.items[0] as Record<string, unknown>;
+      const item = (res.body.data.items as Array<Record<string, unknown>>).find(
+        (row) => row.activityId === act2Id,
+      );
+      expect(item).toBeDefined();
+      expect(item).toMatchObject({ activityId: act2Id, activityTitle: 'XAtt Activity 2' });
       expect(item).not.toHaveProperty('activity');
     });
 
-    it('expand 白名单外值 → BAD_REQUEST', async () => {
+    it('原生列表未知 expand 值 → BAD_REQUEST', async () => {
       const res = await request(httpServer(app))
-        .get('/api/admin/v1/attendance-sheets')
+        .get('/api/admin/v1/attendance-settlements')
         .query({ expand: 'bogus' })
         .set('Authorization', adminAuth);
 
-      expectBizError(res, BizCode.BAD_REQUEST);
+      expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
+      expect(res.body.message).toBe('property expand should not exist');
     });
   });
 });

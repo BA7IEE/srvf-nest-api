@@ -4,7 +4,7 @@ import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-clean
 import type { INestApplication } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import type { Prisma } from '@prisma/client';
-import { Role, UserStatus } from '@prisma/client';
+import { BindingScopeType, PrincipalType, Role, UserStatus } from '@prisma/client';
 import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
@@ -30,6 +30,8 @@ import { resetDb } from '../setup/reset-db';
 import { assertConnectedTestDatabase } from '../setup/test-db';
 import { createTestApp } from '../setup/test-app';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
+import { createSettlementDraftFixture } from '../helpers/settlement-draft.fixture';
+import { ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED } from '../../src/modules/permissions/permission-catalog';
 
 // 统一通知 S4 + durable outbox L1:
 //   ① 报名审批、候补递补、自助取消在业务事务内 enqueue，worker commit 后执行 Effect；
@@ -136,7 +138,7 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
       (tx) =>
         withTimeLedgerFixtureCleanup(tx, async (tx) => {
           await tx.$executeRawUnsafe(
-            'TRUNCATE TABLE "ActivityRegistration" RESTART IDENTITY CASCADE',
+            'TRUNCATE TABLE "ActivityRegistration", "AttendanceSettlementRun", "EvidenceSeal", "ActivitySession" RESTART IDENTITY CASCADE',
           );
         }),
       { timeout: 60_000 },
@@ -1290,6 +1292,143 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
     });
   });
 
+  it('原生 firstReturn / finalReturn → active owner 收 durable correction intent，worker 后本人可见', async () => {
+    const previousV11 = config.activityV11Workflow.enabled;
+    config.activityV11Workflow.enabled = true;
+    config.activityResponsibilityWorkflow.enabled = true;
+    try {
+      const codes = [
+        'activity.settlement-update-draft.record',
+        'activity.settlement-submit.record',
+      ];
+      await prisma.permission.createMany({
+        data: ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED.filter((permission) =>
+          codes.includes(permission.code),
+        ).map((permission) => ({ ...permission })),
+        skipDuplicates: true,
+      });
+      const permissions = await prisma.permission.findMany({ where: { code: { in: codes } } });
+      expect(permissions).toHaveLength(2);
+      const role = await prisma.rbacRole.create({
+        data: { code: 's4-native-owner', displayName: 'Settlement owner fixture' },
+      });
+      await prisma.rolePermission.createMany({
+        data: permissions.map((permission) => ({ roleId: role.id, permissionId: permission.id })),
+      });
+      const reviewerAuth: string[] = [];
+      for (const username of ['s4-native-first', 's4-native-final']) {
+        await createTestUser(app, { username, role: Role.SUPER_ADMIN });
+        reviewerAuth.push((await loginAs(app, username)).authHeader);
+      }
+      const returnKeys: string[] = [];
+      for (const stage of ['first', 'final'] as const) {
+        const f = await createSettlementDraftFixture(prisma, {
+          organizationId: orgId,
+          participantMemberIds: [bob.memberId],
+          ownerMemberId: alice.memberId,
+          actorUserId: alice.userId,
+          activityTypeCode: 's4-native',
+          missingResult: true,
+        });
+        await prisma.roleBinding.create({
+          data: {
+            roleId: role.id,
+            principalType: PrincipalType.USER,
+            principalId: alice.userId,
+            scopeType: BindingScopeType.ACTIVITY,
+            scopeActivityId: f.activityId,
+          },
+        });
+        const base = `/api/app/v1/my/managed-activities/${f.activityId}/settlement`;
+        await request(httpServer(app))
+          .patch(`${base}/items/${f.identityId}`)
+          .set('Authorization', alice.auth)
+          .send({
+            expectedDraftVersion: 1,
+            resultCode: 'present',
+            recognizedServiceHours: 2,
+            recognizedContributionPoints: 1,
+            reason: '核对现场资料后的人工认定',
+          })
+          .expect(200);
+        const submitted = await request(httpServer(app))
+          .post(`${base}/submit`)
+          .set('Authorization', alice.auth)
+          .send({
+            operationKey: `s4-submit:${f.activityId}`,
+            expectedDraftVersion: 1,
+            evidenceSealId: f.sealId,
+            confirmation: true,
+          })
+          .expect(200);
+        const version = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+          where: { id: submitted.body.data.settlementVersionId },
+        });
+        const review = (action: 'first-approve' | 'first-return' | 'final-return', note?: string) =>
+          request(httpServer(app))
+            .post(`/api/admin/v1/attendance-settlements/${version.id}/${action}`)
+            .set('Authorization', action.startsWith('first') ? reviewerAuth[0] : reviewerAuth[1])
+            .send({
+              operationKey: `s4-${action}:${version.id}`,
+              note,
+              evidenceSealId: version.evidenceSealId,
+              evidenceRevision: version.evidenceRevision,
+              populationRevision: version.populationRevision,
+              workflowRevision: version.workflowRevision,
+              contentHash: version.contentHash,
+            });
+        if (stage === 'final') await review('first-approve').expect(200);
+        const action = stage === 'first' ? 'first-return' : 'final-return';
+        const reason = stage === 'first' ? '补录签退' : '复核时长';
+        await review(action, reason).expect(200);
+        await review(action, reason).expect(200);
+        returnKeys.push(`settlement-review:${version.id}:${stage}`);
+      }
+      const intents = await prisma.notificationOutboxIntent.findMany({
+        where: { eventKey: { in: returnKeys } },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(intents).toHaveLength(2);
+      expect(intents.map((intent) => intent.destinationRef)).toEqual([
+        alice.memberId,
+        alice.memberId,
+      ]);
+      expect(intents.map((intent) => intent.eventKey)).toEqual(returnKeys);
+      expect(intents.every((intent) => intent.status === 'pending')).toBe(true);
+      expect(await directedOf(alice.memberId)).toHaveLength(0);
+      for (const intent of intents) {
+        await outboxWorker.drainEventKey(intent.eventKey);
+        expect(
+          await prisma.notificationOutboxIntent.findUniqueOrThrow({
+            where: { id: intent.id },
+          }),
+        ).toMatchObject({ status: 'succeeded' });
+        await outboxWorker.drainEventKey(intent.eventKey);
+      }
+      const notifications = await directedOf(alice.memberId);
+      expect(notifications).toHaveLength(2);
+      expect(notifications.map((notification) => notification.title).sort()).toEqual(
+        ['结算一审已退回', '结算终审已退回'].sort(),
+      );
+      expect(notifications.map((notification) => notification.body).join(' ')).toContain(
+        '补录签退',
+      );
+      expect(notifications.map((notification) => notification.body).join(' ')).toContain(
+        '复核时长',
+      );
+      expect(await feedIds(alice.auth)).toEqual(
+        expect.arrayContaining(notifications.map((row) => row.id)),
+      );
+      expect(await directedOf(bob.memberId)).toHaveLength(0);
+      for (const notification of notifications) {
+        expectBizError(await feedDetail(bob.auth, notification.id), BizCode.NOTIFICATION_NOT_FOUND);
+      }
+    } finally {
+      config.activityV11Workflow.enabled = previousV11;
+      config.activityResponsibilityWorkflow.enabled = false;
+    }
+  });
+
   // ============ ③ 考勤终审通过 → 逐 record 本人(含贡献值) ============
   describe('考勤结果/贡献值定向通知(finalApprove → 逐 record 本人;仅站内)', () => {
     let attendances: AttendancesService;
@@ -1862,73 +2001,6 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
       } finally {
         spy.mockRestore();
       }
-    });
-
-    it('firstReturn / finalReturn → active attendance owner 收 durable correction intent', async () => {
-      const activityId = await seedActivity('退回修改活动');
-      await prisma.activityResponsibilityAssignment.create({
-        data: {
-          activityId,
-          memberId: alice.memberId,
-          responsibilityType: 'owner',
-          canManageRegistrations: true,
-          canManageAttendance: true,
-          status: 'active',
-          assignedByUserId: adminPayload.id,
-          source: 'admin',
-        },
-      });
-      const firstSheetId = await seedSheetPendingFinal(activityId, [bob.memberId]);
-      await prisma.attendanceSheet.update({
-        where: { id: firstSheetId },
-        data: { statusCode: 'pending' },
-      });
-      const finalSheetId = await seedSheetPendingFinal(activityId, [bob.memberId]);
-
-      await attendances.firstReturn(
-        firstSheetId,
-        { returnNote: '补录签退' },
-        finalReviewerPayload,
-        AUDIT_META,
-      );
-      await attendances.finalReturn(
-        finalSheetId,
-        { returnNote: '复核时长' },
-        finalReviewerPayload,
-        AUDIT_META,
-      );
-
-      const intents = await prisma.notificationOutboxIntent.findMany({
-        where: {
-          aggregateType: 'attendance_sheet',
-          aggregateId: { in: [firstSheetId, finalSheetId] },
-        },
-        orderBy: { createdAt: 'asc' },
-      });
-      expect(intents).toHaveLength(2);
-      expect(intents.map((intent) => intent.destinationRef)).toEqual([
-        alice.memberId,
-        alice.memberId,
-      ]);
-      expect(intents.map((intent) => intent.eventKey)).toEqual([
-        expect.stringMatching(new RegExp(`^attendance-return:${firstSheetId}:`)),
-        expect.stringMatching(new RegExp(`^attendance-return:${finalSheetId}:`)),
-      ]);
-      expect(await directedOf(alice.memberId)).toHaveLength(0);
-      await drainAttendanceIntents(firstSheetId);
-      await drainAttendanceIntents(finalSheetId);
-      const notifications = await directedOf(alice.memberId);
-      expect(notifications).toHaveLength(2);
-      expect(notifications.map((notification) => notification.title)).toEqual([
-        '考勤单已退回修改',
-        '考勤单已退回修改',
-      ]);
-      expect(notifications.map((notification) => notification.body).join(' ')).toContain(
-        '补录签退',
-      );
-      expect(notifications.map((notification) => notification.body).join(' ')).toContain(
-        '复核时长',
-      );
     });
 
     it('worker Effect 失败 → approved 保持提交、intent 退避，重试仅生成一条通知', async () => {

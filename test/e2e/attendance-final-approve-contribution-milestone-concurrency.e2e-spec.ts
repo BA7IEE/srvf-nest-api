@@ -4,6 +4,9 @@ import type { CurrentUserPayload } from '../../src/common/decorators/current-use
 import { PrismaService } from '../../src/database/prisma.service';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { AttendancesService } from '../../src/modules/attendances/attendances.service';
+import { LedgerPreparationService } from '../../src/modules/activities/ledger-preparation.service';
+import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
+import { createSettlementDraftFixture } from '../helpers/settlement-draft.fixture';
 import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -48,13 +51,12 @@ describe('考勤终审 × 入队贡献值里程碑并发(K3 · B-F2 write skew)'
   let appB: INestApplication;
   let prismaA: PrismaService;
   let prismaB: PrismaService;
-  let attendancesA: AttendancesService;
-  let attendancesB: AttendancesService;
   let finalReviewer: CurrentUserPayload;
   let submitterUserId: string;
   let reviewerUserId: string;
   let activityId: string;
   let seq = 0;
+  const previousV11 = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
 
   async function countAdvisoryWaiters(): Promise<number> {
     const [row] = await prismaB.$queryRaw<Array<{ n: number }>>(Prisma.sql`
@@ -225,13 +227,12 @@ describe('考勤终审 × 入队贡献值里程碑并发(K3 · B-F2 write skew)'
   }
 
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     appA = await createTestApp();
     appB = await createTestApp();
     await resetDb(appA);
     prismaA = appA.get(PrismaService);
     prismaB = appB.get(PrismaService);
-    attendancesA = appA.get(AttendancesService);
-    attendancesB = appB.get(AttendancesService);
 
     const submitter = await prismaA.user.create({
       data: {
@@ -293,7 +294,12 @@ describe('考勤终审 × 入队贡献值里程碑并发(K3 · B-F2 write skew)'
   });
 
   afterAll(async () => {
-    await Promise.all([appA.close(), appB.close()]);
+    try {
+      await Promise.all([appA.close(), appB.close()]);
+    } finally {
+      if (previousV11 === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousV11;
+    }
   });
 
   it('两个 app 确实是两条独立连接(否则下面的锁等待全是自欺)', async () => {
@@ -306,16 +312,105 @@ describe('考勤终审 × 入队贡献值里程碑并发(K3 · B-F2 write skew)'
   });
 
   it(
-    '① 结构位:finalApprove 必须在 member 线性化键内读贡献聚合(键被占住时它得等)',
+    '① 原生结构位:正式入账在 member 线性化键内生效，持锁期间不可见，释放后才提交',
     async () => {
       const { memberId } = await createCandidate();
-      await giveApprovedContribution(memberId, '3.00', DAY_A);
-      const sheetId = await createPendingFinalReviewSheet(memberId, '1.00', DAY_B);
+      const activity = await prismaA.activity.findUniqueOrThrow({ where: { id: activityId } });
+      const f = await createSettlementDraftFixture(prismaA, {
+        organizationId: activity.organizationId,
+        participantMemberIds: [memberId],
+        ownerMemberId: memberId,
+        actorUserId: submitterUserId,
+        activityTypeCode: 'afm-native',
+      });
+      const identity = await prismaA.activityParticipationIdentity.findUniqueOrThrow({
+        where: { id: f.identityId },
+      });
+      const session = await prismaA.activitySession.findUniqueOrThrow({
+        where: { id: identity.sessionId },
+      });
+      const endAt = new Date(session.startAt.getTime() + 2 * 3_600_000);
+      const events = await prismaA.attendancePunchEvent.createManyAndReturn({
+        data: [
+          { eventTypeCode: 'check_in', occurredAt: session.startAt },
+          { eventTypeCode: 'check_out', occurredAt: endAt },
+        ].map((event) => ({
+          ...event,
+          activityId: f.activityId,
+          sessionId: session.id,
+          participationIdentityId: identity.id,
+          memberId,
+          sourceCode: 'staff_scan',
+          receivedAt: event.occurredAt,
+          operatorUserId: submitterUserId,
+          eventKey: `${f.activityId}:${event.eventTypeCode}`,
+          requestHash: `${f.activityId}:${event.eventTypeCode}`,
+          evidenceRevision: 0,
+        })),
+      });
+      await prismaA.participantServiceSegmentRevision.create({
+        data: {
+          participationIdentityId: identity.id,
+          segmentKey: f.activityId,
+          revision: 0,
+          sourceCheckInEventId: events.find((event) => event.eventTypeCode === 'check_in')!.id,
+          sourceCloseEventId: events.find((event) => event.eventTypeCode === 'check_out')!.id,
+          resultCode: 'valid',
+          statusCode: 'draft',
+          checkInAt: session.startAt,
+          checkOutAt: endAt,
+          serviceHours: 2,
+        },
+      });
+      // Seed only the approved checkpoint. Preparation and activation below
+      // use production protocols; no committed facts are manufactured.
+      await prismaA.participantSettlementResultRevision.updateMany({
+        where: { settlementVersionId: f.draftId },
+        data: { recognizedContributionPoints: 1, calculatedContributionPoints: 1 },
+      });
+      await prismaA.attendanceSettlementVersion.update({
+        where: { id: f.draftId },
+        data: { statusCode: 'approved', submittedAt: new Date(), serviceSegmentCount: 1 },
+      });
+      await prismaA.attendanceSettlementRun.update({
+        where: { id: f.runId },
+        data: { statusCode: 'posting', currentSubmittedVersion: 1 },
+      });
+      const batch = await prismaA.ledgerPostingBatch.create({
+        data: {
+          settlementRunId: f.runId,
+          settlementVersionId: f.draftId,
+          batchRevision: 1,
+          statusCode: 'preparing',
+          requestKey: `prepare:${f.activityId}`,
+          requestHash: `prepare:${f.activityId}`,
+          totalCount: 1,
+          preparedByUserId: finalReviewer.id,
+        },
+      });
+      const preparation = appA.get(LedgerPreparationService);
+      const { jobId } = await preparation.ensurePrepareJob(batch.id);
+      for (const item of await prismaA.activityBatchJobItem.findMany({ where: { jobId } })) {
+        await preparation.prepareChunk(jobId, item.id);
+      }
+      expect((await preparation.finalize(jobId)).batchStatus).toBe('ready');
+      const committedCount = () =>
+        prismaA.participationLedgerEntry.count({
+          where: { postingBatchId: batch.id, postingBatch: { statusCode: 'committed' } },
+        });
+      expect(await committedCount()).toBe(0);
 
       const barrier = holdMemberAdvisoryLock(memberId);
       await barrier.ready;
 
-      const approving = attendancesB.finalApprove(sheetId, {}, finalReviewer, META);
+      const approving = appB.get(LedgerPostingService).commitBatch(
+        {
+          postingBatchId: batch.id,
+          operationKey: `commit:${batch.id}`,
+        },
+        finalReviewer,
+        META,
+      );
       approving.catch(() => undefined);
 
       // 修复前:finalApprove 只锁自己那张 Sheet,从不碰 member 维度的共同键 ——
@@ -327,12 +422,25 @@ describe('考勤终审 × 入队贡献值里程碑并发(K3 · B-F2 write skew)'
           observed = await countAdvisoryWaiters();
           if (observed === 0) await new Promise((resolve) => setTimeout(resolve, 20));
         }
+        expect(await committedCount()).toBe(0);
+        expect(
+          await prismaA.ledgerPostingBatch.findUniqueOrThrow({ where: { id: batch.id } }),
+        ).toMatchObject({ statusCode: 'ready', committedAt: null });
       } finally {
         barrier.release();
         await barrier.done;
       }
       await approving;
       expect(observed).toBeGreaterThanOrEqual(1);
+      expect(
+        await prismaA.ledgerPostingBatch.findUniqueOrThrow({ where: { id: batch.id } }),
+      ).toMatchObject({ statusCode: 'committed', committedAt: expect.any(Date) });
+      expect(await committedCount()).toBeGreaterThan(0);
+      const total = await prismaA.participationLedgerEntry.aggregate({
+        where: { postingBatchId: batch.id, entryTypeCode: 'contribution_credit' },
+        _sum: { creditedPointsDelta: true },
+      });
+      expect(total._sum.creditedPointsDelta?.toString()).toBe('1');
     },
     CASE_TIMEOUT_MS,
   );
@@ -340,6 +448,10 @@ describe('考勤终审 × 入队贡献值里程碑并发(K3 · B-F2 write skew)'
   it(
     '② 行为位:两张 Sheet 并发终审跨过 5 分阈值 —— 恰好一条 milestone intent,不是零条',
     async () => {
+      // The native milestone producer is pending review. Keep its complete
+      // business assertions, without coupling independent connection/lock tests.
+      const attendancesA = appA.get(AttendancesService);
+      const attendancesB = appB.get(AttendancesService);
       const { memberId, applicationId } = await createCandidate();
       // 已生效 3 分(封顶 3/北京日,所以单独占一天)。
       await giveApprovedContribution(memberId, '3.00', DAY_A);
