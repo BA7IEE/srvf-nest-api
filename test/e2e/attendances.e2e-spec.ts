@@ -546,18 +546,26 @@ describe('attendances 模块', () => {
   // These operations are explicitly retired, not aliases for native return or
   // correction. Exercise real historical rows and real native versions together.
   async function expectRetiredMutation(options: {
-    action: 'delete' | 'reject' | 'final-reject';
+    action: 'delete' | 'edit' | 'reject' | 'final-reject';
     legacyStatus?: string;
-    nativeStage?: 'submitted' | 'approved' | 'first-returned';
+    nativeStage?: 'submitted' | 'pending-final' | 'approved' | 'first-returned' | 'final-returned';
     auth?: string;
     missing?: boolean;
     body?: Record<string, unknown>;
   }) {
     const f = await nativeDraft([memberCId]);
     const { version } = await nativeSubmit(f);
-    if (options.nativeStage === 'approved') {
+    if (
+      options.nativeStage === 'approved' ||
+      options.nativeStage === 'pending-final' ||
+      options.nativeStage === 'final-returned'
+    ) {
       await nativeReview(version, 'first-approve').expect(200);
+    }
+    if (options.nativeStage === 'approved') {
       await nativeReview(version, 'final-approve').expect(200);
+    } else if (options.nativeStage === 'final-returned') {
+      await nativeReview(version, 'final-return', '终审历史保护验收').expect(200);
     } else if (options.nativeStage === 'first-returned') {
       await nativeReview(version, 'first-return', '历史保护验收').expect(200);
     }
@@ -575,6 +583,8 @@ describe('attendances 模块', () => {
             checkOutAt: new Date('2020-03-01T01:00:00Z'),
             serviceHours: 1,
             contributionPoints: 7,
+            deletedAt:
+              options.legacyStatus === 'final_rejected' ? new Date('2020-03-01T03:00:00Z') : null,
           },
         },
       },
@@ -591,14 +601,28 @@ describe('attendances 模块', () => {
       const command =
         options.action === 'delete'
           ? request(httpServer(app)).delete(path)
-          : request(httpServer(app)).patch(`${path}/${options.action}`);
-      const response = await command
-        .set('Authorization', options.auth ?? nativeFinalAuth)
-        .send(options.body ?? {});
+          : request(httpServer(app)).patch(
+              options.action === 'edit' ? path : `${path}/${options.action}`,
+            );
+      const response = await command.set('Authorization', options.auth ?? nativeFinalAuth).send(
+        options.body ??
+          (options.action === 'edit'
+            ? {
+                records: history.records.map((row) => ({
+                  memberId: row.memberId,
+                  roleCode: row.roleCode,
+                  attendanceStatusCode: row.attendanceStatusCode,
+                  checkInAt: row.checkInAt.toISOString(),
+                  checkOutAt: row.checkOutAt.toISOString(),
+                })),
+              }
+            : {}),
+      );
       expectBizError(response, BizCode.NOT_FOUND);
       expect(await legacySnapshot()).toEqual(history);
       expect(await nativeSnapshot(f)).toEqual(before);
     }
+    return { f, version, legacySnapshot, history };
   }
 
   const baseRecord = (override: Record<string, unknown> = {}): Record<string, unknown> => ({
@@ -660,22 +684,6 @@ describe('attendances 模块', () => {
       throw new Error(
         `approveToTerminalApproved failed: ${res.status} ${JSON.stringify(res.body)}`,
       );
-    }
-  }
-
-  // 批次 4-B helper:推到 final_rejected 终态(一级 approve = adminAuth,final-reject =
-  // finalAdminAuth —— 摘码微刀后 biz-admin 无终审码,终审一律走 SA 兜底身份)。
-  async function approveThenFinalReject(
-    sheetId: string,
-    note = 'fixture final reject',
-  ): Promise<void> {
-    await approveToPendingFinalReview(sheetId);
-    const res = await request(httpServer(app))
-      .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-reject`)
-      .set('Authorization', finalAdminAuth)
-      .send({ finalReviewNote: note });
-    if (res.status !== 200) {
-      throw new Error(`approveThenFinalReject failed: ${res.status} ${JSON.stringify(res.body)}`);
     }
   }
 
@@ -1762,107 +1770,108 @@ describe('attendances 模块', () => {
   // ============ PATCH reject ============
 
   describe('PATCH reject', () => {
-    it('reject pending Sheet → 200,statusCode=rejected,reviewNote 入库', async () => {
-      const id = await createPendingSheet(activityId, [
-        baseRecord({
-          memberId: memberCId,
-          checkInAt: pastIso('06-26T08:00:00.000Z'),
-          checkOutAt: pastIso('06-26T09:00:00.000Z'),
+    it('原生初审退回留存原因和事实；旧硬驳回入口不能改写旧历史或新版 ID', async () => {
+      const { f, version, legacySnapshot, history } = await expectRetiredMutation({
+        action: 'reject',
+        body: { reviewNote: '数据有误' },
+      });
+      const before = await nativeSnapshot(f);
+      await nativeReview(version, 'first-return', '数据需补充').expect(200);
+      const after = await nativeSnapshot(f);
+      expect(after.run.statusCode).toBe('drafting');
+      expect(after.versions.find((row) => row.id === version.id)).toMatchObject({
+        statusCode: 'returned',
+        returnFromStage: 'first',
+        returnReason: '数据需补充',
+      });
+      expect(after.reviews).toEqual([
+        expect.objectContaining({
+          stageCode: 'first',
+          actionCode: 'return',
+          actorUserId: nativeFirstReviewerId,
+          actedAt: expect.any(Date),
+          note: '数据需补充',
         }),
       ]);
-      const res = await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${id}/reject`)
-        .set('Authorization', adminAuth)
-        .send({ reviewNote: '数据有误' });
-      expect(res.status).toBe(200);
-      expect(res.body.data.statusCode).toBe('rejected');
-      expect(res.body.data.reviewNote).toBe('数据有误');
+      expect(after.results).toEqual(before.results);
+      expect(await legacySnapshot()).toEqual(history);
     });
 
-    it('reject 缺 reviewNote → 400', async () => {
-      const id = await createPendingSheet(activityId, [
-        baseRecord({
-          memberId: memberCId,
-          checkInAt: pastIso('06-26T10:00:00.000Z'),
-          checkOutAt: pastIso('06-26T11:00:00.000Z'),
-        }),
-      ]);
-      const res = await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${id}/reject`)
-        .set('Authorization', adminAuth)
-        .send({});
-      expect(res.status).toBe(400);
+    it('原生初审退回缺原因 → DTO 40000 且零写', async () => {
+      const f = await nativeDraft([memberCId]);
+      const { version } = await nativeSubmit(f);
+      const before = await nativeSnapshot(f);
+      expectBizError(await nativeReview(version, 'first-return'), BizCode.BAD_REQUEST, {
+        strictMessage: false,
+      });
+      expect(await nativeSnapshot(f)).toEqual(before);
     });
 
-    it('reject pending_final_review Sheet → 22030(批次 4-B:APD 一级 approve 后不能再 APD reject)', async () => {
-      const id = await createPendingSheet(activityId, [
-        baseRecord({
-          memberId: memberCId,
-          checkInAt: pastIso('06-26T12:00:00.000Z'),
-          checkOutAt: pastIso('06-26T13:00:00.000Z'),
-        }),
-      ]);
-      await fillContributionPoints(id);
-      await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${id}/approve`)
-        .set('Authorization', adminAuth)
-        .send({});
-      const res = await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${id}/reject`)
-        .set('Authorization', adminAuth)
-        .send({ reviewNote: '试图驳回已 pending_final_review' });
-      expectBizError(res, BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
+    it('原生初审已通过后不能改判初审退回，待终审状态与原决定不变', async () => {
+      const f = await nativeDraft([memberCId]);
+      const { version } = await nativeSubmit(f);
+      await nativeReview(version, 'first-approve').expect(200);
+      const before = await nativeSnapshot(f);
+      expectBizError(
+        await nativeReview(version, 'first-return', '改判尝试'),
+        BizCode.SETTLEMENT_REVIEW_ALREADY_DECIDED,
+      );
+      expect(await nativeSnapshot(f)).toEqual(before);
     });
 
-    it('reject 不存在 → 22001', async () => {
-      const res = await request(httpServer(app))
-        .patch('/api/admin/v1/attendance-sheets/cl0000000000000000000000/reject')
-        .set('Authorization', adminAuth)
-        .send({ reviewNote: 'x' });
-      expectBizError(res, BizCode.ATTENDANCE_SHEET_NOT_FOUND);
+    it('原生初审退回不存在版本 → 防枚举 30100 且零写', async () => {
+      const f = await nativeDraft([memberCId]);
+      const { version } = await nativeSubmit(f);
+      const before = await nativeSnapshot(f);
+      expectBizError(
+        await nativeReview({ ...version, id: 'cl0000000000000000000000' }, 'first-return', 'x'),
+        BizCode.RBAC_FORBIDDEN,
+      );
+      expect(await nativeSnapshot(f)).toEqual(before);
     });
   });
 
   // ============ approved-only 事件 / 副作用 ============
 
-  describe('Q-S13 approved-only:eventPlaceholder 仅终审 approve 触发(批次 4-B 移到 final-approve)', () => {
-    // 批次 4-B(沿 D-S7):attendance.recorded 触发位置从 APD approve 移到 final-approve。
-    // 副作用层面验证:eventPlaceholder 走 logger,e2e 无法直接断言 logger;
-    // 通过"approve / reject / final-reject 路径 statusCode 正确转移 + 不引起后续业务变化"间接覆盖。
-    it('reject 后 sheet 仍为 rejected;不触发 approved', async () => {
-      const id = await createPendingSheet(activityId, [
-        baseRecord({
-          memberId: memberCId,
-          checkInAt: pastIso('06-28T08:00:00.000Z'),
-          checkOutAt: pastIso('06-28T09:00:00.000Z'),
-        }),
-      ]);
-      await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${id}/reject`)
-        .set('Authorization', adminAuth)
-        .send({ reviewNote: 'no event' });
-      const sheet = await prisma.attendanceSheet.findUnique({ where: { id } });
-      expect(sheet?.statusCode).toBe('rejected');
+  describe('原生正式时长的生效边界', () => {
+    // Assert actual credit visibility; unresolved milestone notifications are
+    // covered separately and are not claimed complete by these state checks.
+    it('初审退回不产生已批准版本、入账批次或本人可见时长', async () => {
+      const f = await nativeDraft([memberAId]);
+      const { version } = await nativeSubmit(f);
+      await nativeReview(version, 'first-return', '退回不入账').expect(200);
+      const after = await nativeSnapshot(f);
+      expect(after.versions.find((row) => row.id === version.id)?.statusCode).toBe('returned');
+      expect(after.batches).toHaveLength(0);
+      expect(after.ledgerCount).toBe(0);
+      const response = await request(httpServer(app))
+        .get('/api/app/v1/my/participation-ledger')
+        .set('Authorization', userWithMemberAuth)
+        .expect(200);
+      expect(
+        (response.body.data.items as Array<{ activityId: string }>).some(
+          (row) => row.activityId === f.activityId,
+        ),
+      ).toBe(false);
     });
 
-    it('批次 4-B:APD approve 仅推到 pending_final_review,不触发 attendance.recorded(终态由 final-approve 触发)', async () => {
-      const id = await createPendingSheet(activityId, [
-        baseRecord({
-          memberId: memberCId,
-          checkInAt: pastIso('06-28T10:00:00.000Z'),
-          checkOutAt: pastIso('06-28T11:00:00.000Z'),
-        }),
-      ]);
-      await fillContributionPoints(id, 1);
-      await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${id}/approve`)
-        .set('Authorization', adminAuth)
-        .send({});
-      const sheet = await prisma.attendanceSheet.findUnique({ where: { id } });
-      // 沿 D-S6 / D-A1:APD approve → pending_final_review,不到 approved 终态
-      expect(sheet?.statusCode).toBe('pending_final_review');
-      // /me/attendance-records 仅返 approved Sheet 内 records → 此 sheet 不可见
-      // (间接验证 attendance.recorded 未触发完整入账;D-S7)
+    it('初审通过只推进待终审，不产生本人可见时长或批次', async () => {
+      const f = await nativeDraft([memberAId]);
+      const { version } = await nativeSubmit(f);
+      await nativeReview(version, 'first-approve').expect(200);
+      const after = await nativeSnapshot(f);
+      expect(after.run.statusCode).toBe('pending_final_review');
+      expect(after.batches).toHaveLength(0);
+      expect(after.ledgerCount).toBe(0);
+      const response = await request(httpServer(app))
+        .get('/api/app/v1/my/participation-ledger')
+        .set('Authorization', userWithMemberAuth)
+        .expect(200);
+      expect(
+        (response.body.data.items as Array<{ activityId: string }>).some(
+          (row) => row.activityId === f.activityId,
+        ),
+      ).toBe(false);
     });
   });
 
@@ -1872,42 +1881,6 @@ describe('attendances 模块', () => {
   //   - 批次4_贡献值业务规则_schema草案评审决议表.md v1.0 D-S5 / D-S7
 
   describe('PATCH final-approve / final-reject(批次 4-B 终审)', () => {
-    let pendingFinalReviewId: string;
-    let alreadyApprovedId: string;
-    let alreadyFinalRejectedId: string;
-
-    async function seedLegacyFinalReviewFixtures() {
-      pendingFinalReviewId = await createPendingSheet(activityId, [
-        baseRecord({
-          memberId: memberCId,
-          checkInAt: pastIso('06-29T08:00:00.000Z'),
-          checkOutAt: pastIso('06-29T09:00:00.000Z'),
-        }),
-      ]);
-      await fillContributionPoints(pendingFinalReviewId, 1);
-      await approveToPendingFinalReview(pendingFinalReviewId);
-
-      alreadyApprovedId = await createPendingSheet(activityId, [
-        baseRecord({
-          memberId: memberCId,
-          checkInAt: pastIso('06-29T09:30:00.000Z'),
-          checkOutAt: pastIso('06-29T10:30:00.000Z'),
-        }),
-      ]);
-      await fillContributionPoints(alreadyApprovedId, 1);
-      await approveToTerminalApproved(alreadyApprovedId);
-
-      alreadyFinalRejectedId = await createPendingSheet(activityId, [
-        baseRecord({
-          memberId: memberCId,
-          checkInAt: pastIso('06-29T11:00:00.000Z'),
-          checkOutAt: pastIso('06-29T12:00:00.000Z'),
-        }),
-      ]);
-      await fillContributionPoints(alreadyFinalRejectedId, 1);
-      await approveThenFinalReject(alreadyFinalRejectedId, 'fixture final reject');
-    }
-
     it('原生终审通过 → 版本 approved、run posting、批次 preparing，两个审核决定均保留', async () => {
       const f = await nativeDraft([memberCId]);
       const { version } = await nativeSubmit(f);
@@ -2071,125 +2044,142 @@ describe('attendances 模块', () => {
       expect(await nativeSnapshot(f)).toEqual(before);
     });
 
-    describe('旧终审/驳回流程（待迁移）', () => {
-      beforeAll(seedLegacyFinalReviewFixtures);
-
-      it('final-reject pending_final_review Sheet → 200 + statusCode=final_rejected + records 跟随软删', async () => {
-        const id = await createPendingSheet(activityId, [
-          baseRecord({
-            memberId: memberCId,
-            checkInAt: pastIso('06-29T16:30:00.000Z'),
-            checkOutAt: pastIso('06-29T17:30:00.000Z'),
-          }),
-        ]);
-        await fillContributionPoints(id, 1);
-        await approveToPendingFinalReview(id);
-
-        const res = await request(httpServer(app))
-          .patch(`/api/admin/v1/attendance-sheets/${id}/final-reject`)
-          .set('Authorization', finalAdminAuth)
-          .send({ finalReviewNote: '终审驳回理由' });
-        expect(res.status).toBe(200);
-        expect(res.body.data.statusCode).toBe('final_rejected');
-        expect(res.body.data.finalReviewerUserId).toBeTruthy();
-        expect(res.body.data.finalReviewedAt).toBeTruthy();
-        expect(res.body.data.finalReviewNote).toBe('终审驳回理由');
-        // records 跟随软删(沿 D8 主路径 + 业务规则文档 §2.3)
-        const records = await prisma.attendanceRecord.findMany({ where: { sheetId: id } });
-        expect(records.length).toBeGreaterThan(0);
-        expect(records.every((r) => r.deletedAt !== null)).toBe(true);
+    describe('原生退回与退役终态驳回边界', () => {
+      it('旧终态驳回不能写入；原生终审退回留存人/时间/原因，不级联删除事实', async () => {
+        const { f, version, legacySnapshot, history } = await expectRetiredMutation({
+          action: 'final-reject',
+          legacyStatus: 'pending_final_review',
+          nativeStage: 'pending-final',
+          body: { finalReviewNote: '终审驳回理由' },
+        });
+        const before = await nativeSnapshot(f);
+        await nativeReview(version, 'final-return', '终审退回理由').expect(200);
+        const after = await nativeSnapshot(f);
+        expect(after.run.statusCode).toBe('drafting');
+        expect(after.versions.find((row) => row.id === version.id)).toMatchObject({
+          statusCode: 'returned',
+          returnFromStage: 'final',
+          returnReason: '终审退回理由',
+        });
+        expect(after.reviews.find((row) => row.stageCode === 'final')).toMatchObject({
+          actorUserId: nativeFinalReviewerId,
+          actedAt: expect.any(Date),
+          note: '终审退回理由',
+        });
+        expect(after.results).toEqual(before.results);
+        expect(after.ledgerCount).toBe(0);
+        expect(await legacySnapshot()).toEqual(history);
       });
 
-      it('final-reject 缺 finalReviewNote → 400(DTO 必填校验)', async () => {
-        const id = await createPendingSheet(activityId, [
-          baseRecord({
-            memberId: memberCId,
-            checkInAt: pastIso('06-29T18:00:00.000Z'),
-            checkOutAt: pastIso('06-29T18:30:00.000Z'),
-          }),
-        ]);
-        await fillContributionPoints(id, 1);
-        await approveToPendingFinalReview(id);
-        const res = await request(httpServer(app))
-          .patch(`/api/admin/v1/attendance-sheets/${id}/final-reject`)
-          .set('Authorization', finalAdminAuth)
-          .send({});
-        expect(res.status).toBe(400);
+      it('原生终审退回缺原因必须拒绝且零写', async () => {
+        const f = await nativeDraft([memberCId]);
+        const { version } = await nativeSubmit(f);
+        await nativeReview(version, 'first-approve').expect(200);
+        const before = await nativeSnapshot(f);
+        expectBizError(await nativeReview(version, 'final-return'), BizCode.BAD_REQUEST, {
+          strictMessage: false,
+        });
+        expect(await nativeSnapshot(f)).toEqual(before);
       });
 
-      it('final-reject 空白 finalReviewNote → 400(DTO @MinLength(1))', async () => {
-        const id = await createPendingSheet(activityId, [
-          baseRecord({
-            memberId: memberCId,
-            checkInAt: pastIso('06-29T19:00:00.000Z'),
-            checkOutAt: pastIso('06-29T19:30:00.000Z'),
-          }),
-        ]);
-        await fillContributionPoints(id, 1);
-        await approveToPendingFinalReview(id);
-        const res = await request(httpServer(app))
-          .patch(`/api/admin/v1/attendance-sheets/${id}/final-reject`)
-          .set('Authorization', finalAdminAuth)
-          .send({ finalReviewNote: '' });
-        expect(res.status).toBe(400);
+      it('原生终审退回的空串/空白原因均拒绝且零写', async () => {
+        const f = await nativeDraft([memberCId]);
+        const { version } = await nativeSubmit(f);
+        await nativeReview(version, 'first-approve').expect(200);
+        const before = await nativeSnapshot(f);
+        for (const [note, error] of [
+          ['', BizCode.BAD_REQUEST],
+          ['   ', BizCode.SETTLEMENT_REVIEW_RETURN_REASON_REQUIRED],
+        ] as const) {
+          expectBizError(await nativeReview(version, 'final-return', note), error, {
+            strictMessage: error !== BizCode.BAD_REQUEST,
+          });
+          expect(await nativeSnapshot(f)).toEqual(before);
+        }
       });
 
-      it('final-reject 状态非 pending_final_review → 22045', async () => {
-        // alreadyFinalRejectedId 已 final_rejected,再 final-reject 抛 22045
-        // (摘码微刀:须持权身份才到状态门;adminAuth 会先吃 30100)
-        const res = await request(httpServer(app))
-          .patch(`/api/admin/v1/attendance-sheets/${alreadyFinalRejectedId}/final-reject`)
-          .set('Authorization', finalAdminAuth)
-          .send({ finalReviewNote: 'noop' });
-        expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
+      it('原生已终审退回的版本不能再次作出新决定，拒绝零写', async () => {
+        const f = await nativeDraft([memberCId]);
+        const { version } = await nativeSubmit(f);
+        await nativeReview(version, 'first-approve').expect(200);
+        await nativeReview(version, 'final-return', '首次退回').expect(200);
+        const before = await nativeSnapshot(f);
+        expectBizError(
+          await nativeReview(version, 'final-return', '再次退回', ':again'),
+          BizCode.SETTLEMENT_REVIEW_ALREADY_DECIDED,
+        );
+        expect(await nativeSnapshot(f)).toEqual(before);
       });
 
-      it('final_rejected Sheet 不可 edit → 22043', async () => {
-        const res = await request(httpServer(app))
-          .patch(`/api/admin/v1/attendance-sheets/${alreadyFinalRejectedId}`)
-          .set('Authorization', adminAuth)
-          .send({ records: [baseRecord({ memberId: memberCId })] });
-        expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE);
+      it('旧终态历史拒绝编辑；原生只编辑 working draft，已退回版本与旧软删事实不变', async () => {
+        const { f, version, legacySnapshot, history } = await expectRetiredMutation({
+          action: 'edit',
+          legacyStatus: 'final_rejected',
+          nativeStage: 'final-returned',
+        });
+        const before = await nativeSnapshot(f);
+        await request(httpServer(app))
+          .patch(`${f.base}/items/${f.identityId}`)
+          .set('Authorization', nativeAuth)
+          .send({
+            expectedDraftVersion: before.run.currentDraftVersion,
+            resultCode: 'present',
+            recognizedServiceHours: 1.5,
+            recognizedContributionPoints: 1,
+            reason: '扣除休息',
+          })
+          .expect(200);
+        const after = await nativeSnapshot(f);
+        expect(after.versions.find((row) => row.id === version.id)).toEqual(
+          before.versions.find((row) => row.id === version.id),
+        );
+        expect(after.results.filter((row) => row.settlementVersionId === version.id)).toEqual(
+          before.results.filter((row) => row.settlementVersionId === version.id),
+        );
+        const draftId = after.versions.find(
+          (row) => row.version === after.run.currentDraftVersion,
+        )!.id;
+        expect(
+          after.results
+            .find((row) => row.settlementVersionId === draftId)
+            ?.recognizedServiceHours.toString(),
+        ).toBe('1.5');
+        expect(await legacySnapshot()).toEqual(history);
       });
 
-      it('final_rejected Sheet 不可 delete → 22043', async () => {
-        const res = await request(httpServer(app))
-          .delete(`/api/admin/v1/attendance-sheets/${alreadyFinalRejectedId}`)
-          .set('Authorization', adminAuth);
-        expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE);
+      it('原生退回版本与旧终态软删历史不能再经旧删除入口改变', async () => {
+        await expectRetiredMutation({
+          action: 'delete',
+          legacyStatus: 'final_rejected',
+          nativeStage: 'final-returned',
+        });
       });
 
-      it('pending_final_review Sheet 不可 edit → 22030(沿 §2.1 业务规则)', async () => {
-        const id = await createPendingSheet(activityId, [
-          baseRecord({
-            memberId: memberCId,
-            checkInAt: pastIso('06-29T20:00:00.000Z'),
-            checkOutAt: pastIso('06-29T20:30:00.000Z'),
-          }),
-        ]);
-        await fillContributionPoints(id, 1);
-        await approveToPendingFinalReview(id);
-        const res = await request(httpServer(app))
-          .patch(`/api/admin/v1/attendance-sheets/${id}`)
-          .set('Authorization', adminAuth)
-          .send({ records: [baseRecord({ memberId: memberCId })] });
-        expectBizError(res, BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
+      it('原生待终审时不可改写 working draft 或送审结果，拒绝零写', async () => {
+        const f = await nativeDraft([memberCId]);
+        const { version } = await nativeSubmit(f);
+        await nativeReview(version, 'first-approve').expect(200);
+        const before = await nativeSnapshot(f);
+        const response = await request(httpServer(app))
+          .patch(`${f.base}/items/${f.identityId}`)
+          .set('Authorization', nativeAuth)
+          .send({
+            expectedDraftVersion: before.run.currentDraftVersion,
+            resultCode: 'present',
+            recognizedServiceHours: 1.5,
+            recognizedContributionPoints: 1,
+            reason: '审核中偷改',
+          });
+        expectBizError(response, BizCode.SETTLEMENT_DRAFT_UPDATE_RUN_STATUS_INVALID);
+        expect(await nativeSnapshot(f)).toEqual(before);
       });
 
-      it('pending_final_review Sheet 不可 delete → 22030', async () => {
-        const id = await createPendingSheet(activityId, [
-          baseRecord({
-            memberId: memberCId,
-            checkInAt: pastIso('06-29T21:00:00.000Z'),
-            checkOutAt: pastIso('06-29T21:30:00.000Z'),
-          }),
-        ]);
-        await fillContributionPoints(id, 1);
-        await approveToPendingFinalReview(id);
-        const res = await request(httpServer(app))
-          .delete(`/api/admin/v1/attendance-sheets/${id}`)
-          .set('Authorization', adminAuth);
-        expectBizError(res, BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
+      it('原生待终审版本和旧 pending_final_review 历史不能被旧删除入口抹去', async () => {
+        await expectRetiredMutation({
+          action: 'delete',
+          legacyStatus: 'pending_final_review',
+          nativeStage: 'pending-final',
+        });
       });
     });
   });
