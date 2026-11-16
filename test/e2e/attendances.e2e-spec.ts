@@ -526,6 +526,39 @@ describe('attendances 模块', () => {
     };
   }
 
+  async function expectNativeAnchorCannotBeCleared(
+    f: Awaited<ReturnType<typeof onsiteScenario>>,
+    memberId: string,
+    receipt: AppManagedActivityOnsiteParticipationReceiptDto,
+  ) {
+    const before = await onsiteSnapshot(f);
+    const response = await onsite(f, memberId, { registrationId: null });
+    expectBizError(response, BizCode.BAD_REQUEST, { strictMessage: false });
+    expect(response.body.message).toBe('property registrationId should not exist');
+    expect(await onsiteSnapshot(f)).toEqual(before);
+    // Prisma exposes PG's row DETAIL, not COLUMN_NAME. Check the named
+    // constraint in the catalog instead of matching data-bearing error text.
+    expect(
+      await prisma.$queryRaw`
+      SELECT attname AS "column", attnotnull AS required FROM pg_attribute
+      WHERE attrelid = '"ActivityParticipationIdentity"'::regclass
+        AND attname = 'registrationId'
+    `,
+    ).toEqual([{ column: 'registrationId', required: true }]);
+    await expect(
+      prisma.$executeRaw(Prisma.sql`
+        UPDATE "ActivityParticipationIdentity" SET "registrationId" = NULL
+        WHERE "id" = ${receipt.participationIdentityId}
+      `),
+    ).rejects.toMatchObject({
+      code: 'P2010',
+      meta: { code: '23502' },
+    });
+    expect(await onsiteSnapshot(f)).toEqual(before);
+    expect((await onsite(f, memberId).expect(201)).body.data).toEqual(receipt);
+    expect(await onsiteSnapshot(f)).toEqual(before);
+  }
+
   async function nativeDraft(
     memberIds: string[],
     hours = 2,
@@ -2018,71 +2051,52 @@ describe('attendances 模块', () => {
       }
     });
 
-    // Insurance and field-evidence corrections still need their own native
-    // acceptance migration; keep those assertions separate from draft editing.
-    describe('旧编辑流程（待迁移）', () => {
-      it('requiresInsurance=false 时 edit 显式 registrationId:null → 按未传处理并持久化 null', async () => {
-        const id = await createPendingSheet(activityId, [
-          baseRecord({
-            memberId: memberBId,
-            checkInAt: pastIso('09-02T08:00:00.000Z'),
-            checkOutAt: pastIso('09-02T09:00:00.000Z'),
+    // The retired DTO's nullable field normalization is not a native editing
+    // capability. Preserve its business obligations through real admission:
+    // no preregistration is required without insurance, and source evidence
+    // cannot be unlinked. Historical timestamp editing remains a separate gap.
+    describe('原生报名来源保护与待补时间纠错', () => {
+      it('原生无需保险可无预报名参加，但永久身份来源不能被 null 清除或重放改写', async () => {
+        const f = await onsiteScenario(false);
+        expect(
+          await prisma.activityRegistration.count({ where: { activityId: f.activityId } }),
+        ).toBe(0);
+        const receipt = await admitWithOwnAnchor(f, memberBId);
+        expect(
+          await prisma.insuranceEligibilityEvidence.count({
+            where: { activityRegistrationId: receipt.registrationId },
           }),
-        ]);
-        const res = await request(httpServer(app))
-          .patch(`/api/admin/v1/attendance-sheets/${id}`)
-          .set('Authorization', adminAuth)
-          .send({
-            records: [
-              baseRecord({
-                memberId: memberBId,
-                checkInAt: pastIso('09-02T08:00:00.000Z'),
-                checkOutAt: pastIso('09-02T09:00:00.000Z'),
-                registrationId: null,
-              }),
-            ],
-          });
-        expect(res.status).toBe(200);
-        const record = await prisma.attendanceRecord.findFirstOrThrow({
-          where: { sheetId: id, deletedAt: null },
-          select: { registrationId: true },
-        });
-        expect(record.registrationId).toBeNull();
+        ).toBe(0);
+        await expectNativeAnchorCannotBeCleared(f, memberBId, receipt);
       });
 
-      it('requiresInsurance=true 时 edit 显式 registrationId:null → ATTENDANCE_REGISTRATION_INVALID', async () => {
-        const id = await createPendingSheet(activityId, [
-          baseRecord({
-            memberId: memberCId,
-            checkInAt: pastIso('09-03T08:00:00.000Z'),
-            checkOutAt: pastIso('09-03T09:00:00.000Z'),
-          }),
-        ]);
-        await prisma.activity.update({
-          where: { id: activityId },
-          data: { requiresInsurance: true },
+      it('原生需保险时缺来源拒绝；准入后的报名锚点及保险证据不能被 null 清除', async () => {
+        const f = await onsiteScenario(true);
+        const before = await onsiteSnapshot(f);
+        expectBizError(await onsite(f, memberBId), BizCode.INSURANCE_REQUIRED);
+        expect(await onsiteSnapshot(f)).toEqual(before);
+        const insurance = await prisma.memberInsurance.create({
+          data: {
+            memberId: memberBId,
+            insurerName: 'Fixture insurance',
+            policyNumber: 'ATT-NATIVE-ANCHOR-INSURANCE',
+            coverageStart: new Date(Date.now() - 86_400_000),
+            coverageEnd: new Date(Date.now() + 7 * 86_400_000),
+            reviewStatusCode: 'verified',
+            reviewedByUserId: nativeUserId,
+            reviewedAt: new Date(),
+          },
         });
-        try {
-          const res = await request(httpServer(app))
-            .patch(`/api/admin/v1/attendance-sheets/${id}`)
-            .set('Authorization', adminAuth)
-            .send({
-              records: [
-                baseRecord({
-                  memberId: memberCId,
-                  checkInAt: pastIso('09-03T08:00:00.000Z'),
-                  checkOutAt: pastIso('09-03T09:00:00.000Z'),
-                  registrationId: null,
-                }),
-              ],
-            });
-          expectBizError(res, BizCode.ATTENDANCE_REGISTRATION_INVALID);
-        } finally {
-          await prisma.activity.update({
-            where: { id: activityId },
-            data: { requiresInsurance: false },
-          });
-        }
+        const receipt = await admitWithOwnAnchor(f, memberBId);
+        const evidence = await prisma.insuranceEligibilityEvidence.findMany({
+          where: { activityRegistrationId: receipt.registrationId },
+        });
+        expect(evidence).toHaveLength(1);
+        expect(evidence[0]).toMatchObject({
+          memberInsuranceId: insurance.id,
+          activityRegistrationRevisionId: receipt.registrationRevisionId,
+        });
+        await expectNativeAnchorCannotBeCleared(f, memberBId, receipt);
       });
 
       it('edit pending Sheet 记录越过活动时间窗 → ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW', async () => {
