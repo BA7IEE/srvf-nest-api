@@ -9,6 +9,7 @@ import appConfig, { type AppConfig } from '../../src/config/app.config';
 import type { JwtConfig } from '../../src/config/jwt.config';
 import { PrismaService } from '../../src/database/prisma.service';
 import { LedgerQueryService } from '../../src/modules/activities/ledger-query.service';
+import { AttendancePunchCommandService } from '../../src/modules/attendances/attendance-punch-command.service';
 import {
   digestAttendanceQrToken,
   signAttendanceQrToken,
@@ -271,6 +272,24 @@ describe('App native self punches — migrated GPS business acceptance', () => {
       intents: await db.notificationOutboxIntent.count(),
     };
   }
+  async function position(input: Scene, from: number, until: number) {
+    const slot = await db.activitySessionPosition.create({
+      data: {
+        activityId: input.activityId,
+        sessionId: input.sessionId,
+        code: `gps-slot-${++sequence}`,
+        name: `GPS slot ${sequence}`,
+        attendanceRoleCode: 'member',
+        startAt: time(from),
+        endAt: time(until),
+      },
+    });
+    await db.activityParticipationIdentity.update({
+      where: { id: input.identityId },
+      data: { currentPositionId: slot.id },
+    });
+    return slot;
+  }
   async function rejectUnchanged(
     input: Scene,
     operation: PromiseLike<request.Response>,
@@ -443,6 +462,106 @@ describe('App native self punches — migrated GPS business acceptance', () => {
       data: { terminationCheckOutDeadline: time(60) },
     });
     freeze(time(30));
+    expect(safeReceipt(await punch(input, 'check_out')).segmentStatusCode).toBe('closed_valid');
+  });
+
+  it('self punches intersect the session window with the assigned position interval, including exact boundaries', async () => {
+    const input = await scene();
+    await position(input, 20, 90);
+    await rejectUnchanged(input, punch(input), BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW);
+    freeze(time(20));
+    const first = safeReceipt(await punch(input));
+    freeze(new Date(time(90).getTime() + 1));
+    await rejectUnchanged(
+      input,
+      punch(input, 'check_out'),
+      BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW,
+    );
+    const beforeReplay = await footprint(input);
+    expect(safeReceipt(await punch(input))).toEqual(first);
+    expect(await footprint(input)).toEqual(beforeReplay);
+    freeze(time(90));
+    expect(safeReceipt(await punch(input, 'check_out')).segmentStatusCode).toBe('closed_valid');
+  });
+
+  it('managed proxy punches enforce the same position intersection before any event, projection or audit write', async () => {
+    const input = await scene();
+    const slot = await position(input, 20, 90);
+    await db.activityResponsibilityAssignment.create({
+      data: {
+        activityId: input.activityId,
+        memberId: main.memberId!,
+        responsibilityType: 'owner',
+        canManageRegistrations: true,
+        canManageAttendance: true,
+        status: 'active',
+        assignedByUserId: main.userId,
+        source: 'publish',
+      },
+    });
+    const currentUser = await db.user.findUniqueOrThrow({
+      where: { id: main.userId },
+      select: { id: true, username: true, memberId: true, role: true, status: true },
+    });
+    const command = {
+      activityId: input.activityId,
+      sessionId: input.sessionId,
+      participationIdentityId: input.identityId,
+      memberCredential: null,
+      actionCode: 'check_in' as const,
+      sourceCode: 'proxy' as const,
+      eventKey: `${input.activityId}:proxy`,
+      reason: '岗位窗口验收',
+      deviceId: null,
+      ...LOCATION,
+      currentUser,
+      auditMeta: { requestId: 'native-position-window', ip: null, ua: null },
+    };
+    const service = app.get(AttendancePunchCommandService);
+    const before = await footprint(input);
+    await expect(service.managedPunch(command)).rejects.toMatchObject({
+      biz: BizCode.ATTENDANCE_PUNCH_OUTSIDE_WINDOW,
+    });
+    expect(await footprint(input)).toEqual(before);
+    freeze(time(20));
+    const receipt = await service.managedPunch(command);
+    expect(
+      (await db.attendancePunchEvent.findUniqueOrThrow({ where: { id: receipt.eventId } }))
+        .positionId,
+    ).toBe(slot.id);
+  });
+
+  it('checkout uses the position captured by the open check-in, not a later identity assignment', async () => {
+    const input = await scene();
+    const original = await position(input, 20, 90);
+    freeze(time(20));
+    safeReceipt(await punch(input));
+    await position(input, 120, 240);
+    freeze(time(70));
+    const receipt = safeReceipt(await punch(input, 'check_out'));
+    expect(
+      (
+        await db.attendancePunchEvent.findUniqueOrThrow({
+          where: { id: receipt.eventId as string },
+        })
+      ).positionId,
+    ).toBe(original.id);
+  });
+
+  it('the explicit termination checkout deadline preserves closure even after the ordinary position end', async () => {
+    const input = await scene();
+    await position(input, 20, 60);
+    freeze(time(20));
+    safeReceipt(await punch(input));
+    await db.activity.update({
+      where: { id: input.activityId },
+      data: { statusCode: 'terminated' },
+    });
+    await db.activitySession.update({
+      where: { id: input.sessionId },
+      data: { terminationCheckOutDeadline: time(80) },
+    });
+    freeze(time(70));
     expect(safeReceipt(await punch(input, 'check_out')).segmentStatusCode).toBe('closed_valid');
   });
 
