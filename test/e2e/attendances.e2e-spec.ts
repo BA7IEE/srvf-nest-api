@@ -65,6 +65,7 @@ describe('attendances 模块', () => {
   let nativeFinalReviewerId: string;
   let nativeFinalAuth: string;
   const previousV11 = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+  const previousInsuranceGate = process.env.INSURANCE_ENFORCEMENT_ENABLED;
 
   let memberAId: string;
   let memberBId: string;
@@ -80,6 +81,7 @@ describe('attendances 模块', () => {
 
   beforeAll(async () => {
     process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
+    process.env.INSURANCE_ENFORCEMENT_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
@@ -292,6 +294,7 @@ describe('attendances 模块', () => {
       'activity.settlement-generate.record',
       'activity.settlement-update-draft.record',
       'activity.settlement-submit.record',
+      'activity-registration.create.record',
     ];
     await prisma.permission.createMany({
       data: ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED.filter((permission) =>
@@ -331,10 +334,139 @@ describe('attendances 模块', () => {
     } finally {
       if (previousV11 === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
       else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousV11;
+      if (previousInsuranceGate === undefined) delete process.env.INSURANCE_ENFORCEMENT_ENABLED;
+      else process.env.INSURANCE_ENFORCEMENT_ENABLED = previousInsuranceGate;
     }
   });
 
   // ============ helpers ============
+
+  async function onsiteScenario(requiresInsurance = false) {
+    const startAt = new Date(Date.now() + 3_600_000);
+    const endAt = new Date(startAt.getTime() + 4 * 3_600_000);
+    const activity = await prisma.activity.create({
+      data: {
+        title: 'Native attendance admission',
+        activityTypeCode: 'att-native',
+        organizationId: nativeOrganizationId,
+        startAt,
+        endAt,
+        location: '现场',
+        statusCode: 'published',
+        publishedAt: new Date(),
+        capacity: 10,
+        requiresInsurance,
+      },
+    });
+    await prisma.activityResponsibilityAssignment.create({
+      data: {
+        activityId: activity.id,
+        memberId: nativeOwnerId,
+        responsibilityType: 'owner',
+        canManageRegistrations: true,
+        canManageAttendance: true,
+        status: 'active',
+        assignedByUserId: nativeUserId,
+        source: 'publish',
+      },
+    });
+    await prisma.roleBinding.create({
+      data: {
+        roleId: nativeRoleId,
+        principalType: PrincipalType.USER,
+        principalId: nativeUserId,
+        scopeType: BindingScopeType.ACTIVITY,
+        scopeActivityId: activity.id,
+        status: 'ACTIVE',
+      },
+    });
+    const session = await prisma.activitySession.create({
+      data: {
+        activityId: activity.id,
+        code: 'onsite',
+        name: '现场场次',
+        startAt,
+        endAt,
+        capacity: 10,
+        statusCode: 'scheduled',
+        locationRequired: false,
+        locationText: '现场',
+        locationPolicySourceCode: 'session',
+        checkInOpenAt: new Date(startAt.getTime() - 1_800_000),
+        checkInCloseAt: new Date(startAt.getTime() + 1_800_000),
+        checkOutOpenAt: new Date(endAt.getTime() - 3_600_000),
+        checkOutCloseAt: new Date(endAt.getTime() + 1_800_000),
+      },
+    });
+    await prisma.activityCapacityBucket.createMany({
+      data: [
+        {
+          activityId: activity.id,
+          scopeTypeCode: 'activity_person',
+          scopeId: activity.id,
+          capacity: 10,
+        },
+        {
+          activityId: activity.id,
+          scopeTypeCode: 'session_participation',
+          scopeId: session.id,
+          capacity: 10,
+        },
+      ],
+    });
+    await prisma.activityEvidenceState.create({ data: { activityId: activity.id } });
+    return { activityId: activity.id, sessionId: session.id };
+  }
+
+  function onsite(
+    f: Awaited<ReturnType<typeof onsiteScenario>>,
+    memberId: string,
+    extra: Record<string, unknown> = {},
+  ) {
+    return request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${f.activityId}/onsite-participations`)
+      .set('Authorization', nativeAuth)
+      .send({
+        operationKey: `onsite:${f.activityId}:${memberId}`,
+        memberId,
+        sessionId: f.sessionId,
+        reason: '负责人核验现场参加资格',
+        ...extra,
+      });
+  }
+
+  async function onsiteSnapshot(f: Awaited<ReturnType<typeof onsiteScenario>>) {
+    const activityId = f.activityId;
+    return Promise.all([
+      prisma.activityRegistration.findMany({ where: { activityId }, orderBy: { id: 'asc' } }),
+      prisma.activityParticipationIdentity.findMany({
+        where: { activityId },
+        orderBy: { id: 'asc' },
+      }),
+      prisma.activityRegistrationRevision.findMany({
+        where: { registration: { activityId } },
+        orderBy: { id: 'asc' },
+      }),
+      prisma.activityParticipationRevision.findMany({
+        where: { identity: { activityId } },
+        orderBy: { id: 'asc' },
+      }),
+      prisma.capacityReservation.findMany({
+        where: { identity: { activityId } },
+        orderBy: { id: 'asc' },
+      }),
+      prisma.activityCapacityBucket.findMany({ where: { activityId }, orderBy: { id: 'asc' } }),
+      prisma.insuranceEligibilityEvidence.findMany({
+        where: { activityRegistration: { activityId } },
+        orderBy: { id: 'asc' },
+      }),
+      prisma.activityEvidenceState.findUniqueOrThrow({ where: { activityId } }),
+      prisma.attendancePunchEvent.count({ where: { activityId } }),
+      prisma.participationLedgerEntry.count({ where: { activityId } }),
+      prisma.auditLog.count(),
+      prisma.notificationOutboxIntent.count(),
+    ]);
+  }
 
   async function nativeDraft(
     memberIds: string[],
@@ -915,26 +1047,30 @@ describe('attendances 模块', () => {
       });
     });
 
-    it('requiresInsurance=false 时 submit 显式 registrationId:null → 按未传处理并持久化 null', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({
-          records: [
-            baseRecord({
-              memberId: memberBId,
-              checkInAt: pastIso('09-01T08:00:00.000Z'),
-              checkOutAt: pastIso('09-01T09:00:00.000Z'),
-              registrationId: null,
-            }),
-          ],
-        });
-      expect(res.status).toBe(201);
-      const record = await prisma.attendanceRecord.findFirstOrThrow({
-        where: { sheetId: res.body.data.id, deletedAt: null },
-        select: { registrationId: true },
+    it('原生无需保险可现场参加，无须预报名；锚点由服务端建立而非接收 null', async () => {
+      const f = await onsiteScenario();
+      const before = await onsiteSnapshot(f);
+      expectBizError(await onsite(f, memberBId, { registrationId: null }), BizCode.BAD_REQUEST, {
+        strictMessage: false,
       });
-      expect(record.registrationId).toBeNull();
+      expect(await onsiteSnapshot(f)).toEqual(before);
+      const response = await onsite(f, memberBId).expect(201);
+      expect(response.body.data).toMatchObject({ sourceCode: 'onsite', statusCode: 'pass' });
+      const identity = await prisma.activityParticipationIdentity.findUniqueOrThrow({
+        where: { id: response.body.data.participationIdentityId },
+        include: { registration: true },
+      });
+      expect(identity).toMatchObject({
+        activityId: f.activityId,
+        memberId: memberBId,
+        registrationId: response.body.data.registrationId,
+        registration: { activityId: f.activityId, memberId: memberBId },
+      });
+      expect(
+        await prisma.insuranceEligibilityEvidence.count({
+          where: { activityRegistration: { activityId: f.activityId } },
+        }),
+      ).toBe(0);
     });
 
     it('当前时刻提交未来考勤记录 → 22079', async () => {
@@ -955,61 +1091,53 @@ describe('attendances 模块', () => {
       expectBizError(res, BizCode.ATTENDANCE_CHECK_OUT_IN_FUTURE);
     });
 
-    it('requiresInsurance=true 时省略或显式 null registrationId 拒绝;同活动同成员 pass 报名放行', async () => {
-      await prisma.activity.update({
-        where: { id: activityId },
-        data: { requiresInsurance: true },
+    it('原生需保险的现场参加先核验真实来源，无来源零写，有来源按同人同活动留证', async () => {
+      const f = await onsiteScenario(true);
+      const before = await onsiteSnapshot(f);
+      expectBizError(await onsite(f, memberCId), BizCode.INSURANCE_REQUIRED);
+      expect(await onsiteSnapshot(f)).toEqual(before);
+      expectBizError(await onsite(f, memberCId, { registrationId: null }), BizCode.BAD_REQUEST, {
+        strictMessage: false,
       });
-      try {
-        const withoutRegistration = await request(httpServer(app))
-          .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-          .set('Authorization', adminAuth)
-          .send({
-            records: [
-              baseRecord({
-                memberId: memberAId,
-                checkInAt: pastIso('07-20T08:00:00.000Z'),
-                checkOutAt: pastIso('07-20T09:00:00.000Z'),
-              }),
-            ],
-          });
-        expectBizError(withoutRegistration, BizCode.ATTENDANCE_REGISTRATION_INVALID);
-
-        const nullRegistration = await request(httpServer(app))
-          .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-          .set('Authorization', adminAuth)
-          .send({
-            records: [
-              baseRecord({
-                memberId: memberAId,
-                checkInAt: pastIso('07-20T08:00:00.000Z'),
-                checkOutAt: pastIso('07-20T09:00:00.000Z'),
-                registrationId: null,
-              }),
-            ],
-          });
-        expectBizError(nullRegistration, BizCode.ATTENDANCE_REGISTRATION_INVALID);
-
-        const withRegistration = await request(httpServer(app))
-          .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-          .set('Authorization', adminAuth)
-          .send({
-            records: [
-              baseRecord({
-                memberId: memberAId,
-                checkInAt: pastIso('07-20T08:00:00.000Z'),
-                checkOutAt: pastIso('07-20T09:00:00.000Z'),
-                registrationId: registrationAId,
-              }),
-            ],
-          });
-        expect(withRegistration.status).toBe(201);
-      } finally {
-        await prisma.activity.update({
-          where: { id: activityId },
-          data: { requiresInsurance: false },
-        });
-      }
+      expect(await onsiteSnapshot(f)).toEqual(before);
+      const insurance = await prisma.memberInsurance.create({
+        data: {
+          memberId: memberCId,
+          insurerName: 'Fixture insurance',
+          policyNumber: 'ATT-NATIVE-INSURANCE',
+          coverageStart: new Date(Date.now() - 86_400_000),
+          coverageEnd: new Date(Date.now() + 7 * 86_400_000),
+          reviewStatusCode: 'verified',
+          reviewedByUserId: nativeUserId,
+          reviewedAt: new Date(),
+        },
+      });
+      const response = await onsite(f, memberCId).expect(201);
+      const evidence = await prisma.insuranceEligibilityEvidence.findMany({
+        where: { activityRegistrationId: response.body.data.registrationId },
+        include: {
+          activityRegistration: { select: { activityId: true, memberId: true } },
+          memberInsurance: { select: { memberId: true } },
+        },
+      });
+      expect(evidence).toHaveLength(1);
+      expect(evidence[0]).toMatchObject({
+        memberInsuranceId: insurance.id,
+        activityRegistrationRevisionId: response.body.data.registrationRevisionId,
+        activityRegistration: { activityId: f.activityId, memberId: memberCId },
+        memberInsurance: { memberId: memberCId },
+      });
+      const identity = await prisma.activityParticipationIdentity.findUniqueOrThrow({
+        where: { id: response.body.data.participationIdentityId },
+      });
+      expect(identity).toMatchObject({
+        activityId: f.activityId,
+        memberId: memberCId,
+        registrationId: response.body.data.registrationId,
+      });
+      const admitted = await onsiteSnapshot(f);
+      expect((await onsite(f, memberCId).expect(201)).body.data).toEqual(response.body.data);
+      expect(await onsiteSnapshot(f)).toEqual(admitted);
     });
   });
 
@@ -1071,14 +1199,31 @@ describe('attendances 模块', () => {
       expect(await nativeSnapshot(f)).toEqual(before);
     });
 
-    it('member 不存在 → MEMBER_NOT_FOUND', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({
-          records: [baseRecord({ memberId: 'cl0000000000000000000000' })],
+    it('原生现场准入拒绝不存在/软删/停用成员，不建身份、占位或保险证据', async () => {
+      const f = await onsiteScenario();
+      const targets: Array<{
+        id: string;
+        error: typeof BizCode.MEMBER_NOT_FOUND | typeof BizCode.MEMBER_INACTIVE;
+      }> = [{ id: 'cl0000000000000000000000', error: BizCode.MEMBER_NOT_FOUND }];
+      for (const state of ['deleted', 'inactive'] as const) {
+        const member = await prisma.member.create({
+          data: {
+            memberNo: `att-native-${state}`,
+            ...memberIdentityData(`Invalid ${state}`),
+            status: state === 'inactive' ? 'INACTIVE' : 'ACTIVE',
+            deletedAt: state === 'deleted' ? new Date() : null,
+          },
         });
-      expectBizError(res, BizCode.MEMBER_NOT_FOUND);
+        targets.push({
+          id: member.id,
+          error: state === 'deleted' ? BizCode.MEMBER_NOT_FOUND : BizCode.MEMBER_INACTIVE,
+        });
+      }
+      const before = await onsiteSnapshot(f);
+      for (const target of targets) {
+        expectBizError(await onsite(f, target.id), target.error);
+        expect(await onsiteSnapshot(f)).toEqual(before);
+      }
     });
 
     it('原生角色由岗位事实决定，submit 不能夹带 roleCode 且拒绝零写', async () => {
