@@ -2320,164 +2320,64 @@ describe('attendances 模块', () => {
   // ============ 审计刀1:考勤提交不再隐式推动 Activity.completed ============
 
   describe('Activity.completed 只允许显式状态机推动', () => {
-    it('首张 AttendanceSheet 创建后 Activity 仍为 published', async () => {
-      // 新建一个 published 状态的 activity(沿 fixture 风格)
-      const ti = await prisma.dictItem.findFirstOrThrow({
-        where: { code: 'att-demo' },
-        select: { code: true },
-      });
-      const childOrg = await prisma.organization.findFirstOrThrow({
-        where: { nodeTypeCode: 'att-child' },
-        select: { id: true },
-      });
-      const act = await prisma.activity.create({
-        data: {
-          title: 'D11 推动测试',
-          activityTypeCode: ti.code,
-          organizationId: childOrg.id,
-          startAt: new Date(pastIso('08-01T08:00:00.000Z')),
-          endAt: new Date(pastIso('08-01T18:00:00.000Z')),
-          location: '示例',
-          statusCode: 'published',
-        },
-        select: { id: true },
-      });
-
-      await createPendingSheet(act.id, [
-        baseRecord({
-          memberId: memberCId,
-          checkInAt: pastIso('08-01T09:00:00.000Z'),
-          checkOutAt: pastIso('08-01T10:00:00.000Z'),
-        }),
-      ]);
-
-      const after = await prisma.activity.findUnique({
-        where: { id: act.id },
-        select: { statusCode: true },
-      });
-      expect(after?.statusCode).toBe('published');
+    it('原生首次提交结算不隐式完结活动', async () => {
+      const f = await nativeDraft([memberCId]);
+      await nativeSubmit(f);
+      expect((await nativeSnapshot(f)).activity.statusCode).toBe('published');
     });
 
-    it('多张 Sheet 创建后 Activity 仍为 published', async () => {
-      const ti = await prisma.dictItem.findFirstOrThrow({
-        where: { code: 'att-demo' },
-        select: { code: true },
-      });
-      const childOrg = await prisma.organization.findFirstOrThrow({
-        where: { nodeTypeCode: 'att-child' },
-        select: { id: true },
-      });
-      const act = await prisma.activity.create({
-        data: {
-          title: 'D11 多 Sheet 幂等',
-          activityTypeCode: ti.code,
-          organizationId: childOrg.id,
-          startAt: new Date(pastIso('08-02T08:00:00.000Z')),
-          endAt: new Date(pastIso('08-02T18:00:00.000Z')),
-          location: '示例',
-          statusCode: 'published',
-        },
-        select: { id: true },
-      });
-
-      await createPendingSheet(act.id, [
-        baseRecord({
-          memberId: memberCId,
-          checkInAt: pastIso('08-02T09:00:00.000Z'),
-          checkOutAt: pastIso('08-02T10:00:00.000Z'),
-        }),
-      ]);
-      // 第二张
-      await createPendingSheet(act.id, [
-        baseRecord({
-          memberId: memberCId,
-          checkInAt: pastIso('08-02T11:00:00.000Z'),
-          checkOutAt: pastIso('08-02T12:00:00.000Z'),
-        }),
-      ]);
-      const after = await prisma.activity.findUnique({
-        where: { id: act.id },
-        select: { statusCode: true },
-      });
-      expect(after?.statusCode).toBe('published');
+    it('原生退回重提新版本不隐式完结活动，也不改写旧版本', async () => {
+      const f = await nativeDraft([memberCId]);
+      const { version } = await nativeSubmit(f);
+      await nativeReview(version, 'first-return', '补充说明后重提').expect(200);
+      const before = await nativeSnapshot(f);
+      const response = await request(httpServer(app))
+        .post(`${f.base}/versions/${version.id}/resubmit`)
+        .set('Authorization', nativeAuth)
+        .send({
+          operationKey: `resubmit:${f.activityId}`,
+          expectedDraftVersion: before.run.currentDraftVersion,
+          evidenceSealId: f.sealId,
+          confirmation: true,
+        })
+        .expect(200);
+      expect(response.body.data.settlementVersionId).not.toBe(version.id);
+      const after = await nativeSnapshot(f);
+      expect(after.activity.statusCode).toBe('published');
+      expect(after.versions.find((row) => row.id === version.id)).toEqual(
+        before.versions.find((row) => row.id === version.id),
+      );
+      expect(after.results.filter((row) => row.settlementVersionId === version.id)).toEqual(
+        before.results.filter((row) => row.settlementVersionId === version.id),
+      );
+      expect(
+        after.versions.find((row) => row.id === response.body.data.settlementVersionId),
+      ).toMatchObject({ statusCode: 'submitted', priorVersionId: version.id });
     });
 
-    it('reject / final-reject 不改变 Activity published 状态', async () => {
-      const ti = await prisma.dictItem.findFirstOrThrow({
-        where: { code: 'att-demo' },
-        select: { code: true },
-      });
-      const childOrg = await prisma.organization.findFirstOrThrow({
-        where: { nodeTypeCode: 'att-child' },
-        select: { id: true },
-      });
-      const act = await prisma.activity.create({
-        data: {
-          title: 'D11 不回退',
-          activityTypeCode: ti.code,
-          organizationId: childOrg.id,
-          startAt: new Date(pastIso('08-03T08:00:00.000Z')),
-          endAt: new Date(pastIso('08-03T18:00:00.000Z')),
-          location: '示例',
-          statusCode: 'published',
-        },
-        select: { id: true },
-      });
-
-      const sheetId = await createPendingSheet(act.id, [
-        baseRecord({
-          memberId: memberCId,
-          checkInAt: pastIso('08-03T09:00:00.000Z'),
-          checkOutAt: pastIso('08-03T10:00:00.000Z'),
-        }),
-      ]);
-      // 考勤提交不再隐式改变活动状态。
-      await fillContributionPoints(sheetId, 1);
-      await approveThenFinalReject(sheetId, '强行驳回');
-
-      // Activity 仍 published。
-      const after = await prisma.activity.findUnique({
-        where: { id: act.id },
-        select: { statusCode: true },
-      });
-      expect(after?.statusCode).toBe('published');
+    it('原生初审/终审退回均不改变活动 published 状态或产生正式时长', async () => {
+      for (const stage of ['first-return', 'final-return'] as const) {
+        const f = await nativeDraft([memberCId]);
+        const { version } = await nativeSubmit(f);
+        if (stage === 'final-return') await nativeReview(version, 'first-approve').expect(200);
+        await nativeReview(version, stage, '退回说明').expect(200);
+        const after = await nativeSnapshot(f);
+        expect(after.activity.statusCode).toBe('published');
+        expect(after.versions.find((row) => row.id === version.id)?.statusCode).toBe('returned');
+        expect(after.ledgerCount).toBe(0);
+      }
     });
 
-    it('Activity 已是 completed 时,POST Sheet 不报错(幂等)', async () => {
-      const ti = await prisma.dictItem.findFirstOrThrow({
-        where: { code: 'att-demo' },
-        select: { code: true },
-      });
-      const childOrg = await prisma.organization.findFirstOrThrow({
-        where: { nodeTypeCode: 'att-child' },
-        select: { id: true },
-      });
-      const act = await prisma.activity.create({
-        data: {
-          title: 'D11 already completed',
-          activityTypeCode: ti.code,
-          organizationId: childOrg.id,
-          startAt: new Date(pastIso('08-04T08:00:00.000Z')),
-          endAt: new Date(pastIso('08-04T18:00:00.000Z')),
-          location: '示例',
-          statusCode: 'completed', // 直接 completed
-        },
-        select: { id: true },
-      });
-
-      const id = await createPendingSheet(act.id, [
-        baseRecord({
-          memberId: memberCId,
-          checkInAt: pastIso('08-04T09:00:00.000Z'),
-          checkOutAt: pastIso('08-04T10:00:00.000Z'),
-        }),
-      ]);
-      expect(id).toBeTruthy();
-      const after = await prisma.activity.findUnique({
-        where: { id: act.id },
-        select: { statusCode: true },
-      });
-      expect(after?.statusCode).toBe('completed');
+    it('原生活动经显式完结后仍可提交已有现场事实，保持 completed', async () => {
+      const f = await nativeDraft([memberCId]);
+      await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${f.activityId}/complete`)
+        .set('Authorization', nativeFinalAuth)
+        .expect(200);
+      expect((await nativeSnapshot(f)).activity.statusCode).toBe('completed');
+      const { version } = await nativeSubmit(f);
+      expect(version.statusCode).toBe('submitted');
+      expect((await nativeSnapshot(f)).activity.statusCode).toBe('completed');
     });
   });
 
