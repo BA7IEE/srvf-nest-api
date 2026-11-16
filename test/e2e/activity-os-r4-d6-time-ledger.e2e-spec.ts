@@ -1,6 +1,7 @@
 import { BindingScopeType, PrincipalType, Role, UserStatus, Prisma } from '@prisma/client';
 import { performance } from 'node:perf_hooks';
 import appConfig, { type AppConfig } from '../../src/config/app.config';
+import { D6ReceiptFunctionDiagnostic } from '../helpers/d6-receipt-function-diagnostic';
 import { E4EngineRequestWaitDiagnostic } from '../helpers/e4-engine-request-wait-diagnostic';
 import { observeTestEngineTransactions } from '../helpers/engine-transaction-observation';
 import request from 'supertest';
@@ -99,6 +100,7 @@ describe('D6 classified ledger through real preparation and commit', () => {
       const loopBefore = observeThisPrepare ? performance.eventLoopUtilization() : undefined;
       let transactions: ReturnType<typeof observeTestEngineTransactions> | undefined;
       let waits: E4EngineRequestWaitDiagnostic | undefined;
+      let receiptFunctions: D6ReceiptFunctionDiagnostic | undefined;
       let observationUnknown = false;
       if (observeThisPrepare) {
         try {
@@ -106,6 +108,7 @@ describe('D6 classified ledger through real preparation and commit', () => {
           transactions = observeTestEngineTransactions(engine);
           waits = new E4EngineRequestWaitDiagnostic(engine);
           waits.begin();
+          receiptFunctions = new D6ReceiptFunctionDiagnostic(timeSettlement);
         } catch {
           observationUnknown = true;
         }
@@ -136,6 +139,7 @@ describe('D6 classified ledger through real preparation and commit', () => {
         if (observeThisPrepare) {
           // Observation cannot replace the original prepare result/error or its cleanup.
           for (const cleanup of [
+            () => receiptFunctions?.restore(),
             () => waits?.finish(),
             () => waits?.restore(),
             () => transactions?.restore(),
@@ -163,6 +167,8 @@ describe('D6 classified ledger through real preparation and commit', () => {
                 finishedAt: new Date().toISOString(),
                 contributionMode:
                   f.app.get<AppConfig>(appConfig.KEY).contributionSettlementMode ?? 'off',
+                receiptFunctionInstrumentation:
+                  receiptFunctions?.snapshot().purpose ?? 'NOT_INSTALLED',
                 requests,
                 transactions: transactionPhases,
                 jestProcessCpuMicroseconds: cpuBefore ? process.cpuUsage(cpuBefore) : null,
@@ -170,7 +176,7 @@ describe('D6 classified ledger through real preparation and commit', () => {
                   ? performance.eventLoopUtilization(loopBefore)
                   : null,
                 interpretation:
-                  'Promise in-flight union and transaction bridge calls; process CPU/event loop. No PG execution or shared-worker attribution.',
+                  'Promise in-flight union and transaction bridge calls; process CPU/event loop. Includes optional receipt diagnostic SQL; not uninstrumented acceptance or PG wait attribution.',
               }),
             );
           } catch {
@@ -182,6 +188,15 @@ describe('D6 classified ledger through real preparation and commit', () => {
             } catch {
               /* Diagnostic output must not replace the original prepare outcome. */
             }
+          }
+          try {
+            if (receiptFunctions)
+              console.info(
+                'D6 receipt function counters (instrumented transaction)',
+                JSON.stringify(receiptFunctions.snapshot()),
+              );
+          } catch {
+            /* Instrumentation output cannot replace the original response or cleanup. */
           }
         }
       }
