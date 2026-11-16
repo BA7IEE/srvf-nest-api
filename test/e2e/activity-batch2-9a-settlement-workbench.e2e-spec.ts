@@ -3,6 +3,7 @@ import { MemberStatus, Prisma, Role } from '@prisma/client';
 import request from 'supertest';
 
 import { PrismaService } from '../../src/database/prisma.service';
+import { AuditLogsService } from '../../src/modules/audit-logs/audit-logs.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
@@ -412,7 +413,10 @@ describe('第 2 批第 ⑨a 刀 —— App 负责人结算工作台', () => {
     });
 
     const measured = await countSettlementVersionWrites(() =>
-      patchDraftItem(fixture, fixture.participants[0].identityId),
+      patchDraftItem(fixture, fixture.participants[0].identityId).set(
+        'User-Agent',
+        'settlement-item-http-audit',
+      ),
     );
 
     expect(measured.result.status).toBe(200);
@@ -423,22 +427,70 @@ describe('第 2 批第 ⑨a 刀 —— App 负责人结算工作台', () => {
         select: { id: true, statusCode: true, contentHash: true, updatedAt: true },
       }),
     ).resolves.toEqual(submittedBefore);
+    const audits = await prisma.auditLog.findMany({
+      where: { event: 'activity.publish', resourceId: fixture.activityId },
+    });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      actorUserId,
+      resourceType: 'activity',
+      context: {
+        requestId: expect.any(String),
+        ua: 'settlement-item-http-audit',
+        extra: {
+          operation: 'settlement-draft-item-update',
+          settlementVersionId: fixture.draftVersionId,
+          participationIdentityId: fixture.participants[0].identityId,
+        },
+      },
+    });
+    expect(JSON.stringify(audits[0].context)).not.toContain('负责人核对后的调整');
+  });
+
+  it('PATCH 审计故障返回错误且不留下认定变更', async () => {
+    const fixture = await createSettlementFixture();
+    const before = await prisma.participantSettlementResultRevision.findMany({
+      where: { settlementVersionId: fixture.draftVersionId },
+      orderBy: { id: 'asc' },
+    });
+    const auditCount = await prisma.auditLog.count();
+    const audit = jest
+      .spyOn(app.get(AuditLogsService), 'log')
+      .mockRejectedValueOnce(new Error('http-draft-audit-failed'));
+    try {
+      const response = await patchDraftItem(fixture, fixture.participants[0].identityId);
+      expect(response.status).toBe(500);
+      expect(response.body.data).toBeNull();
+      expect(audit).toHaveBeenCalledTimes(1);
+      await expect(
+        prisma.participantSettlementResultRevision.findMany({
+          where: { settlementVersionId: fixture.draftVersionId },
+          orderBy: { id: 'asc' },
+        }),
+      ).resolves.toEqual(before);
+      expect(await prisma.auditLog.count()).toBe(auditCount);
+    } finally {
+      audit.mockRestore();
+    }
   });
 
   it.each(['submitted', 'posted', 'closed'] as const)(
     'PATCH 在下游态 %s 被明确锁定',
     async (runStatus) => {
       const fixture = await createSettlementFixture({ runStatus });
+      const auditCount = await prisma.auditLog.count();
 
       const response = await patchDraftItem(fixture, fixture.participants[0].identityId);
 
       expect(response.status).toBe(409);
       expect(response.body.code).toBe(SETTLEMENT_DRAFT_UPDATE_RUN_STATUS_INVALID);
+      expect(await prisma.auditLog.count()).toBe(auditCount);
     },
   );
 
   it('PATCH 的 expectedDraftVersion 不匹配返回专属 CAS 冲突码', async () => {
     const fixture = await createSettlementFixture();
+    const auditCount = await prisma.auditLog.count();
 
     const response = await patchDraftItem(
       fixture,
@@ -448,6 +500,7 @@ describe('第 2 批第 ⑨a 刀 —— App 负责人结算工作台', () => {
 
     expect(response.status).toBe(409);
     expect(response.body.code).toBe(SETTLEMENT_DRAFT_UPDATE_EXPECTED_DRAFT_VERSION_MISMATCH);
+    expect(await prisma.auditLog.count()).toBe(auditCount);
   });
 
   it('items 的 session 过滤器只命中 session 红集', async () => {

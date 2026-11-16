@@ -3,6 +3,13 @@ import type { Prisma, Role } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 
+type DraftItemAuditSnapshot = {
+  revision: number;
+  resultCode: string;
+  recognizedServiceHours: Prisma.Decimal;
+  recognizedContributionPoints: Prisma.Decimal;
+};
+
 // 结算草稿生成(合同 §5.9)的 audit 组装。
 //
 // ⚠️ **不新增 AuditLogEvent**:沿本模块既有 `activity.publish` 伞事件 + `extra.operation`
@@ -15,6 +22,49 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 @Injectable()
 export class SettlementDraftAuditRecorder {
   constructor(private readonly auditLogs: AuditLogsService) {}
+
+  async logItemUpdate(args: {
+    activityId: string;
+    settlementVersionId: string;
+    settlementVersion: number;
+    participationIdentityId: string;
+    before: DraftItemAuditSnapshot | null;
+    after: DraftItemAuditSnapshot;
+    adjustmentReasonChanged: boolean;
+    actorUserId: string;
+    actorRoleSnap: Role;
+    auditMeta: AuditMeta;
+    tx: Prisma.TransactionClient;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: 'activity.publish',
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: 'activity',
+      resourceId: args.activityId,
+      meta: args.auditMeta,
+      ...(args.before ? { before: this.itemSnapshot(args.before) } : {}),
+      after: this.itemSnapshot(args.after),
+      extra: {
+        operation: 'settlement-draft-item-update',
+        settlementVersionId: args.settlementVersionId,
+        settlementVersion: args.settlementVersion,
+        participationIdentityId: args.participationIdentityId,
+        adjustmentReasonChanged: args.adjustmentReasonChanged,
+      },
+      tx: args.tx,
+    });
+  }
+
+  private itemSnapshot(row: DraftItemAuditSnapshot): Record<string, unknown> {
+    // 不复制自由文本原因、成员资料或整行数据；只保存认定结果的可追溯差异。
+    return {
+      revision: row.revision,
+      resultCode: row.resultCode,
+      recognizedServiceHours: row.recognizedServiceHours.toString(),
+      recognizedContributionPoints: row.recognizedContributionPoints.toString(),
+    };
+  }
 
   async log(args: {
     activityId: string;

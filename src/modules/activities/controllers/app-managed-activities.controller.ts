@@ -1119,6 +1119,7 @@ export class AppManagedActivitiesController {
     @CurrentUser() user: CurrentUserPayload,
     @Param() params: AppSettlementItemParamsDto,
     @Body() dto: AppSettlementUpdateDraftItemDto,
+    @Req() req: Request,
   ): Promise<AppSettlementUpdatedDraftItemResponseDto> {
     await this.resolveMemberId(user);
     return await this.settlements.updateDraftItem(
@@ -1132,6 +1133,7 @@ export class AppManagedActivitiesController {
         reason: dto.reason,
       },
       user,
+      this.auditMeta(req),
     );
   }
 
