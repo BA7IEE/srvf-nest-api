@@ -975,20 +975,59 @@ describe('attendances 模块', () => {
   // ============ POST submit 关键失败 ============
 
   describe('POST submit 关键失败', () => {
-    it('activity 不存在 → ACTIVITY_NOT_FOUND', async () => {
-      const res = await request(httpServer(app))
-        .post('/api/admin/v1/activities/cl0000000000000000000000/attendance-sheets')
-        .set('Authorization', adminAuth)
-        .send({ records: [baseRecord({ memberId: memberCId })] });
-      expectBizError(res, BizCode.ACTIVITY_NOT_FOUND);
+    it('原生不存在活动：GLOBAL 持码者得 NOT_FOUND，scoped 及撤 GLOBAL 后均防枚举且零写', async () => {
+      const f = await nativeDraft([memberCId]);
+      const submitMissing = () =>
+        request(httpServer(app))
+          .post('/api/app/v1/my/managed-activities/cl0000000000000000000000/settlement/submit')
+          .set('Authorization', nativeAuth)
+          .send({
+            operationKey: 'missing-activity-submit',
+            expectedDraftVersion: f.draftVersion,
+            evidenceSealId: f.sealId,
+            confirmation: true,
+          });
+      const before = await nativeSnapshot(f);
+      expectBizError(await submitMissing(), BizCode.RBAC_FORBIDDEN);
+      expect(await nativeSnapshot(f)).toEqual(before);
+      const binding = await prisma.roleBinding.create({
+        data: {
+          roleId: nativeRoleId,
+          principalType: PrincipalType.USER,
+          principalId: nativeUserId,
+          scopeType: BindingScopeType.GLOBAL,
+          status: 'ACTIVE',
+        },
+      });
+      try {
+        expectBizError(await submitMissing(), BizCode.ACTIVITY_NOT_FOUND);
+        expect(await nativeSnapshot(f)).toEqual(before);
+      } finally {
+        await prisma.roleBinding.delete({ where: { id: binding.id } });
+      }
+      expectBizError(await submitMissing(), BizCode.RBAC_FORBIDDEN);
+      expect(await nativeSnapshot(f)).toEqual(before);
     });
 
-    it('activity cancelled → ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN(20122)', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityCancelledId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({ records: [baseRecord({ memberId: memberCId })] });
-      expectBizError(res, BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN);
+    it('原生 cancelled 活动首次送审拒绝 20122，草稿/版本/审计/通知零写', async () => {
+      const f = await nativeDraft([memberCId]);
+      // Cancelled is the input checkpoint, as in the dedicated state-guard suite.
+      await prisma.activity.update({
+        where: { id: f.activityId },
+        data: { statusCode: 'cancelled' },
+      });
+      const before = await nativeSnapshot(f);
+      const response = await request(httpServer(app))
+        .post(`${f.base}/submit`)
+        .set('Authorization', nativeAuth)
+        .send({
+          operationKey: `cancelled:${f.activityId}`,
+          expectedDraftVersion: f.draftVersion,
+          evidenceSealId: f.sealId,
+          confirmation: true,
+        });
+      expectBizError(response, BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN);
+      expect(await nativeSnapshot(f)).toEqual(before);
     });
 
     it('member 不存在 → MEMBER_NOT_FOUND', async () => {
@@ -1001,24 +1040,15 @@ describe('attendances 模块', () => {
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
     });
 
-    it('roleCode 不存在 → ATTENDANCE_ROLE_CODE_INVALID', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({
-          records: [baseRecord({ memberId: memberCId, roleCode: 'no-such-role' })],
-        });
-      expectBizError(res, BizCode.ATTENDANCE_ROLE_CODE_INVALID);
+    it('原生角色由岗位事实决定，submit 不能夹带 roleCode 且拒绝零写', async () => {
+      await expectNativeDtoRejection('submit', { roleCode: 'no-such-role' });
     });
 
-    it('attendanceStatusCode 不存在 → ATTENDANCE_STATUS_CODE_INVALID(absent/leave 自动失败)', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
-        .set('Authorization', adminAuth)
-        .send({
-          records: [baseRecord({ memberId: memberCId, attendanceStatusCode: 'absent' })],
-        });
-      expectBizError(res, BizCode.ATTENDANCE_STATUS_CODE_INVALID);
+    it('原生认定拒绝未知 resultCode，也不接受旧 attendanceStatusCode 字段', async () => {
+      // Native absence decisions are valid enum members; the retired DTO's
+      // present-only restriction is not the native result-code contract.
+      await expectNativeDtoRejection('edit', { resultCode: 'no-such-result' });
+      await expectNativeDtoRejection('edit', { attendanceStatusCode: 'absent' });
     });
 
     it('checkOutAt <= checkInAt → CHECK_OUT_BEFORE_CHECK_IN', async () => {
@@ -1305,6 +1335,63 @@ describe('attendances 模块', () => {
 
   // ============ GET list / detail ============
 
+  describe('原生结算只读元数据与防枚举', () => {
+    it('入账进度存在时可读；不存在版本拒绝且无读取审计或其他写入', async () => {
+      const f = await nativeDraft([memberCId]);
+      const { version } = await nativeSubmit(f);
+      await nativeReview(version, 'first-approve').expect(200);
+      await nativeReview(version, 'final-approve').expect(200);
+      const control = await request(httpServer(app))
+        .get(`/api/admin/v1/attendance-settlements/${version.id}/posting-batch`)
+        .set('Authorization', finalAdminAuth)
+        .expect(200);
+      expect(control.body.data).toMatchObject({
+        settlementVersionId: version.id,
+        effective: false,
+      });
+      const before = await nativeSnapshot(f);
+      const response = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-settlements/cl0000000000000000000000/posting-batch')
+        .set('Authorization', finalAdminAuth);
+      expectBizError(response, BizCode.RBAC_FORBIDDEN);
+      expect(await nativeSnapshot(f)).toEqual(before);
+    });
+
+    it('版本元数据正常返回，不混入旧 records/previousSnapshot/deletedAt', async () => {
+      const f = await nativeDraft([memberCId]);
+      const { version } = await nativeSubmit(f);
+      const response = await request(httpServer(app))
+        .get(`/api/admin/v1/attendance-settlements/${version.id}/review-detail`)
+        .set('Authorization', finalAdminAuth)
+        .expect(200);
+      expect(response.body.data.version).toMatchObject({
+        id: version.id,
+        version: version.version,
+        statusCode: 'submitted',
+        personCount: 1,
+      });
+      for (const field of ['records', 'previousSnapshot', 'deletedAt']) {
+        expect(response.body.data).not.toHaveProperty(field);
+        expect(response.body.data.version).not.toHaveProperty(field);
+      }
+    });
+
+    it('审核详情存在时可读；不存在版本保持防枚举与失败零写', async () => {
+      const f = await nativeDraft([memberCId]);
+      const { version } = await nativeSubmit(f);
+      await request(httpServer(app))
+        .get(`/api/admin/v1/attendance-settlements/${version.id}/review-detail`)
+        .set('Authorization', finalAdminAuth)
+        .expect(200);
+      const before = await nativeSnapshot(f);
+      const response = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-settlements/cl0000000000000000000000/review-detail')
+        .set('Authorization', finalAdminAuth);
+      expectBizError(response, BizCode.RBAC_FORBIDDEN);
+      expect(await nativeSnapshot(f)).toEqual(before);
+    });
+  });
+
   describe('GET list / detail', () => {
     let createdId: string;
 
@@ -1337,24 +1424,6 @@ describe('attendances 模块', () => {
       for (const s of statuses) expect(s).toBe('pending');
     });
 
-    it('GET detail:不存在 → ATTENDANCE_SHEET_NOT_FOUND', async () => {
-      const res = await request(httpServer(app))
-        .get('/api/admin/v1/attendance-sheets/cl0000000000000000000000')
-        .set('Authorization', adminAuth);
-      expectBizError(res, BizCode.ATTENDANCE_SHEET_NOT_FOUND);
-    });
-
-    it('GET detail:不返 records 数组(Sheet 简化)', async () => {
-      const res = await request(httpServer(app))
-        .get(`/api/admin/v1/attendance-sheets/${createdId}`)
-        .set('Authorization', adminAuth);
-      expect(res.status).toBe(200);
-      expect(res.body.data.id).toBe(createdId);
-      expect(res.body.data).not.toHaveProperty('records');
-      expect(res.body.data).not.toHaveProperty('previousSnapshot');
-      expect(res.body.data).not.toHaveProperty('deletedAt');
-    });
-
     it('GET review-detail:Activity 摘要 + Sheet + Records 完整(R25)', async () => {
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/attendance-sheets/${createdId}/review-detail`)
@@ -1374,13 +1443,6 @@ describe('attendances 模块', () => {
       expect(res.body.data.records[0].member.label).toBeTruthy();
       // Decimal 序列化为 string
       expect(typeof res.body.data.records[0].serviceHours).toBe('string');
-    });
-
-    it('GET review-detail:不存在 → ATTENDANCE_SHEET_NOT_FOUND', async () => {
-      const res = await request(httpServer(app))
-        .get('/api/admin/v1/attendance-sheets/cl0000000000000000000000/review-detail')
-        .set('Authorization', adminAuth);
-      expectBizError(res, BizCode.ATTENDANCE_SHEET_NOT_FOUND);
     });
   });
 
