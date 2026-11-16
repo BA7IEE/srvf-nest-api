@@ -491,6 +491,7 @@ type SliceSample = {
   rootRows: number;
   rootLoops: number;
   rootBuffers: ReturnType<typeof buffers>;
+  maxWorkNode: WorkNode | null;
   sliceScans: WorkNode[];
 };
 type SliceIdentity = {
@@ -503,6 +504,11 @@ type SliceIdentity = {
   parentSealed: true;
   planCacheMode: Mode;
 };
+type SliceFailure = {
+  phase: SliceIdentity['phase'] | null;
+  variant: SliceVariant | null;
+  stage: Reason;
+};
 function sliceSnapshot(
   status: 'DISABLED' | 'UNKNOWN' | 'PARTIAL' | 'OBSERVED',
   reason: string,
@@ -512,24 +518,27 @@ function sliceSnapshot(
   transactions = 0,
   statements = 0,
   equivalent: boolean | null = null,
+  failure: SliceFailure | null = null,
 ) {
   return {
     status,
     reason,
     purpose: 'READ_ONLY_SHADOW_AB_NOT_NATIVE_GUARD_OR_PERFORMANCE_ACCEPTANCE',
     scope: 'SAME_REPEATABLE_READ_SNAPSHOT_WITHIN_EACH_PAIR_NOT_ACROSS_PAIRS',
-    candidate: 'CURRENT_REVISION_ALLOCATION_INDEX_DRIVEN_FOUR_CATEGORY_NUMERIC_MAP',
+    candidate: 'CURRENT_REVISION_ALLOCATION_LOCAL_NUMERIC_TOTALS_AND_SOURCE_IDS',
     oracle: 'NORMAL_INPUT_BOTH_EMPTY_REJECT_SETS_PLUS_BIDIRECTIONAL_PROJECTION_COUNTEREXAMPLES',
     oracleScope: 'ONLY_SOURCE_READY_AND_BUCKET_SOURCE_NOT_COMPLETE_GUARD_ACCEPTANCE',
     completeness: 'ORIGINAL_SOURCE_READY_UNCHANGED_AND_TESTED_FOR_MISSING_SOURCE',
     effects: 'EXTRA_READS_MAY_WARM_CACHES_NO_FORCED_PLAN_MODE_OR_STATISTICS_UPDATE',
     buffers: 'INCLUSIVE_NODE_BUFFERS_DO_NOT_SUM_PARENT_CHILDREN',
+    work: 'ROW_LOOP_PROXY_NOT_NODE_TIME_OR_CPU',
     rows: 'POSTGRES_ROUNDED_PER_LOOP_AVERAGES_NOT_EXACT_TUPLE_TOTALS',
     transactionBudgetMs: 5000,
     statementBudgetMs: 2000,
     transactions,
     explicitObserverStatements: statements,
     equivalent,
+    failure,
     controls,
     samples,
     identities,
@@ -545,40 +554,34 @@ export function d6ReceiptSliceComparisonAuthority(source: string) {
   const suffix = ') AS expected_recognized';
   const end = original.indexOf(suffix, start) + suffix.length;
   requireValue(start >= 0 && end > start);
-  let candidate =
-    original.slice(0, start) +
-    'coalesce((d6_totals_map.by_allocation -> a.id ->> b."categoryCode")::NUMERIC, 0) AS expected_recognized' +
-    original.slice(end);
-  const sums = ['volunteer_service', 'training', 'organization', 'non_creditable']
+  const categories = ['volunteer_service', 'training', 'organization', 'non_creditable'];
+  const expected = `CASE b."categoryCode" ${categories
+    .map((category) => `WHEN '${category}' THEN d6_totals."${category}"`)
+    .join(' ')} ELSE 0::NUMERIC END AS expected_recognized`;
+  let scoped = original.slice(0, start) + expected + original.slice(end);
+  const sums = categories
     .map(
-      (category) => `'${category}', coalesce(sum(extract(epoch FROM
+      (category) => `coalesce(sum(extract(epoch FROM
         (slice."endAt" - slice."startAt")) * 1000)
-        FILTER (WHERE slice."categoryCode" = '${category}'), 0)`,
+        FILTER (WHERE slice."categoryCode" = '${category}'), 0) AS "${category}"`,
     )
     .join(',\n');
-  // One statement-local numeric map avoids an unindexed aggregate-to-source join.
-  // Every slice lookup is driven by an allocation from this exact revision.
-  candidate = candidate.replace(
+  // Keep this lateral subquery correlated: its materialized scope is one small
+  // allocation packet, not an unindexed all-allocation aggregate-to-source join.
+  scoped = scoped.replace(
     'WITH source_facts AS (',
-    `WITH d6_allocation_ids AS MATERIALIZED (
-      SELECT DISTINCT "allocationRevisionId"
-      FROM public."ParticipantSettlementTimeBucketSource"
-      WHERE "timeRevisionId" = parent_row.id
-    ), d6_totals_map AS MATERIALIZED (
-      SELECT jsonb_object_agg(ids."allocationRevisionId", per_allocation.totals) AS by_allocation
-      FROM d6_allocation_ids ids
-      CROSS JOIN LATERAL (
-        SELECT jsonb_build_object(${sums}) AS totals
-        FROM public."ParticipantTimeAllocationSlice" slice
-        WHERE slice."allocationRevisionId" = ids."allocationRevisionId"
-      ) per_allocation
+    `WITH d6_source_scope AS MATERIALIZED (
+      SELECT d6_totals."allocationRevisionId" AS id, d6_totals.source_ids
     ), source_facts AS (`,
   );
-  candidate = candidate.replace(
+  scoped = scoped.replace(
     'WHERE bs."timeRevisionId" = parent_row.id',
-    'CROSS JOIN d6_totals_map\n      WHERE bs."timeRevisionId" = parent_row.id',
+    `CROSS JOIN d6_source_scope
+      WHERE bs."timeRevisionId" = parent_row.id
+        AND bs."allocationRevisionId" = d6_source_scope.id
+        AND bs.id = ANY(d6_source_scope.source_ids)`,
   );
-  requireValue(candidate.includes('CROSS JOIN d6_totals_map'));
+  requireValue(scoped.includes('CROSS JOIN d6_source_scope'));
   const rejectIds = (predicate: string) => {
     requireValue(predicate.includes('SELECT 1 FROM source_facts f'));
     return predicate.replace(
@@ -586,6 +589,23 @@ export function d6ReceiptSliceComparisonAuthority(source: string) {
       'SELECT f.id AS id FROM source_facts f',
     );
   };
+  const candidate = `WITH d6_allocation_ids AS MATERIALIZED (
+      SELECT "allocationRevisionId", array_agg(id ORDER BY id COLLATE "C") AS source_ids
+      FROM public."ParticipantSettlementTimeBucketSource"
+      WHERE "timeRevisionId" = parent_row.id
+      GROUP BY "allocationRevisionId"
+    ), d6_allocation_totals AS MATERIALIZED (
+      SELECT ids."allocationRevisionId", ids.source_ids, per_allocation.*
+      FROM d6_allocation_ids ids
+      CROSS JOIN LATERAL (
+        SELECT ${sums}
+        FROM public."ParticipantTimeAllocationSlice" slice
+        WHERE slice."allocationRevisionId" = ids."allocationRevisionId"
+      ) per_allocation
+    )
+    SELECT d6_rejections.id AS id
+    FROM d6_allocation_totals d6_totals
+    CROSS JOIN LATERAL (${rejectIds(scoped)}) d6_rejections`;
   const difference = `d6_difference AS (
     (SELECT id FROM d6_original EXCEPT SELECT id FROM d6_candidate)
     UNION ALL
@@ -657,7 +677,7 @@ export function d6ReceiptSliceComparisonAuthority(source: string) {
         JOIN public."ParticipantSettlementTimeBucket" b ON b.id=sample."bucketId"
         WHERE b."categoryCode"='training'))
     ), d6_original AS MATERIALIZED (${rejectIds(project(original))}),
-      d6_candidate AS MATERIALIZED (${rejectIds(project(candidate))}),
+      d6_candidate AS MATERIALIZED (${project(candidate)}),
       d6_readiness AS MATERIALIZED (SELECT EXISTS(${readiness}) AS rejected),
       ${difference}
     SELECT (EXISTS(SELECT 1 FROM d6_original) OR d6_readiness.rejected) AS "originalRejected",
@@ -709,6 +729,10 @@ export async function observeD6ReceiptSliceComparison(
   let controls: SliceControl[] = [];
   const samples: SliceSample[] = [];
   const identities: SliceIdentity[] = [];
+  const current: { phase: SliceIdentity['phase'] | null; variant: SliceVariant | null } = {
+    phase: null,
+    variant: null,
+  };
   const stage: { current: Reason } = { current: 'TRANSACTION' };
   type Query = (text: string, ...values: unknown[]) => Promise<unknown>;
   const readMetadata = (rows: unknown) => {
@@ -720,6 +744,8 @@ export async function observeD6ReceiptSliceComparison(
     name: SliceIdentity['phase'],
     run: (query: Query) => Promise<T>,
   ): Promise<T> => {
+    current.phase = name;
+    current.variant = null;
     stage.current = 'TRANSACTION';
     transactions++;
     let active = true;
@@ -756,6 +782,7 @@ export async function observeD6ReceiptSliceComparison(
               before.version === after.version &&
               before.mode === after.mode,
           );
+          stage.current = 'TRANSACTION';
           return { value, mode: before.mode };
         },
         { maxWait: 1000, timeout: 5000 },
@@ -777,6 +804,7 @@ export async function observeD6ReceiptSliceComparison(
     }
   };
   let reason: Reason = 'NONE';
+  let failure: SliceFailure | null = null;
   try {
     controls = await attempt('CONTROLS', async (query) => {
       stage.current = 'COUNTEREXAMPLES';
@@ -820,6 +848,7 @@ export async function observeD6ReceiptSliceComparison(
       const pair = await attempt(order, async (query) => {
         const result: SliceSample[] = [];
         for (const variant of variants) {
+          current.variant = variant;
           stage.current = 'PLAN_SQL';
           const raw = await query(variant === 'ORIGINAL' ? sql.original : sql.candidate, reference);
           stage.current = 'PLAN_SHAPE';
@@ -843,6 +872,7 @@ export async function observeD6ReceiptSliceComparison(
             rootRows: plan.rootRows,
             rootLoops: plan.rootLoops,
             rootBuffers: plan.rootBuffers,
+            maxWorkNode: plan.topWorkNodes[0] ?? null,
             sliceScans,
           });
         }
@@ -855,6 +885,13 @@ export async function observeD6ReceiptSliceComparison(
     }
   } catch (error) {
     reason = failureReason(error, stage.current);
+    failure = {
+      phase: current.phase,
+      variant: ['PLAN_SQL', 'PLAN_SHAPE', 'POST_PREPARE_DATA_CHANGED'].includes(stage.current)
+        ? current.variant
+        : null,
+      stage: stage.current,
+    };
   }
   const result = sliceSnapshot(
     samples.length === 4 ? 'OBSERVED' : samples.length ? 'PARTIAL' : 'UNKNOWN',
@@ -865,6 +902,7 @@ export async function observeD6ReceiptSliceComparison(
     transactions,
     statements,
     equivalent,
+    failure,
   );
   if (Buffer.byteLength(JSON.stringify(result), 'utf8') <= 8192) return result;
   return sliceSnapshot('UNKNOWN', 'OUTPUT', [], [], [], transactions, statements);

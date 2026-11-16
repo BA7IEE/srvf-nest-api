@@ -731,25 +731,45 @@ describe('D6 post-prepare read-only predicate plan diagnostic', () => {
 });
 
 describe('D6 fixed read-only per-allocation slice comparison', () => {
-  it('retains the pinned original and changes only recognized-slice derivation in the candidate', () => {
+  it('retains the pinned original and all rejection clauses with allocation-local numeric totals', () => {
     const sql = d6ReceiptSliceComparisonAuthority(source);
     expect(sql.original === queries.BUCKET_SOURCE).toBe(true);
     expect(sql.candidate.includes('d6_allocation_ids AS MATERIALIZED')).toBe(true);
-    expect(sql.candidate.includes('jsonb_object_agg')).toBe(true);
+    expect(sql.candidate.includes('d6_allocation_totals AS MATERIALIZED')).toBe(true);
+    expect(
+      /jsonb_object_agg|jsonb_build_object|d6_totals_map|by_allocation/u.test(sql.candidate),
+    ).toBe(false);
     expect(sql.candidate.includes('CROSS JOIN LATERAL')).toBe(true);
     expect(
       sql.candidate.includes('slice."allocationRevisionId" = ids."allocationRevisionId"'),
     ).toBe(true);
-    expect(
-      sql.candidate.includes('->> b."categoryCode")::NUMERIC, 0) AS expected_recognized'),
-    ).toBe(true);
-    for (const category of ['volunteer_service', 'training', 'organization', 'non_creditable'])
+    for (const category of ['volunteer_service', 'training', 'organization', 'non_creditable']) {
       expect(sql.candidate.includes(`slice."categoryCode" = '${category}'`)).toBe(true);
-    const tail = '    SELECT 1 FROM source_facts f';
+      expect(sql.candidate.includes(`AS "${category}"`)).toBe(true);
+      expect(sql.candidate.includes(`WHEN '${category}' THEN d6_totals."${category}"`)).toBe(true);
+    }
+    const start = sql.original.indexOf('    WHERE f."participationIdentityId"');
+    const end = 'newer.revision > f.allocation_revision)';
+    const stop = sql.original.indexOf(end, start);
+    expect(start).toBeGreaterThan(0);
+    expect(stop).toBeGreaterThan(start);
+    expect(sql.candidate.includes(sql.original.slice(start, stop + end.length))).toBe(true);
+  });
+
+  it('carries every current-revision source ID in its own allocation packet instead of rejoining a global aggregate', () => {
+    const { candidate } = d6ReceiptSliceComparisonAuthority(source);
+    expect(candidate.includes('array_agg(id ORDER BY id COLLATE "C") AS source_ids')).toBe(true);
+    expect(candidate.includes('GROUP BY "allocationRevisionId"')).toBe(true);
+    expect(candidate.includes('d6_source_scope AS MATERIALIZED')).toBe(true);
     expect(
-      sql.original.slice(sql.original.indexOf(tail)) ===
-        sql.candidate.slice(sql.candidate.indexOf(tail)),
+      candidate.includes('SELECT d6_totals."allocationRevisionId" AS id, d6_totals.source_ids'),
     ).toBe(true);
+    expect(candidate.includes('bs.id = ANY(d6_source_scope.source_ids)')).toBe(true);
+    expect(candidate.includes('bs."allocationRevisionId" = d6_source_scope.id')).toBe(true);
+    expect(candidate.includes('bs."timeRevisionId" = parent_row.id')).toBe(true);
+    expect(candidate.includes('SELECT f.id AS id FROM source_facts f')).toBe(true);
+    expect(candidate.includes('SELECT d6_rejections.id AS id')).toBe(true);
+    expect(/\b(?:LIMIT|HAVING)\b/u.test(candidate)).toBe(false);
   });
 
   it('refuses changed authority and never adds DDL, writes, statistics or plan-mode changes', () => {
@@ -796,6 +816,7 @@ describe('D6 fixed read-only per-allocation slice comparison', () => {
       ['BA', 'ORIGINAL'],
     ]);
     expect(result.samples.map((s) => s.sliceScans[0].loops)).toEqual([40000, 10000, 10000, 40000]);
+    expect(result.samples.map((s) => s.maxWorkNode?.loops)).toEqual([40000, 10000, 10000, 40000]);
     expect(result.identities).toHaveLength(3);
     expect(
       result.identities.every(
@@ -810,6 +831,10 @@ describe('D6 fixed read-only per-allocation slice comparison', () => {
     ).toBe(true);
     expect(result.transactions).toBe(3);
     expect(result.explicitObserverStatements).toBe(17);
+    expect(result.failure).toBeNull();
+    expect(result.candidate).toBe(
+      'CURRENT_REVISION_ALLOCATION_LOCAL_NUMERIC_TOTALS_AND_SOURCE_IDS',
+    );
     expect(f.closed).toBe(3);
     for (const c of f.calls.filter((c) => c.kind === 'BEGIN'))
       expect(c.values).toEqual([{ maxWait: 1000, timeout: 5000 }]);
@@ -920,6 +945,33 @@ describe('D6 fixed read-only per-allocation slice comparison', () => {
     },
   );
 
+  it('identifies a timed-out candidate without publishing an incomplete pair or issuing BA queries', async () => {
+    const candidate = d6ReceiptSliceComparisonAuthority(source).candidate;
+    const f = fixture({
+      error: Object.assign(new Error('PRIVATE_CANDIDATE_TIMEOUT'), {
+        code: 'P2010',
+        meta: { code: '57014' },
+      }),
+      fail: (sql) => sql === candidate,
+    });
+    const result = await f.compare();
+    expect(result.status).toBe('UNKNOWN');
+    expect(result.reason).toBe('PLAN_TIMEOUT');
+    expect(result.failure).toEqual({
+      phase: 'AB',
+      variant: 'ONCE_PER_ALLOCATION',
+      stage: 'PLAN_SQL',
+    });
+    expect(result.controls).toHaveLength(8);
+    expect(result.samples).toEqual([]);
+    expect(result.equivalent).toBeNull();
+    expect(result.transactions).toBe(2);
+    expect(result.explicitObserverStatements).toBe(10);
+    expect(result.identities.map((i) => i.phase)).toEqual(['CONTROLS']);
+    expect(f.calls.at(-1)?.kind).toBe('ROLLBACK');
+    expect(JSON.stringify(result)).not.toContain('PRIVATE');
+  });
+
   it.each(['backend', 'virtual', 'mode', 'oid', 'version'])(
     'rejects changing %s identity before recording controls or samples',
     async (field) => {
@@ -935,6 +987,7 @@ describe('D6 fixed read-only per-allocation slice comparison', () => {
       });
       const result = await f.compare();
       expect(result.reason).toBe('IDENTITY');
+      expect(result.failure).toEqual({ phase: 'CONTROLS', variant: null, stage: 'IDENTITY' });
       expect(result.controls).toEqual([]);
       expect(result.samples).toEqual([]);
       expect(result.identities).toEqual([]);
