@@ -282,16 +282,14 @@ export function ensureTemplateDatabaseExists(): string {
 // 兼容旧名(reset-test-db-cli.ts 等调用点):语义 = 确保模板库存在。
 export const ensureTestDatabaseExists = ensureTemplateDatabaseExists;
 
-function connectionCount(dbName: string): string {
-  return psql(
-    `SELECT count(*) FROM pg_stat_activity WHERE datname='${dbName}' AND pid<>pg_backend_pid()`,
-  );
-}
-
 // DROP alone excludes PostgreSQL's own autovacuum workers. Every other kind,
 // including unknown background workers, still blocks; ordinary DROP remains the
 // final race/prepared-transaction guard. One aggregate supplies both verdict and evidence.
-function dropConnectionSnapshot(dbName: string): { blocked: boolean; summary: string } {
+// Template checks retain the stricter zero-connection condition, including autovacuum.
+function connectionSnapshot(
+  dbName: string,
+  operation: 'drop' | 'template',
+): { blocked: boolean; summary: string } {
   try {
     const value = psql(
       `SELECT COALESCE(sum(n) FILTER (WHERE kind <> 'autovacuum'), 0)::text || '|' ||
@@ -334,7 +332,8 @@ function dropConnectionSnapshot(dbName: string): { blocked: boolean; summary: st
       return total + (kind === 'autovacuum' ? 0 : Number(amount));
     }, 0);
     if (blockingCount !== Number(count)) throw new Error('Inconsistent snapshot');
-    return { blocked: blockingCount !== 0, summary };
+    const templateCount = rows.reduce((total, row) => total + Number(row.split(':')[2]), 0);
+    return { blocked: (operation === 'template' ? templateCount : blockingCount) !== 0, summary };
   } catch {
     // A failed/malformed observation is never permission to drop or a reason to retry.
     return { blocked: true, summary: 'unavailable' };
@@ -352,11 +351,12 @@ function inspectHint(dbName: string): string {
 // 否则非职业程序员维护者会卡死在一条 Postgres 原生报错上。
 export function assertTemplateHasNoConnections(): void {
   const templateName = deriveTemplateTestDbName();
-  const count = connectionCount(templateName);
-  if (count !== '0') {
+  const snapshot = connectionSnapshot(templateName, 'template');
+  if (snapshot.blocked) {
     throw new Error(
-      `模板测试库 '${templateName}' 上还有 ${count} 个活跃连接(Prisma Studio?dev server?),` +
-        `无法按模板克隆 worker 库。请关闭这些连接后重跑;查看来源:\n${inspectHint(templateName)}`,
+      `模板测试库 '${templateName}' 仍有活跃连接或无法确认零连接，拒绝克隆 worker 库。\n` +
+        `请确认连接来源后重跑；不自动终止连接。\n${inspectHint(templateName)}\n` +
+        `脱敏进程分类（同一次判定快照）: ${snapshot.summary}`,
     );
   }
 }
@@ -391,7 +391,7 @@ export function recreateWorkerDatabase(workerId: string | number): string {
   // 正在用这个 worker 库,静默 FORCE 删除会让两条 run 共用重建后的同名库、互相
   // TRUNCATE —— 正是本设计要根除的跨 run 互擦。模板库零连接断言检测不到这种情况
   // (并发 run 的 worker 连的是 _wN 而非模板),所以必须在这里对目标库单独把关。
-  const snapshot = dropConnectionSnapshot(workerName);
+  const snapshot = connectionSnapshot(workerName, 'drop');
   if (snapshot.blocked) {
     throw new Error(
       `worker 测试库 '${workerName}' 仍有活跃连接，拒绝重建。\n` +
@@ -422,7 +422,7 @@ export function dropWorkerDatabase(workerId: string | number): void {
   const workerName = deriveWorkerTestDbName(workerId);
   assertDroppableTestDbName(workerName);
   assertNamedTestDatabaseScope([workerName]);
-  const snapshot = dropConnectionSnapshot(workerName);
+  const snapshot = connectionSnapshot(workerName, 'drop');
   if (snapshot.blocked) {
     throw new Error(
       `worker 测试库 '${workerName}' 仍有活跃连接，拒绝清理。\n${inspectHint(workerName)}\n` +

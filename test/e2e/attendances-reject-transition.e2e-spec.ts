@@ -1,366 +1,295 @@
 import type { INestApplication } from '@nestjs/common';
 import { Role, UserStatus } from '@prisma/client';
+import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { PrismaService } from '../../src/database/prisma.service';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
-import { AttendancesService } from '../../src/modules/attendances/attendances.service';
-import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
+import { ActivitySettlementHttpService } from '../../src/modules/activities/activity-settlement-http.service';
+import { SettlementSubmitService } from '../../src/modules/activities/settlement-submit.service';
+import { SettlementDraftService } from '../../src/modules/activities/settlement-draft.service';
+import { createTestUser } from '../fixtures/users.fixture';
+import { loginAs } from '../fixtures/auth.fixture';
+import { httpServer } from '../helpers/http-server';
+import { createSettlementDraftFixture } from '../helpers/settlement-draft.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 
-// attendances reject(...) 状态转移 characterization tests(StateMachine 抽离前最后一块前置)。
-//
-// 目标:在抽 `StateMachine` 前显式锁定 `AttendancesService.reject(...)` 的现状行为。
-//
-// 范围(complement of PR #176 + PR #181):
-//   - PR #176 attendances-state-transition.e2e-spec.ts 锁了 approve / finalApprove / finalReject
-//   - PR #181 attendances-status-guards.e2e-spec.ts 锁了 submit / edit / softDelete
-//   - 本 spec 锁 reject(pending → rejected)+ 4 个 wrong-state 拒绝;沿 PR #176 Group A + Group C 范式。
-//
-// 现状(只读复核):
-//   - reject 仅允许 `pending`;非 pending 统一抛 `ATTENDANCE_SHEET_STATUS_INVALID`(单 BizCode,
-//     不分 source state — 与 edit / softDelete 的 per-state 4 个 BizCode 不同)。
-//   - 成功:Sheet.statusCode → 'rejected';写 reviewerUserId / reviewedAt / reviewNote。
-//   - audit:event = 'attendance-sheet.review';extra.operation = 'review';extra.action = 'reject';
-//     extra.priorStatusCode / extra.nextStatusCode 写实际 source / target。
-//
-// 测试策略(沿 PR #176 范式):
-//   - createTestApp + resetDb + 真实 PrismaService(test database)。
-//   - service-level e2e:绕过 HTTP / Guard / RolesGuard,直接 `app.get(AttendancesService).reject(...)`。
-//   - per-test `isolateFixtures()` 清 sheets / records / audit_logs(保留 user/member/org/activity)。
-//   - direct prisma seed Sheet 任意起始 statusCode(包括非 pending 4 种),覆盖护栏路径。
-//   - **不测 reviewNote 必填** — DTO `@MinLength(1)` 在 controller path 校验;service 不做空字符串兜底
-//     (reject 与 finalReject 不同;finalReject 在 service 内有 trim 兜底,reject 没有)。本 spec
-//     只锁 transition 决策与副作用,不锁 DTO validation。
-//
-// 本 PR 范围:
-//   ❌ 不改 attendances.service.ts
-//   ❌ 不抽 StateMachine / TimeOverlapPolicy / ContributionCalculator / AuditRecorder
-//   ❌ 不拆 controller / DTO / schema / migration / OpenAPI snapshot
-//   ✅ 只新增本测试文件
+// Old hard rejection is retired. Its valid review/state/audit/concurrency
+// assertions move to first-return, which preserves facts for resubmission.
+// Historical Sheet deletion is deliberately not inherited by the new command.
+const META: AuditMeta = { requestId: 'rej-native-state', ip: null, ua: 'jest/return-state' };
+type Fixture = Awaited<ReturnType<typeof createSettlementDraftFixture>> & { versionId: string };
 
-type SheetStatus = 'pending' | 'pending_final_review' | 'approved' | 'rejected' | 'final_rejected';
-
-interface SeedContext {
-  prisma: PrismaService;
-  service: AttendancesService;
-  reviewerUserId: string;
-  reviewerPayload: CurrentUserPayload;
-  submitterUserId: string;
-  memberId: string;
-  activityId: string;
-}
-
-const AUDIT_META: AuditMeta = {
-  requestId: 'rej-test-req-00000000000000001',
-  ip: '127.0.0.1',
-  ua: 'jest/30 attendances-reject-transition',
-};
-
-describe('AttendancesService reject transition (characterization)', () => {
+describe('native first-return and retired hard rejection', () => {
   let app: INestApplication;
-  let ctx: SeedContext;
+  let prisma: PrismaService;
+  let reviews: ActivitySettlementHttpService;
+  let submitter: CurrentUserPayload;
+  let reviewer: CurrentUserPayload;
+  let auth: string;
+  let organizationId: string;
+  let ownerId: string;
+  let participantIds: string[];
+  const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
 
   beforeAll(async () => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
-
-    const prisma = app.get(PrismaService);
-    const service = app.get(AttendancesService);
-
-    // 一次性 seed 全局公共数据(reviewer / member / org / activity)
-    // 与 PR #176 状态转移 spec 一致:reject(...) **仅校验** sheet.statusCode,不走 dict / org
-    // 校验路径(那是 submit / edit 的逻辑),因此 dict items 字符串内容随意,FK 由 organization 兜底。
-    const reviewer = await prisma.user.create({
-      data: {
-        username: 'att-rej-reviewer',
-        passwordHash: '$2a$10$dummy-hash-not-used-since-no-login-needed',
-        role: Role.ADMIN,
-        status: UserStatus.ACTIVE,
-      },
-      select: { id: true },
-    });
-    const submitter = await prisma.user.create({
-      data: {
-        username: 'att-rej-submitter',
-        passwordHash: '$2a$10$dummy-hash-not-used-since-no-login-needed',
-        role: Role.USER,
-        status: UserStatus.ACTIVE,
-      },
-      select: { id: true },
-    });
-
-    // Slow-4 T3(评审稿 §8 / D-S4-6):本 spec 直调 service(绕过 Guard),判权已下沉
-    // service 层 rbac.can();给 ADMIN 测试用户 reviewer 补挂 biz-admin(零漂移:对应迁移前
-    // @Roles(SUPER_ADMIN, ADMIN) 放行语义;断言零修改)。
-    const bizSeed = await seedBizAdminPermissionsAndRole(app);
-    await grantBizAdminToUser(app, reviewer.id, bizSeed.bizAdminRoleId);
-
-    const member = await prisma.member.create({
-      data: { memberNo: 'att-rej-m-001', ...memberIdentityData('Reject Member') },
-      select: { id: true },
-    });
-
-    // Activity 需要 Organization FK(沿 schema.prisma Activity.organizationId Restrict)
-    const nodeDict = await prisma.dictType.create({
-      data: { code: 'node_type', label: '节点类型' },
-      select: { id: true },
-    });
-    await prisma.dictItem.create({
-      data: { typeId: nodeDict.id, code: 'rej-root', label: '根' },
-    });
-    const rootOrg = await prisma.organization.create({
-      data: { name: 'Reject Root Org', nodeTypeCode: 'rej-root', parentId: null },
-      select: { id: true },
-    });
-
-    // Activity statusCode 用 'completed':reject 不依赖 activity status,任意非 cancelled 即可;
-    // 用 completed 锁定补录考勤仍允许的参与状态语义。
-    const activity = await prisma.activity.create({
-      data: {
-        title: 'Reject Activity',
-        activityTypeCode: 'rej-type',
-        organizationId: rootOrg.id,
-        startAt: new Date('2099-08-01T08:00:00.000Z'),
-        endAt: new Date('2099-08-01T12:00:00.000Z'),
-        location: 'reject demo',
-        statusCode: 'completed',
-        isPublicRegistration: true,
-      },
-      select: { id: true },
-    });
-
-    ctx = {
-      prisma,
-      service,
-      reviewerUserId: reviewer.id,
-      reviewerPayload: {
-        id: reviewer.id,
-        username: 'att-rej-reviewer',
-        role: Role.ADMIN,
-        status: UserStatus.ACTIVE,
-        memberId: null,
-      },
-      submitterUserId: submitter.id,
-      memberId: member.id,
-      activityId: activity.id,
+    prisma = app.get(PrismaService);
+    reviews = app.get(ActivitySettlementHttpService);
+    const user = async (username: string, role: Role): Promise<CurrentUserPayload> => {
+      const row = await createTestUser(app, { username, role });
+      return { id: row.id, username, role, status: UserStatus.ACTIVE, memberId: null };
     };
+    submitter = await user('att-rej-submitter', Role.USER);
+    reviewer = await user('att-rej-reviewer', Role.ADMIN);
+    auth = (await loginAs(app, reviewer.username)).authHeader;
+    const role = await prisma.rbacRole.create({
+      data: { code: 'native-return-characterization', displayName: '原生退回验收' },
+    });
+    const code = 'activity.settlement-first-review.record';
+    const permission = await prisma.permission.upsert({
+      where: { code },
+      update: {},
+      create: {
+        code,
+        module: 'activity',
+        action: 'settlement-first-review',
+        resourceType: 'record',
+      },
+    });
+    await prisma.rolePermission.create({ data: { roleId: role.id, permissionId: permission.id } });
+    await prisma.roleBinding.create({
+      data: {
+        principalType: 'USER',
+        principalId: reviewer.id,
+        roleId: role.id,
+        scopeType: 'GLOBAL',
+        status: 'ACTIVE',
+      },
+    });
+    organizationId = (
+      await prisma.organization.create({
+        data: { name: 'Return transition org', nodeTypeCode: 'return-root' },
+      })
+    ).id;
+    const member = async (memberNo: string) =>
+      (
+        await prisma.member.create({
+          data: {
+            memberNo,
+            ...memberIdentityData(memberNo),
+            status: 'ACTIVE',
+            gradeCode: 'level-2',
+          },
+        })
+      ).id;
+    ownerId = await member('return-transition-owner');
+    participantIds = await Promise.all([1, 2].map((index) => member(`return-transition-${index}`)));
   });
 
   afterAll(async () => {
-    await app.close();
+    if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+    else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
+    await app?.close();
   });
 
-  // 每个 case 清 sheets / records / audit_logs(保留 user / member / org / activity)。
-  async function isolateFixtures(): Promise<void> {
-    // 顺序很关键:先删 child records,再删 parent sheets(Restrict FK)
-    await ctx.prisma.attendanceRecord.deleteMany({});
-    await ctx.prisma.attendanceSheet.deleteMany({});
-    await ctx.prisma.auditLog.deleteMany({});
-  }
-
-  /**
-   * 直接 prisma seed AttendanceSheet + 1 条 active record(绕过 submit 状态机)。
-   * 沿 attendances-state-transition.e2e-spec.ts seedSheet 范式;仅简化为 1 条 record(reject 不依赖 records)。
-   */
-  async function seedSheet(opts: {
-    statusCode: SheetStatus;
-    checkInOffsetHours?: number;
-  }): Promise<string> {
-    const offsetHours = opts.checkInOffsetHours ?? 0;
-    const sheet = await ctx.prisma.attendanceSheet.create({
-      data: {
-        activityId: ctx.activityId,
-        submitterUserId: ctx.submitterUserId,
-        statusCode: opts.statusCode,
-        version: 1,
-      },
-      select: { id: true },
+  async function fixture(): Promise<Fixture> {
+    const f = await createSettlementDraftFixture(prisma, {
+      organizationId,
+      ownerMemberId: ownerId,
+      actorUserId: submitter.id,
+      participantMemberIds: participantIds,
+      activityTypeCode: 'return-type',
     });
-    const checkIn = new Date(
-      new Date('2099-08-10T08:00:00.000Z').getTime() + offsetHours * 60 * 60 * 1000,
-    );
-    const checkOut = new Date(checkIn.getTime() + 4 * 60 * 60 * 1000);
-    await ctx.prisma.attendanceRecord.create({
-      data: {
-        sheetId: sheet.id,
-        memberId: ctx.memberId,
-        roleCode: 'rej-role',
-        checkInAt: checkIn,
-        checkOutAt: checkOut,
-        serviceHours: 4,
-        attendanceStatusCode: 'normal',
-        contributionPoints: 1, // 任意非 null;reject 不读 contributionPoints
-      },
-    });
-    return sheet.id;
-  }
-
-  // ============ A. reject(pending → rejected)============
-  describe('A. reject(pending → rejected)', () => {
-    beforeEach(isolateFixtures);
-
-    it('成功路径:返 rejected + DB 落库 + reviewer 三字段 + record 跟随软删(F4)+ audit review.reject', async () => {
-      const sheetId = await seedSheet({ statusCode: 'pending' });
-
-      const result = await ctx.service.reject(
-        sheetId,
-        { reviewNote: '数据有误,驳回' },
-        ctx.reviewerPayload,
-        AUDIT_META,
-      );
-
-      // DTO 返回
-      expect(result.statusCode).toBe('rejected');
-      expect(result.reviewerUserId).toBe(ctx.reviewerUserId);
-      expect(result.reviewedAt).not.toBeNull();
-      expect(result.reviewNote).toBe('数据有误,驳回');
-
-      // DB 落库反向断言
-      const db = await ctx.prisma.attendanceSheet.findUniqueOrThrow({
-        where: { id: sheetId },
-        select: {
-          statusCode: true,
-          reviewerUserId: true,
-          reviewedAt: true,
-          reviewNote: true,
-          finalReviewerUserId: true,
-          finalReviewedAt: true,
-          finalReviewNote: true,
+    for (const [index, participationIdentityId] of f.identityIds.entries()) {
+      await app.get(SettlementDraftService).updateItem(
+        {
+          activityId: f.activityId,
+          participationIdentityId,
+          expectedDraftVersion: 1,
+          resultCode: 'present',
+          recognizedServiceHours: 2,
+          recognizedContributionPoints: index + 1,
+          reason: '退回验收人工认定',
         },
-      });
-      expect(db.statusCode).toBe('rejected');
-      expect(db.reviewerUserId).toBe(ctx.reviewerUserId);
-      expect(db.reviewedAt).not.toBeNull();
-      expect(db.reviewNote).toBe('数据有误,驳回');
-      // finalReviewer 三字段不写(reject 是 APD 一级路径,不触及终审)
-      expect(db.finalReviewerUserId).toBeNull();
-      expect(db.finalReviewedAt).toBeNull();
-      expect(db.finalReviewNote).toBeNull();
-
-      // F4(#399):record 跟随软删(对称 final_rejected;deletedAt 写为 reviewedAt 同刻)
-      const recs = await ctx.prisma.attendanceRecord.findMany({
-        where: { sheetId },
-        select: { deletedAt: true },
-      });
-      expect(recs).toHaveLength(1);
-      expect(recs[0].deletedAt).not.toBeNull();
-      // 软删时刻 = sheet.reviewedAt 同刻
-      expect(recs[0].deletedAt?.getTime()).toBe(db.reviewedAt?.getTime());
-
-      // audit:event = 'attendance-sheet.review',extra 全字段断(F4:reject 现写 recordsCount)
-      const audits = await ctx.prisma.auditLog.findMany({
-        where: { resourceId: sheetId },
-        orderBy: { createdAt: 'desc' },
-        take: 1,
-      });
-      expect(audits).toHaveLength(1);
-      expect(audits[0].event).toBe('attendance-sheet.review');
-      const ctx0 = audits[0].context as {
-        extra?: {
-          operation?: string;
-          action?: string;
-          priorStatusCode?: string;
-          nextStatusCode?: string;
-          recordsCount?: number;
-        };
-      };
-      expect(ctx0.extra?.operation).toBe('review');
-      expect(ctx0.extra?.action).toBe('reject');
-      expect(ctx0.extra?.priorStatusCode).toBe('pending');
-      expect(ctx0.extra?.nextStatusCode).toBe('rejected');
-      // F4:reject 软删 records → 审计写 recordsCount(被软删条数)
-      expect(ctx0.extra?.recordsCount).toBe(1);
-    });
-
-    it('findings #4/#6:同一 pending approve || reject 仅一方成功且明细与 winner 一致', async () => {
-      const sheetId = await seedSheet({ statusCode: 'pending' });
-      const results = await Promise.allSettled([
-        ctx.service.approve(
-          sheetId,
-          { reviewNote: 'race approve' },
-          ctx.reviewerPayload,
-          AUDIT_META,
-        ),
-        ctx.service.reject(sheetId, { reviewNote: 'race reject' }, ctx.reviewerPayload, AUDIT_META),
-      ]);
-
-      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-      expect(results.find((r) => r.status === 'rejected')).toMatchObject({
-        status: 'rejected',
-        reason: { biz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID },
-      });
-      const sheet = await ctx.prisma.attendanceSheet.findUniqueOrThrow({
-        where: { id: sheetId },
-        select: { statusCode: true },
-      });
-      const record = await ctx.prisma.attendanceRecord.findFirstOrThrow({
-        where: { sheetId },
-        select: { deletedAt: true },
-      });
-      if (sheet.statusCode === 'pending_final_review') expect(record.deletedAt).toBeNull();
-      else {
-        expect(sheet.statusCode).toBe('rejected');
-        expect(record.deletedAt).not.toBeNull();
-      }
-      expect(await ctx.prisma.auditLog.count({ where: { resourceId: sheetId } })).toBe(1);
-    });
-  });
-
-  // ============ B. reject 错误状态护栏(非 pending 一律拒)============
-  // 沿 service.ts:1048-1050 单一 if 守卫:`if (sheet.statusCode !== SHEET_STATUS_PENDING)`;
-  // 4 个 source 共用同一 BizCode = ATTENDANCE_SHEET_STATUS_INVALID(与 approve 同型,
-  // 与 edit / softDelete 的 per-source-state BizCode 不同 — 此为现状,本 spec 显式锁定)。
-  describe('B. reject 错误状态护栏(非 pending 一律拒 ATTENDANCE_SHEET_STATUS_INVALID)', () => {
-    beforeEach(isolateFixtures);
-
-    it.each<SheetStatus>(['pending_final_review', 'approved', 'rejected', 'final_rejected'])(
-      'from %s → 抛 ATTENDANCE_SHEET_STATUS_INVALID;DB 状态/reviewer 字段/record 不变 + 无 review audit',
-      async (fromStatus) => {
-        const sheetId = await seedSheet({ statusCode: fromStatus });
-
-        await expect(
-          ctx.service.reject(
-            sheetId,
-            { reviewNote: 'attempting reject from ' + fromStatus },
-            ctx.reviewerPayload,
-            AUDIT_META,
-          ),
-        ).rejects.toMatchObject({
-          biz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
-        });
-
-        // DB Sheet 状态/reviewer 字段不变(事务整体回滚)
-        const db = await ctx.prisma.attendanceSheet.findUniqueOrThrow({
-          where: { id: sheetId },
-          select: {
-            statusCode: true,
-            reviewerUserId: true,
-            reviewedAt: true,
-            reviewNote: true,
-          },
-        });
-        expect(db.statusCode).toBe(fromStatus);
-        expect(db.reviewerUserId).toBeNull();
-        expect(db.reviewedAt).toBeNull();
-        expect(db.reviewNote).toBeNull();
-
-        // record 不软删
-        const recs = await ctx.prisma.attendanceRecord.findMany({
-          where: { sheetId },
-          select: { deletedAt: true },
-        });
-        expect(recs).toHaveLength(1);
-        expect(recs[0].deletedAt).toBeNull();
-
-        // 无 review audit(护栏前抛出,事务回滚)
-        const audits = await ctx.prisma.auditLog.findMany({
-          where: { resourceId: sheetId, event: 'attendance-sheet.review' },
-        });
-        expect(audits).toHaveLength(0);
+        submitter,
+        META,
+      );
+    }
+    const result = await app.get(SettlementSubmitService).submit(
+      {
+        activityId: f.activityId,
+        operationKey: `submit-${f.activityId}`,
+        requestHash: `submit-hash-${f.activityId}`,
+        expectedDraftVersion: 1,
+        expectedEvidenceSealId: f.sealId,
       },
+      submitter,
+      META,
     );
+    return { ...f, versionId: result.settlementVersionId };
+  }
+
+  async function review(f: Fixture, action: 'approve' | 'return') {
+    const v = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+      where: { id: f.versionId },
+    });
+    return reviews.review(
+      f.versionId,
+      'first',
+      action,
+      {
+        operationKey: `${action}-${f.versionId}`,
+        note: '需要重新核对',
+        expectation: {
+          evidenceSealId: v.evidenceSealId,
+          evidenceRevision: v.evidenceRevision,
+          populationRevision: v.populationRevision,
+          workflowRevision: v.workflowRevision,
+          contentHash: v.contentHash,
+        },
+      },
+      reviewer,
+      META,
+    );
+  }
+
+  async function snapshot(f: Fixture) {
+    return {
+      version: await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+        where: { id: f.versionId },
+        include: {
+          resultRevisions: { orderBy: { id: 'asc' } },
+          reviewActions: true,
+          postingBatches: true,
+        },
+      }),
+      run: await prisma.attendanceSettlementRun.findUniqueOrThrow({ where: { id: f.runId } }),
+      audits: await prisma.auditLog.findMany({
+        where: { resourceId: f.activityId },
+        orderBy: { id: 'asc' },
+      }),
+      intents: await prisma.notificationOutboxIntent.findMany({
+        where: { aggregateId: f.activityId },
+        orderBy: { id: 'asc' },
+      }),
+    };
+  }
+
+  const reviewAudits = (f: Fixture) =>
+    prisma.auditLog.findMany({
+      where: {
+        resourceId: f.activityId,
+        context: { path: ['extra', 'operation'], equals: 'settlement-first-review' },
+      },
+    });
+
+  it('first return records actor/time/note and audit, retaining results and historical Sheet data', async () => {
+    const f = await fixture();
+    const history = await prisma.attendanceSheet.create({
+      data: {
+        activityId: f.activityId,
+        submitterUserId: submitter.id,
+        statusCode: 'pending',
+        records: {
+          create: participantIds.map((memberId) => ({
+            memberId,
+            roleCode: 'member',
+            attendanceStatusCode: 'present',
+            checkInAt: new Date('2020-03-01T00:00:00Z'),
+            checkOutAt: new Date('2020-03-01T02:00:00Z'),
+            serviceHours: 2,
+            contributionPoints: 1,
+          })),
+        },
+      },
+      include: { records: { orderBy: { id: 'asc' } } },
+    });
+    const before = await snapshot(f);
+    expect(before.version.resultRevisions).toHaveLength(2);
+    expect(await review(f, 'return')).toMatchObject({
+      runStatusAfter: 'drafting',
+      versionStatusAfter: 'returned',
+    });
+    const after = await snapshot(f);
+    expect(after.version).toMatchObject({
+      statusCode: 'returned',
+      returnFromStage: 'first',
+      returnReason: '需要重新核对',
+    });
+    expect(after.version.resultRevisions).toEqual(before.version.resultRevisions);
+    expect(after.version.reviewActions).toHaveLength(1);
+    expect(after.version.reviewActions[0]).toMatchObject({
+      actionCode: 'return',
+      actorUserId: reviewer.id,
+      actedAt: expect.any(Date),
+      note: '需要重新核对',
+    });
+    expect(after.version.postingBatches).toHaveLength(0);
+    const logged = await reviewAudits(f);
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({
+      event: 'activity.publish',
+      actorUserId: reviewer.id,
+      context: {
+        extra: {
+          actionCode: 'return',
+          runStatusBefore: 'pending_first_review',
+          runStatusAfter: 'drafting',
+        },
+      },
+    });
+    expect(after.intents).toHaveLength(before.intents.length + 1);
+    await request(httpServer(app))
+      .patch(`/api/admin/v1/attendance-sheets/${history.id}/reject`)
+      .set('Authorization', auth)
+      .send({ reviewNote: 'old hard rejection' })
+      .expect(404);
+    expect(await snapshot(f)).toEqual(after);
+    expect(
+      await prisma.attendanceSheet.findUniqueOrThrow({
+        where: { id: history.id },
+        include: { records: { orderBy: { id: 'asc' } } },
+      }),
+    ).toEqual(history);
   });
+
+  it('approve versus return has exactly one decision, audit and intent; the loser cannot delete results', async () => {
+    const f = await fixture();
+    const before = await snapshot(f);
+    const settled = await Promise.allSettled([review(f, 'approve'), review(f, 'return')]);
+    expect(settled.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const loser = settled.find((result) => result.status === 'rejected');
+    expect(loser).toMatchObject({
+      status: 'rejected',
+      reason: { biz: BizCode.SETTLEMENT_REVIEW_ALREADY_DECIDED },
+    });
+    expect(JSON.stringify(loser)).not.toContain('40P01');
+    const after = await snapshot(f);
+    expect(after.version.reviewActions).toHaveLength(1);
+    const approved = after.version.reviewActions[0].actionCode === 'approve';
+    expect(after.run.statusCode).toBe(approved ? 'pending_final_review' : 'drafting');
+    expect(after.version.statusCode).toBe(approved ? 'submitted' : 'returned');
+    expect(after.version.resultRevisions).toEqual(before.version.resultRevisions);
+    expect(after.version.postingBatches).toHaveLength(0);
+    expect(await reviewAudits(f)).toHaveLength(1);
+    expect(after.intents).toHaveLength(before.intents.length + 1);
+  });
+
+  it.each(['pending_final_review', 'posting', 'drafting', 'posted'])(
+    'first return from run=%s is refused with no state/audit/effect changes',
+    async (statusCode) => {
+      const f = await fixture();
+      await prisma.attendanceSettlementRun.update({ where: { id: f.runId }, data: { statusCode } });
+      const before = await snapshot(f);
+      await expect(review(f, 'return')).rejects.toMatchObject({
+        biz: BizCode.SETTLEMENT_REVIEW_RUN_STATUS_INVALID,
+      });
+      expect(await snapshot(f)).toEqual(before);
+    },
+  );
 });
