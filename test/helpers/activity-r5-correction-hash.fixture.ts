@@ -116,6 +116,36 @@ async function approveParticipantTimeCorrection(
     },
     orderBy: { revision: 'desc' },
   });
+  // V3 proves the whole committed source set, including unchanged people.
+  // Settlement-bound allocations alone are not standalone correction baselines.
+  const unchangedSegments = await f.db.participantServiceSegmentRevision.findMany({
+    where: {
+      id: { not: segment.id },
+      identity: { activityId: source.activityId },
+      statusCode: 'committed',
+      resultCode: 'valid',
+    },
+    orderBy: { id: 'asc' },
+  });
+  for (const unchanged of unchangedSegments) {
+    const base = await f.db.participantTimeAllocationRevision.findFirstOrThrow({
+      where: { sourceSegmentId: unchanged.id },
+      orderBy: { revision: 'desc' },
+    });
+    if (base.settlementDraftVersionId === null) continue;
+    await f.app.get(ActivityTimeAllocationService).recognize(
+      source.activityId,
+      {
+        operationKey: f.key('unchanged_source_allocation'),
+        sourceSegmentId: unchanged.id,
+        expectedRevision: base.revision,
+        recognitionModeCode: 'automatic',
+        evidenceAttachmentIds: [],
+      },
+      e4Actor(f.creator, true),
+      E4_META,
+    );
+  }
   const allocation = await f.db.participantTimeAllocationRevision.findFirstOrThrow({
     where: { sourceSegmentId: segment.id },
     orderBy: { revision: 'desc' },
