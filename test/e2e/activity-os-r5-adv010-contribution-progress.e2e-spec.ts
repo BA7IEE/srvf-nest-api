@@ -781,9 +781,10 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
         where: { id: who.userId },
         select: { id: true, username: true, role: true, status: true, memberId: true },
       });
+      // App-eligible applicant, but no GLOBAL final-review permission (30100).
       await expect(
         positive.correction.commit(positive.input, unauthorized, E4_META),
-      ).rejects.toMatchObject({ biz: { code: BizCode.FORBIDDEN.code } });
+      ).rejects.toMatchObject({ biz: { code: BizCode.RBAC_FORBIDDEN.code } });
       if (!newApplication) {
         const audit = humanCorrectionTestService(f, CorrectionAuditRecorder);
         const write = audit.logCommit.bind(audit);
