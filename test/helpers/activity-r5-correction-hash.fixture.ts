@@ -69,13 +69,33 @@ export async function approvedE4ParticipantTimeCorrection(
     recognizedSeconds,
     service,
   );
+  let prepared: Awaited<ReturnType<CorrectionApplicationService['prepare']>> | undefined;
+  const sourceBinding = {
+    human: true as const,
+    expectedActivityId: source.activityId,
+    expectedBaseSettlementVersionId: settlementVersionId,
+  };
   return {
     input: approved.input,
     correction: {
-      prepare: (...args: Parameters<CorrectionApplicationService['prepare']>) =>
-        service.prepare(args[0], args[1], args[2], { ...args[3], human: true }),
-      commit: (...args: Parameters<CorrectionApplicationService['commit']>) =>
-        service.commit(args[0], args[1], args[2], { ...args[3], human: true }),
+      prepare: async (...args: Parameters<CorrectionApplicationService['prepare']>) => {
+        prepared = await service.prepare(args[0], args[1], args[2], {
+          ...sourceBinding,
+          ...args[3],
+          human: true,
+        });
+        return prepared;
+      },
+      commit: (...args: Parameters<CorrectionApplicationService['commit']>) => {
+        if (!prepared) throw new Error('A9 Human fixture requires its prepared target');
+        return service.commit(args[0], args[1], args[2], {
+          ...sourceBinding,
+          expectedCorrectionApplicationId: prepared.correctionApplicationId,
+          expectedPostingBatchId: prepared.newPostingBatchId,
+          ...args[3],
+          human: true,
+        });
+      },
     },
   };
 }

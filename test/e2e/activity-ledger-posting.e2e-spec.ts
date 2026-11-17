@@ -1431,7 +1431,7 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
                 await expect(result).rejects.toMatchObject({
                   biz: BizCode.ATTENDANCE_TIME_OVERLAP,
                 });
-              else await expect(result).resolves.toBeUndefined();
+              else await expect(result).resolves.toBe(false);
               expect(await snapshot()).toEqual(before);
               await tx.$executeRaw`ROLLBACK TO SAVEPOINT overlap_case`;
               await tx.$executeRaw`RELEASE SAVEPOINT overlap_case`;
