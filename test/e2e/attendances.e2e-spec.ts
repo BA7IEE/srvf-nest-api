@@ -3,7 +3,6 @@ import { BindingScopeType, Prisma, PrincipalType, Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
-import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -18,6 +17,9 @@ import { LedgerPreparationService } from '../../src/modules/activities/ledger-pr
 import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
 import type { AppManagedActivityOnsiteParticipationReceiptDto } from '../../src/modules/activity-registrations/dto/app/app-onsite-participation.dto';
 import { AttendancePunchCommandService } from '../../src/modules/attendances/attendance-punch-command.service';
+import { CorrectionApplicationService } from '../../src/modules/activities/correction-application.service';
+import { CorrectionAuditRecorder } from '../../src/modules/activities/correction-audit-recorder';
+import { CORRECTION_CHANGE_SCHEMA_VERSION } from '../../src/modules/activities/correction-change-set';
 
 const relativeIso = (yearOffset: number, suffix: string): string =>
   `${new Date().getUTCFullYear() + yearOffset}-${suffix}`;
@@ -46,7 +48,6 @@ const earlierIso = (suffix: string): string => relativeIso(-2, suffix);
 describe('attendances 模块', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let outboxWorker: NotificationOutboxWorker;
   let adminAuth: string;
   let submitterAuth: string;
   // 终态 scoped-authz PR9:第二身份专职终审 —— 自审禁止(submitter==终审人 → 22074)+
@@ -85,7 +86,6 @@ describe('attendances 模块', () => {
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
-    outboxWorker = app.get(NotificationOutboxWorker);
 
     // 用户(权限边界只需 1 个已绑 member 的 USER)
     nativeFinalReviewerId = (
@@ -917,14 +917,6 @@ describe('attendances 模块', () => {
     ...override,
   });
 
-  // 在新建 sheet 后补 records contributionPoints(approve 前必填,R31)
-  async function fillContributionPoints(sheetId: string, value = 1.0): Promise<void> {
-    await prisma.attendanceRecord.updateMany({
-      where: { sheetId, deletedAt: null },
-      data: { contributionPoints: value },
-    });
-  }
-
   async function createPendingSheet(
     actId: string,
     records: Array<Record<string, unknown>>,
@@ -937,19 +929,6 @@ describe('attendances 模块', () => {
       throw new Error(`createPendingSheet failed: ${res.status} ${JSON.stringify(res.body)}`);
     }
     return res.body.data.id as string;
-  }
-
-  // 批次 4-B helper:推到 pending_final_review(APD 一级 approve)。
-  async function approveToPendingFinalReview(sheetId: string): Promise<void> {
-    const res = await request(httpServer(app))
-      .patch(`/api/admin/v1/attendance-sheets/${sheetId}/approve`)
-      .set('Authorization', adminAuth)
-      .send({});
-    if (res.status !== 200) {
-      throw new Error(
-        `approveToPendingFinalReview failed: ${res.status} ${JSON.stringify(res.body)}`,
-      );
-    }
   }
 
   // ============ 权限边界 ============
@@ -2839,28 +2818,18 @@ describe('attendances 模块', () => {
     });
   });
 
-  describe('v0.47.0 attendance reopen 完整链路', () => {
-    it('pending→approve→finalApprove→reopen→edit→approve→finalApprove;贡献值下降后恢复', async () => {
+  describe('A7 正式更正生效链路（原 v0.47.0 reopen 旅程）', () => {
+    it('提交/审核/准备不暂扣积分，失败整笔回滚，正式提交才切换且旧历史与入队决定保留', async () => {
       const member = await prisma.member.create({
-        data: { memberNo: 'att-reopen-m-001', ...memberIdentityData('Reopen Member') },
-        select: { id: true },
-      });
-      const childOrg = await prisma.organization.findFirstOrThrow({
-        where: { nodeTypeCode: 'att-child' },
-        select: { id: true },
-      });
-      const activity = await prisma.activity.create({
         data: {
-          title: 'ATT-REOPEN-FULL-CHAIN',
-          activityTypeCode: 'att-demo',
-          organizationId: childOrg.id,
-          startAt: new Date(pastIso('01-05T08:00:00.000Z')),
-          endAt: new Date(pastIso('01-05T18:00:00.000Z')),
-          location: '重开链路',
-          statusCode: 'published',
+          memberNo: 'att-correction-a7',
+          ...memberIdentityData('Correction Member'),
+          status: 'ACTIVE',
+          gradeCode: 'level-2',
         },
         select: { id: true },
       });
+      const f = await nativeDraft([member.id], 2);
       const cycle = await prisma.teamJoinCycle.create({
         data: {
           year: new Date().getUTCFullYear() - 1,
@@ -2888,138 +2857,192 @@ describe('attendances 模块', () => {
         return res.body.data.contributionPoints as string;
       };
       expect(await summary()).toBe('0');
-
-      const sheetId = await createPendingSheet(activity.id, [
-        baseRecord({
-          memberId: member.id,
-          checkInAt: pastIso('01-05T09:00:00.000Z'),
-          checkOutAt: pastIso('01-05T10:00:00.000Z'),
-        }),
-      ]);
-      await fillContributionPoints(sheetId, 1);
-      await approveToPendingFinalReview(sheetId);
-      const firstFinal = await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-approve`)
-        .set('Authorization', finalAdminAuth)
-        .send({ finalReviewNote: '首次终审' });
-      expect(firstFinal.status).toBe(200);
-      expect(firstFinal.body.data.statusCode).toBe('approved');
-      expect(await summary()).toBe('1');
-      const firstIntent = await prisma.notificationOutboxIntent.findFirstOrThrow({
-        where: {
-          aggregateType: 'attendance_sheet',
-          aggregateId: sheetId,
-          status: 'pending',
-        },
-      });
-      await outboxWorker.drainEventKey(firstIntent.eventKey);
-
-      const notificationCountAfterFirstFinal = await prisma.notification.count({
-        where: { recipientMemberId: member.id, deletedAt: null },
-      });
-      for (const invalidBody of [{}, { reason: '   ' }]) {
-        expectBizError(
-          await request(httpServer(app))
-            .post(`/api/admin/v1/attendance-sheets/${sheetId}/reopen`)
-            .set('Authorization', finalAdminAuth)
-            .send(invalidBody),
-          BizCode.BAD_REQUEST,
-          { strictMessage: false },
-        );
-      }
-      const reopen = await request(httpServer(app))
-        .post(`/api/admin/v1/attendance-sheets/${sheetId}/reopen`)
-        .set('Authorization', finalAdminAuth)
-        .send({ reason: '  记录时间需要修订  ' });
-      expect(reopen.status).toBe(200);
-      expect(reopen.body.data).toMatchObject({
-        statusCode: 'pending',
-        reviewerUserId: null,
-        reviewedAt: null,
-        reviewNote: null,
-        finalReviewerUserId: null,
-        finalReviewedAt: null,
-        finalReviewNote: null,
-        version: 1,
-      });
+      const { version, results } = await nativeSubmit(f);
+      await nativeReview(version, 'first-approve').expect(200);
+      await nativeReview(version, 'final-approve').expect(200);
       expect(await summary()).toBe('0');
-      expect(
-        await prisma.notification.count({
-          where: { recipientMemberId: member.id, deletedAt: null },
-        }),
-      ).toBe(notificationCountAfterFirstFinal);
-
-      expectBizError(
-        await request(httpServer(app))
-          .post(`/api/admin/v1/attendance-sheets/${sheetId}/reopen`)
-          .set('Authorization', finalAdminAuth)
-          .send({ reason: '不能重复撤回' }),
-        BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
-      );
-
-      const reopenAudit = await prisma.auditLog.findFirstOrThrow({
-        where: { resourceId: sheetId, event: 'attendance-sheet.reopen' },
-        orderBy: { createdAt: 'desc' },
-      });
-      const reopenContext = reopenAudit.context as {
-        before?: { sheet?: { statusCode?: string }; records?: unknown[] };
-        after?: { sheet?: { statusCode?: string }; records?: unknown[] };
-        extra?: { reason?: string; recordsCount?: number };
-      };
-      expect(reopenContext.before?.sheet?.statusCode).toBe('approved');
-      expect(reopenContext.after?.sheet?.statusCode).toBe('pending');
-      expect(reopenContext.before?.records).toHaveLength(1);
-      expect(reopenContext.after?.records).toHaveLength(1);
-      expect(reopenContext.extra).toMatchObject({
-        reason: '记录时间需要修订',
-        recordsCount: 1,
-      });
-
-      const edited = await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sheetId}`)
-        .set('Authorization', adminAuth)
-        .send({
-          records: [
-            baseRecord({
-              memberId: member.id,
-              checkInAt: pastIso('01-05T11:00:00.000Z'),
-              checkOutAt: pastIso('01-05T12:00:00.000Z'),
-              note: '撤回后修订',
-            }),
-          ],
-        });
-      expect(edited.status).toBe(200);
-      expect(edited.body.data).toMatchObject({ statusCode: 'pending', version: 2 });
-      await fillContributionPoints(sheetId, 1);
-      await approveToPendingFinalReview(sheetId);
-      const secondFinal = await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-approve`)
-        .set('Authorization', finalAdminAuth)
-        .send({ finalReviewNote: '修订后重审' });
-      expect(secondFinal.status).toBe(200);
-      expect(secondFinal.body.data.statusCode).toBe('approved');
+      const batch = await nativePrepare(version.id);
+      expect(await summary()).toBe('0');
+      await nativeCommit(batch.id);
       expect(await summary()).toBe('1');
-      const secondIntent = await prisma.notificationOutboxIntent.findFirstOrThrow({
-        where: {
-          aggregateType: 'attendance_sheet',
-          aggregateId: sheetId,
-          status: 'pending',
-        },
-      });
-      await outboxWorker.drainEventKey(secondIntent.eventKey);
-      expect(
-        await prisma.notification.count({
-          where: { recipientMemberId: member.id, deletedAt: null },
-        }),
-      ).toBe(notificationCountAfterFirstFinal + 1);
+      const firstHistory = await nativeSnapshot(f);
+      expect(firstHistory.entries).toHaveLength(2);
 
-      const records = await prisma.attendanceRecord.findMany({
-        where: { sheetId },
-        select: { deletedAt: true },
-        orderBy: { createdAt: 'asc' },
+      // V1 point correction has an existing internal service boundary, not a
+      // public Human HTTP command. Do not bypass Human's V2/V3 qualification.
+      const correction = app.get(CorrectionApplicationService);
+      const audit = app.get(CorrectionAuditRecorder);
+      const meta = { requestId: 'a7-correction-acceptance', ip: null, ua: 'jest' };
+      const actorSelect = { id: true, username: true, role: true, status: true, memberId: true };
+      const owner = await prisma.user.findUniqueOrThrow({
+        where: { id: nativeUserId },
+        select: actorSelect,
       });
-      expect(records).toHaveLength(2);
-      expect(records.filter((r) => r.deletedAt === null)).toHaveLength(1);
+      const reviewer = await prisma.user.findUniqueOrThrow({
+        where: { id: nativeFinalReviewerId },
+        select: actorSelect,
+      });
+      const requestInput = {
+        activityId: f.activityId,
+        participationIdentityId: f.identityIds[0],
+        requestTypeCode: 'points',
+        requestedChangeJson: {
+          schemaVersion: CORRECTION_CHANGE_SCHEMA_VERSION,
+          results: [
+            {
+              participationIdentityId: f.identityIds[0],
+              resultCode: 'present',
+              recognizedServiceHours: '2.00',
+              recognizedContributionPoints: '0.50',
+              adjustmentReason: '复核认定分值，不改原始现场事实',
+              lateFlag: false,
+              earlyLeaveFlag: false,
+            },
+          ],
+          segments: [],
+        },
+        reason: '认定贡献值更正',
+        operationKey: `a7-submit:${f.activityId}`,
+        requestHash: `a7-submit-hash:${f.activityId}`,
+      };
+      const state = async () => ({
+        ...(await nativeSnapshot(f)),
+        requests: await prisma.attendanceCorrectionRequest.findMany({
+          where: { activityId: f.activityId },
+          orderBy: { id: 'asc' },
+        }),
+        applications: await prisma.correctionApplication.findMany({
+          where: { correctionRequest: { activityId: f.activityId } },
+          orderBy: { id: 'asc' },
+        }),
+        dayStates: await prisma.memberContributionDayState.findMany({
+          where: { memberId: member.id },
+          orderBy: { ledgerDate: 'asc' },
+        }),
+      });
+      const submitted = await correction.submit(requestInput, owner, meta);
+      expect(submitted).toMatchObject({
+        statusCode: 'pending',
+        baseSettlementVersionId: version.id,
+        baseResultRevisionId: results[0].id,
+        replayed: false,
+      });
+      expect(await summary()).toBe('1');
+      const afterSubmit = await state();
+      await expect(correction.submit(requestInput, owner, meta)).resolves.toMatchObject({
+        replayed: true,
+      });
+      expect(await state()).toEqual(afterSubmit);
+      await expect(
+        correction.review(
+          {
+            correctionRequestId: submitted.correctionRequestId,
+            actionCode: 'approve',
+          },
+          owner,
+          meta,
+        ),
+      ).rejects.toMatchObject({ biz: BizCode.CORRECTION_REVIEW_SELF_FORBIDDEN });
+      expect(await state()).toEqual(afterSubmit);
+      await expect(
+        correction.review(
+          {
+            correctionRequestId: submitted.correctionRequestId,
+            actionCode: 'approve',
+            note: '独立复核',
+          },
+          reviewer,
+          meta,
+        ),
+      ).resolves.toMatchObject({ outcome: 'reviewed', statusCode: 'approved' });
+      expect(await summary()).toBe('1');
+      const applyInput = {
+        correctionRequestId: submitted.correctionRequestId,
+        operationKey: `a7-apply:${f.activityId}`,
+        requestHash: `a7-apply-hash:${f.activityId}`,
+      };
+      const reviewed = await state();
+      await expect(correction.prepare(applyInput, owner, meta)).rejects.toMatchObject({
+        biz: BizCode.RBAC_FORBIDDEN,
+      });
+      expect(await state()).toEqual(reviewed);
+      const prepared = await correction.prepare(applyInput, reviewer, meta);
+      expect(prepared).toMatchObject({ batchStatus: 'ready', baseSettlementVersionId: version.id });
+      expect(await summary()).toBe('1');
+      const beforeFailure = await state();
+      const writeCommitAudit = audit.logCommit.bind(audit);
+      const fault = jest.spyOn(audit, 'logCommit').mockImplementationOnce(async (args) => {
+        await writeCommitAudit(args);
+        throw new Error('A7: fault after actual commit audit insert');
+      });
+      try {
+        await expect(correction.commit(applyInput, reviewer, meta)).rejects.toThrow(
+          'A7: fault after actual commit audit insert',
+        );
+        expect(fault).toHaveBeenCalledTimes(1);
+      } finally {
+        fault.mockRestore();
+      }
+      expect(await state()).toEqual(beforeFailure);
+      expect(await summary()).toBe('1');
+
+      const committed = await correction.commit(applyInput, reviewer, meta);
+      expect(committed).toMatchObject({
+        correctionStatus: 'applied',
+        applicationStatus: 'committed',
+        replayed: false,
+        ledger: { batchStatus: 'committed' },
+      });
+      expect(await summary()).toBe('0.5');
+      const finalState = await state();
+      expect(finalState.run.currentPostedVersion).toBe(prepared.newSettlementVersion);
+      expect(finalState.punches).toEqual(firstHistory.punches);
+      expect(
+        finalState.entries.filter((row) => firstHistory.entries.some((old) => old.id === row.id)),
+      ).toEqual(firstHistory.entries);
+      expect(finalState.entries).toHaveLength(
+        firstHistory.entries.length + prepared.reversalEntryCount + prepared.replacementEntryCount,
+      );
+      expect(finalState.versions.find((row) => row.id === version.id)).toEqual(
+        firstHistory.versions.find((row) => row.id === version.id),
+      );
+      const original = firstHistory.results.find((row) => row.id === results[0].id)!;
+      expect(finalState.results.find((row) => row.id === original.id)).toEqual({
+        ...original,
+        statusCode: 'superseded',
+        updatedAt: expect.any(Date),
+      });
+      expect(
+        finalState.results.find(
+          (row) => row.settlementVersionId === prepared.newSettlementVersionId,
+        ),
+      ).toMatchObject({
+        baseResultRevisionId: original.id,
+        correctionRequestId: submitted.correctionRequestId,
+        recognizedContributionPoints: new Prisma.Decimal('0.50'),
+        statusCode: 'committed',
+      });
+      expect(
+        await prisma.auditLog.count({
+          where: {
+            resourceId: f.activityId,
+            event: 'activity.publish',
+            context: { path: ['extra', 'operation'], equals: 'correction-commit' },
+          },
+        }),
+      ).toBe(1);
+      await expect(correction.commit(applyInput, reviewer, meta)).resolves.toMatchObject({
+        replayed: true,
+      });
+      expect(await state()).toEqual(finalState);
+      // Even an exact successful command key cannot grant final-review authority.
+      await expect(correction.commit(applyInput, owner, meta)).rejects.toMatchObject({
+        biz: BizCode.RBAC_FORBIDDEN,
+      });
+      expect(await state()).toEqual(finalState);
+      expect(await summary()).toBe('0.5');
+      // Member result delivery is deferred A8, not a success assertion here.
+      // Exact old notification requirements/source are retained in the decision handoff.
       expect(
         await prisma.teamJoinApplication.findUniqueOrThrow({
           where: { id: historicalAdmission.id },
