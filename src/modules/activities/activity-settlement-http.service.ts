@@ -258,8 +258,26 @@ export interface SettlementHttpReviewListItem {
   activityTitle: string;
   version: number;
   statusCode: string;
+  reviewStage: string | null;
   submittedAt: Date | null;
   postingBatchStatusCode: string | null;
+  submittedBy: { id: string; username: string; nickname: string | null } | null;
+  activity?: { id: string; title: string; startAt: Date; organizationId: string };
+}
+
+export interface SettlementReviewListQuery {
+  page: number;
+  pageSize: number;
+  q?: string;
+  activityQ?: string;
+  activityId?: string;
+  statusCode?: string;
+  reviewStage?: string;
+  organizationId?: string;
+  includeDescendants?: boolean;
+  dateFrom?: string;
+  dateTo?: string;
+  expand?: string;
 }
 
 export interface SettlementHttpPostingBatchResult {
@@ -775,7 +793,7 @@ export class ActivitySettlementHttpService {
 
   /** 跨活动审核工作台：授权范围沿既有 attendance.read.sheet 的组织 scope 下推。 */
   async reviewWorkbench(
-    query: { page: number; pageSize: number },
+    query: SettlementReviewListQuery,
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<SettlementHttpReviewListItem>> {
     const scope = await this.authz.getVisibleOrganizationScope(
@@ -784,13 +802,66 @@ export class ActivitySettlementHttpService {
     );
     if (!scope.hasPermission) throw new BizException(BizCode.RBAC_FORBIDDEN);
 
-    const visibleOrganizationIds = scope.global ? undefined : scope.organizationIds;
+    const dateFrom = query.dateFrom === undefined ? undefined : new Date(query.dateFrom);
+    const dateTo = query.dateTo === undefined ? undefined : new Date(query.dateTo);
+    if (
+      (dateFrom && !Number.isFinite(dateFrom.getTime())) ||
+      (dateTo && !Number.isFinite(dateTo.getTime())) ||
+      (dateFrom && dateTo && dateFrom > dateTo)
+    )
+      throw new BizException(BizCode.BAD_REQUEST);
+
+    let visibleOrganizationIds = scope.global ? undefined : scope.organizationIds;
+    if (query.organizationId !== undefined) {
+      const requested = query.includeDescendants
+        ? [
+            query.organizationId,
+            ...(
+              await this.prisma.organizationClosure.findMany({
+                where: { ancestorId: query.organizationId },
+                select: { descendantId: true },
+              })
+            ).map((row) => row.descendantId),
+          ]
+        : [query.organizationId];
+      visibleOrganizationIds = scope.global
+        ? [...new Set(requested)]
+        : scope.organizationIds.filter((id) => requested.includes(id));
+    }
     const where: Prisma.AttendanceSettlementVersionWhereInput = {
       // draft 是负责人可变工作区，审核根只列 immutable submit/review/posting 历史。
       statusCode: { not: 'draft' },
+      AND: [
+        ...(query.statusCode === undefined ? [] : [{ statusCode: query.statusCode }]),
+        ...(query.reviewStage === undefined
+          ? []
+          : [
+              {
+                statusCode: 'submitted',
+                reviewActions:
+                  query.reviewStage === 'final'
+                    ? { some: { stageCode: 'first', actionCode: 'approve' } }
+                    : { none: { stageCode: 'first', actionCode: 'approve' } },
+              },
+            ]),
+      ],
+      ...(dateFrom || dateTo ? { submittedAt: { gte: dateFrom, lte: dateTo } } : {}),
+      ...(query.q
+        ? {
+            OR: [
+              {
+                settlementRun: { activity: { title: { contains: query.q, mode: 'insensitive' } } },
+              },
+              { createdBy: { username: { contains: query.q, mode: 'insensitive' } } },
+              { createdBy: { nickname: { contains: query.q, mode: 'insensitive' } } },
+            ],
+          }
+        : {}),
       settlementRun: {
         activity: {
           deletedAt: null,
+          ...(query.activityId === undefined ? {} : { id: query.activityId }),
+          ...(query.activityQ ? { title: { contains: query.activityQ, mode: 'insensitive' } } : {}),
           ...(visibleOrganizationIds === undefined
             ? {}
             : { organizationId: { in: visibleOrganizationIds } }),
@@ -805,7 +876,17 @@ export class ActivitySettlementHttpService {
           version: true,
           statusCode: true,
           submittedAt: true,
-          settlementRun: { select: { activity: { select: { id: true, title: true } } } },
+          createdBy: { select: { id: true, username: true, nickname: true } },
+          reviewActions: {
+            where: { stageCode: 'first', actionCode: 'approve' },
+            select: { id: true },
+            take: 1,
+          },
+          settlementRun: {
+            select: {
+              activity: { select: { id: true, title: true, startAt: true, organizationId: true } },
+            },
+          },
           postingBatches: {
             select: { statusCode: true },
             orderBy: { batchRevision: 'desc' },
@@ -825,8 +906,16 @@ export class ActivitySettlementHttpService {
         activityTitle: row.settlementRun.activity.title,
         version: row.version,
         statusCode: row.statusCode,
+        reviewStage:
+          row.statusCode === 'submitted'
+            ? row.reviewActions.length > 0
+              ? 'final'
+              : 'first'
+            : null,
         submittedAt: row.submittedAt,
         postingBatchStatusCode: row.postingBatches[0]?.statusCode ?? null,
+        submittedBy: row.createdBy,
+        ...(query.expand === 'activity' ? { activity: row.settlementRun.activity } : {}),
       })),
       total,
       page: query.page,

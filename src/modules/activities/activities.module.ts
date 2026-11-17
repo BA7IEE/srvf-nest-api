@@ -191,6 +191,9 @@ import { CorrectionApplicationService } from './correction-application.service';
 import { CorrectionAuditRecorder } from './correction-audit-recorder';
 import { CorrectionTimeAllocationService } from './correction-time-allocation.service';
 import { ActivitySettlementHttpService } from './activity-settlement-http.service';
+import { AdminSettlementReadService } from './admin-settlement-read.service';
+import { SettlementReviewQueryService } from './settlement-review-query.service';
+import { SettlementReadAuditRecorder } from './settlement-read-audit-recorder';
 import { ActivityLifecycleService } from './activity-lifecycle.service';
 // 归档 / 撤销归档(2026-08-25 拍板;§6.6 + AC-004 / AC-064)。
 import { ActivityArchivePolicy } from './activity-archive-policy';
@@ -412,6 +415,9 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityArchivePolicy,
     ActivityArchiveService,
     ActivitySettlementHttpService,
+    AdminSettlementReadService,
+    SettlementReviewQueryService,
+    SettlementReadAuditRecorder,
     // 活动改造 v1.1 第 2 批第一刀(合同 §5.8):证据封场。
     // 本刀零端点 —— 消费方是第 2 批第二刀(结算草稿 / 提交),故先 provider + export。
     EvidenceSealAuditRecorder,

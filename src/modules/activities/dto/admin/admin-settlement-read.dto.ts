@@ -1,8 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsString, MaxLength, MinLength } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsDateString, IsIn, IsString, MaxLength, MinLength } from 'class-validator';
 
 import { OmittableOnly } from '../../../../common/decorators/omittable-only.decorator';
-import { PaginationQueryDto } from '../../../../common/dto/pagination.dto';
+import { PageResultDto, PaginationQueryDto } from '../../../../common/dto/pagination.dto';
 
 export class AdminSettlementVersionReadParamsDto {
   @ApiProperty({ description: 'AttendanceSettlementVersion.id', minLength: 8, maxLength: 64 })
@@ -28,7 +29,101 @@ export class AdminMemberParticipationLedgerParamsDto {
   memberId!: string;
 }
 
-export class ListAdminAttendanceSettlementsQueryDto extends PaginationQueryDto {}
+export class ListAdminAttendanceSettlementsQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({
+    description: '活动标题或版本提交人的 username/nickname，忽略大小写',
+    maxLength: 200,
+  })
+  @OmittableOnly()
+  @IsString()
+  @MaxLength(200)
+  q?: string;
+
+  @ApiPropertyOptional({ description: '仅搜索活动标题，忽略大小写', maxLength: 200 })
+  @OmittableOnly()
+  @IsString()
+  @MaxLength(200)
+  activityQ?: string;
+
+  @ApiPropertyOptional({ description: '精确活动 ID', minLength: 8, maxLength: 64 })
+  @OmittableOnly()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(64)
+  activityId?: string;
+
+  @ApiPropertyOptional({
+    description: '新版版本状态；approved 不等于已入账。draft 不进入审核列表',
+    enum: ['draft', 'submitted', 'returned', 'approved', 'voided'],
+  })
+  @OmittableOnly()
+  @IsIn(['draft', 'submitted', 'returned', 'approved', 'voided'])
+  statusCode?: string;
+
+  @ApiPropertyOptional({
+    enum: ['first', 'final'],
+    description: '仅筛选等待一审/终审的 submitted 版本，按该版本的审核动作判断',
+  })
+  @OmittableOnly()
+  @IsIn(['first', 'final'])
+  reviewStage?: string;
+
+  @ApiPropertyOptional({
+    description: '活动承办组织，始终与授权范围求交',
+    minLength: 8,
+    maxLength: 64,
+  })
+  @OmittableOnly()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(64)
+  organizationId?: string;
+
+  @ApiPropertyOptional({ description: '有 organizationId 时包含下属组织', default: false })
+  @OmittableOnly()
+  @Transform(({ value }: { value: unknown }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  )
+  @IsBoolean()
+  includeDescendants?: boolean;
+
+  @ApiPropertyOptional({ description: 'submittedAt 下界，ISO8601，含边界' })
+  @OmittableOnly()
+  @IsDateString()
+  dateFrom?: string;
+
+  @ApiPropertyOptional({
+    description: 'submittedAt 上界，ISO8601，含边界；纯日期按 UTC 当日零点解释',
+  })
+  @OmittableOnly()
+  @IsDateString()
+  dateTo?: string;
+
+  @ApiPropertyOptional({ description: '按需返回活动摘要；默认省略', enum: ['activity'] })
+  @OmittableOnly()
+  @IsIn(['activity'])
+  expand?: string;
+}
+
+export class AdminSettlementActivitySummaryDto {
+  @ApiProperty()
+  id!: string;
+  @ApiProperty()
+  title!: string;
+  @ApiProperty({ type: String, format: 'date-time' })
+  startAt!: Date;
+  @ApiProperty({ type: String })
+  organizationId!: string;
+}
+
+export class AdminSettlementSubmitterDto {
+  @ApiProperty()
+  id!: string;
+  @ApiProperty()
+  username!: string;
+  @ApiProperty({ type: String, nullable: true })
+  nickname!: string | null;
+}
 
 export class ListAdminMemberParticipationLedgerQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({
@@ -64,11 +159,32 @@ export class AdminAttendanceSettlementListItemDto {
   @ApiProperty()
   statusCode!: string;
 
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    enum: ['first', 'final'],
+    description: 'submitted 版本当前待审阶段，其他状态为null；不是操作授权',
+  })
+  reviewStage!: string | null;
+
   @ApiPropertyOptional({ nullable: true, type: String, format: 'date-time' })
   submittedAt!: Date | null;
 
   @ApiPropertyOptional({ nullable: true, type: String })
   postingBatchStatusCode!: string | null;
+
+  @ApiProperty({
+    type: () => AdminSettlementSubmitterDto,
+    nullable: true,
+    description: '该版本的创建/提交人；不是当前活动负责人',
+  })
+  submittedBy!: AdminSettlementSubmitterDto | null;
+
+  @ApiPropertyOptional({
+    type: () => AdminSettlementActivitySummaryDto,
+    description: '仅 expand=activity 返回当前活动摘要，不是版本冻结内容',
+  })
+  activity?: AdminSettlementActivitySummaryDto;
 }
 
 export class AdminSettlementReviewGapDto {
@@ -222,7 +338,115 @@ export class AdminContributionProofDto {
   evaluations!: AdminContributionProofEvaluationDto[];
 }
 
+export class AdminSettlementResultMemberDto {
+  @ApiProperty()
+  id!: string;
+  @ApiProperty()
+  memberNo!: string;
+  @ApiProperty()
+  realName!: string;
+  @ApiProperty({ type: String, nullable: true })
+  nickname!: string | null;
+  @ApiProperty()
+  label!: string;
+}
+
+export class AdminSettlementResultSessionDto {
+  @ApiProperty()
+  id!: string;
+  @ApiProperty()
+  code!: string;
+  @ApiProperty()
+  name!: string;
+}
+
+export class AdminSettlementFrozenTimeBucketDto {
+  @ApiProperty()
+  categoryCode!: string;
+  @ApiProperty({ type: Number, nullable: true })
+  calculatedSeconds!: number | null;
+  @ApiProperty()
+  recognizedSeconds!: number;
+}
+
+export class AdminSettlementFrozenResultDto {
+  @ApiProperty({
+    enum: ['legacy', 'ready', 'pending'],
+    description: '原生分值来自本版本完整贡献证明，不对100条预览求和',
+  })
+  contributionResultState!: string;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: '本身份全部原生评价单元的计算分值，未准备为null',
+  })
+  nativeCalculatedContributionPoints!: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: '本身份全部原生评价单元的认定分值；完整证明中无适用评价为0.00',
+  })
+  nativeRecognizedContributionPoints!: string | null;
+  @ApiProperty({
+    enum: ['legacy', 'ready', 'pending'],
+    description:
+      'legacy 使用冻结遗留小时；ready 使用版本绑定的已提交分类或正式更正替换值；pending 不把缺证明显示为零',
+  })
+  timeResultState!: string;
+  @ApiProperty({
+    type: () => [AdminSettlementFrozenTimeBucketDto],
+    nullable: true,
+    description:
+      '请求版本自身或其不可变绑定的时间分类，不读当前指针；更正仅展示正式替换值，calculatedSeconds为空。不含来源JSON、政策配置和自由文本',
+  })
+  timeBuckets!: AdminSettlementFrozenTimeBucketDto[] | null;
+  @ApiProperty({ description: '该版本的人员结果修订 ID，不是当前草稿行' })
+  id!: string;
+  @ApiProperty({ description: '同一队员多场次保留不同身份，不合并或截断' })
+  participationIdentityId!: string;
+  @ApiProperty()
+  revision!: number;
+  @ApiProperty()
+  resultCode!: string;
+  @ApiProperty()
+  lateFlag!: boolean;
+  @ApiProperty()
+  earlyLeaveFlag!: boolean;
+  @ApiProperty({ description: '版本冻结的认定小时文本；不等于已正式生效的志愿小时' })
+  recognizedServiceHours!: string;
+  @ApiProperty({ description: '版本冻结的计算小时文本；不从当前打卡重算' })
+  calculatedServiceHours!: string;
+  @ApiProperty({
+    description: '版本冻结的遗留认定分值；policy_v1 的正式贡献以 contributionProof 为准',
+  })
+  recognizedContributionPoints!: string;
+  @ApiProperty()
+  calculatedContributionPoints!: string;
+  @ApiProperty({ description: '认定与计算存在调整；不返回自由文本说明' })
+  hasAdjustment!: boolean;
+  @ApiProperty({
+    type: () => AdminSettlementResultMemberDto,
+    description: '当前人员最小展示资料；数值结果仍绑定历史版本，不宣称人员姓名为冻结快照',
+  })
+  member!: AdminSettlementResultMemberDto;
+  @ApiProperty({ type: () => AdminSettlementResultSessionDto })
+  session!: AdminSettlementResultSessionDto;
+}
+
+export class AdminSettlementFrozenResultsPageDto extends PageResultDto<AdminSettlementFrozenResultDto> {
+  @ApiProperty({ type: () => [AdminSettlementFrozenResultDto] })
+  declare items: AdminSettlementFrozenResultDto[];
+}
+
 export class AdminSettlementReviewDetailDto {
+  @ApiProperty({
+    description:
+      '按身份稳定分页的本版本冻结结果，total 为场次参与身份数；draft 返回 null，不把可变草稿冒充冻结结果',
+    type: () => AdminSettlementFrozenResultsPageDto,
+    nullable: true,
+  })
+  results!: AdminSettlementFrozenResultsPageDto | null;
+
   @ApiPropertyOptional({
     description: '同一审核版本的冻结贡献证明；历史legacy省略',
     type: () => AdminContributionProofDto,

@@ -75164,6 +75164,117 @@
               "example": 20,
               "type": "number"
             }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "活动标题或版本提交人的 username/nickname，忽略大小写",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "activityQ",
+            "required": false,
+            "in": "query",
+            "description": "仅搜索活动标题，忽略大小写",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "activityId",
+            "required": false,
+            "in": "query",
+            "description": "精确活动 ID",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "statusCode",
+            "required": false,
+            "in": "query",
+            "description": "新版版本状态；approved 不等于已入账。draft 不进入审核列表",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "submitted",
+                "returned",
+                "approved",
+                "voided"
+              ]
+            }
+          },
+          {
+            "name": "reviewStage",
+            "required": false,
+            "in": "query",
+            "description": "仅筛选等待一审/终审的 submitted 版本，按该版本的审核动作判断",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "first",
+                "final"
+              ]
+            }
+          },
+          {
+            "name": "organizationId",
+            "required": false,
+            "in": "query",
+            "description": "活动承办组织，始终与授权范围求交",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "includeDescendants",
+            "required": false,
+            "in": "query",
+            "description": "有 organizationId 时包含下属组织",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "dateFrom",
+            "required": false,
+            "in": "query",
+            "description": "submittedAt 下界，ISO8601，含边界",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "dateTo",
+            "required": false,
+            "in": "query",
+            "description": "submittedAt 上界，ISO8601，含边界；纯日期按 UTC 当日零点解释",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expand",
+            "required": false,
+            "in": "query",
+            "description": "按需返回活动摘要；默认省略",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "activity"
+              ]
+            }
           }
         ],
         "responses": {
@@ -75325,7 +75436,7 @@
             "bearer": []
           }
         ],
-        "summary": "跨活动结算审核工作台（分页） [rbac: attendance.read.sheet]",
+        "summary": "跨活动结算审核列表（分页、搜索、组织与状态过滤） [rbac: attendance.read.sheet]",
         "tags": [
           "Admin - Attendance Settlements"
         ]
@@ -75344,6 +75455,31 @@
               "minLength": 8,
               "maxLength": 64,
               "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页数量",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
             }
           }
         ],
@@ -75480,7 +75616,7 @@
             }
           },
           "404": {
-            "description": "活动不存在(code=20001)",
+            "description": "活动不存在(code=20001) / 分类时长账本不存在或不可访问(code=20230)",
             "content": {
               "application/json": {
                 "schema": {
@@ -75494,9 +75630,10 @@
                     "code": {
                       "type": "integer",
                       "enum": [
-                        20001
+                        20001,
+                        20230
                       ],
-                      "description": "20001: 活动不存在",
+                      "description": "20001: 活动不存在; 20230: 分类时长账本不存在或不可访问",
                       "example": 20001
                     },
                     "message": {
@@ -75519,7 +75656,7 @@
             "bearer": []
           }
         ],
-        "summary": "查看结算版本不可变审核详情、seal、差异与缺口 [rbac: attendance.read.sheet]",
+        "summary": "查看结算版本及分页逐人冻结结果、seal、差异与缺口 [rbac: attendance.read.sheet]",
         "tags": [
           "Admin - Attendance Settlements"
         ]
@@ -167267,6 +167404,50 @@
           "activity"
         ]
       },
+      "AdminSettlementSubmitterDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "nickname"
+        ]
+      },
+      "AdminSettlementActivitySummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "organizationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "startAt",
+          "organizationId"
+        ]
+      },
       "AdminAttendanceSettlementListItemDto": {
         "type": "object",
         "properties": {
@@ -167286,6 +167467,15 @@
           "statusCode": {
             "type": "string"
           },
+          "reviewStage": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "first",
+              "final"
+            ],
+            "description": "submitted 版本当前待审阶段，其他状态为null；不是操作授权"
+          },
           "submittedAt": {
             "type": "string",
             "nullable": true,
@@ -167294,6 +167484,24 @@
           "postingBatchStatusCode": {
             "type": "string",
             "nullable": true
+          },
+          "submittedBy": {
+            "nullable": true,
+            "description": "该版本的创建/提交人；不是当前活动负责人",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AdminSettlementSubmitterDto"
+              }
+            ]
+          },
+          "activity": {
+            "description": "仅 expand=activity 返回当前活动摘要，不是版本冻结内容",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AdminSettlementActivitySummaryDto"
+              }
+            ]
           }
         },
         "required": [
@@ -167301,7 +167509,220 @@
           "activityId",
           "activityTitle",
           "version",
-          "statusCode"
+          "statusCode",
+          "reviewStage",
+          "submittedBy"
+        ]
+      },
+      "AdminSettlementFrozenTimeBucketDto": {
+        "type": "object",
+        "properties": {
+          "categoryCode": {
+            "type": "string"
+          },
+          "calculatedSeconds": {
+            "type": "number",
+            "nullable": true
+          },
+          "recognizedSeconds": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "categoryCode",
+          "calculatedSeconds",
+          "recognizedSeconds"
+        ]
+      },
+      "AdminSettlementResultMemberDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "memberNo": {
+            "type": "string"
+          },
+          "realName": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string",
+            "nullable": true
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "memberNo",
+          "realName",
+          "nickname",
+          "label"
+        ]
+      },
+      "AdminSettlementResultSessionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name"
+        ]
+      },
+      "AdminSettlementFrozenResultDto": {
+        "type": "object",
+        "properties": {
+          "contributionResultState": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "ready",
+              "pending"
+            ],
+            "description": "原生分值来自本版本完整贡献证明，不对100条预览求和"
+          },
+          "nativeCalculatedContributionPoints": {
+            "type": "string",
+            "nullable": true,
+            "description": "本身份全部原生评价单元的计算分值，未准备为null"
+          },
+          "nativeRecognizedContributionPoints": {
+            "type": "string",
+            "nullable": true,
+            "description": "本身份全部原生评价单元的认定分值；完整证明中无适用评价为0.00"
+          },
+          "timeResultState": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "ready",
+              "pending"
+            ],
+            "description": "legacy 使用冻结遗留小时；ready 使用版本绑定的已提交分类或正式更正替换值；pending 不把缺证明显示为零"
+          },
+          "timeBuckets": {
+            "nullable": true,
+            "description": "请求版本自身或其不可变绑定的时间分类，不读当前指针；更正仅展示正式替换值，calculatedSeconds为空。不含来源JSON、政策配置和自由文本",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminSettlementFrozenTimeBucketDto"
+            }
+          },
+          "id": {
+            "type": "string",
+            "description": "该版本的人员结果修订 ID，不是当前草稿行"
+          },
+          "participationIdentityId": {
+            "type": "string",
+            "description": "同一队员多场次保留不同身份，不合并或截断"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "resultCode": {
+            "type": "string"
+          },
+          "lateFlag": {
+            "type": "boolean"
+          },
+          "earlyLeaveFlag": {
+            "type": "boolean"
+          },
+          "recognizedServiceHours": {
+            "type": "string",
+            "description": "版本冻结的认定小时文本；不等于已正式生效的志愿小时"
+          },
+          "calculatedServiceHours": {
+            "type": "string",
+            "description": "版本冻结的计算小时文本；不从当前打卡重算"
+          },
+          "recognizedContributionPoints": {
+            "type": "string",
+            "description": "版本冻结的遗留认定分值；policy_v1 的正式贡献以 contributionProof 为准"
+          },
+          "calculatedContributionPoints": {
+            "type": "string"
+          },
+          "hasAdjustment": {
+            "type": "boolean",
+            "description": "认定与计算存在调整；不返回自由文本说明"
+          },
+          "member": {
+            "description": "当前人员最小展示资料；数值结果仍绑定历史版本，不宣称人员姓名为冻结快照",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AdminSettlementResultMemberDto"
+              }
+            ]
+          },
+          "session": {
+            "$ref": "#/components/schemas/AdminSettlementResultSessionDto"
+          }
+        },
+        "required": [
+          "contributionResultState",
+          "nativeCalculatedContributionPoints",
+          "nativeRecognizedContributionPoints",
+          "timeResultState",
+          "timeBuckets",
+          "id",
+          "participationIdentityId",
+          "revision",
+          "resultCode",
+          "lateFlag",
+          "earlyLeaveFlag",
+          "recognizedServiceHours",
+          "calculatedServiceHours",
+          "recognizedContributionPoints",
+          "calculatedContributionPoints",
+          "hasAdjustment",
+          "member",
+          "session"
+        ]
+      },
+      "AdminSettlementFrozenResultsPageDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "description": "当前页数据列表;实际元素类型由具体接口指定",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminSettlementFrozenResultDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "description": "总记录数",
+            "example": 0
+          },
+          "page": {
+            "type": "number",
+            "description": "当前页码",
+            "example": 1
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "每页数量",
+            "example": 20
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
         ]
       },
       "AdminContributionProofEvaluationDto": {
@@ -167602,6 +168023,16 @@
       "AdminSettlementReviewDetailDto": {
         "type": "object",
         "properties": {
+          "results": {
+            "description": "按身份稳定分页的本版本冻结结果，total 为场次参与身份数；draft 返回 null，不把可变草稿冒充冻结结果",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AdminSettlementFrozenResultsPageDto"
+              }
+            ]
+          },
           "contributionProof": {
             "description": "同一审核版本的冻结贡献证明；历史legacy省略",
             "allOf": [
@@ -167630,6 +168061,7 @@
           }
         },
         "required": [
+          "results",
           "version",
           "diff",
           "sealRevisions",

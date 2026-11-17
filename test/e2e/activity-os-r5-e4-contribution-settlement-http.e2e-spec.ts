@@ -242,6 +242,7 @@ describe('E4 contribution HTTP: real JWT, scoped workbench and immutable Admin p
         .set('Authorization', f.creator.auth),
     );
     expect(draftDetail.contributionProof).toEqual(workbench.contributionProof);
+    expect(draftDetail.results).toBeNull();
 
     const submitted = successData(
       await request(httpServer(f.app))
@@ -274,6 +275,26 @@ describe('E4 contribution HTTP: real JWT, scoped workbench and immutable Admin p
     expect(formalRoot.id).not.toBe(draftRoot.id);
     expect(formalRoot.kindCode).toBe('submitted');
     expect(draftRoot.kindCode).toBe('draft');
+    const time = await f.db.activitySettlementTimeRevision.findFirstOrThrow({
+      where: { settlementVersionId: formalVersionId, kindCode: 'submitted' },
+      include: { buckets: { orderBy: { categoryCode: 'asc' } } },
+    });
+    const frozenResults = object(detail.results);
+    expect(frozenResults.total).toBe(1);
+    expect(frozenResults.items).toEqual([
+      expect.objectContaining({
+        participationIdentityId: time.buckets[0].participationIdentityId,
+        timeResultState: 'ready',
+        contributionResultState: 'ready',
+        nativeRecognizedContributionPoints: '1.00',
+        nativeCalculatedContributionPoints: '1.00',
+        timeBuckets: time.buckets.map(({ categoryCode, calculatedSeconds, recognizedSeconds }) => ({
+          categoryCode,
+          calculatedSeconds,
+          recognizedSeconds,
+        })),
+      }),
+    ]);
     // Regression for the lock-after authorization callback: valid scoped/GLOBAL reviewers
     // still approve and replay through the real HTTP owner, with the original proof intact.
     const version = await f.db.attendanceSettlementVersion.findUniqueOrThrow({
