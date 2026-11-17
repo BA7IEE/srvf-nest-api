@@ -51,8 +51,8 @@ async function approvedE4TimeCorrectionWithService(
   );
 }
 
-/** Reuse the real V3 command/review protocol for a participant in an existing
- * posted fixture. Other participants' root time facts are not correction items. */
+/** Reuse the real V3 protocol for an existing participant. The complete root
+ * envelope retains unchanged participants while altering only this target. */
 export async function approvedE4ParticipantTimeCorrection(
   f: E4Fixture,
   source: Awaited<ReturnType<typeof createE4Source>>,
@@ -116,7 +116,7 @@ async function approveParticipantTimeCorrection(
     where: { settlementVersionId },
   });
   const roots = await f.db.participationTimeLedgerEntry.findMany({
-    where: { manifestId: original.id, participationIdentityId },
+    where: { manifestId: original.id },
   });
   const requested = await correction.submit(
     {
@@ -145,6 +145,7 @@ async function approveParticipantTimeCorrection(
           items: roots.map((root) => ({
             rootEntryId: root.id,
             recognizedSeconds:
+              root.participationIdentityId === participationIdentityId &&
               root.categoryCode === 'volunteer_service'
                 ? recognizedSeconds
                 : root.recognizedSeconds,

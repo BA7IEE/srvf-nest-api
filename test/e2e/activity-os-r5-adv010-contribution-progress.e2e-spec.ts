@@ -552,114 +552,120 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
     );
   });
 
-  it.each([false, true])(
-    'ADV-010 real member-lock concurrency (A9 crossing=%s): recompute after waiting, one permanent intent',
-    async (crossing) => {
-      const who = await candidate();
-      if (crossing) {
-        for (const day of ['2020-02-27', '2020-02-28']) {
-          const baseline = await sourceFor(
-            who,
-            new Date(`${day}T08:00:00Z`),
-            new Date(`${day}T09:00:00Z`),
-          );
-          await postE4Ledger(f, await submitE4Time(f, baseline, await prepareE4Time(f, baseline)));
-        }
-        await expectProgress(who, '4');
-      }
-      const { secondApp, observationDb, progressApp } = await ordinaryConcurrencyApps();
-      const a = await sourceFor(
-        who,
-        new Date('2020-03-01T08:00:00Z'),
-        new Date('2020-03-01T09:00:00Z'),
-      );
-      const b = await sourceFor(
-        who,
-        new Date(crossing ? '2020-03-02T10:00:00Z' : '2020-03-01T10:00:00Z'),
-        new Date(crossing ? '2020-03-02T11:00:00Z' : '2020-03-01T11:00:00Z'),
-      );
-      const ready = [];
-      for (const source of [a, b])
-        ready.push(
-          await prepareE4Ledger(f, await submitE4Time(f, source, await prepareE4Time(f, source))),
+  it.each([
+    {
+      crossing: false,
+      title:
+        'ADV-010 concurrently commits two same-day awards while real progress refreshes, with one stale baseline rejected',
+    },
+    {
+      crossing: true,
+      title: 'A9 real member-lock concurrency: recompute after waiting, one permanent intent',
+    },
+  ])('$title', async ({ crossing }) => {
+    const who = await candidate();
+    if (crossing) {
+      for (const day of ['2020-02-27', '2020-02-28']) {
+        const baseline = await sourceFor(
+          who,
+          new Date(`${day}T08:00:00Z`),
+          new Date(`${day}T09:00:00Z`),
         );
-      for (const [index, batch] of ready.entries()) {
-        const job = await f.db.activityBatchJob.findFirstOrThrow({
-          where: { postingBatchId: batch.batchId },
-        });
-        expect(
-          readBaselineFromPayload(job.payload)[
-            ledgerBaselineKey(who.memberId, crossing && index === 1 ? '2020-03-02' : '2020-03-01')
-          ],
-        ).toBe('0:0');
+        await postE4Ledger(f, await submitE4Time(f, baseline, await prepareE4Time(f, baseline)));
       }
-      const segments = await f.db.participantServiceSegmentRevision.findMany({
-        where: {
-          identity: { memberId: who.memberId, activityId: { in: [a.activityId, b.activityId] } },
-          statusCode: 'draft',
-        },
-        orderBy: { checkInAt: 'asc' },
+      await expectProgress(who, '4');
+    }
+    const { secondApp, observationDb, progressApp } = await ordinaryConcurrencyApps();
+    const a = await sourceFor(
+      who,
+      new Date('2020-03-01T08:00:00Z'),
+      new Date('2020-03-01T09:00:00Z'),
+    );
+    const b = await sourceFor(
+      who,
+      new Date(crossing ? '2020-03-02T10:00:00Z' : '2020-03-01T10:00:00Z'),
+      new Date(crossing ? '2020-03-02T11:00:00Z' : '2020-03-01T11:00:00Z'),
+    );
+    const ready = [];
+    for (const source of [a, b])
+      ready.push(
+        await prepareE4Ledger(f, await submitE4Time(f, source, await prepareE4Time(f, source))),
+      );
+    for (const [index, batch] of ready.entries()) {
+      const job = await f.db.activityBatchJob.findFirstOrThrow({
+        where: { postingBatchId: batch.batchId },
       });
-      expect(segments.map((s) => [s.checkInAt.toISOString(), s.checkOutAt?.toISOString()])).toEqual(
-        [
-          ['2020-03-01T08:00:00.000Z', '2020-03-01T09:00:00.000Z'],
-          crossing
-            ? ['2020-03-02T10:00:00.000Z', '2020-03-02T11:00:00.000Z']
-            : ['2020-03-01T10:00:00.000Z', '2020-03-01T11:00:00.000Z'],
+      expect(
+        readBaselineFromPayload(job.payload)[
+          ledgerBaselineKey(who.memberId, crossing && index === 1 ? '2020-03-02' : '2020-03-01')
         ],
-      );
-      const capturedBefore: string[] = [];
-      for (const instance of [f.app, secondApp]) {
-        const recorder = instance.get(ContributionMilestoneRecorder);
-        const capture = recorder.captureBefore.bind(recorder);
-        jest.spyOn(recorder, 'captureBefore').mockImplementation(async (...args) => {
-          const snapshots = await capture(...args);
-          capturedBefore.push(
-            ...snapshots
-              .filter((row) => row.memberId === who.memberId)
-              .map((row) => row.beforePoints.toString()),
-          );
-          return snapshots;
-        });
-      }
-      const lockDb = r5CiOwnerClient();
-      extraPools.push(lockDb);
-      await lockDb.$connect();
-      await assertConnectedTestDatabase(lockDb);
-      let release: () => void = () => undefined;
-      const hold = new Promise<void>((resolve) => {
-        release = resolve;
+      ).toBe('0:0');
+    }
+    const segments = await f.db.participantServiceSegmentRevision.findMany({
+      where: {
+        identity: { memberId: who.memberId, activityId: { in: [a.activityId, b.activityId] } },
+        statusCode: 'draft',
+      },
+      orderBy: { checkInAt: 'asc' },
+    });
+    expect(segments.map((s) => [s.checkInAt.toISOString(), s.checkOutAt?.toISOString()])).toEqual([
+      ['2020-03-01T08:00:00.000Z', '2020-03-01T09:00:00.000Z'],
+      crossing
+        ? ['2020-03-02T10:00:00.000Z', '2020-03-02T11:00:00.000Z']
+        : ['2020-03-01T10:00:00.000Z', '2020-03-01T11:00:00.000Z'],
+    ]);
+    const capturedBefore: string[] = [];
+    for (const instance of [f.app, secondApp]) {
+      const recorder = instance.get(ContributionMilestoneRecorder);
+      const capture = recorder.captureBefore.bind(recorder);
+      jest.spyOn(recorder, 'captureBefore').mockImplementation(async (...args) => {
+        const snapshots = await capture(...args);
+        capturedBefore.push(
+          ...snapshots
+            .filter((row) => row.memberId === who.memberId)
+            .map((row) => row.beforePoints.toString()),
+        );
+        return snapshots;
       });
-      let acquired!: (pid: number) => void;
-      let acquireFailed!: (error: unknown) => void;
-      const acquiredPid = new Promise<number>((resolve, reject) => {
-        acquired = resolve;
-        acquireFailed = reject;
-      });
-      const holding = lockDb.$transaction(
-        async (tx) => {
-          await lockMembersForWrite(tx, [f.creator.memberId, who.memberId]);
-          const [{ pid }] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
-          acquired(pid);
-          await hold;
-        },
-        { timeout: 20_000 },
-      );
-      void holding.catch(acquireFailed);
-      const holderPid = await acquiredPid;
-      // Actual services immediately start both PostgreSQL transactions; no unconsumed HTTP request objects.
-      const outcomes = Promise.allSettled(
-        ready.map((batch, i) =>
-          (i === 0 ? f.app : secondApp)
-            .get(LedgerPostingService)
-            .commitBatch(batch.commitCommand, e4Actor(f.finalReviewer), E4_META),
-        ),
-      );
-      try {
-        const deadline = performance.now() + 2_000;
-        let waiters = 0;
-        while (performance.now() < deadline && waiters !== 2) {
-          const [{ count }] = await observationDb.$queryRaw<{ count: number }[]>`
+    }
+    const lockDb = r5CiOwnerClient();
+    extraPools.push(lockDb);
+    await lockDb.$connect();
+    await assertConnectedTestDatabase(lockDb);
+    let release: () => void = () => undefined;
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let acquired!: (pid: number) => void;
+    let acquireFailed!: (error: unknown) => void;
+    const acquiredPid = new Promise<number>((resolve, reject) => {
+      acquired = resolve;
+      acquireFailed = reject;
+    });
+    const holding = lockDb.$transaction(
+      async (tx) => {
+        await lockMembersForWrite(tx, [f.creator.memberId, who.memberId]);
+        const [{ pid }] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        acquired(pid);
+        await hold;
+      },
+      { timeout: 20_000 },
+    );
+    void holding.catch(acquireFailed);
+    const holderPid = await acquiredPid;
+    // Actual services immediately start both PostgreSQL transactions; no unconsumed HTTP request objects.
+    const outcomes = Promise.allSettled(
+      ready.map((batch, i) =>
+        (i === 0 ? f.app : secondApp)
+          .get(LedgerPostingService)
+          .commitBatch(batch.commitCommand, e4Actor(f.finalReviewer), E4_META),
+      ),
+    );
+    try {
+      const deadline = performance.now() + 2_000;
+      let waiters = 0;
+      while (performance.now() < deadline && waiters !== 2) {
+        const [{ count }] = await observationDb.$queryRaw<{ count: number }[]>`
           SELECT count(DISTINCT waiting.pid)::int AS count FROM pg_locks waiting
           JOIN pg_locks holder ON holder.locktype=waiting.locktype AND holder.database=waiting.database
             AND holder.classid=waiting.classid AND holder.objid=waiting.objid AND holder.objsubid=waiting.objsubid
@@ -668,57 +674,56 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
             AND waiting.locktype='advisory' AND waiting.objsubid=1 AND NOT waiting.granted
             AND holder.granted AND holder.pid=${holderPid} AND ${holderPid}=ANY(pg_blocking_pids(activity.pid))
         `;
-          waiters = count;
-          if (waiters !== 2) await nextTurn();
-        }
-        expect(waiters).toBe(2);
-        expect(capturedBefore).toEqual([]);
-        await expectProgress(who, crossing ? '4' : '0', progressApp);
-      } finally {
-        release();
-        await Promise.allSettled([holding, outcomes]);
+        waiters = count;
+        if (waiters !== 2) await nextTurn();
       }
-      await holding;
-      const results = await outcomes;
-      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(crossing ? 2 : 1);
-      const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
-      expect(failed).toHaveLength(crossing ? 0 : 1);
-      if (!crossing) {
-        expect(failed[0].reason).toMatchObject({
-          biz: { code: BizCode.LEDGER_COMMIT_BASELINE_CHANGED.code },
-        });
-      }
-      expect(BizCode.LEDGER_COMMIT_BASELINE_CHANGED.httpStatus).toBe(409);
-      const batches = await f.db.ledgerPostingBatch.findMany({
-        where: { id: { in: ready.map((r) => r.batchId) } },
+      expect(waiters).toBe(2);
+      expect(capturedBefore).toEqual([]);
+      await expectProgress(who, crossing ? '4' : '0', progressApp);
+    } finally {
+      release();
+      await Promise.allSettled([holding, outcomes]);
+    }
+    await holding;
+    const results = await outcomes;
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(crossing ? 2 : 1);
+    const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    expect(failed).toHaveLength(crossing ? 0 : 1);
+    if (!crossing) {
+      expect(failed[0].reason).toMatchObject({
+        biz: { code: BizCode.LEDGER_COMMIT_BASELINE_CHANGED.code },
       });
-      expect(batches.map((r) => r.statusCode).sort()).toEqual(
-        crossing ? ['committed', 'committed'] : ['committed', 'ready'],
-      );
-      const day = await f.db.memberContributionDayState.findFirstOrThrow({
-        where: { memberId: who.memberId, ledgerDate: new Date('2020-03-01T00:00:00Z') },
-      });
-      expect(day.version).toBe(1);
-      expect(day.committedCreditedPoints.toString()).toBe('2');
-      await expectProgress(who, crossing ? '8' : '2');
-      await expectMemberSummaries(who, crossing ? '8' : '2');
-      const facts = await f.db.teamJoinContributionMilestone.findMany({
-        where: { applicationId: who.applicationId },
-      });
-      expect(facts).toHaveLength(crossing ? 1 : 0);
-      if (crossing) {
-        expect(capturedBefore.sort()).toEqual(['4', '6']);
-        expect(facts[0].beforePoints.toString()).toBe('4');
-        expect(facts[0].afterPoints.toString()).toBe('6');
-        expect(ready.map((batch) => batch.batchId)).toContain(facts[0].postingBatchId);
-        expect(
-          await f.db.notificationOutboxIntent.count({
-            where: { eventKey: `team-join-contribution-met:${who.applicationId}:5` },
-          }),
-        ).toBe(1);
-      }
-    },
-  );
+    }
+    expect(BizCode.LEDGER_COMMIT_BASELINE_CHANGED.httpStatus).toBe(409);
+    const batches = await f.db.ledgerPostingBatch.findMany({
+      where: { id: { in: ready.map((r) => r.batchId) } },
+    });
+    expect(batches.map((r) => r.statusCode).sort()).toEqual(
+      crossing ? ['committed', 'committed'] : ['committed', 'ready'],
+    );
+    const day = await f.db.memberContributionDayState.findFirstOrThrow({
+      where: { memberId: who.memberId, ledgerDate: new Date('2020-03-01T00:00:00Z') },
+    });
+    expect(day.version).toBe(1);
+    expect(day.committedCreditedPoints.toString()).toBe('2');
+    await expectProgress(who, crossing ? '8' : '2');
+    await expectMemberSummaries(who, crossing ? '8' : '2');
+    const facts = await f.db.teamJoinContributionMilestone.findMany({
+      where: { applicationId: who.applicationId },
+    });
+    expect(facts).toHaveLength(crossing ? 1 : 0);
+    if (crossing) {
+      expect(capturedBefore.sort()).toEqual(['4', '6']);
+      expect(facts[0].beforePoints.toString()).toBe('4');
+      expect(facts[0].afterPoints.toString()).toBe('6');
+      expect(ready.map((batch) => batch.batchId)).toContain(facts[0].postingBatchId);
+      expect(
+        await f.db.notificationOutboxIntent.count({
+          where: { eventKey: `team-join-contribution-met:${who.applicationId}:5` },
+        }),
+      ).toBe(1);
+    }
+  });
 
   it.each([false, true])(
     'A9 Human V3 net 4→5→4→5: no resend after cleanup; new application independent=%s',

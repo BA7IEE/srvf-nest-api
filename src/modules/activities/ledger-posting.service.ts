@@ -454,9 +454,15 @@ export class LedgerPostingService {
       // ===== ⑥ member advisory lock(既有 util,本刀不改)=====
       await lockMembersForWrite(tx, lockedMemberIds);
       await this.assertNoCrossActivitySegmentOverlap(tx, activityId);
+      // A cutoff selects whole ledger dates. If every date delta for a member
+      // is non-positive, no cycle can cross upwards. Keep positive dates even
+      // when reversals on other dates make the lifetime net zero or negative.
+      const potentialCrossingMemberIds = [
+        ...new Set(deltas.filter((row) => row.creditedHundredths > 0).map((row) => row.memberId)),
+      ].sort();
       const milestoneSnapshots = options.conversion
         ? []
-        : await this.notifications.captureContributionBefore(tx, lockedMemberIds);
+        : await this.notifications.captureContributionBefore(tx, potentialCrossingMemberIds);
 
       // ===== ⑦ day-state:缺行补齐 + 按 (memberId, ledgerDate) 排序 FOR UPDATE =====
       await this.createMissingDayStates(tx, deltas);

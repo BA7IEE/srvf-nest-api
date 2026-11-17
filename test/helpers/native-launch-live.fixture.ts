@@ -232,7 +232,7 @@ export async function createNativeLaunchLiveSource(
 export async function nativeLaunchBusinessFingerprint(
   db: PrismaClient,
   stage: NativeLaunchStage,
-  profile: 'current155' | 'pre155' = 'current155',
+  profile: 'current' | 'current155' | 'pre155' = 'current',
 ) {
   const tables = await stage(
     'FINGERPRINT_TABLES',

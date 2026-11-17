@@ -36,11 +36,12 @@ export const E4_MIGRATION_153 = '20261023170000_activity_contribution_source_par
 export const E4_MIGRATION_154 = '20261030172000_activity_human_correction_background_job';
 
 export const E4_MIGRATION_155 = '20261031223000_r5_correction_set_materialization';
+export const E4_MIGRATION_156 = '20261117190000_team_join_contribution_milestones';
 
 export function e4HistoricalMigrationPrefix(names: readonly string[]): string[] {
   const ordered = [...names].sort();
   if (
-    ordered.length !== 155 ||
+    ordered.length !== 156 ||
     ordered[136] !== E4_MIGRATION_137 ||
     ordered[137] !== E4_MIGRATION_138 ||
     ordered[138] !== E4_MIGRATION_139 ||
@@ -59,10 +60,11 @@ export function e4HistoricalMigrationPrefix(names: readonly string[]): string[] 
     ordered[151] !== E4_MIGRATION_152 ||
     ordered[152] !== E4_MIGRATION_153 ||
     ordered[153] !== E4_MIGRATION_154 ||
-    ordered[154] !== E4_MIGRATION_155
+    ordered[154] !== E4_MIGRATION_155 ||
+    ordered[155] !== E4_MIGRATION_156
   )
     throw new Error(
-      'E4 fixed 137 prefix or explicit 138/139/140/141/142/143/144/145/146/147/148/149/150/151/152/153/154/155 successors changed',
+      'E4 fixed 137 prefix or explicit 138/139/140/141/142/143/144/145/146/147/148/149/150/151/152/153/154/155/156 successors changed',
     );
   return ordered.slice(0, 137);
 }
