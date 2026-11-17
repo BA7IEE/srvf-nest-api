@@ -9,6 +9,7 @@ import {
   r5CiMigrationSources,
 } from '../../test/helpers/r5-ci-source-binding';
 import { humanCorrectionCatalogSha256 } from '../modules/activities/human-correction-trusted-connection';
+import { currentMigrationInventory } from '../../test/helpers/migration-inventory';
 
 const identity = {
   database: R5_CI_DATABASE,
@@ -103,7 +104,7 @@ describe('disposable CI source binding, no database or authentication', () => {
     expect(built.base.functions.filter((row) => !added.has(String(row.signature)))).toEqual(
       frozen.catalogs.base.functions,
     );
-    expect(r5CiMigrationSources()).toHaveLength(156);
+    expect(r5CiMigrationSources()).toEqual(currentMigrationInventory().migrations);
     expect(built.base.functions.filter((row) => added.has(String(row.signature)))).toHaveLength(3);
   });
 });

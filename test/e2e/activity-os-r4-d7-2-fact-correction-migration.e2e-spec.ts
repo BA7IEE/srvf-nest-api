@@ -1,3 +1,4 @@
+import { currentMigrationInventory } from '../helpers/migration-inventory';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -33,7 +34,7 @@ const D7_2_FACT_MIGRATION_COUNT = 125;
 const BINDING_GUARD_MIGRATION_COUNT = 126;
 const ALLOCATION_GUARD_MIGRATION_COUNT = 127;
 const CORRECTION_RECEIPT_GUARD_MIGRATION_COUNT = 128;
-const CURRENT_MIGRATION_COUNT = 156;
+const CURRENT_MIGRATION_COUNT = currentMigrationInventory().count;
 const WORKER = 98;
 const USE_DEDICATED_W98 = process.env.SRVF_D7_2_W98 === '1';
 const LEGACY_V1_REQUEST_ID = 'd7-2-migration-v1-request';

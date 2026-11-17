@@ -1,3 +1,4 @@
+import { currentMigrationInventory } from '../helpers/migration-inventory';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -15,7 +16,7 @@ import * as path from 'node:path';
 import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
 
-const CURRENT_MIGRATION_COUNT = 156;
+const CURRENT_MIGRATION_COUNT = currentMigrationInventory().count;
 
 const MIGRATION = '20260911100000_activity_os_r4_d1_3_time_policy_selection';
 

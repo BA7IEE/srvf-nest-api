@@ -1,3 +1,4 @@
+import { currentMigrationInventory } from '../helpers/migration-inventory';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import {
@@ -60,7 +61,7 @@ import {
 // Fixed pre-29.12 SQL reference; do not derive it from the candidate migration.
 import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
 
-const CURRENT_MIGRATION_COUNT = 156;
+const CURRENT_MIGRATION_COUNT = currentMigrationInventory().count;
 
 const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_E3_D2_MAPPING_W98 === '1');
 
