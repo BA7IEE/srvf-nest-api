@@ -19,6 +19,7 @@ import {
   frozenContributionRegime,
 } from './activity-contribution-settlement.service';
 import type { ContributionRegimeCode } from './activity-contribution-settlement-policy';
+import { validateManualHoursEvidence } from './settlement-hours-evidence-query';
 
 // ===== 活动改造 v1.1 第 2 批第二刀:结算草稿生成(合同 §5.9)=====
 //
@@ -441,6 +442,10 @@ export class SettlementDraftService {
         select: { id: true },
       });
       if (identity === null) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+
+      if (frozenContributionRegime(draft.contributionRegimeCode) === 'legacy') {
+        await validateManualHoursEvidence(tx, input.activityId, [input]);
+      }
 
       const existing = await tx.participantSettlementResultRevision.findUnique({
         where: {

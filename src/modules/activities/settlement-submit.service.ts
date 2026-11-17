@@ -24,6 +24,7 @@ import {
   type SettlementSubmissionRejection,
 } from './settlement-submission-validator';
 import { frozenContributionRegime } from './activity-contribution-settlement.service';
+import { validateManualHoursEvidence } from './settlement-hours-evidence-query';
 
 // ===== 活动改造 v1.1 第 2 批第三刀:提交不可变 SettlementVersion(合同 §5.10)=====
 //
@@ -424,6 +425,7 @@ export class SettlementSubmitService {
       sealRevision: number;
       draft: DraftVersionRow;
       contributionProof?: ActivitySettlementContributionRevision;
+      validateLegacyManualHours: boolean;
     },
   ): Promise<string> {
     const rows = await tx.participantSettlementResultRevision.findMany({
@@ -443,6 +445,14 @@ export class SettlementSubmitService {
       // 稳定序:hash 的可复现性依赖它(canonicalize 对**数组保序**)。
       orderBy: { participationIdentityId: 'asc' },
     });
+
+    if (input.validateLegacyManualHours) {
+      await validateManualHoursEvidence(
+        tx,
+        input.activityId,
+        rows.filter((row) => row.adjustmentReason !== null),
+      );
+    }
 
     const contributionTotals = input.contributionProof
       ? await tx.participantContributionEvaluation.groupBy({
@@ -798,6 +808,7 @@ export class SettlementSubmitService {
       sealRevision: seal.sealRevision,
       draft,
       contributionProof: contribution,
+      validateLegacyManualHours: !classified && regime === 'legacy',
     });
 
     const contentHash =

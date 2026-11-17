@@ -444,6 +444,113 @@ describe('settlement submit —— 提交不可变版本 (合同 §5.10)', () =>
   // DoD 1 前置 —— run 形态与锁序
   // =========================================================================
 
+  describe('A6 手工小时在固化前复验', () => {
+    it('已存在的越界人工草稿不能绕过 PATCH 校验直接送审；失败零写', async () => {
+      const fixture = await createSubmittable({ populationSize: 1 });
+      const identity = await prisma.activityParticipationIdentity.findUniqueOrThrow({
+        where: { id: fixture.identityIds[0] },
+        select: { id: true, memberId: true },
+      });
+      await prisma.attendancePunchEvent.createMany({
+        data: (
+          [
+            ['check_in', SESSION_START],
+            ['check_out', SESSION_END],
+          ] as const
+        ).map(([eventTypeCode, occurredAt]) => ({
+          activityId: fixture.activityId,
+          sessionId: fixture.sessionId,
+          participationIdentityId: identity.id,
+          memberId: identity.memberId,
+          eventTypeCode,
+          sourceCode: 'staff_scan',
+          occurredAt,
+          receivedAt: occurredAt,
+          operatorUserId: actor.id,
+          eventKey: `a6-submit:${fixture.activityId}:${eventTypeCode}`,
+          requestHash: `a6-submit:${fixture.activityId}:${eventTypeCode}`,
+          evidenceRevision: 0,
+        })),
+      });
+      await prisma.participantSettlementResultRevision.updateMany({
+        where: { settlementVersionId: fixture.draftVersionId },
+        data: { recognizedServiceHours: 5, adjustmentReason: '校验上线前的人工草稿' },
+      });
+      const before = await prisma.participantSettlementResultRevision.findMany({
+        where: { settlementVersionId: fixture.draftVersionId },
+      });
+      const auditCount = await prisma.auditLog.count();
+      await expectRefusal(fixture, BizCode.ATTENDANCE_SERVICE_HOURS_EXCEEDS_SPAN);
+      expect(
+        await prisma.participantSettlementResultRevision.findMany({
+          where: { settlementVersionId: fixture.draftVersionId },
+        }),
+      ).toEqual(before);
+      expect(await prisma.auditLog.count()).toBe(auditCount);
+    });
+
+    it('零认定不会抹掉缺规则 blocker，也不能使缺少有效封场的草稿送审', async () => {
+      for (const missing of ['rule', 'seal'] as const) {
+        const fixture = await createSubmittable({
+          populationSize: 1,
+          withBlocker: missing === 'rule',
+        });
+        const before = await prisma.participantSettlementResultRevision.findFirstOrThrow({
+          where: { settlementVersionId: fixture.draftVersionId },
+        });
+        await draftService.updateItem({
+          activityId: fixture.activityId,
+          participationIdentityId: fixture.identityIds[0],
+          expectedDraftVersion: 1,
+          resultCode: 'present',
+          recognizedServiceHours: 0,
+          recognizedContributionPoints: 0,
+          reason: '认定为零不解除必需条件',
+        });
+        const after = await prisma.participantSettlementResultRevision.findUniqueOrThrow({
+          where: { id: before.id },
+        });
+        expect(after.exceptionFlagsJson).toEqual(before.exceptionFlagsJson);
+        expect(after.calculatedServiceHours).toEqual(before.calculatedServiceHours);
+        if (missing === 'seal') {
+          await prisma.evidenceSeal.update({
+            where: { id: fixture.sealId },
+            data: { statusCode: 'superseded' },
+          });
+        }
+        await expectRefusal(
+          fixture,
+          missing === 'rule'
+            ? BizCode.SETTLEMENT_SUBMIT_MISSING_RULE
+            : BizCode.SETTLEMENT_SUBMIT_EVIDENCE_SEAL_INACTIVE,
+        );
+      }
+    });
+
+    it('未闭合事实不能用零认定掩盖，认定失败不改原结果', async () => {
+      const fixture = await createSubmittable({ populationSize: 1, withOpenSegment: true });
+      const before = await prisma.participantSettlementResultRevision.findFirstOrThrow({
+        where: { settlementVersionId: fixture.draftVersionId },
+      });
+      await expect(
+        draftService.updateItem({
+          activityId: fixture.activityId,
+          participationIdentityId: fixture.identityIds[0],
+          expectedDraftVersion: 1,
+          resultCode: 'present',
+          recognizedServiceHours: 0,
+          recognizedContributionPoints: 0,
+          reason: '不能以零跳过缺失签退',
+        }),
+      ).rejects.toMatchObject({ biz: BizCode.SETTLEMENT_SUBMIT_OPEN_SEGMENT });
+      expect(
+        await prisma.participantSettlementResultRevision.findUniqueOrThrow({
+          where: { id: before.id },
+        }),
+      ).toEqual(before);
+    });
+  });
+
   describe('前置闸 —— run 状态与草稿存在性', () => {
     it('没有 run 行 → SETTLEMENT_SUBMIT_RUN_STATUS_INVALID', async () => {
       const fixture = await createSubmittable();

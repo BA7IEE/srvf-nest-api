@@ -987,6 +987,7 @@ export class AppManagedActivitiesController {
     BizCode.SETTLEMENT_SUBMIT_OPEN_SEGMENT,
     BizCode.SETTLEMENT_SUBMIT_MISSING_RULE,
     BizCode.SETTLEMENT_SUBMIT_OPERATION_KEY_CONFLICT,
+    BizCode.ATTENDANCE_SERVICE_HOURS_EXCEEDS_SPAN,
   )
   async submitSettlement(
     @CurrentUser() user: CurrentUserPayload,
@@ -1114,6 +1115,9 @@ export class AppManagedActivitiesController {
     BizCode.SETTLEMENT_DRAFT_UPDATE_RUN_STATUS_INVALID,
     BizCode.SETTLEMENT_DRAFT_UPDATE_EXPECTED_DRAFT_VERSION_MISMATCH,
     BizCode.SETTLEMENT_SUBMIT_DRAFT_MISSING,
+    BizCode.ATTENDANCE_SERVICE_HOURS_EXCEEDS_SPAN,
+    BizCode.SETTLEMENT_SUBMIT_OPEN_SEGMENT,
+    BizCode.SETTLEMENT_SUBMIT_PENDING_RESULT,
   )
   async updateSettlementDraftItem(
     @CurrentUser() user: CurrentUserPayload,

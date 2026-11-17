@@ -74,7 +74,12 @@ export class AppSettlementUpdateDraftItemDto {
   @IsIn(APP_SETTLEMENT_EDITABLE_RESULT_CODES)
   resultCode!: (typeof APP_SETTLEMENT_EDITABLE_RESULT_CODES)[number];
 
-  @ApiProperty({ minimum: 0, maximum: 999.99, description: '负责人认定的服务时长' })
+  @ApiProperty({
+    minimum: 0,
+    maximum: 999.99,
+    description:
+      '负责人认定的手工结算小时；旧制度完整现场证据下，不超过有效服务段按既有两位精度逐段合计的跨度。允许有明确原因的零认定，但不解除未处理异常或送审所需条件；不用于分类时长认定。',
+  })
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)

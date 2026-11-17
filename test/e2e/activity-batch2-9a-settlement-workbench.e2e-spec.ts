@@ -9,6 +9,7 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
+import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 
 // ===== 第 2 批第 ⑨a 刀：负责人结算工作台 =====
 //
@@ -123,6 +124,7 @@ describe('第 2 批第 ⑨a 刀 —— App 负责人结算工作台', () => {
   async function createSettlementFixture(
     options: {
       runStatus?: string;
+      widePunchWindow?: boolean;
       submittedStatus?: 'submitted' | 'returned';
       participants?: ReadonlyArray<{
         sessionKey: string;
@@ -170,8 +172,12 @@ describe('第 2 批第 ⑨a 刀 —— App 负责人结算工作台', () => {
           endAt: SESSION_END,
           locationText: '深圳',
           checkInOpenAt: new Date(SESSION_START.getTime() - 3600_000),
-          checkInCloseAt: new Date(SESSION_START.getTime() + 3600_000),
-          checkOutOpenAt: new Date(SESSION_START.getTime() + 2 * 3600_000),
+          checkInCloseAt: options.widePunchWindow
+            ? SESSION_END
+            : new Date(SESSION_START.getTime() + 3600_000),
+          checkOutOpenAt: options.widePunchWindow
+            ? SESSION_START
+            : new Date(SESSION_START.getTime() + 2 * 3600_000),
           checkOutCloseAt: new Date('2020-03-01T08:00:00.000Z'),
           locationRequired: false,
           locationPolicySourceCode: 'session',
@@ -343,6 +349,12 @@ describe('第 2 批第 ⑨a 刀 —— App 负责人结算工作台', () => {
     fixture: SettlementFixture,
     identityId: string,
     expectedDraftVersion = fixture.draftVersion,
+    overrides: {
+      recognizedServiceHours?: number;
+      recognizedContributionPoints?: number;
+      resultCode?: string;
+      reason?: string;
+    } = {},
   ) {
     return request(httpServer(app))
       .patch(
@@ -355,8 +367,169 @@ describe('第 2 批第 ⑨a 刀 —— App 负责人结算工作台', () => {
         recognizedServiceHours: 1,
         recognizedContributionPoints: 2,
         reason: '负责人核对后的调整',
+        ...overrides,
       });
   }
+
+  async function addHoursEvidence(
+    fixture: SettlementFixture,
+    spans: readonly [string, string][],
+  ): Promise<void> {
+    const person = fixture.participants[0];
+    await prisma.attendancePunchEvent.createMany({
+      data: spans.flatMap(([start, end], index) =>
+        (
+          [
+            ['check_in', start],
+            ['check_out', end],
+          ] as const
+        ).map(([eventTypeCode, time]) => ({
+          activityId: fixture.activityId,
+          sessionId: person.sessionId,
+          participationIdentityId: person.identityId,
+          memberId: person.memberId,
+          eventTypeCode,
+          sourceCode: 'staff_scan',
+          occurredAt: new Date(`2020-03-01T${time}Z`),
+          receivedAt: new Date(`2020-03-01T${time}Z`),
+          operatorUserId: actorUserId,
+          eventKey: `${fixture.activityId}:${index}:${eventTypeCode}`,
+          requestHash: `${fixture.activityId}:${index}:${eventTypeCode}`,
+          evidenceRevision: 0,
+        })),
+      ),
+    });
+  }
+
+  async function hoursWriteState(fixture: SettlementFixture) {
+    return {
+      results: await prisma.participantSettlementResultRevision.findMany({
+        where: { settlementVersionId: fixture.draftVersionId },
+        orderBy: { id: 'asc' },
+      }),
+      version: await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+        where: { id: fixture.draftVersionId },
+      }),
+      events: await prisma.attendancePunchEvent.findMany({
+        where: { activityId: fixture.activityId },
+        orderBy: { id: 'asc' },
+      }),
+      auditCount: await prisma.auditLog.count(),
+      outboxCount: await prisma.notificationOutboxIntent.count(),
+    };
+  }
+
+  it('A6：分段合计限制与合法零认定；保留冻结计算值、类型、原因和原始证据', async () => {
+    const fixture = await createSettlementFixture({ widePunchWindow: true });
+    const identityId = fixture.participants[0].identityId;
+    await addHoursEvidence(fixture, [
+      ['00:00:00', '01:00:00'],
+      ['03:00:00', '04:00:00'],
+    ]);
+    const initial = await hoursWriteState(fixture);
+    const zero = await patchDraftItem(fixture, identityId, fixture.draftVersion, {
+      recognizedServiceHours: 0,
+      reason: '经现场核对，本次认定为零',
+    });
+    expect(zero.status).toBe(200);
+    const afterZero = await hoursWriteState(fixture);
+    expect(afterZero.results[0]).toMatchObject({
+      calculatedServiceHours: new Prisma.Decimal(2),
+      recognizedServiceHours: new Prisma.Decimal(0),
+      resultCode: 'present',
+      adjustmentReason: '经现场核对，本次认定为零',
+    });
+    expect(afterZero.events).toEqual(initial.events);
+    expect(afterZero.version).toEqual(initial.version);
+    for (const recognizedServiceHours of [2.01, 4, 6]) {
+      const before = await hoursWriteState(fixture);
+      const response = await patchDraftItem(fixture, identityId, fixture.draftVersion, {
+        recognizedServiceHours,
+      });
+      expect(response.status).toBe(BizCode.ATTENDANCE_SERVICE_HOURS_EXCEEDS_SPAN.httpStatus);
+      expect(response.body.code).toBe(BizCode.ATTENDANCE_SERVICE_HOURS_EXCEEDS_SPAN.code);
+      expect(await hoursWriteState(fixture)).toEqual(before);
+    }
+    expect(
+      (
+        await patchDraftItem(fixture, identityId, fixture.draftVersion, {
+          recognizedServiceHours: 2,
+        })
+      ).status,
+    ).toBe(200);
+  });
+
+  it('A6：完整四小时证据允许高于冻结计算值，不能仅凭原因认五小时', async () => {
+    const fixture = await createSettlementFixture({
+      participants: [
+        {
+          sessionKey: 's1',
+          resultCode: 'present',
+          memberNo: `hours-machine-${sequence}`,
+          ...memberIdentityData('冻结计算值与证据跨度'),
+          recognizedServiceHours: 3,
+        },
+      ],
+    });
+    await addHoursEvidence(fixture, [['00:00:00', '04:00:00']]);
+    const identityId = fixture.participants[0].identityId;
+    expect(
+      (
+        await patchDraftItem(fixture, identityId, fixture.draftVersion, {
+          recognizedServiceHours: 4,
+        })
+      ).status,
+    ).toBe(200);
+    const before = await hoursWriteState(fixture);
+    expect(before.results[0].calculatedServiceHours.toFixed(2)).toBe('3.00');
+    const response = await patchDraftItem(fixture, identityId, fixture.draftVersion, {
+      recognizedServiceHours: 5,
+      reason: '填写原因不能替代新增证据',
+    });
+    expect(response.body.code).toBe(BizCode.ATTENDANCE_SERVICE_HOURS_EXCEEDS_SPAN.code);
+    expect(await hoursWriteState(fixture)).toEqual(before);
+  });
+
+  it('A6：两位小数半入边界；无理由、匿名和无权限不能写入', async () => {
+    const fixture = await createSettlementFixture({ widePunchWindow: true });
+    await addHoursEvidence(fixture, [['00:00:00', '01:00:18']]);
+    const identityId = fixture.participants[0].identityId;
+    expect(
+      (
+        await patchDraftItem(fixture, identityId, fixture.draftVersion, {
+          recognizedServiceHours: 1.01,
+        })
+      ).status,
+    ).toBe(200);
+    const denied = await createTestUser(app, {
+      username: `hours-denied-${sequence}`,
+      role: Role.USER,
+    });
+    const member = await prisma.member.create({
+      data: {
+        memberNo: `hours-denied-${sequence}`,
+        ...memberIdentityData('无结算权限'),
+        status: MemberStatus.ACTIVE,
+        gradeCode: 'level-2',
+      },
+    });
+    await prisma.user.update({ where: { id: denied.id }, data: { memberId: member.id } });
+    const deniedAuth = (await loginAs(app, denied.username)).authHeader;
+    const before = await hoursWriteState(fixture);
+    expect(
+      (
+        await patchDraftItem(fixture, identityId, fixture.draftVersion, {
+          recognizedServiceHours: 0,
+          reason: ' ',
+        })
+      ).status,
+    ).toBe(400);
+    expect((await patchDraftItem(fixture, identityId).unset('Authorization')).status).toBe(401);
+    const forbidden = await patchDraftItem(fixture, identityId).set('Authorization', deniedAuth);
+    expect(forbidden.status).toBe(403);
+    expect(forbidden.body.code).toBe(30100);
+    expect(await hoursWriteState(fixture)).toEqual(before);
+  });
 
   async function createFilterFixture(): Promise<SettlementFixture> {
     const tag = `filter-${sequence + 1}`;
