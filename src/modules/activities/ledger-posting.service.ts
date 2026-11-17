@@ -454,6 +454,9 @@ export class LedgerPostingService {
       // ===== ⑥ member advisory lock(既有 util,本刀不改)=====
       await lockMembersForWrite(tx, lockedMemberIds);
       await this.assertNoCrossActivitySegmentOverlap(tx, activityId);
+      const milestoneSnapshots = options.conversion
+        ? []
+        : await this.notifications.captureContributionBefore(tx, lockedMemberIds);
 
       // ===== ⑦ day-state:缺行补齐 + 按 (memberId, ledgerDate) 排序 FOR UPDATE =====
       await this.createMissingDayStates(tx, deltas);
@@ -583,6 +586,7 @@ export class LedgerPostingService {
       //    转换刀(conversion: true)刻意跳过:回填不是新结算,向历史活动负责人
       //    逐活动重发「已入账」是追溯性骚扰;账本事实 / day-state / audit 全部照写。
       if (!options.conversion) {
+        await this.notifications.recordContributionAfter(tx, batch.id, milestoneSnapshots);
         await this.notifications.enqueuePosted(tx, {
           activityId,
           activityTitle: activity.title,

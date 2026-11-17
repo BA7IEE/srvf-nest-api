@@ -19,6 +19,11 @@ import {
 import { LedgerPostingAuditRecorder } from '../../src/modules/activities/ledger-posting-audit-recorder';
 import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
 import { LedgerQueryService } from '../../src/modules/activities/ledger-query.service';
+import { ContributionMilestoneRecorder } from '../../src/modules/activities/contribution-milestone-recorder';
+import { NotificationOutboxService } from '../../src/modules/notifications/notification-outbox.service';
+import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
+import { NotificationOutboxHandlers } from '../../src/modules/notifications/notification-outbox.handlers';
+import { runMemberLinearizedTransaction } from '../../src/common/prisma/member-advisory-lock.util';
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -621,6 +626,305 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
   // =========================================================================
   // ① §5.12 分块准备:worker 建任务 → 逐块 → 批次进 ready
   // =========================================================================
+  describe('A9 新入账达标事实', () => {
+    async function atFour(protocol: 1 | null = 1, precisionBoundary = false) {
+      const member = await prisma.member.create({
+        data: {
+          memberNo: `milestone-${sequence}-${protocol}`,
+          ...memberIdentityData('达标申请人'),
+          gradeCode: 'volunteer',
+        },
+      });
+      const memberId = member.id;
+      const first = await createPostingFixture({ memberIds: [memberId], recognizedPoints: 3 });
+      const cycle = await prisma.teamJoinCycle.create({
+        data: { year: 2020, name: `milestone-${sequence}`, statusCode: 'closed' },
+      });
+      const application = await prisma.teamJoinApplication.create({
+        data: {
+          cycleId: cycle.id,
+          memberId,
+          statusCode: 'joining',
+          targetOrganizationIds: [organizationId],
+          contributionNoticeProtocol: protocol,
+        },
+      });
+      await prepareBatch(first);
+      await posting.commitBatch(commitInput(first), actor, auditMeta);
+      const second = await createPostingFixture({
+        memberIds: [memberId],
+        recognizedPoints: precisionBoundary ? 1.99 : 1,
+        startOffsetMs: 86_400_000,
+      });
+      await prepareBatch(second);
+      await posting.commitBatch(commitInput(second), actor, auditMeta);
+      const crossing = await createPostingFixture({
+        memberIds: [memberId],
+        recognizedPoints: precisionBoundary ? 0.01 : 1,
+        startOffsetMs: 2 * 86_400_000,
+      });
+      await prepareBatch(crossing);
+      const eventKey = `team-join-contribution-met:${application.id}:5`;
+      expect(
+        await prisma.teamJoinContributionMilestone.count({
+          where: { applicationId: application.id },
+        }),
+      ).toBe(0);
+      expect(await prisma.notificationOutboxIntent.count({ where: { eventKey } })).toBe(0);
+      return { application, crossing, memberId, eventKey };
+    }
+
+    it('准备不触发；4→5 正式入账一次，重放和已清理 outbox 不再登记', async () => {
+      const f = await atFour();
+      const input = commitInput(f.crossing);
+      await posting.commitBatch(input, actor, auditMeta);
+      const receipt = await prisma.teamJoinContributionMilestone.findUniqueOrThrow({
+        where: { applicationId_threshold: { applicationId: f.application.id, threshold: 5 } },
+      });
+      expect(receipt).toMatchObject({
+        memberId: f.memberId,
+        postingBatchId: f.crossing.batchId,
+        outcomeCode: 'notice_registered',
+        beforePoints: new Prisma.Decimal(4),
+        afterPoints: new Prisma.Decimal(5),
+      });
+      const intent = await prisma.notificationOutboxIntent.findUniqueOrThrow({
+        where: { eventKey: f.eventKey },
+      });
+      expect(intent.id).toBe(receipt.intentId);
+      expect(intent.id).toMatch(/^c[a-z0-9]{24}$/u);
+      expect(intent.destinationRef).toBe(f.memberId);
+      expect((await posting.commitBatch(input, actor, auditMeta)).replayed).toBe(true);
+      const recipient = await createTestUser(app, { username: `milestone-recipient-${sequence}` });
+      await prisma.user.update({ where: { id: recipient.id }, data: { memberId: f.memberId } });
+      expect((await app.get(NotificationOutboxWorker).drainEventKey(f.eventKey)).succeeded).toBe(1);
+      expect(
+        await prisma.notificationOutboxIntent.findUnique({
+          where: { eventKey: f.eventKey },
+          select: { status: true },
+        }),
+      ).toEqual({ status: 'succeeded' });
+      await prisma.notificationOutboxIntent.delete({ where: { id: intent.id } });
+      await posting.commitBatch(input, actor, auditMeta);
+      expect(await prisma.notificationOutboxIntent.count({ where: { eventKey: f.eventKey } })).toBe(
+        0,
+      );
+      expect(
+        await prisma.teamJoinContributionMilestone.findUnique({
+          where: { id: receipt.id },
+        }),
+      ).toEqual(receipt);
+      await expect(
+        prisma.teamJoinContributionMilestone.update({
+          where: { id: receipt.id },
+          data: { afterPoints: 6 },
+        }),
+      ).rejects.toThrow('immutable contribution milestone fact');
+      await expect(
+        prisma.teamJoinContributionMilestone.delete({
+          where: { id: receipt.id },
+        }),
+      ).rejects.toThrow('immutable contribution milestone fact');
+      await expect(
+        prisma.$executeRaw`TRUNCATE TABLE "TeamJoinContributionMilestone"`,
+      ).rejects.toThrow('immutable contribution milestone fact');
+    });
+
+    it('4.99→5.00 使用既有 Decimal 积分核，不因浮点转换错过精确门槛', async () => {
+      const f = await atFour(1, true);
+      await posting.commitBatch(commitInput(f.crossing), actor, auditMeta);
+      const fact = await prisma.teamJoinContributionMilestone.findFirstOrThrow({
+        where: { applicationId: f.application.id },
+      });
+      expect(fact.beforePoints.toString()).toBe('4.99');
+      expect(fact.afterPoints.toString()).toBe('5');
+    });
+
+    it.each(['source-anchor', 'invalid-outcome'] as const)(
+      'DB %s 拒绝伪造事实，正式账与通知零部分生效',
+      async (kind) => {
+        const f = await atFour(null);
+        jest
+          .spyOn(app.get(ContributionMilestoneRecorder), 'recordAfter')
+          .mockImplementationOnce(async (tx, batchId) => {
+            const entry = await tx.participationLedgerEntry.findFirstOrThrow({
+              where: {
+                memberId: f.memberId,
+                postingBatchId: kind === 'source-anchor' ? { not: batchId } : batchId,
+              },
+            });
+            await tx.teamJoinContributionMilestone.create({
+              data: {
+                applicationId: f.application.id,
+                memberId: f.memberId,
+                cycleId: f.application.cycleId,
+                cycleYear: 2020,
+                threshold: 5,
+                sourceEntryId: entry.id,
+                postingBatchId: batchId,
+                beforePoints: 4,
+                afterPoints: 5,
+                outcomeCode: kind === 'source-anchor' ? 'history_pending' : 'unknown',
+                payloadVersion: 1,
+              },
+            });
+          });
+        const operation = posting.commitBatch(commitInput(f.crossing), actor, auditMeta);
+        if (kind === 'source-anchor') {
+          await expect(operation).rejects.toMatchObject({ code: 'P2003' });
+        } else {
+          await expect(operation).rejects.toThrow('team_join_contribution_milestone_shape');
+        }
+        await expectNothingTookEffect(f.crossing);
+        expect(
+          await prisma.teamJoinContributionMilestone.count({
+            where: { applicationId: f.application.id },
+          }),
+        ).toBe(0);
+      },
+    );
+
+    it('历史未知申请正常入账，只留待判定跨线事实；不能把旧申请改成新协议', async () => {
+      const f = await atFour(null);
+      await posting.commitBatch(commitInput(f.crossing), actor, auditMeta);
+      const fact = await prisma.teamJoinContributionMilestone.findFirstOrThrow({
+        where: { applicationId: f.application.id },
+      });
+      expect(fact).toMatchObject({
+        outcomeCode: 'history_pending',
+        intentId: null,
+        payloadHash: null,
+        beforePoints: new Prisma.Decimal(4),
+        afterPoints: new Prisma.Decimal(5),
+      });
+      expect(await prisma.notificationOutboxIntent.count({ where: { eventKey: f.eventKey } })).toBe(
+        0,
+      );
+      await expect(
+        prisma.teamJoinApplication.update({
+          where: { id: f.application.id },
+          data: { contributionNoticeProtocol: 1 },
+        }),
+      ).rejects.toThrow('immutable application contribution notice protocol');
+      expect(
+        (
+          await prisma.ledgerPostingBatch.findUniqueOrThrow({
+            where: { id: f.crossing.batchId },
+          })
+        ).statusCode,
+      ).toBe('committed');
+    });
+
+    it.each(['outbox', 'fact', 'audit', 'outer-step'] as const)(
+      '%s 实际写入后故障，账本、事实、意图、审计整笔回滚',
+      async (stage) => {
+        const f = await atFour();
+        const auditsBefore = await prisma.auditLog.count();
+        const fault = new Error(`milestone-${stage}-failure`);
+        if (stage === 'outbox') {
+          const outbox = app.get(NotificationOutboxService);
+          const original = outbox.enqueueMany.bind(outbox);
+          jest.spyOn(outbox, 'enqueueMany').mockImplementationOnce(async (...args) => {
+            await original(...args);
+            throw fault;
+          });
+        } else if (stage === 'fact') {
+          const recorder = app.get(ContributionMilestoneRecorder);
+          const original = recorder.recordAfter.bind(recorder);
+          jest.spyOn(recorder, 'recordAfter').mockImplementationOnce(async (...args) => {
+            await original(...args);
+            expect(
+              await args[0].teamJoinContributionMilestone.count({
+                where: { applicationId: f.application.id },
+              }),
+            ).toBe(1);
+            throw fault;
+          });
+        } else if (stage === 'audit') {
+          const original = auditRecorder.log.bind(auditRecorder);
+          jest.spyOn(auditRecorder, 'log').mockImplementationOnce(async (...args) => {
+            await original(...args);
+            throw fault;
+          });
+        }
+        const input = commitInput(f.crossing);
+        const operation =
+          stage === 'outer-step'
+            ? runMemberLinearizedTransaction(prisma, async (tx) => {
+                await posting.commitBatchWithin(tx, f.crossing.activityId, input, actor, auditMeta);
+                throw fault;
+              })
+            : posting.commitBatch(input, actor, auditMeta);
+        await expect(operation).rejects.toThrow(fault);
+        await expectNothingTookEffect(f.crossing);
+        expect(
+          await prisma.teamJoinContributionMilestone.count({
+            where: { applicationId: f.application.id },
+          }),
+        ).toBe(0);
+        expect(
+          await prisma.notificationOutboxIntent.count({ where: { eventKey: f.eventKey } }),
+        ).toBe(0);
+        expect(await prisma.auditLog.count()).toBe(auditsBefore);
+      },
+    );
+
+    it('新协议遇到先存的同 key 意图不能吞掉冲突认证成功，整笔拒绝', async () => {
+      const f = await atFour();
+      const outbox = app.get(NotificationOutboxService);
+      const original = outbox.enqueueMany.bind(outbox);
+      jest.spyOn(outbox, 'enqueueMany').mockImplementationOnce(async (inputs, tx, ids) => {
+        // A same-payload race still must fail: it is not this fresh logical intent.
+        await original(inputs, tx);
+        return original(inputs, tx, ids);
+      });
+      await expect(
+        posting.commitBatch(commitInput(f.crossing), actor, auditMeta),
+      ).rejects.toThrow();
+      await expectNothingTookEffect(f.crossing);
+      expect(
+        await prisma.teamJoinContributionMilestone.count({
+          where: { applicationId: f.application.id },
+        }),
+      ).toBe(0);
+      expect(await prisma.notificationOutboxIntent.count({ where: { eventKey: f.eventKey } })).toBe(
+        0,
+      );
+    });
+
+    it('投递暂态失败沿原 intent 重试；收据不代表投递已成功', async () => {
+      const f = await atFour();
+      const recipient = await createTestUser(app, { username: `milestone-retry-${sequence}` });
+      await prisma.user.update({ where: { id: recipient.id }, data: { memberId: f.memberId } });
+      await posting.commitBatch(commitInput(f.crossing), actor, auditMeta);
+      const stored = await prisma.notificationOutboxIntent.findUniqueOrThrow({
+        where: { eventKey: f.eventKey },
+      });
+      jest
+        .spyOn(app.get(NotificationOutboxHandlers), 'execute')
+        .mockRejectedValueOnce(new Error('temporary delivery failure'));
+      const delivery = app.get(NotificationOutboxWorker);
+      expect((await delivery.drainEventKey(f.eventKey)).failed).toBe(1);
+      expect(
+        await prisma.notificationOutboxIntent.findUnique({
+          where: { id: stored.id },
+          select: { status: true, attempts: true },
+        }),
+      ).toEqual({ status: 'pending', attempts: 1 });
+      await prisma.notificationOutboxIntent.update({
+        where: { id: stored.id },
+        data: { availableAt: new Date(0) },
+      });
+      expect((await delivery.drainEventKey(f.eventKey)).succeeded).toBe(1);
+      expect((await delivery.drainEventKey(f.eventKey)).claimed).toBe(0);
+      expect(
+        await prisma.teamJoinContributionMilestone.count({
+          where: { applicationId: f.application.id, intentId: stored.id },
+        }),
+      ).toBe(1);
+    });
+  });
+
   describe('① 分块准备(§5.12)', () => {
     it('worker 用 SKIP LOCKED + lease 领活,准备完成后批次进 ready', async () => {
       const fixture = await createPostingFixture({ memberCount: 3 });

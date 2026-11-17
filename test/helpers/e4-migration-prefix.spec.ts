@@ -23,7 +23,7 @@ import {
   E4_MIGRATION_155,
 } from './e4-migration-prefix';
 
-const CURRENT_MIGRATION_COUNT = 155;
+const CURRENT_MIGRATION_COUNT = 156;
 
 describe('fixed E4 historical migration prefix', () => {
   const names = readdirSync(resolve(__dirname, '../../prisma/migrations'), {

@@ -181,6 +181,7 @@ export class AppMeTeamJoinService {
             memberId,
             statusCode: APP_STATUS_JOINING,
             targetOrganizationIds: targets,
+            contributionNoticeProtocol: this.activityWorkflowGate.isV11Enabled() ? 1 : null,
           },
           include: APP_APPLICATION_INCLUDE,
         });

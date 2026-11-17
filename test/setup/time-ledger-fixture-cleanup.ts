@@ -8,6 +8,7 @@ import { deriveTestDbName } from './worktree-db';
 import { r5CiTestDatabaseUrl } from './r5-ci-instance-scope';
 
 const TRUNCATE_TRIGGERS = [
+  { table: 'TeamJoinContributionMilestone', trigger: 'team_join_milestone_no_truncate' },
   { table: 'ParticipantContributionEvaluation', trigger: 'e4_evaluation_no_truncate' },
   { table: 'ActivitySettlementContributionRevision', trigger: 'e4_revision_no_truncate' },
   { table: 'ContributionShadowWindowRegistrationReceipt', trigger: 'cswr_no_truncate' },
