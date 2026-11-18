@@ -1232,7 +1232,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 672; // ActivityOS V1 adds six explicit Admin simple-activity routes.
+const EXPECTED_ROUTE_COUNT = 675; // Three same-origin HTTPS H5 session routes added.
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',

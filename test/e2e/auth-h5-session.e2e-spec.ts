@@ -16,7 +16,7 @@ const credentials = { username: 'h5sessiontest', password: 'Passw0rd1!' };
 const expiryOf = (header: string) => Date.parse(/(?:^|; )Expires=([^;]+)/.exec(header)?.[1] ?? '');
 
 function cookieOf(response: Response): { header: string; pair: string; raw: string } {
-  const header = (response.headers['set-cookie'] as string[] | undefined)?.[0] ?? '';
+  const header = response.get('Set-Cookie')?.[0] ?? '';
   const pair = header.split(';')[0];
   return { header, pair, raw: pair.slice(cookieName.length + 1) };
 }
@@ -63,7 +63,7 @@ describe('same-origin HTTPS H5 sessions', () => {
       .set('Sec-Fetch-Site', site)
       .send(action === 'login' ? credentials : undefined);
     expectBizError(response, BizCode.FORBIDDEN);
-    expect(response.headers['set-cookie']).toBeUndefined();
+    expect(response.get('Set-Cookie')).toBeUndefined();
     expect(response.headers['access-control-allow-credentials']).toBeUndefined();
   });
 
@@ -133,7 +133,7 @@ describe('same-origin HTTPS H5 sessions', () => {
   it('keeps JSON clients compatible and rejects body-only H5 refresh and logout', async () => {
     const legacy = (action: string) => request(httpServer(app)).post(`/api/auth/v1/${action}`);
     const login = await legacy('login').send(credentials).expect(200);
-    expect(login.headers['set-cookie']).toBeUndefined();
+    expect(login.get('Set-Cookie')).toBeUndefined();
     expect(Object.keys(login.body.data as object).sort()).toEqual([
       'accessToken',
       'expiresIn',
@@ -147,7 +147,7 @@ describe('same-origin HTTPS H5 sessions', () => {
     expectCleared(bodyOnly);
     expectCleared(await post('logout').send({ refreshToken }).expect(200));
     const refreshed = await legacy('refresh').send({ refreshToken }).expect(200);
-    expect(refreshed.headers['set-cookie']).toBeUndefined();
+    expect(refreshed.get('Set-Cookie')).toBeUndefined();
     expect(refreshed.body.data.refreshExpiresAt).toBe(login.body.data.refreshExpiresAt);
     await legacy('logout').send({ refreshToken: refreshed.body.data.refreshToken }).expect(200);
   });
