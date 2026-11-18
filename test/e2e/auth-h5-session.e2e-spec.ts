@@ -80,7 +80,11 @@ describe('same-origin HTTPS H5 sessions', () => {
   it('rotates a persistent cookie at the original family deadline and revokes on logout', async () => {
     const login = await post('login').send(credentials).expect(200);
     const first = cookieOf(login);
-    expect(Object.keys(login.body.data).sort()).toEqual(['accessToken', 'expiresIn', 'tokenType']);
+    expect(Object.keys(login.body.data as object).sort()).toEqual([
+      'accessToken',
+      'expiresIn',
+      'tokenType',
+    ]);
     expect(login.headers['cache-control']).toBe('no-store');
     expect(first.pair.startsWith(`${cookieName}=`)).toBe(true);
     expect(
@@ -97,7 +101,7 @@ describe('same-origin HTTPS H5 sessions', () => {
 
     const refresh = await post('refresh').set('Cookie', first.pair).expect(200);
     const second = cookieOf(refresh);
-    expect(Object.keys(refresh.body.data).sort()).toEqual([
+    expect(Object.keys(refresh.body.data as object).sort()).toEqual([
       'accessToken',
       'expiresIn',
       'tokenType',
@@ -130,7 +134,7 @@ describe('same-origin HTTPS H5 sessions', () => {
     const legacy = (action: string) => request(httpServer(app)).post(`/api/auth/v1/${action}`);
     const login = await legacy('login').send(credentials).expect(200);
     expect(login.headers['set-cookie']).toBeUndefined();
-    expect(Object.keys(login.body.data).sort()).toEqual([
+    expect(Object.keys(login.body.data as object).sort()).toEqual([
       'accessToken',
       'expiresIn',
       'refreshExpiresAt',
