@@ -168,6 +168,7 @@ import { SettlementSubmitService } from './settlement-submit.service';
 import { ACTIVITY_BATCH_AUTO_COMMIT_ENABLED, ActivityBatchWorker } from './activity-batch.worker';
 import { LedgerPostingAuditRecorder } from './ledger-posting-audit-recorder';
 import { LedgerPostingService } from './ledger-posting.service';
+import { ContributionMilestoneRecorder } from './contribution-milestone-recorder';
 import { LegacyConversionRegistrationHeadService } from '../activity-registrations/legacy-conversion-registration-head.service';
 import { LegacyLedgerConversionService } from './legacy-ledger-conversion.service';
 import { LedgerPreparationService } from './ledger-preparation.service';
@@ -464,6 +465,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityBatchWorker,
     LedgerPostingAuditRecorder,
     LedgerPostingService,
+    ContributionMilestoneRecorder,
     // 存量考勤账本化转换刀(P1-28 第 7 批② A 案,2026-08-27 拍板):零端点 / 零 DTO /
     // 零权限码 —— 唯一调用方是 scripts/legacy-ledger-conversion.ts(维护者 SOP)与 e2e。
     // ⭐ 复用而非另写:生效走 commitConvertedBatchWithin(第五刀协议体,判闸位换转换窗口)。

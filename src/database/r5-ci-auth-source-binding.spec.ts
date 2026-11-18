@@ -9,6 +9,7 @@ import {
   r5CiMigrationSources,
 } from '../../test/helpers/r5-ci-source-binding';
 import { humanCorrectionCatalogSha256 } from '../modules/activities/human-correction-trusted-connection';
+import { currentMigrationInventory } from '../../test/helpers/migration-inventory';
 
 const identity = {
   database: R5_CI_DATABASE,
@@ -22,7 +23,7 @@ describe('disposable CI source binding, no database or authentication', () => {
     const built = r5CiSourceBinding(identity);
     expect(built.base.tables).toHaveLength(26);
     expect(built.supplemental.tables).toHaveLength(4);
-    expect(built.base.functions).toHaveLength(201);
+    expect(built.base.functions).toHaveLength(204);
     expect(built.base.databaseOid).toBe(10);
     expect(JSON.stringify(built.base)).not.toContain('CI_CALLER_ROLE_OID');
     expect(built.base.functions).toEqual(built.supplemental.functions);
@@ -63,25 +64,47 @@ describe('disposable CI source binding, no database or authentication', () => {
     ).toThrow();
   });
 
-  it('rejects any migration source drift before building an executable binding', () => {
-    const scratch = mkdtempSync(join(tmpdir(), 'r5-ci-source-'));
-    try {
-      for (const migration of r5CiMigrationSources()) {
-        const dir = join(scratch, 'prisma/migrations', migration.name);
-        mkdirSync(dir, { recursive: true });
+  it.each([0, 155])(
+    'rejects migration source drift at index %s before building a binding',
+    (index) => {
+      const scratch = mkdtempSync(join(tmpdir(), 'r5-ci-source-'));
+      try {
+        for (const migration of r5CiMigrationSources()) {
+          const dir = join(scratch, 'prisma/migrations', migration.name);
+          mkdirSync(dir, { recursive: true });
+          writeFileSync(
+            join(dir, 'migration.sql'),
+            readFileSync(join(process.cwd(), 'prisma/migrations', migration.name, 'migration.sql')),
+          );
+        }
+        const first = r5CiMigrationSources()[index].name;
         writeFileSync(
-          join(dir, 'migration.sql'),
-          readFileSync(join(process.cwd(), 'prisma/migrations', migration.name, 'migration.sql')),
+          join(scratch, 'prisma/migrations', first, 'migration.sql'),
+          '-- replaced source',
         );
+        expect(() => r5CiSourceBinding(identity, scratch)).toThrow(
+          'R5_CI_MIGRATION_SOURCE_CHANGED',
+        );
+      } finally {
+        rmSync(scratch, { recursive: true, force: true });
       }
-      const first = r5CiMigrationSources()[0].name;
-      writeFileSync(
-        join(scratch, 'prisma/migrations', first, 'migration.sql'),
-        '-- replaced source',
-      );
-      expect(() => r5CiSourceBinding(identity, scratch)).toThrow('R5_CI_MIGRATION_SOURCE_CHANGED');
-    } finally {
-      rmSync(scratch, { recursive: true, force: true });
-    }
+    },
+  );
+
+  it('retains the complete frozen catalog and adds only the three source-pinned guards', () => {
+    const frozen = JSON.parse(
+      readFileSync(join(process.cwd(), 'test/fixtures/r5-ci-source-catalog.json'), 'utf8'),
+    ) as { catalogs: { base: { functions: Record<string, unknown>[] } } };
+    const built = r5CiSourceBinding(identity);
+    const added = new Set([
+      'public.team_join_milestone_immutable()',
+      'public.team_join_milestone_insert_guard()',
+      'public.team_join_notice_protocol_immutable()',
+    ]);
+    expect(built.base.functions.filter((row) => !added.has(String(row.signature)))).toEqual(
+      frozen.catalogs.base.functions,
+    );
+    expect(r5CiMigrationSources()).toEqual(currentMigrationInventory().migrations);
+    expect(built.base.functions.filter((row) => added.has(String(row.signature)))).toHaveLength(3);
   });
 });

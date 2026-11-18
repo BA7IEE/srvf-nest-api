@@ -1,3 +1,4 @@
+import { currentMigrationInventory } from '../helpers/migration-inventory';
 import {
   acquireScratchDatabaseLease,
   type ScratchLeaseSession,
@@ -20,7 +21,7 @@ import { loadTestEnv } from '../setup/load-env';
 import { assertTestDatabaseUrl } from '../setup/test-db';
 import { deriveWorkerTestDbName, deriveTestDbName } from '../setup/worktree-db';
 
-const CURRENT_MIGRATION_COUNT = 155;
+const CURRENT_MIGRATION_COUNT = currentMigrationInventory().count;
 
 const MIGRATION = '20261002170000_activity_os_r5_e3_reconciliation_signature';
 const PREDECESSOR = '20260930120000_activity_os_r5_e3_shadow_mapping_proof';

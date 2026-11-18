@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { currentMigrationInventory } from '../../test/helpers/migration-inventory';
 import {
   r5CurrentBusinessTableNames,
   r5CurrentE4SourcePins,
@@ -7,7 +8,7 @@ import {
 describe('SQL155 source expectations and generated client boundary', () => {
   it('derives the current complete-body pin from frozen source, not database metadata', () => {
     expect(r5CurrentE4SourcePins()).toEqual({
-      count: 155,
+      count: currentMigrationInventory().count,
       pin: '8922a6d0c4642ba1c99f679cb9581065',
     });
   });
@@ -15,6 +16,10 @@ describe('SQL155 source expectations and generated client boundary', () => {
     const names = r5CurrentBusinessTableNames();
     expect(names).toContain('CorrectionApprovedInputItem');
     expect(names).toContain('CorrectionWritePhase');
+    expect(names).toContain('TeamJoinContributionMilestone');
+    expect(r5CurrentBusinessTableNames('current155')).toEqual(
+      names.filter((name) => name !== 'TeamJoinContributionMilestone'),
+    );
     expect(names).not.toContain('_prisma_migrations');
     expect(new Set(names).size).toBe(names.length);
   });

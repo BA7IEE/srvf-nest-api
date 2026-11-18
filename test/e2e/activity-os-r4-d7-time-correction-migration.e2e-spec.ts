@@ -1,3 +1,4 @@
+import { currentMigrationInventory } from '../helpers/migration-inventory';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -19,7 +20,7 @@ import {
 } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
 
-const CURRENT_MIGRATION_COUNT = 155;
+const CURRENT_MIGRATION_COUNT = currentMigrationInventory().count;
 
 const MIGRATION = '20260915120000_activity_os_r4_d7_time_correction';
 function target() {

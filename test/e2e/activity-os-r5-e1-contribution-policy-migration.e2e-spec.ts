@@ -1,3 +1,4 @@
+import { currentMigrationInventory } from '../helpers/migration-inventory';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -27,7 +28,7 @@ const MIGRATION = '20260922194000_activity_os_r5_e1_contribution_policy_foundati
 const LATEST_MIGRATION = '20260923190000_activity_os_r5_e1_3_contribution_policy_selection';
 const PREVIOUS_MIGRATION_COUNT = 129;
 const FOUNDATION_MIGRATION_COUNT = 130;
-const CURRENT_MIGRATION_COUNT = 155;
+const CURRENT_MIGRATION_COUNT = currentMigrationInventory().count;
 const WORKER = process.env.JEST_WORKER_ID ?? '1';
 const prismaRoot = path.resolve(__dirname, '..', '..', 'prisma');
 const schema = path.join(prismaRoot, 'schema.prisma');
