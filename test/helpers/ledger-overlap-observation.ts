@@ -36,13 +36,17 @@ function positiveInteger(value: unknown): value is number {
 
 export function isOverlapStatement(parts: readonly string[]): boolean {
   const sql = parts.join('?');
+  const combined = sql.match(
+    /^\s*WITH conflicts AS \(([\s\S]+)\), applications AS \([\s\S]+\)\s*SELECT conflict FROM conflicts\s*UNION ALL SELECT conflict FROM applications\s*$/u,
+  );
+  const relation = combined?.[1] ?? sql;
   return (
-    /^\s*SELECT 1 AS conflict\b/u.test(sql) &&
-    sql.includes('"ParticipantServiceSegmentRevision" existing') &&
-    sql.includes('"ActivityParticipationIdentity" existing_identity') &&
-    sql.includes('"ActivityParticipationIdentity" candidate_identity') &&
-    sql.includes('"ParticipantServiceSegmentRevision" candidate') &&
-    /\bLIMIT 1\s*$/u.test(sql)
+    /^\s*SELECT 1 AS conflict\b/u.test(relation) &&
+    relation.includes('"ParticipantServiceSegmentRevision" existing') &&
+    relation.includes('"ActivityParticipationIdentity" existing_identity') &&
+    relation.includes('"ActivityParticipationIdentity" candidate_identity') &&
+    relation.includes('"ParticipantServiceSegmentRevision" candidate') &&
+    /\bLIMIT 1\s*$/u.test(relation)
   );
 }
 
@@ -63,7 +67,7 @@ export function observationRequest(
   const application = `srvf-overlap-observer-${target.pid}`;
   const content = cleanup
     ? `json_build_object('remaining_clients', (SELECT count(*)::int FROM pg_stat_activity WHERE datname=current_database() AND application_name='${application}'), 'remaining_locks', (SELECT count(*)::int FROM pg_locks l JOIN pg_stat_activity a ON a.pid=l.pid WHERE a.datname=current_database() AND a.application_name='${application}'))`
-    : `json_build_object('sampler_pid',pg_backend_pid(),'target',(SELECT row_to_json(t) FROM (SELECT pid,datid::int,backend_start::text,state,wait_event_type,wait_event,query_start::text,pg_blocking_pids(pid) AS blockers,query ~ '^\\s*SELECT 1 AS conflict' AS is_overlap FROM pg_stat_activity WHERE pid=${target.pid} AND datid=${target.oid}) t))`;
+    : `json_build_object('sampler_pid',pg_backend_pid(),'target',(SELECT row_to_json(t) FROM (SELECT pid,datid::int,backend_start::text,state,wait_event_type,wait_event,query_start::text,pg_blocking_pids(pid) AS blockers,query ~ '^\\s*(SELECT 1 AS conflict|WITH conflicts AS [(]\\s*SELECT 1 AS conflict)' AS is_overlap FROM pg_stat_activity WHERE pid=${target.pid} AND datid=${target.oid}) t))`;
   return {
     database: target.database,
     applicationName: cleanup ? 'srvf-overlap-cleanup' : application,

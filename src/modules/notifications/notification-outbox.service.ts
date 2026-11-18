@@ -175,6 +175,7 @@ export class NotificationOutboxService {
   async enqueueMany(
     inputs: readonly NotificationOutboxEnqueueInput[],
     client: OutboxClient = this.prisma,
+    requireFresh = false,
   ): Promise<NotificationOutboxIntent[]> {
     if (inputs.length === 0) return [];
     const byKey = new Map<string, NotificationOutboxEnqueueInput>();
@@ -192,8 +193,9 @@ export class NotificationOutboxService {
       }
     }
     const normalizedList = [...byKey.values()];
-
-    await client.notificationOutboxIntent.createMany({
+    // Durable business receipts may require a genuinely new logical intent.
+    // A conflicting row must abort their transaction, even with equal content.
+    const created = await client.notificationOutboxIntent.createMany({
       data: normalizedList.map((normalized) => ({
         eventKey: normalized.eventKey,
         eventType: normalized.eventType,
@@ -207,8 +209,11 @@ export class NotificationOutboxService {
         // 写与判同源:同 `enqueue()`,领取判据用应用时钟。
         availableAt: new Date(),
       })),
-      skipDuplicates: true,
+      skipDuplicates: !requireFresh,
     });
+    if (requireFresh && created.count !== normalizedList.length) {
+      throw new NotificationOutboxInvariantError('fresh intent set was not completely inserted');
+    }
 
     const rows = await client.notificationOutboxIntent.findMany({
       where: { eventKey: { in: [...byKey.keys()] } },

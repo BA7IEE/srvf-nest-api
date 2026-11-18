@@ -74,7 +74,7 @@ describe('pre155 fixture is a source-qualified historical implementation', () =>
     );
   });
   it('preserves the full historical table set, excluding only the two tables introduced by155', () => {
-    const current = r5CurrentBusinessTableNames(),
+    const current = r5CurrentBusinessTableNames('current155'),
       historical = r5CurrentBusinessTableNames('pre155');
     expect(current.filter((name) => !historical.includes(name))).toEqual([
       'CorrectionApprovedInputItem',

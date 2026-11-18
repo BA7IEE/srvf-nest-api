@@ -7,7 +7,9 @@
   责任制闸关：approved考勤，北京日封顶3；闸开：仅SUM committed credited delta含冲回/重记，
   不叠加旧分、不二次封顶、空账不fallback。cycle.year cutoff/门槛5不变，单人批量同核。
   旧分上线前转换并逐人对账总分/cutoff，生产转换未执行。
-  既有考勤终审通知仍同事务approved前后调用该核，不新建账本提交通知。
+  旧链考勤终审通知仍同事务approved前后调用该核。新链仅正式入账<5→>=5登记达标意图，
+  人员锁后计算，永久申请/门槛事实与outbox同事务；不以可清理outbox作永久去重。
+  旧申请协议NULL不可改成1；未知历史跨线只记history_pending，不补发或视为已提醒。
 - contribution-ledger-reader只声明语义；TeamJoinModule.register(reader)唯一token注入，
   AppModule唯一组合点传公开LedgerQueryService。
   team-join不直接聚合账本、不反向import实现、不提供旧核或global client默认；批量一次groupBy。

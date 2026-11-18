@@ -283,9 +283,10 @@ try:
     assert identity['database'] == DB and identity['cluster'] not in ['7695840193603043362', '7702954905055002659']
     save('IDENTITY.json', identity)
     files = sorted((repo / 'prisma/migrations').glob('*/migration.sql'))
-    assert len(files) == 155
+    assert len(files) == 156
+    assert files[-1].parent.name == '20261117190000_team_join_contribution_milestones'
     install = '\n'.join('\\echo ' + p.parent.name + '\n' + p.read_text() for p in files)
-    sql(install, 'install-155', timeout=80)
+    sql(install, 'install-migrations', timeout=80)
     negative = sql('\\set VERBOSITY verbose\nSET ROLE ' + ROLES[1] + '; SELECT public.r5_correction_boundary_preflight();', 'default-null', allow=True)
     assert negative.returncode == 3 and '55000: materialization catalog pins are not bound' in negative.stderr
     app_cid = docker(['run', '--detach', '--pull=never', '--name', name + '-app', '--label', label,

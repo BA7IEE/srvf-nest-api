@@ -288,20 +288,39 @@ describe('ledger posting draft member query characterization', () => {
     await expect(service['readDraftSegmentMemberIds'](tx, 'activity-one')).rejects.toBe(error);
   });
 
-  it.each([false, true])(
-    'preserves the overlap existence decision: conflict=%s',
-    async (conflict) => {
+  it.each([
+    { conflict: false, hasApplications: false },
+    { conflict: false, hasApplications: true },
+    { conflict: true, hasApplications: false },
+    { conflict: true, hasApplications: true },
+  ])(
+    'preserves overlap rejection independently of applicant presence: %j',
+    async ({ conflict, hasApplications }) => {
       const query = jest
         .spyOn(tx, '$queryRaw')
-        .mockResolvedValue(conflict ? [{ conflict: 1 }] : []);
-      const result = service['assertNoCrossActivitySegmentOverlap'](tx, 'activity-one');
+        .mockResolvedValue([
+          ...(conflict ? [{ conflict: 1 }] : []),
+          ...(hasApplications ? [{ conflict: 0 }] : []),
+        ]);
+      const result = service['assertNoCrossActivitySegmentOverlap'](tx, 'activity-one', [
+        'member-a',
+      ]);
       if (conflict)
         await expect(result).rejects.toMatchObject({ biz: BizCode.ATTENDANCE_TIME_OVERLAP });
-      else await expect(result).resolves.toBeUndefined();
+      else await expect(result).resolves.toBe(hasApplications);
       expect(query).toHaveBeenCalledTimes(1);
       const [parts, ...values] = query.mock.calls[0];
-      expect(values).toEqual(['activity-one', 'activity-one']);
-      const sql = Array.isArray(parts) ? parts.join('?') : '';
+      expect(values).toEqual(['activity-one', 'activity-one', ['member-a']]);
+      const statement = Array.isArray(parts) ? parts.join('?') : '';
+      expect(statement).toMatch(/^\s*WITH conflicts AS \(/);
+      expect(statement).toContain('WHERE a."memberId" = ANY(?::text[])');
+      expect(statement).toContain('UNION ALL SELECT conflict FROM applications');
+      expect(statement.match(/\bLIMIT\b/g)).toHaveLength(2);
+      // Keep every existing assertion on the complete overlap relation.
+      const sql = statement.slice(
+        statement.indexOf('SELECT 1 AS conflict'),
+        statement.indexOf('), applications AS ('),
+      );
       expect(sql).toMatch(/^\s*SELECT 1 AS conflict/);
       expect(sql).toContain('FROM "ActivityParticipationIdentity" candidate_identity');
       expect(sql).toContain(

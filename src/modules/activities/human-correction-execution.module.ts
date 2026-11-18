@@ -48,6 +48,7 @@ import {
 import { HUMAN_CORRECTION_CLIENT } from './human-correction-runtime-client';
 import { LedgerPostingAuditRecorder } from './ledger-posting-audit-recorder';
 import { LedgerPostingService } from './ledger-posting.service';
+import { ContributionMilestoneRecorder } from './contribution-milestone-recorder';
 import { LedgerPreparationService } from './ledger-preparation.service';
 import { LedgerReadyBatchCommitter } from './ledger-ready-batch-committer.service';
 import { ParticipationTimeCorrectionService } from './participation-time-correction.service';
@@ -87,6 +88,7 @@ const scopedServices: readonly Type<object>[] = [
   CorrectionTimeAllocationService,
   AttendanceCorrectionWriteService,
   LedgerPostingService,
+  ContributionMilestoneRecorder,
   LedgerPostingAuditRecorder,
   NotificationOutboxService,
   SettlementNotificationProducer,

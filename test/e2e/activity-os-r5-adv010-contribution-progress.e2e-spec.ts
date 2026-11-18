@@ -9,6 +9,10 @@ import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { lockMembersForWrite } from '../../src/common/prisma/member-advisory-lock.util';
 import { PrismaService } from '../../src/database/prisma.service';
 import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
+import { LedgerReadyBatchCommitter } from '../../src/modules/activities/ledger-ready-batch-committer.service';
+import { ContributionMilestoneRecorder } from '../../src/modules/activities/contribution-milestone-recorder';
+import { CorrectionAuditRecorder } from '../../src/modules/activities/correction-audit-recorder';
+import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
 import {
   LedgerPreparationService,
   readBaselineFromPayload,
@@ -37,14 +41,21 @@ import {
   submitE4Time,
   type E4Fixture,
 } from '../helpers/activity-contribution-policy.fixture';
-import { approvedE4TimeCorrection } from '../helpers/activity-r5-correction-hash.fixture';
+import {
+  approvedE4TimeCorrection,
+  approvedE4ParticipantTimeCorrection,
+} from '../helpers/activity-r5-correction-hash.fixture';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 import { createTestApp } from '../setup/test-app';
 import { assertConnectedTestDatabase } from '../setup/test-db';
-import { r5CiOwnerClient } from '../helpers/r5-ci-authenticated-runtime';
+import {
+  r5CiOwnerClient,
+  humanCorrectionTestApp,
+  humanCorrectionTestService,
+} from '../helpers/r5-ci-authenticated-runtime';
 import { r5CiAuthenticated } from '../setup/r5-ci-instance-scope';
 
 const ADMIN_APPLICATIONS = '/api/admin/v1/team-join/applications';
@@ -59,6 +70,31 @@ const TWO_POINTS = {
           timeCategoryCode: 'volunteer_service' as const,
           durationBands: [
             { maxSecondsInclusive: null, recognizedPoints: '2.00', explanationCode: 'adv010_two' },
+          ],
+        },
+      ],
+    },
+  ],
+};
+const DURATION_POINTS = {
+  ...TWO_POINTS,
+  roleRules: [
+    {
+      attendanceRoleCode: 'service',
+      categoryRules: [
+        {
+          timeCategoryCode: 'volunteer_service' as const,
+          durationBands: [
+            {
+              maxSecondsInclusive: 1800,
+              recognizedPoints: '1.00',
+              explanationCode: 'a9_half_hour',
+            },
+            {
+              maxSecondsInclusive: null,
+              recognizedPoints: '2.00',
+              explanationCode: 'a9_full_hour',
+            },
           ],
         },
       ],
@@ -155,10 +191,22 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
     };
   }
 
-  async function sourceFor(who: Candidate, startsAt: Date, endsAt: Date) {
+  async function sourceFor(
+    who: Candidate,
+    startsAt: Date,
+    endsAt: Date,
+    options: {
+      definition?: NonNullable<Parameters<typeof createE4Source>[1]>['definition'];
+      actualSeconds?: number;
+    } = {},
+  ) {
     let identityId = '';
+    const checkoutAt =
+      options.actualSeconds === undefined
+        ? endsAt
+        : new Date(startsAt.getTime() + options.actualSeconds * 1000);
     const source = await createE4Source(f, {
-      definition: TWO_POINTS,
+      definition: options.definition ?? TWO_POINTS,
       startsAt,
       endsAt,
       beforeSeal: async (draft) => {
@@ -181,7 +229,7 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
         const events: string[] = [];
         for (const [eventTypeCode, occurredAt] of [
           ['check_in', startsAt],
-          ['check_out', endsAt],
+          ['check_out', checkoutAt],
         ] as const) {
           const event = await f.db.attendancePunchEvent.create({
             data: {
@@ -212,8 +260,8 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
             resultCode: 'valid',
             statusCode: 'draft',
             checkInAt: startsAt,
-            checkOutAt: endsAt,
-            serviceHours: (endsAt.getTime() - startsAt.getTime()) / 3_600_000,
+            checkOutAt: checkoutAt,
+            serviceHours: (checkoutAt.getTime() - startsAt.getTime()) / 3_600_000,
             lateFlag: false,
             earlyLeaveFlag: false,
           },
@@ -368,6 +416,13 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
 
   it('refreshes real admin and App progress after an actual native committed award', async () => {
     const who = await candidate();
+    expect(
+      (
+        await f.db.teamJoinApplication.findUniqueOrThrow({
+          where: { id: who.applicationId },
+        })
+      ).contributionNoticeProtocol,
+    ).toBe(1);
     await expectProgress(who, '0');
     const source = await sourceFor(
       who,
@@ -419,12 +474,39 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
     expect(capped._sum.recognizedPointsDelta?.toString()).toBe('2');
     expect(capped._sum.creditedPointsDelta?.toString()).toBe('1');
     await expectProgress(who, '3');
+    expect(
+      await f.db.teamJoinContributionMilestone.count({
+        where: { applicationId: who.applicationId },
+      }),
+    ).toBe(0);
     const third = await sourceFor(
       who,
       new Date('2020-03-02T08:00:00Z'),
       new Date('2020-03-02T09:00:00Z'),
     );
-    await postE4Ledger(f, await submitE4Time(f, third, await prepareE4Time(f, third)));
+    const thirdReady = await prepareE4Ledger(
+      f,
+      await submitE4Time(f, third, await prepareE4Time(f, third)),
+    );
+    expect(
+      await f.db.teamJoinContributionMilestone.count({
+        where: { applicationId: who.applicationId },
+      }),
+    ).toBe(0);
+    const autoCommitter = f.app.get(LedgerReadyBatchCommitter);
+    await autoCommitter.commitReadyBatch(thirdReady.batchId);
+    const milestone = await f.db.teamJoinContributionMilestone.findFirstOrThrow({
+      where: { applicationId: who.applicationId },
+    });
+    expect(milestone.beforePoints.toString()).toBe('3');
+    expect(milestone.afterPoints.toString()).toBe('5');
+    expect(milestone.outcomeCode).toBe('notice_registered');
+    expect((await autoCommitter.commitReadyBatch(thirdReady.batchId)).replayed).toBe(true);
+    expect(
+      await f.db.teamJoinContributionMilestone.findMany({
+        where: { applicationId: who.applicationId },
+      }),
+    ).toEqual([milestone]);
     await expectProgress(who, '5');
     await expectMemberSummaries(who, '5');
     const batch = await computeCappedContributionBatch(
@@ -470,8 +552,29 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
     );
   });
 
-  it('ADV-010 concurrently commits two same-day awards while real progress refreshes, with one stale baseline rejected', async () => {
+  it.each([
+    {
+      crossing: false,
+      title:
+        'ADV-010 concurrently commits two same-day awards while real progress refreshes, with one stale baseline rejected',
+    },
+    {
+      crossing: true,
+      title: 'A9 real member-lock concurrency: recompute after waiting, one permanent intent',
+    },
+  ])('$title', async ({ crossing }) => {
     const who = await candidate();
+    if (crossing) {
+      for (const day of ['2020-02-27', '2020-02-28']) {
+        const baseline = await sourceFor(
+          who,
+          new Date(`${day}T08:00:00Z`),
+          new Date(`${day}T09:00:00Z`),
+        );
+        await postE4Ledger(f, await submitE4Time(f, baseline, await prepareE4Time(f, baseline)));
+      }
+      await expectProgress(who, '4');
+    }
     const { secondApp, observationDb, progressApp } = await ordinaryConcurrencyApps();
     const a = await sourceFor(
       who,
@@ -480,20 +583,22 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
     );
     const b = await sourceFor(
       who,
-      new Date('2020-03-01T10:00:00Z'),
-      new Date('2020-03-01T11:00:00Z'),
+      new Date(crossing ? '2020-03-02T10:00:00Z' : '2020-03-01T10:00:00Z'),
+      new Date(crossing ? '2020-03-02T11:00:00Z' : '2020-03-01T11:00:00Z'),
     );
     const ready = [];
     for (const source of [a, b])
       ready.push(
         await prepareE4Ledger(f, await submitE4Time(f, source, await prepareE4Time(f, source))),
       );
-    for (const batch of ready) {
+    for (const [index, batch] of ready.entries()) {
       const job = await f.db.activityBatchJob.findFirstOrThrow({
         where: { postingBatchId: batch.batchId },
       });
       expect(
-        readBaselineFromPayload(job.payload)[ledgerBaselineKey(who.memberId, '2020-03-01')],
+        readBaselineFromPayload(job.payload)[
+          ledgerBaselineKey(who.memberId, crossing && index === 1 ? '2020-03-02' : '2020-03-01')
+        ],
       ).toBe('0:0');
     }
     const segments = await f.db.participantServiceSegmentRevision.findMany({
@@ -505,8 +610,24 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
     });
     expect(segments.map((s) => [s.checkInAt.toISOString(), s.checkOutAt?.toISOString()])).toEqual([
       ['2020-03-01T08:00:00.000Z', '2020-03-01T09:00:00.000Z'],
-      ['2020-03-01T10:00:00.000Z', '2020-03-01T11:00:00.000Z'],
+      crossing
+        ? ['2020-03-02T10:00:00.000Z', '2020-03-02T11:00:00.000Z']
+        : ['2020-03-01T10:00:00.000Z', '2020-03-01T11:00:00.000Z'],
     ]);
+    const capturedBefore: string[] = [];
+    for (const instance of [f.app, secondApp]) {
+      const recorder = instance.get(ContributionMilestoneRecorder);
+      const capture = recorder.captureBefore.bind(recorder);
+      jest.spyOn(recorder, 'captureBefore').mockImplementation(async (...args) => {
+        const snapshots = await capture(...args);
+        capturedBefore.push(
+          ...snapshots
+            .filter((row) => row.memberId === who.memberId)
+            .map((row) => row.beforePoints.toString()),
+        );
+        return snapshots;
+      });
+    }
     const lockDb = r5CiOwnerClient();
     extraPools.push(lockDb);
     await lockDb.$connect();
@@ -557,32 +678,270 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
         if (waiters !== 2) await nextTurn();
       }
       expect(waiters).toBe(2);
-      await expectProgress(who, '0', progressApp);
+      expect(capturedBefore).toEqual([]);
+      await expectProgress(who, crossing ? '4' : '0', progressApp);
     } finally {
       release();
       await Promise.allSettled([holding, outcomes]);
     }
     await holding;
     const results = await outcomes;
-    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(crossing ? 2 : 1);
     const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
-    expect(failed).toHaveLength(1);
-    expect(failed[0].reason).toMatchObject({
-      biz: { code: BizCode.LEDGER_COMMIT_BASELINE_CHANGED.code },
-    });
+    expect(failed).toHaveLength(crossing ? 0 : 1);
+    if (!crossing) {
+      expect(failed[0].reason).toMatchObject({
+        biz: { code: BizCode.LEDGER_COMMIT_BASELINE_CHANGED.code },
+      });
+    }
     expect(BizCode.LEDGER_COMMIT_BASELINE_CHANGED.httpStatus).toBe(409);
     const batches = await f.db.ledgerPostingBatch.findMany({
       where: { id: { in: ready.map((r) => r.batchId) } },
     });
-    expect(batches.map((r) => r.statusCode).sort()).toEqual(['committed', 'ready']);
+    expect(batches.map((r) => r.statusCode).sort()).toEqual(
+      crossing ? ['committed', 'committed'] : ['committed', 'ready'],
+    );
     const day = await f.db.memberContributionDayState.findFirstOrThrow({
-      where: { memberId: who.memberId },
+      where: { memberId: who.memberId, ledgerDate: new Date('2020-03-01T00:00:00Z') },
     });
     expect(day.version).toBe(1);
     expect(day.committedCreditedPoints.toString()).toBe('2');
-    await expectProgress(who, '2');
-    await expectMemberSummaries(who, '2');
+    await expectProgress(who, crossing ? '8' : '2');
+    await expectMemberSummaries(who, crossing ? '8' : '2');
+    const facts = await f.db.teamJoinContributionMilestone.findMany({
+      where: { applicationId: who.applicationId },
+    });
+    expect(facts).toHaveLength(crossing ? 1 : 0);
+    if (crossing) {
+      expect(capturedBefore.sort()).toEqual(['4', '6']);
+      expect(facts[0].beforePoints.toString()).toBe('4');
+      expect(facts[0].afterPoints.toString()).toBe('6');
+      expect(ready.map((batch) => batch.batchId)).toContain(facts[0].postingBatchId);
+      expect(
+        await f.db.notificationOutboxIntent.count({
+          where: { eventKey: `team-join-contribution-met:${who.applicationId}:5` },
+        }),
+      ).toBe(1);
+    }
   });
+
+  it.each([false, true])(
+    'A9 Human V3 net 4→5→4→5: no resend after cleanup; new application independent=%s',
+    async (newApplication) => {
+      const who = await candidate();
+      async function post(source: Awaited<ReturnType<typeof sourceFor>>) {
+        const submitted = await submitE4Time(f, source, await prepareE4Time(f, source));
+        await postE4Ledger(f, submitted);
+        return submitted;
+      }
+      const baseline = await sourceFor(
+        who,
+        new Date('2020-02-28T08:00:00Z'),
+        new Date('2020-02-28T09:00:00Z'),
+        { definition: DURATION_POINTS },
+      );
+      const baselinePosted = await post(baseline);
+      const capped = await sourceFor(
+        who,
+        new Date('2020-02-28T10:00:00Z'),
+        new Date('2020-02-28T11:00:00Z'),
+      );
+      await post(capped);
+      const changed = await sourceFor(
+        who,
+        new Date('2020-03-01T08:00:00Z'),
+        new Date('2020-03-01T09:00:00Z'),
+        { definition: DURATION_POINTS, actualSeconds: 1800 },
+      );
+      const changedPosted = await post(changed);
+      await expectProgress(who, '4');
+      const originalEntries = await f.db.participationLedgerEntry.findMany({
+        where: { memberId: who.memberId, postingBatch: { statusCode: 'committed' } },
+        orderBy: { id: 'asc' },
+      });
+      const positive = await approvedE4ParticipantTimeCorrection(
+        f,
+        changed,
+        changedPosted.settlementVersionId,
+        changed.candidateIdentityId,
+        3600,
+      );
+      const prepared = await positive.correction.prepare(
+        positive.input,
+        e4Actor(f.finalReviewer),
+        E4_META,
+      );
+      await expectProgress(who, '4');
+      expect(
+        await f.db.teamJoinContributionMilestone.count({
+          where: { applicationId: who.applicationId },
+        }),
+      ).toBe(0);
+      const unauthorized = await f.db.user.findUniqueOrThrow({
+        where: { id: who.userId },
+        select: { id: true, username: true, role: true, status: true, memberId: true },
+      });
+      // App-eligible applicant, but no GLOBAL final-review permission (30100).
+      await expect(
+        positive.correction.commit(positive.input, unauthorized, E4_META),
+      ).rejects.toMatchObject({ biz: { code: BizCode.RBAC_FORBIDDEN.code } });
+      if (!newApplication) {
+        const audit = humanCorrectionTestService(f, CorrectionAuditRecorder);
+        const write = audit.logCommit.bind(audit);
+        const count = await f.db.auditLog.count();
+        const failure = jest.spyOn(audit, 'logCommit').mockImplementationOnce(async (args) => {
+          await write(args);
+          expect(
+            await args.tx.teamJoinContributionMilestone.count({
+              where: { applicationId: who.applicationId },
+            }),
+          ).toBe(1);
+          throw new Error('A9 Human audit failure after write');
+        });
+        await expect(
+          positive.correction.commit(positive.input, e4Actor(f.finalReviewer), E4_META),
+        ).rejects.toThrow('A9 Human audit failure after write');
+        failure.mockRestore();
+        expect(await f.db.auditLog.count()).toBe(count);
+      }
+      await expectProgress(who, '4');
+      expect(
+        await f.db.teamJoinContributionMilestone.count({
+          where: { applicationId: who.applicationId },
+        }),
+      ).toBe(0);
+      expect(
+        await f.db.notificationOutboxIntent.count({
+          where: { eventKey: `team-join-contribution-met:${who.applicationId}:5` },
+        }),
+      ).toBe(0);
+      expect(
+        (
+          await f.db.ledgerPostingBatch.findUniqueOrThrow({
+            where: { id: prepared.newPostingBatchId },
+          })
+        ).statusCode,
+      ).toBe('ready');
+      await positive.correction.commit(positive.input, e4Actor(f.finalReviewer), E4_META);
+      await expectProgress(who, '5');
+      const fact = await f.db.teamJoinContributionMilestone.findFirstOrThrow({
+        where: { applicationId: who.applicationId },
+      });
+      expect(fact.outcomeCode).toBe('notice_registered');
+      expect(fact.beforePoints.toString()).toBe('4');
+      expect(fact.afterPoints.toString()).toBe('5');
+      expect(fact.postingBatchId).toBe(prepared.newPostingBatchId);
+      if (newApplication) {
+        // This file runs only in the qualified SCRAM fixture. A SET ROLE from
+        // an owner connection is not a substitute for U's real session_user.
+        expect(r5CiAuthenticated()).toBe(true);
+        const untrusted = humanCorrectionTestApp(f).get(PrismaService);
+        await expect(
+          untrusted.$transaction(async (tx) => {
+            await tx.$executeRaw`SET LOCAL ROLE r5_boundary_caller_h7c6`;
+            expect(
+              await tx.$queryRaw`SELECT session_user::text AS login, current_user::text AS role`,
+            ).toEqual([
+              {
+                login: 'r5_untrusted_caller_login_20261030_q1',
+                role: 'r5_boundary_caller_h7c6',
+              },
+            ]);
+            await tx.teamJoinContributionMilestone.create({
+              data: { ...fact, id: f.key('forged_milestone') },
+            });
+          }),
+        ).rejects.toThrow('untrusted milestone writer');
+        await expect(
+          untrusted.$transaction(async (tx) => {
+            await tx.$executeRaw`SET LOCAL ROLE r5_boundary_caller_h7c6`;
+            await tx.$executeRaw`
+            UPDATE team_join_applications SET "contributionNoticeProtocol" = NULL
+            WHERE id = ${who.applicationId}
+          `;
+          }),
+        ).rejects.toThrow('immutable application contribution notice protocol');
+      }
+      const net = await f.db.participationLedgerEntry.findMany({
+        where: { memberId: who.memberId, postingBatchId: prepared.newPostingBatchId },
+      });
+      expect(net.some((row) => row.creditedPointsDelta.isNegative())).toBe(true);
+      expect(net.some((row) => row.creditedPointsDelta.isPositive())).toBe(true);
+      expect(
+        (await positive.correction.commit(positive.input, e4Actor(f.finalReviewer), E4_META))
+          .replayed,
+      ).toBe(true);
+      const oldKey = `team-join-contribution-met:${who.applicationId}:5`;
+      expect((await f.app.get(NotificationOutboxWorker).drainEventKey(oldKey)).succeeded).toBe(1);
+      await f.db.notificationOutboxIntent.delete({ where: { eventKey: oldKey } });
+      const negative = await approvedE4ParticipantTimeCorrection(
+        f,
+        baseline,
+        baselinePosted.settlementVersionId,
+        baseline.candidateIdentityId,
+        1800,
+      );
+      await negative.correction.prepare(negative.input, e4Actor(f.finalReviewer), E4_META);
+      await expectProgress(who, '5');
+      await negative.correction.commit(negative.input, e4Actor(f.finalReviewer), E4_META);
+      await expectProgress(who, '4');
+      expect(
+        await f.db.teamJoinContributionMilestone.findUnique({
+          where: { id: fact.id },
+        }),
+      ).toEqual(fact);
+      let activeApplicationId = who.applicationId;
+      if (newApplication) {
+        const rejected = await request(httpServer(f.app))
+          .post(`${ADMIN_APPLICATIONS}/${who.applicationId}/evaluate`)
+          .set('Authorization', f.creator.auth)
+          .send({ approved: false })
+          .expect(200);
+        expect(rejected.body.code).toBe(0);
+        const fresh = await request(httpServer(f.app))
+          .post(APP_APPLICATIONS)
+          .set('Authorization', who.auth)
+          .send({ targetOrganizationIds: [who.targetId] })
+          .expect(201);
+        expect(fresh.body.code).toBe(0);
+        activeApplicationId = fresh.body.data.id as string;
+        expect(activeApplicationId).not.toBe(who.applicationId);
+      }
+      const recross = await sourceFor(
+        who,
+        new Date('2020-03-02T08:00:00Z'),
+        new Date('2020-03-02T09:00:00Z'),
+        { definition: DURATION_POINTS, actualSeconds: 1800 },
+      );
+      await post(recross);
+      await expectProgress({ ...who, applicationId: activeApplicationId }, '5');
+      expect(
+        await f.db.teamJoinContributionMilestone.findUnique({
+          where: { id: fact.id },
+        }),
+      ).toEqual(fact);
+      expect(await f.db.notificationOutboxIntent.count({ where: { eventKey: oldKey } })).toBe(0);
+      expect(
+        await f.db.teamJoinContributionMilestone.count({
+          where: { memberId: who.memberId },
+        }),
+      ).toBe(newApplication ? 2 : 1);
+      if (newApplication) {
+        const freshFact = await f.db.teamJoinContributionMilestone.findFirstOrThrow({
+          where: { applicationId: activeApplicationId },
+        });
+        expect(freshFact.intentId).not.toBe(fact.intentId);
+        expect(freshFact.beforePoints.toString()).toBe('4');
+        expect(freshFact.afterPoints.toString()).toBe('5');
+      }
+      expect(
+        await f.db.participationLedgerEntry.findMany({
+          where: { id: { in: originalEntries.map((row) => row.id) } },
+          orderBy: { id: 'asc' },
+        }),
+      ).toEqual(originalEntries);
+    },
+  );
 
   it('keeps readonly on the same source and never adds or falls back to legacy approved scores', async () => {
     const who = await candidate();
@@ -798,5 +1157,17 @@ describe('R5 ADV-010: real contribution posting and team-join progress', () => {
       ).toBe('already-converted');
     expect(await f.db.participationLedgerEntry.count()).toBe(count);
     await expectProgress(who, '5');
+    // The application's 2026 cutoff includes all five converted points.
+    // Conversion still is not a newly earned settlement or a reminder backfill.
+    expect(
+      await f.db.teamJoinContributionMilestone.count({
+        where: { applicationId: who.applicationId },
+      }),
+    ).toBe(0);
+    expect(
+      await f.db.notificationOutboxIntent.count({
+        where: { eventKey: `team-join-contribution-met:${who.applicationId}:5` },
+      }),
+    ).toBe(0);
   });
 });
