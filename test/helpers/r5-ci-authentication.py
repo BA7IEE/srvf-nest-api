@@ -17,6 +17,7 @@ import subprocess
 import time
 from urllib.parse import quote
 from r5_ci_resources import memory_admission
+from migration_inventory import migration_install_sql
 
 PG_IMAGE_REF = 'postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea'
 NODE_IMAGE = 'node@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413'
@@ -203,6 +204,7 @@ try:
     assert memory['memoryAvailableBytes'] > 4 * 1024**3, 'MEMORY_ADMISSION_REJECTED_GT_4GIB'
     source_paths = ['test/helpers/r5-ci-authentication.py', 'test/helpers/r5_ci_resources.py',
                     'test/helpers/r5-ci-auth-probe.ts', 'test/helpers/r5-ci-source-binding.ts',
+                    'test/helpers/migration_inventory.py', 'test/helpers/migration-inventory.ts',
                     'test/fixtures/r5-ci-source-catalog.json', 'test/r5-authenticated-ci-suites.json']
     save('EXECUTION-SOURCE.json', {p: hashlib.sha256((repo / p).read_bytes()).hexdigest()
                                  for p in source_paths})
@@ -282,10 +284,8 @@ try:
     identity = query("SELECT jsonb_build_object('database',current_database(),'databaseOid',(SELECT oid::bigint FROM pg_database WHERE datname=current_database()),'cluster',(SELECT system_identifier::text FROM pg_control_system()),'roles',(SELECT jsonb_object_agg(rolname,oid::bigint) FROM pg_roles WHERE rolname LIKE 'r5_%'));", 'identity')
     assert identity['database'] == DB and identity['cluster'] not in ['7695840193603043362', '7702954905055002659']
     save('IDENTITY.json', identity)
-    files = sorted((repo / 'prisma/migrations').glob('*/migration.sql'))
-    assert len(files) == 155
-    install = '\n'.join('\\echo ' + p.parent.name + '\n' + p.read_text() for p in files)
-    sql(install, 'install-155', timeout=80)
+    install = migration_install_sql(repo)
+    sql(install, 'install-migrations', timeout=80)
     negative = sql('\\set VERBOSITY verbose\nSET ROLE ' + ROLES[1] + '; SELECT public.r5_correction_boundary_preflight();', 'default-null', allow=True)
     assert negative.returncode == 3 and '55000: materialization catalog pins are not bound' in negative.stderr
     app_cid = docker(['run', '--detach', '--pull=never', '--name', name + '-app', '--label', label,

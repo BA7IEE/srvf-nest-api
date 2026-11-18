@@ -1,3 +1,4 @@
+import { currentMigrationInventory } from '../helpers/migration-inventory';
 import { execFileSync } from 'node:child_process';
 import { cpSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -10,7 +11,7 @@ import {
 } from '../setup/test-db';
 import { deriveWorkerTestDbName } from '../setup/worktree-db';
 
-const CURRENT_MIGRATION_COUNT = 155;
+const CURRENT_MIGRATION_COUNT = currentMigrationInventory().count;
 
 const WORKER = process.env.JEST_WORKER_ID ?? '1';
 const database = () => deriveWorkerTestDbName(WORKER);

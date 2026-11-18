@@ -453,7 +453,21 @@ export class LedgerPostingService {
 
       // ===== ⑥ member advisory lock(既有 util,本刀不改)=====
       await lockMembersForWrite(tx, lockedMemberIds);
-      await this.assertNoCrossActivitySegmentOverlap(tx, activityId);
+      // A cutoff selects whole ledger dates. If every date delta for a member
+      // is non-positive, no cycle can cross upwards. Keep positive dates even
+      // when reversals on other dates make the lifetime net zero or negative.
+      const potentialCrossingMemberIds = [
+        ...new Set(deltas.filter((row) => row.creditedHundredths > 0).map((row) => row.memberId)),
+      ].sort();
+      const hasApplications = await this.assertNoCrossActivitySegmentOverlap(
+        tx,
+        activityId,
+        options.conversion ? [] : potentialCrossingMemberIds,
+      );
+      const milestoneSnapshots =
+        options.conversion || !hasApplications
+          ? []
+          : await this.notifications.captureContributionBefore(tx, potentialCrossingMemberIds);
 
       // ===== ⑦ day-state:缺行补齐 + 按 (memberId, ledgerDate) 排序 FOR UPDATE =====
       await this.createMissingDayStates(tx, deltas);
@@ -583,6 +597,7 @@ export class LedgerPostingService {
       //    转换刀(conversion: true)刻意跳过:回填不是新结算,向历史活动负责人
       //    逐活动重发「已入账」是追溯性骚扰;账本事实 / day-state / audit 全部照写。
       if (!options.conversion) {
+        await this.notifications.recordContributionAfter(tx, batch.id, milestoneSnapshots);
         await this.notifications.enqueuePosted(tx, {
           activityId,
           activityTitle: activity.title,
@@ -733,8 +748,10 @@ export class LedgerPostingService {
   private async assertNoCrossActivitySegmentOverlap(
     tx: PrismaTx,
     activityId: string,
-  ): Promise<void> {
+    potentialCrossingMemberIds: readonly string[] = [],
+  ): Promise<boolean> {
     const rows = await tx.$queryRaw<Array<{ conflict: number }>>`
+      WITH conflicts AS (
       SELECT 1 AS conflict
       FROM "ActivityParticipationIdentity" candidate_identity
       CROSS JOIN LATERAL (
@@ -776,8 +793,20 @@ export class LedgerPostingService {
         AND candidate."checkInAt" < existing."checkOutAt"
         AND existing."checkInAt" < candidate."checkOutAt"
       LIMIT 1
+      ), applications AS (
+        SELECT 0 AS conflict FROM public.team_join_applications a
+        WHERE a."memberId" = ANY(${potentialCrossingMemberIds}::text[])
+        LIMIT 1
+      )
+      SELECT conflict FROM conflicts
+      UNION ALL SELECT conflict FROM applications
     `;
-    if (rows.length > 0) throw new BizException(BizCode.ATTENDANCE_TIME_OVERLAP);
+    if (rows.some((row) => row.conflict === 1))
+      throw new BizException(BizCode.ATTENDANCE_TIME_OVERLAP);
+    // Broad existence only: member locks prevent a concurrent application
+    // creation. The recorder still locks and selects eligible applications and
+    // reads current points. No extra round trip when nobody has an application.
+    return rows.some((row) => row.conflict === 0);
   }
 
   /**

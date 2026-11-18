@@ -880,7 +880,7 @@ export interface WorkflowMutationControl {
 }
 
 /**
- * C3 正对照:**当前四处读面文件全部脱闸** ⇒ C3 必红。
+ * C3 正对照:**当前全部读源调用点脱闸** ⇒ C3 必红。
  *
  * ⚠️ 2026-08-21(第六轮评审 B-01)起,这条变异必须**摘掉全部三处读面的闸**才会红。
  *    原因正是 C3 的粒度:它只断言「全仓至少有一个文件调过闸的读面方法」,
@@ -897,12 +897,16 @@ export function controlAllReadFacesDetached(): WorkflowMutationControl {
     READ_FACE_ACTIVITY_PARTICIPATION,
     READ_FACE_META_OVERVIEW,
     READ_FACE_TEAM_JOIN,
+    'src/modules/team-join/team-join-applications.app.service.ts',
+    'src/modules/activities/contribution-milestone-recorder.ts',
   ]) {
     const original = readSource(target);
     const next = original
       .split(`this.activityWorkflowGate.${READ_SOURCE}()`)
       .join("('approved-attendance' as const)")
       .split(`activityWorkflowGate.${READ_SOURCE}()`)
+      .join("('approved-attendance' as const)")
+      .split(`this.gate.${READ_SOURCE}()`)
       .join("('approved-attendance' as const)");
     if (next === original) changed = false;
     overrides[target] = next;

@@ -3,6 +3,11 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { HumanCorrectionInstalledConnection } from '../../src/modules/activities/human-correction-trusted-connection';
 import { HUMAN_CORRECTION_BASE_CATALOG_SQL } from '../../src/modules/activities/human-correction-trusted-catalog';
+import {
+  currentMigrationInventory,
+  MILESTONE_MIGRATION,
+  readFrozenMigrationCatalog as sourceCatalog,
+} from './migration-inventory';
 
 export const R5_CI_DATABASE = 'app_test_r5_setmat_20261029_q1';
 export const R5_CI_ROLES = Object.freeze({
@@ -14,19 +19,53 @@ export const R5_CI_ROLES = Object.freeze({
 });
 const sha = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 type Catalog = HumanCorrectionInstalledConnection['source']['baseCatalog'];
-interface FrozenSourceCatalog {
-  readonly migrations: readonly { readonly name: string; readonly sha256: string }[];
-  readonly catalogs: { readonly base: unknown; readonly supplemental: unknown };
+export const r5CiMigrationSources = (checkout = process.cwd()) =>
+  currentMigrationInventory(checkout).migrations;
+
+/** Exact additive source overlay. The original 155-migration catalog remains
+ * byte-pinned. Expected guard definitions come only from the separately pinned
+ * migration, never a target database or a relaxed catalog comparison. */
+function milestoneFunctions(checkout: string) {
+  const sql = readFileSync(
+    resolve(checkout, 'prisma/migrations', MILESTONE_MIGRATION.name, 'migration.sql'),
+    'utf8',
+  );
+  if (sha(sql) !== MILESTONE_MIGRATION.sha256) throw new Error('R5_CI_MIGRATION_SOURCE_CHANGED');
+  return [
+    'team_join_milestone_immutable',
+    'team_join_milestone_insert_guard',
+    'team_join_notice_protocol_immutable',
+  ].map((name) => {
+    const definition = new RegExp(
+      `CREATE FUNCTION public\\.${name}\\(\\) RETURNS trigger\\n` +
+        'LANGUAGE plpgsql SET search_path = pg_catalog AS \\$\\$([\\s\\S]*?)\\$\\$;',
+      'g',
+    );
+    const matches = [...sql.matchAll(definition)];
+    if (matches.length !== 1) throw new Error('R5_CI_MILESTONE_FUNCTION_SOURCE_SHAPE');
+    return {
+      signature: `public.${name}()`,
+      owner: R5_CI_ROLES.owner,
+      language: 'plpgsql',
+      kind: 'f',
+      definer: false,
+      config: ['search_path=pg_catalog'],
+      acl: `{${R5_CI_ROLES.owner}=X/${R5_CI_ROLES.owner}}`,
+      volatility: 'v',
+      strict: false,
+      leakproof: false,
+      parallel: 'u',
+      set: false,
+      returnType: 'trigger',
+      argNames: null,
+      argModes: null,
+      allArgTypes: null,
+      defaults: '',
+      bodyHash: sha(matches[0][1]),
+      sqlBody: null,
+    };
+  });
 }
-// This large fixture is runtime data, not a giant inferred TypeScript literal.
-// Pin all bytes before parsing; no fields or checks are omitted at runtime.
-function sourceCatalog(): FrozenSourceCatalog {
-  const sourceBytes = readFileSync(resolve(__dirname, '../fixtures/r5-ci-source-catalog.json'));
-  if (sha(sourceBytes) !== '341f429157b559913cb9ff22ff09e2ff820589b038d9f5f8243dd030677cbaa6')
-    throw new Error('R5_CI_SOURCE_CATALOG_BYTES_CHANGED');
-  return JSON.parse(sourceBytes.toString('utf8')) as FrozenSourceCatalog;
-}
-export const r5CiMigrationSources = () => sourceCatalog().migrations;
 function canonical(value: unknown): string {
   if (value === null || typeof value === 'string' || typeof value === 'boolean')
     return JSON.stringify(value);
@@ -66,17 +105,34 @@ export function r5CiSourceBinding(identity: R5CiInstanceIdentity, checkout = pro
     new Set(Object.values(identity.roles)).size !== 5
   )
     throw new Error('R5_CI_INSTANCE_IDENTITY_REJECTED');
-  for (const migration of source.migrations) {
-    const file = resolve(checkout, 'prisma/migrations', migration.name, 'migration.sql');
-    if (sha(readFileSync(file)) !== migration.sha256)
-      throw new Error('R5_CI_MIGRATION_SOURCE_CHANGED');
+  try {
+    r5CiMigrationSources(checkout);
+  } catch {
+    throw new Error('R5_CI_MIGRATION_SOURCE_CHANGED');
   }
+  const additions = milestoneFunctions(checkout);
   const link = (input: unknown): Catalog => {
     const catalog = JSON.parse(JSON.stringify(input)) as Record<string, unknown>;
     if (catalog.database !== 'CI_INSTANCE_DATABASE_NAME' || catalog.databaseOid !== 0)
       throw new Error('R5_CI_SOURCE_IDENTITY_PLACEHOLDER_CHANGED');
     catalog.database = identity.database;
     catalog.databaseOid = identity.databaseOid;
+    const functions = catalog.functions as Record<string, unknown>[];
+    const insertion = functions.findIndex(
+      (row) => row.signature === 'public.tp_identity_guard_fn()',
+    );
+    if (
+      insertion < 0 ||
+      functions.some((row) => additions.some((addition) => addition.signature === row.signature))
+    )
+      throw new Error('R5_CI_MILESTONE_CATALOG_SOURCE_SHAPE');
+    // Preserve every frozen field and its PostgreSQL order; the three new
+    // team_join_* signatures sort immediately before the existing tp_* group.
+    catalog.functions = [
+      ...functions.slice(0, insertion),
+      ...additions,
+      ...functions.slice(insertion),
+    ];
     const text = JSON.stringify(catalog).replaceAll(
       '{CI_CALLER_ROLE_OID}',
       `{${identity.roles[R5_CI_ROLES.caller]}}`,
@@ -135,7 +191,7 @@ export function r5CiInstalledRecord(
     schema: 'srvf-r5-human-correction-installed-connection/v1',
     status: 'INSTALLED_AND_SOURCE_VERIFIED',
     approvalReference: 'disposable-ci-authentication-only',
-    sourceQualificationReference: 'checksum-pinned-155-migrations-and-source-catalog',
+    sourceQualificationReference: 'checksum-pinned-migrations-and-source-catalog',
     installationReceipt: {
       reference: 'this-disposable-instance/source-comparison',
       sha256: receipts.installationSha256,

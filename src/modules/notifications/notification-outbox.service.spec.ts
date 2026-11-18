@@ -135,6 +135,29 @@ describe('NotificationOutboxService', () => {
     ).rejects.toBeInstanceOf(NotificationOutboxInvariantError);
   });
 
+  it('永久业务收据需要新 intent：同 key 冲突不能被普通 enqueue 幂等吞掉', async () => {
+    const f = build();
+    const conflict = new Prisma.PrismaClientKnownRequestError('duplicate event key', {
+      code: 'P2002',
+      clientVersion: 'test',
+    });
+    f.createMany.mockRejectedValueOnce(conflict);
+    await expect(f.service.enqueueMany([input()], f.tx as never, true)).rejects.toBe(conflict);
+    expect(f.createMany).toHaveBeenCalledWith(expect.objectContaining({ skipDuplicates: false }));
+    expect(f.findMany).not.toHaveBeenCalled();
+  });
+
+  it('fresh batch 不接受少写；默认批量重放仍可读回既有同内容 intent', async () => {
+    const f = build();
+    f.createMany.mockResolvedValue({ count: 0 });
+    await expect(f.service.enqueueMany([input()], f.tx as never, true)).rejects.toBeInstanceOf(
+      NotificationOutboxInvariantError,
+    );
+    expect(f.findMany).not.toHaveBeenCalled();
+    f.findMany.mockResolvedValue([row()]);
+    await expect(f.service.enqueueMany([input()], f.tx as never)).resolves.toEqual([row()]);
+  });
+
   it('微信广播不同 generation 撞 active partial unique 时显式要求 root defer', async () => {
     const f = build();
     const firstGeneration = wechatInput('cm00000000000000000000007');

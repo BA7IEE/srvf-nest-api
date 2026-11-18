@@ -8,6 +8,7 @@ import { deriveTestDbName } from './worktree-db';
 import { r5CiTestDatabaseUrl } from './r5-ci-instance-scope';
 
 const TRUNCATE_TRIGGERS = [
+  { table: 'TeamJoinContributionMilestone', trigger: 'team_join_milestone_no_truncate' },
   { table: 'ParticipantContributionEvaluation', trigger: 'e4_evaluation_no_truncate' },
   { table: 'ActivitySettlementContributionRevision', trigger: 'e4_revision_no_truncate' },
   { table: 'ContributionShadowWindowRegistrationReceipt', trigger: 'cswr_no_truncate' },
@@ -131,7 +132,8 @@ export function timeLedgerFixtureTriggerSql(expectedDatabase = deriveTestDbName(
         END IF;
         FOR item IN SELECT value FROM jsonb_array_elements(current_setting('srvf.d6_fixture_trigger_states')::jsonb)
         LOOP
-          IF NOT ((item->>'table'='ContributionShadowObservationWindow' AND item->>'trigger'='csow_no_truncate') OR
+          IF NOT ((item->>'table'='TeamJoinContributionMilestone' AND item->>'trigger'='team_join_milestone_no_truncate') OR
+                  (item->>'table'='ContributionShadowObservationWindow' AND item->>'trigger'='csow_no_truncate') OR
                   (item->>'table'='ParticipantContributionEvaluation' AND item->>'trigger'='e4_evaluation_no_truncate') OR
                   (item->>'table'='ActivitySettlementContributionRevision' AND item->>'trigger'='e4_revision_no_truncate') OR
                   (item->>'table'='ContributionShadowWindowRegistrationReceipt' AND item->>'trigger'='cswr_no_truncate') OR

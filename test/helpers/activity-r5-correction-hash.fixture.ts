@@ -41,14 +41,111 @@ async function approvedE4TimeCorrectionWithService(
   const source = await createE4Source(f, sourceWindow);
   const submitted = await submitE4Time(f, source, await prepareE4Time(f, source));
   await postE4Ledger(f, submitted);
+  return approveParticipantTimeCorrection(
+    f,
+    source,
+    submitted.settlementVersionId,
+    source.identity.id,
+    1800,
+    correction,
+  );
+}
+
+/** Reuse the real V3 protocol for an existing participant. The complete root
+ * envelope retains unchanged participants while altering only this target. */
+export async function approvedE4ParticipantTimeCorrection(
+  f: E4Fixture,
+  source: Awaited<ReturnType<typeof createE4Source>>,
+  settlementVersionId: string,
+  participationIdentityId: string,
+  recognizedSeconds: number,
+) {
+  const service = humanCorrectionTestService(f, CorrectionApplicationService);
+  const approved = await approveParticipantTimeCorrection(
+    f,
+    source,
+    settlementVersionId,
+    participationIdentityId,
+    recognizedSeconds,
+    service,
+  );
+  let prepared: Awaited<ReturnType<CorrectionApplicationService['prepare']>> | undefined;
+  const sourceBinding = {
+    human: true as const,
+    expectedActivityId: source.activityId,
+    expectedBaseSettlementVersionId: settlementVersionId,
+  };
+  return {
+    input: approved.input,
+    correction: {
+      prepare: async (...args: Parameters<CorrectionApplicationService['prepare']>) => {
+        prepared = await service.prepare(args[0], args[1], args[2], {
+          ...sourceBinding,
+          ...args[3],
+          human: true,
+        });
+        return prepared;
+      },
+      commit: (...args: Parameters<CorrectionApplicationService['commit']>) => {
+        if (!prepared) throw new Error('A9 Human fixture requires its prepared target');
+        return service.commit(args[0], args[1], args[2], {
+          ...sourceBinding,
+          expectedCorrectionApplicationId: prepared.correctionApplicationId,
+          expectedPostingBatchId: prepared.newPostingBatchId,
+          ...args[3],
+          human: true,
+        });
+      },
+    },
+  };
+}
+
+async function approveParticipantTimeCorrection(
+  f: E4Fixture,
+  source: Awaited<ReturnType<typeof createE4Source>>,
+  settlementVersionId: string,
+  participationIdentityId: string,
+  recognizedSeconds: number,
+  correction: Pick<CorrectionApplicationService, 'submit' | 'review' | 'prepare' | 'commit'>,
+) {
   const segment = await f.db.participantServiceSegmentRevision.findFirstOrThrow({
     where: {
-      participationIdentityId: source.identity.id,
+      participationIdentityId,
       statusCode: 'committed',
       resultCode: 'valid',
     },
     orderBy: { revision: 'desc' },
   });
+  // V3 proves the whole committed source set, including unchanged people.
+  // Settlement-bound allocations alone are not standalone correction baselines.
+  const unchangedSegments = await f.db.participantServiceSegmentRevision.findMany({
+    where: {
+      id: { not: segment.id },
+      identity: { activityId: source.activityId },
+      statusCode: 'committed',
+      resultCode: 'valid',
+    },
+    orderBy: { id: 'asc' },
+  });
+  for (const unchanged of unchangedSegments) {
+    const base = await f.db.participantTimeAllocationRevision.findFirstOrThrow({
+      where: { sourceSegmentId: unchanged.id },
+      orderBy: { revision: 'desc' },
+    });
+    if (base.settlementDraftVersionId === null) continue;
+    await f.app.get(ActivityTimeAllocationService).recognize(
+      source.activityId,
+      {
+        operationKey: f.key('unchanged_source_allocation'),
+        sourceSegmentId: unchanged.id,
+        expectedRevision: base.revision,
+        recognitionModeCode: 'automatic',
+        evidenceAttachmentIds: [],
+      },
+      e4Actor(f.creator, true),
+      E4_META,
+    );
+  }
   const allocation = await f.db.participantTimeAllocationRevision.findFirstOrThrow({
     where: { sourceSegmentId: segment.id },
     orderBy: { revision: 'desc' },
@@ -66,7 +163,7 @@ async function approvedE4TimeCorrectionWithService(
     E4_META,
   );
   const original = await f.db.participationTimeLedgerManifest.findFirstOrThrow({
-    where: { settlementVersionId: submitted.settlementVersionId },
+    where: { settlementVersionId },
   });
   const roots = await f.db.participationTimeLedgerEntry.findMany({
     where: { manifestId: original.id },
@@ -74,34 +171,39 @@ async function approvedE4TimeCorrectionWithService(
   const requested = await correction.submit(
     {
       activityId: source.activityId,
-      participationIdentityId: source.identity.id,
+      participationIdentityId,
       requestTypeCode: 'time',
       requestedChangeJson: {
         schemaVersion: 3,
         results: [],
         segments: [
           {
-            participationIdentityId: source.identity.id,
+            participationIdentityId,
             segmentKey: segment.segmentKey,
             checkInAt: source.startsAt.toISOString(),
-            checkOutAt: new Date(source.startsAt.getTime() + 1800_000).toISOString(),
+            checkOutAt: new Date(
+              source.startsAt.getTime() + recognizedSeconds * 1000,
+            ).toISOString(),
             resultCode: 'valid',
-            serviceHours: '0.50',
+            serviceHours: (recognizedSeconds / 3600).toFixed(2),
           },
         ],
         timeCorrection: {
-          baseSettlementVersionId: submitted.settlementVersionId,
+          baseSettlementVersionId: settlementVersionId,
           baseTimeLedgerHash: original.contentHash,
           reason: 'NULL constraint diagnostic',
           items: roots.map((root) => ({
             rootEntryId: root.id,
             recognizedSeconds:
-              root.categoryCode === 'volunteer_service' ? 1800 : root.recognizedSeconds,
+              root.participationIdentityId === participationIdentityId &&
+              root.categoryCode === 'volunteer_service'
+                ? recognizedSeconds
+                : root.recognizedSeconds,
           })),
         },
         allocations: [
           {
-            participationIdentityId: source.identity.id,
+            participationIdentityId,
             segmentKey: segment.segmentKey,
             baseSegmentRevisionId: segment.id,
             baseAllocationRevisionId: recognized.allocationRevisionId,

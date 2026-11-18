@@ -9,6 +9,10 @@ import {
 } from '../notifications/notification.constants';
 import { NotificationOutboxService } from '../notifications/notification-outbox.service';
 import type { FrozenRecipientCohort } from './activity-recipient-freeze';
+import {
+  ContributionMilestoneRecorder,
+  type ContributionMilestoneSnapshot,
+} from './contribution-milestone-recorder';
 
 // 结算提交通知 intent(合同 §5.10 ⑨)+ 一审 / 终审结果通知 intent(合同 §5.11)。
 //
@@ -35,7 +39,24 @@ import type { FrozenRecipientCohort } from './activity-recipient-freeze';
 //    (新增字典项要动 seed,属本刀写集之外)。
 @Injectable()
 export class SettlementNotificationProducer {
-  constructor(private readonly outbox: NotificationOutboxService) {}
+  constructor(
+    private readonly outbox: NotificationOutboxService,
+    private readonly milestones: ContributionMilestoneRecorder,
+  ) {}
+
+  // Applicant milestones have a separate recipient and durable receipt
+  // protocol. They never inherit the owner-notification empty-cohort fallback.
+  captureContributionBefore(tx: Prisma.TransactionClient, lockedMemberIds: readonly string[]) {
+    return this.milestones.captureBefore(tx, lockedMemberIds);
+  }
+
+  recordContributionAfter(
+    tx: Prisma.TransactionClient,
+    postingBatchId: string,
+    snapshots: readonly ContributionMilestoneSnapshot[],
+  ) {
+    return this.milestones.recordAfter(tx, postingBatchId, snapshots);
+  }
 
   /**
    * 结算版本已提交、进入一审待办。
