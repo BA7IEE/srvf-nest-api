@@ -1,14 +1,21 @@
 import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-cleanup';
 import type { INestApplication } from '@nestjs/common';
-import { Prisma, Role, UserStatus } from '@prisma/client';
+import { randomBytes } from 'node:crypto';
+import { Prisma, PrismaClient, Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { BizException } from '../../src/common/exceptions/biz.exception';
 import { PrismaService } from '../../src/database/prisma.service';
 import { lockOrganizationTopology } from '../../src/modules/organizations/organization-topology-transaction';
 import { OrganizationsService } from '../../src/modules/organizations/organizations.service';
+import {
+  assertOwnedAdvisoryLockBackends,
+  type AdvisoryLockBackend,
+} from '../helpers/organization-lock-ownership';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { assertConnectedTestDatabase } from '../setup/test-db';
+import { deriveTestDbName } from '../setup/worktree-db';
 
 // D-ORG 真实 PostgreSQL 并发证据。
 //
@@ -55,6 +62,8 @@ interface TopologyDiffRow {
 }
 
 describe('organizations topology serialization', () => {
+  const cleanupOwner = 'org_topology_' + randomBytes(16).toString('hex');
+  let originalDatabaseUrl: string | undefined;
   let app: INestApplication;
   let prisma: PrismaService;
   let organizations: OrganizationsService;
@@ -63,9 +72,19 @@ describe('organizations topology serialization', () => {
   let lastGoldenLockSnapshot: AdvisoryLockSnapshot | undefined;
 
   beforeAll(async () => {
+    originalDatabaseUrl = process.env.DATABASE_URL;
+    if (!originalDatabaseUrl) throw new Error('organization test database URL is missing');
+    const databaseUrl = new URL(originalDatabaseUrl);
+    // Tag the pool before Nest creates its Prisma client.
+    databaseUrl.searchParams.set('application_name', cleanupOwner);
+    process.env.DATABASE_URL = databaseUrl.toString();
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
+    const identity = await prisma.$queryRaw<Array<{ applicationName: string }>>`
+      SELECT current_setting('application_name') AS "applicationName"
+    `;
+    expect(identity).toEqual([{ applicationName: cleanupOwner }]);
     organizations = app.get(OrganizationsService);
 
     const user = await prisma.user.create({
@@ -94,7 +113,12 @@ describe('organizations topology serialization', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    try {
+      await app?.close();
+    } finally {
+      if (originalDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = originalDatabaseUrl;
+    }
   });
 
   beforeEach(async () => {
@@ -123,6 +147,39 @@ describe('organizations topology serialization', () => {
       { name, parentId, nodeTypeCode: NODE_TYPE_CODE },
       meta(`seed-${name}`),
     );
+  }
+
+  function holdGoldenLock(client: PrismaClient) {
+    let signalReady: (pid: number) => void = () => undefined;
+    let signalFailure: (error: unknown) => void = () => undefined;
+    let release: () => void = () => undefined;
+    const ready = new Promise<number>((resolve, reject) => {
+      signalReady = resolve;
+      signalFailure = reject;
+    });
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const finished = client
+      .$transaction(
+        async (tx) => {
+          const [identity] = await tx.$queryRaw<Array<{ pid: number }>>`
+            SELECT pg_backend_pid() AS pid
+          `;
+          await lockOrganizationTopology(tx);
+          signalReady(identity.pid);
+          await released;
+        },
+        { timeout: LOCK_STATE_TIMEOUT_MS },
+      )
+      .then(
+        () => ({ status: 'fulfilled' as const }),
+        (error: unknown) => {
+          signalFailure(error);
+          return { status: 'rejected' as const, error };
+        },
+      );
+    return { ready, release, finished };
   }
 
   async function readGoldenLockSnapshot(): Promise<AdvisoryLockSnapshot> {
@@ -217,34 +274,73 @@ describe('organizations topology serialization', () => {
 
   async function terminateExactGoldenLockBackends(): Promise<TerminatedBackendRow[]> {
     const database = await rawTimeout(
-      prisma.$queryRaw<Array<{ databaseName: string }>>(Prisma.sql`
-        SELECT current_database() AS "databaseName"
+      prisma.$queryRaw<Array<{ databaseName: string; applicationName: string }>>(Prisma.sql`
+        SELECT current_database() AS "databaseName",
+               current_setting('application_name') AS "applicationName"
       `),
       SNAPSHOT_CAPTURE_TIMEOUT_MS,
     );
     const databaseName = database[0]?.databaseName ?? '';
-    if (databaseName !== 'app_test' && !databaseName.startsWith('app_test_')) {
+    if (databaseName !== deriveTestDbName()) {
       throw new Error(`refusing advisory-lock cleanup outside guarded test DB: ${databaseName}`);
     }
+    if (database[0]?.applicationName !== cleanupOwner) {
+      throw new Error('advisory-lock cleanup refused: controller ownership is unknown');
+    }
 
-    return rawTimeout(
+    const deadline = Date.now() + LOCK_CLEANUP_TIMEOUT_MS;
+    const backends = await rawTimeout(
+      prisma.$queryRaw<AdvisoryLockBackend[]>(Prisma.sql`
+        SELECT DISTINCT locks.pid, activity.application_name AS "applicationName",
+               activity.backend_start::text AS "backendStart"
+        FROM pg_locks locks
+        LEFT JOIN pg_stat_activity activity
+          ON activity.pid = locks.pid AND activity.datname = current_database()
+        WHERE locks.locktype = 'advisory'
+          AND locks.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+          AND locks.classid = '1620833402'::oid
+          AND locks.objid = '2757511107'::oid
+          AND locks.objsubid = 1
+          AND locks.pid IS DISTINCT FROM pg_backend_pid()
+      `),
+      LOCK_CLEANUP_TIMEOUT_MS,
+    );
+    // Refuse the whole cleanup if even one lock holder or waiter is unknown.
+    assertOwnedAdvisoryLockBackends(backends, cleanupOwner);
+    if (backends.length === 0) return [];
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) throw new Error('advisory-lock cleanup ownership check timed out');
+    const identities = backends.map(
+      ({ pid, backendStart }) =>
+        Prisma.sql`(locks.pid = ${pid} AND activity.backend_start = ${backendStart}::timestamptz)`,
+    );
+    const terminated = await rawTimeout(
       prisma.$queryRaw<TerminatedBackendRow[]>(Prisma.sql`
         WITH targets AS (
-          SELECT DISTINCT pid
-          FROM pg_locks
-          WHERE locktype = 'advisory'
-            AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
-            AND classid = '1620833402'::oid
-            AND objid = '2757511107'::oid
-            AND objsubid = 1
-            AND pid <> pg_backend_pid()
+          SELECT DISTINCT locks.pid
+          FROM pg_locks locks
+          JOIN pg_stat_activity activity ON activity.pid = locks.pid
+          WHERE locks.locktype = 'advisory'
+            AND locks.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+            AND locks.classid = '1620833402'::oid
+            AND locks.objid = '2757511107'::oid
+            AND locks.objsubid = 1
+            AND locks.pid <> pg_backend_pid()
+            AND activity.datname = current_database()
+            AND activity.application_name = ${cleanupOwner}
+            AND (${Prisma.join(identities, ' OR ')})
         )
         SELECT pid, pg_terminate_backend(pid) AS terminated
         FROM targets
         ORDER BY pid ASC
       `),
-      LOCK_CLEANUP_TIMEOUT_MS,
+      remainingMs,
     );
+    const observed = new Set(terminated.filter((row) => row.terminated).map((row) => row.pid));
+    if (observed.size !== backends.length || backends.some(({ pid }) => !observed.has(pid))) {
+      throw new Error('advisory-lock cleanup refused: backend identity or termination is unknown');
+    }
+    return terminated;
   }
 
   async function cleanupFailedPair(
@@ -589,5 +685,57 @@ describe('organizations topology serialization', () => {
     expect(finalA.parentId).toBe(b.id);
     expect(finalC.parentId).toBe(d.id);
     await assertTopologyEquivalent('disjoint moves');
+  });
+
+  it('refuses to terminate a golden-lock backend with an unknown owner', async () => {
+    if (!originalDatabaseUrl) throw new Error('organization test database URL is missing');
+    const foreignUrl = new URL(originalDatabaseUrl);
+    foreignUrl.searchParams.set(
+      'application_name',
+      'org_foreign_' + randomBytes(16).toString('hex'),
+    );
+    const foreign = new PrismaClient({ datasourceUrl: foreignUrl.toString() });
+    let holder: ReturnType<typeof holdGoldenLock> | undefined;
+    try {
+      await assertConnectedTestDatabase(foreign);
+      holder = holdGoldenLock(foreign);
+      const pid = await rawTimeout(holder.ready, LOCK_STATE_TIMEOUT_MS);
+      await expect(terminateExactGoldenLockBackends()).rejects.toThrow(
+        'backend ownership is unknown',
+      );
+      const snapshot = await readGoldenLockSnapshot();
+      expect(snapshot.rows).toContainEqual(expect.objectContaining({ pid, granted: true }));
+    } finally {
+      try {
+        if (holder) {
+          holder.release();
+          const result = await rawTimeout(holder.finished, LOCK_CLEANUP_TIMEOUT_MS);
+          expect(result.status).toBe('fulfilled');
+        }
+      } finally {
+        await foreign.$disconnect();
+      }
+    }
+  });
+
+  it('terminates a golden-lock backend owned by this test fixture', async () => {
+    const holder = holdGoldenLock(prisma);
+    try {
+      const pid = await rawTimeout(holder.ready, LOCK_STATE_TIMEOUT_MS);
+      await expect(terminateExactGoldenLockBackends()).resolves.toEqual([
+        { pid, terminated: true },
+      ]);
+      await waitForGoldenLockState(
+        'owned cleanup residual zero',
+        (snapshot) => snapshot.granted === 0 && snapshot.waiting === 0,
+        LOCK_CLEANUP_TIMEOUT_MS,
+      );
+      holder.release();
+      const result = await rawTimeout(holder.finished, LOCK_CLEANUP_TIMEOUT_MS);
+      expect(result.status).toBe('rejected');
+    } finally {
+      holder.release();
+      await rawTimeout(holder.finished, LOCK_CLEANUP_TIMEOUT_MS);
+    }
   });
 });
