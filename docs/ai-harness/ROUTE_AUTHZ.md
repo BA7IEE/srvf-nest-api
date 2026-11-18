@@ -16,8 +16,8 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.1.0 |
-| inputDigest | sha256:759bf68ac5ae292686a2b1a0bccdf4530e2b94aecb38eee81859fd1c9224ab74 |
-| endpoint count | 672 |
+| inputDigest | sha256:9774d0e6ca72c0d28a86baf763a01d0a119cf47473adac0cd6696c6533ed9ceb |
+| endpoint count | 675 |
 | legacy [auth] count | 187 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
@@ -32,7 +32,7 @@
 | admin | 322 | 322 | 0 |
 | app | 208 | 208 | 0 |
 | system | 102 | 102 | 0 |
-| auth | 22 | 22 | 0 |
+| auth | 25 | 25 | 0 |
 | open | 16 | 16 | 0 |
 | integration | 2 | 2 | 0 |
 
@@ -40,7 +40,7 @@
 
 | marker | count |
 |---|---:|
-| public | 33 |
+| public | 36 |
 | rbac | 452 |
 | auth | 187 |
 | unclassified | 0 |
@@ -101,13 +101,13 @@
 | auth/system/integration individual | GET /api/system/v1/authz/me/effective-permissions | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/authz/effective-permissions.controller.ts:22; src/modules/authz/effective-permissions.controller.ts:33 |
 | auth/system/integration individual | GET /api/system/v1/rbac/me/permissions | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/permissions/rbac.controller.ts:44; src/modules/permissions/rbac.controller.ts:54 |
 | auth/system/integration individual | POST /api/auth/v1/delegated-token | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=-; principals=SERVICE | code | src/modules/integration-auth/delegated-token.controller.ts:29; src/modules/integration-auth/delegated-token.controller.ts:46 |
-| auth/system/integration individual | POST /api/auth/v1/logout-all | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:148; src/modules/auth/auth.controller.ts:162 |
+| auth/system/integration individual | POST /api/auth/v1/logout-all | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:247; src/modules/auth/auth.controller.ts:261 |
 | auth/system/integration individual | POST /api/auth/v1/service-token | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=-; principals=CLIENT_CREDENTIALS | code | src/modules/integration-auth/service-token.controller.ts:34; src/modules/integration-auth/service-token.controller.ts:52 |
-| auth/system/integration individual | POST /api/auth/v1/step-up/password | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:165; src/modules/auth/auth.controller.ts:191 |
-| auth/system/integration individual | POST /api/auth/v1/step-up/sms | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:219; src/modules/auth/auth.controller.ts:244 |
-| auth/system/integration individual | POST /api/auth/v1/step-up/sms/send-code | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:194; src/modules/auth/auth.controller.ts:216 |
-| auth/system/integration individual | POST /api/auth/v1/step-up/wechat | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:247; src/modules/auth/auth.controller.ts:274 |
-| auth/system/integration individual | POST /api/auth/v1/wecom-bind/authorize | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:577; src/modules/auth/auth.controller.ts:599 |
+| auth/system/integration individual | POST /api/auth/v1/step-up/password | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:264; src/modules/auth/auth.controller.ts:290 |
+| auth/system/integration individual | POST /api/auth/v1/step-up/sms | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:318; src/modules/auth/auth.controller.ts:343 |
+| auth/system/integration individual | POST /api/auth/v1/step-up/sms/send-code | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:293; src/modules/auth/auth.controller.ts:315 |
+| auth/system/integration individual | POST /api/auth/v1/step-up/wechat | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:346; src/modules/auth/auth.controller.ts:373 |
+| auth/system/integration individual | POST /api/auth/v1/wecom-bind/authorize | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:676; src/modules/auth/auth.controller.ts:698 |
 
 ## Machine-readable manifest
 
@@ -117,7 +117,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.1.0",
-  "inputDigest": "sha256:759bf68ac5ae292686a2b1a0bccdf4530e2b94aecb38eee81859fd1c9224ab74",
+  "inputDigest": "sha256:9774d0e6ca72c0d28a86baf763a01d0a119cf47473adac0cd6696c6533ed9ceb",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -11070,6 +11070,48 @@
       }
     },
     {
+      "routeKey": "POST /api/auth/v1/h5/login",
+      "controller": "AuthController",
+      "handler": "loginH5",
+      "legacy": "public",
+      "policy": {
+        "admission": null,
+        "mode": "PUBLIC",
+        "codes": [],
+        "require": "all",
+        "scopes": [],
+        "engine": null
+      }
+    },
+    {
+      "routeKey": "POST /api/auth/v1/h5/logout",
+      "controller": "AuthController",
+      "handler": "logoutH5",
+      "legacy": "public",
+      "policy": {
+        "admission": null,
+        "mode": "PUBLIC",
+        "codes": [],
+        "require": "all",
+        "scopes": [],
+        "engine": null
+      }
+    },
+    {
+      "routeKey": "POST /api/auth/v1/h5/refresh",
+      "controller": "AuthController",
+      "handler": "refreshH5",
+      "legacy": "public",
+      "policy": {
+        "admission": null,
+        "mode": "PUBLIC",
+        "codes": [],
+        "require": "all",
+        "scopes": [],
+        "engine": null
+      }
+    },
+    {
       "routeKey": "POST /api/auth/v1/login",
       "controller": "AuthController",
       "handler": "login",
@@ -13316,27 +13358,30 @@
 | POST | /api/app/v1/notifications/:id/read | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:147; src/modules/notifications/notification-app.controller.ts:165 |
 | POST | /api/app/v1/notifications/subscriptions/ack | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:73; src/modules/notifications/notification-app.controller.ts:91 |
 | POST | /api/auth/v1/delegated-token | auth/delegated-token | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=-; principals=SERVICE | code | src/modules/integration-auth/delegated-token.controller.ts:29; src/modules/integration-auth/delegated-token.controller.ts:46 |
-| POST | /api/auth/v1/login | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:91; src/modules/auth/auth.controller.ts:101 |
-| POST | /api/auth/v1/login-sms | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:364; src/modules/auth/auth.controller.ts:374 |
-| POST | /api/auth/v1/login-sms/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:335; src/modules/auth/auth.controller.ts:355 |
-| POST | /api/auth/v1/login-wechat | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:383; src/modules/auth/auth.controller.ts:399 |
-| POST | /api/auth/v1/login-wecom | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:491; src/modules/auth/auth.controller.ts:519 |
-| POST | /api/auth/v1/login-wecom/authorize | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:463; src/modules/auth/auth.controller.ts:483 |
-| POST | /api/auth/v1/logout | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:132; src/modules/auth/auth.controller.ts:141 |
-| POST | /api/auth/v1/logout-all | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:148; src/modules/auth/auth.controller.ts:162 |
-| POST | /api/auth/v1/password-reset | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:311; src/modules/auth/auth.controller.ts:326 |
-| POST | /api/auth/v1/password-reset/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:283; src/modules/auth/auth.controller.ts:303 |
-| POST | /api/auth/v1/refresh | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:108; src/modules/auth/auth.controller.ts:123 |
+| POST | /api/auth/v1/h5/login | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:154; src/modules/auth/auth.controller.ts:181 |
+| POST | /api/auth/v1/h5/logout | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:220; src/modules/auth/auth.controller.ts:238 |
+| POST | /api/auth/v1/h5/refresh | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:184; src/modules/auth/auth.controller.ts:210 |
+| POST | /api/auth/v1/login | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:101; src/modules/auth/auth.controller.ts:111 |
+| POST | /api/auth/v1/login-sms | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:463; src/modules/auth/auth.controller.ts:473 |
+| POST | /api/auth/v1/login-sms/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:434; src/modules/auth/auth.controller.ts:454 |
+| POST | /api/auth/v1/login-wechat | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:482; src/modules/auth/auth.controller.ts:498 |
+| POST | /api/auth/v1/login-wecom | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:590; src/modules/auth/auth.controller.ts:618 |
+| POST | /api/auth/v1/login-wecom/authorize | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:562; src/modules/auth/auth.controller.ts:582 |
+| POST | /api/auth/v1/logout | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:142; src/modules/auth/auth.controller.ts:151 |
+| POST | /api/auth/v1/logout-all | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:247; src/modules/auth/auth.controller.ts:261 |
+| POST | /api/auth/v1/password-reset | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:410; src/modules/auth/auth.controller.ts:425 |
+| POST | /api/auth/v1/password-reset/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:382; src/modules/auth/auth.controller.ts:402 |
+| POST | /api/auth/v1/refresh | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:118; src/modules/auth/auth.controller.ts:133 |
 | POST | /api/auth/v1/service-token | auth/service-token | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=-; principals=CLIENT_CREDENTIALS | code | src/modules/integration-auth/service-token.controller.ts:34; src/modules/integration-auth/service-token.controller.ts:52 |
-| POST | /api/auth/v1/step-up/password | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:165; src/modules/auth/auth.controller.ts:191 |
-| POST | /api/auth/v1/step-up/sms | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:219; src/modules/auth/auth.controller.ts:244 |
-| POST | /api/auth/v1/step-up/sms/send-code | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:194; src/modules/auth/auth.controller.ts:216 |
-| POST | /api/auth/v1/step-up/wechat | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:247; src/modules/auth/auth.controller.ts:274 |
-| POST | /api/auth/v1/wechat-bind | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:432; src/modules/auth/auth.controller.ts:450 |
-| POST | /api/auth/v1/wechat-bind/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:405; src/modules/auth/auth.controller.ts:425 |
-| POST | /api/auth/v1/wecom-bind | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:551; src/modules/auth/auth.controller.ts:571 |
-| POST | /api/auth/v1/wecom-bind/authorize | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:577; src/modules/auth/auth.controller.ts:599 |
-| POST | /api/auth/v1/wecom-bind/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:524; src/modules/auth/auth.controller.ts:546 |
+| POST | /api/auth/v1/step-up/password | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:264; src/modules/auth/auth.controller.ts:290 |
+| POST | /api/auth/v1/step-up/sms | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:318; src/modules/auth/auth.controller.ts:343 |
+| POST | /api/auth/v1/step-up/sms/send-code | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:293; src/modules/auth/auth.controller.ts:315 |
+| POST | /api/auth/v1/step-up/wechat | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:346; src/modules/auth/auth.controller.ts:373 |
+| POST | /api/auth/v1/wechat-bind | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:531; src/modules/auth/auth.controller.ts:549 |
+| POST | /api/auth/v1/wechat-bind/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:504; src/modules/auth/auth.controller.ts:524 |
+| POST | /api/auth/v1/wecom-bind | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:650; src/modules/auth/auth.controller.ts:670 |
+| POST | /api/auth/v1/wecom-bind/authorize | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:676; src/modules/auth/auth.controller.ts:698 |
+| POST | /api/auth/v1/wecom-bind/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:623; src/modules/auth/auth.controller.ts:645 |
 | POST | /api/open/v1/recruitment/applications | Public - Recruitment | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/recruitment/recruitment-public.controller.ts:179; src/modules/recruitment/recruitment-public.controller.ts:245 |
 | POST | /api/open/v1/recruitment/applications/query | Public - Recruitment | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/recruitment/recruitment-public.controller.ts:303; src/modules/recruitment/recruitment-public.controller.ts:318 |
 | POST | /api/open/v1/recruitment/applications/query-by-phone | Public - Recruitment | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/recruitment/recruitment-public.controller.ts:367; src/modules/recruitment/recruitment-public.controller.ts:385 |

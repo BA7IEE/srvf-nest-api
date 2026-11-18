@@ -169,7 +169,8 @@ req.body.stepUpToken
 
 - **`tokenVersion` 字段**(本期不做;`User` schema 不增字段):依靠 access TTL 15m 自然过期 + `JwtStrategy.validate` 每请求查库阻断 DISABLED / 软删 user
 - **access token 不主动吊销**:改密 / 手机或微信身份换绑 / 禁用 / 删除后不做 blacklist；ACTIVE 且未软删用户的旧 access 在剩余 ≤ 15m TTL 内仍可用，禁用 / 删除由 `JwtStrategy.validate()` 下一请求阻断；strategy 只看 `deletedAt === null && status === UserStatus.ACTIVE`,**不读** `passwordHash` / `tokenVersion`
-- access token blacklist / JWT revoke list / Redis / Queue / Cron(2026-06-11 注:cron 能力已按升级路径限定解锁**仅生日批**,见 current-state §3;**token 清理类 cron 仍不做**)/ 完整 OAuth tree / httpOnly cookie / refresh_tokens 查询接口 / 已登录设备列表 UI / 单设备管理 / device fingerprint / 微信小程序 OAuth(2026-06-12 注:微信小程序**登录**已解锁落地——code2session 第三认证端点,见上文速查表与 [`wechat-mini-login-review.md`](archive/reviews/wechat-mini-login-review.md);完整 OAuth 网页授权 / unionid 体系 / session_key 存储仍不做)
+- access token blacklist / JWT revoke list / Redis / Queue / Cron(2026-06-11 注:cron 能力已按升级路径限定解锁**仅生日批**,见 current-state §3;**token 清理类 cron 仍不做**)/ 完整 OAuth tree / refresh_tokens 查询接口 / 已登录设备列表 UI / 单设备管理 / device fingerprint / 微信小程序 OAuth(2026-06-12 注:微信小程序**登录**已解锁落地——code2session 第三认证端点,见上文速查表与 [`wechat-mini-login-review.md`](archive/reviews/wechat-mini-login-review.md);完整 OAuth 网页授权 / unionid 体系 / session_key 存储仍不做)
+- 续登凭证默认仍走原 JSON 契约。HttpOnly Cookie 仅允许用于 [P0-E 同源 HTTPS H5 传输例外](reference/auth-jwt-refresh.md);不得扩到其他端点、跨域或 CORS 凭证。代理须屏蔽原始 Cookie/Set-Cookie 日志。
 
 ### refresh token 安全策略(P0-E PR-3 + [`identity session P0 PR2`](archive/reviews/identity-session-p0-step-up-logout-review.md) 锁定)
 

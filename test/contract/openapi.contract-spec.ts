@@ -204,6 +204,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/auth/v1/login'],
   ['post', '/api/auth/v1/refresh'],
   ['post', '/api/auth/v1/logout'],
+  ['post', '/api/auth/v1/h5/login'],
+  ['post', '/api/auth/v1/h5/refresh'],
+  ['post', '/api/auth/v1/h5/logout'],
   ['post', '/api/auth/v1/logout-all'],
   // Identity session P0 PR1(2026-07-17):5 分钟 action-bound step-up proof;
   // 四端点复用既有 AuthController 与 throttler，App 身份换绑消费 proof。
