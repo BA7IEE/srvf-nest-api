@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import type { INestApplication } from '@nestjs/common';
-import { MemberStatus, Role } from '@prisma/client';
+import { BindingScopeType, MemberStatus, PrincipalType, Role } from '@prisma/client';
 import request from 'supertest';
 
 import { PrismaService } from '../../src/database/prisma.service';
@@ -12,6 +12,7 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
+import { AuditLogsService } from '../../src/modules/audit-logs/audit-logs.service';
 
 // ===== 第 2 批第 ⑨b 刀：审核读面 + 账本读面 =====
 //
@@ -29,6 +30,8 @@ interface LedgerFixture {
   memberId: string;
   ledgerDate: string;
   entryKeys: string[];
+  identityId: string;
+  resultId: string;
 }
 
 function stripComments(source: string): string {
@@ -114,6 +117,11 @@ describe('第 2 批第 ⑨b 刀 —— 审核与账本读面', () => {
     batchStatus: 'preparing' | 'ready' | 'committed';
     ledgerDate: string;
     memberId?: string;
+    organizationId?: string;
+    title?: string;
+    submitterId?: string;
+    submittedAt?: Date;
+    participantCount?: number;
   }): Promise<LedgerFixture> {
     sequence += 1;
     const tag = `batch2-9b-${sequence}`;
@@ -133,9 +141,9 @@ describe('第 2 批第 ⑨b 刀 —— 审核与账本读面', () => {
 
     const activity = await prisma.activity.create({
       data: {
-        title: `第 ⑨b 刀账本活动 ${sequence}`,
+        title: options.title ?? `第 ⑨b 刀账本活动 ${sequence}`,
         activityTypeCode: `${tag}-type`,
-        organizationId,
+        organizationId: options.organizationId ?? organizationId,
         startAt: SESSION_START,
         endAt: SESSION_END,
         location: '深圳',
@@ -171,7 +179,7 @@ describe('第 2 批第 ⑨b 刀 —— 审核与账本读面', () => {
         allWindowsClosedAt: SESSION_END,
         openSegmentCount: 0,
         manualReviewPendingCount: 0,
-        populationCountDistinct: 1,
+        populationCountDistinct: options.participantCount ?? 1,
         populationCountBySession: {},
         contentHash: `${tag}-seal`,
         statusCode: 'active',
@@ -198,11 +206,11 @@ describe('第 2 批第 ⑨b 刀 —— 审核与账本读面', () => {
         populationRevision: 0,
         workflowRevision: 0,
         contentHash: `${tag}-content`,
-        personCount: 1,
-        sessionParticipationCount: 1,
-        serviceSegmentCount: 1,
-        createdByUserId: adminUserId,
-        submittedAt: SESSION_END,
+        personCount: options.participantCount ?? 1,
+        sessionParticipationCount: options.participantCount ?? 1,
+        serviceSegmentCount: options.participantCount ?? 1,
+        createdByUserId: options.submitterId ?? adminUserId,
+        submittedAt: options.submittedAt ?? SESSION_END,
         statusCode: 'approved',
         operationKey: `${tag}-submit`,
         requestHash: `${tag}-submit-hash`,
@@ -300,8 +308,538 @@ describe('第 2 批第 ⑨b 刀 —— 审核与账本读面', () => {
       memberId,
       ledgerDate: options.ledgerDate,
       entryKeys: entries.map((entry) => entry.entryKey).sort(),
+      identityId: identity.id,
+      resultId: result.id,
     };
   }
+
+  describe('A3/A4 管理员审核能力', () => {
+    const prefix = 'review-read-a3';
+    let rootOrg: string;
+    let childOrg: string;
+    let outsiderOrg: string;
+    let first: LedgerFixture;
+    let second: LedgerFixture;
+    let outsider: LedgerFixture;
+    let readerAuth: string;
+    let readerId: string;
+    let bindingId: string;
+    let roleId: string;
+    let nextVersionId: string;
+    const from = new Date('2020-08-01T00:00:00.000Z');
+    const to = new Date('2020-08-03T00:00:00.000Z');
+
+    const list = (query: Record<string, unknown> = {}, auth = adminAuthHeader) =>
+      request(httpServer(app))
+        .get('/api/admin/v1/attendance-settlements')
+        .set('Authorization', auth)
+        .query({ activityQ: prefix, ...query });
+    const detail = (id: string, query: Record<string, unknown> = {}, auth = adminAuthHeader) =>
+      request(httpServer(app))
+        .get(`/api/admin/v1/attendance-settlements/${id}/review-detail`)
+        .set('Authorization', auth)
+        .query(query);
+
+    beforeAll(async () => {
+      rootOrg = (
+        await prisma.organization.create({
+          data: { name: '审核查询根组织', nodeTypeCode: 'group' },
+        })
+      ).id;
+      childOrg = (
+        await prisma.organization.create({
+          data: { name: '审核查询子组织', nodeTypeCode: 'group', parentId: rootOrg },
+        })
+      ).id;
+      outsiderOrg = (
+        await prisma.organization.create({
+          data: { name: '审核查询范围外组织', nodeTypeCode: 'group' },
+        })
+      ).id;
+      await prisma.organizationClosure.createMany({
+        data: [
+          { ancestorId: rootOrg, descendantId: rootOrg, depth: 0 },
+          { ancestorId: childOrg, descendantId: childOrg, depth: 0 },
+          { ancestorId: rootOrg, descendantId: childOrg, depth: 1 },
+        ],
+      });
+      const submitter = await createTestUser(app, {
+        username: 'review-a3-submitter',
+        role: Role.USER,
+      });
+      await prisma.user.update({ where: { id: submitter.id }, data: { nickname: 'ReviewNeedle' } });
+      first = await createLedgerFixture({
+        batchStatus: 'ready',
+        ledgerDate: '2020-08-01',
+        organizationId: rootOrg,
+        title: `${prefix}-North`,
+        submitterId: submitter.id,
+        submittedAt: from,
+      });
+      second = await createLedgerFixture({
+        batchStatus: 'committed',
+        ledgerDate: '2020-08-03',
+        organizationId: childOrg,
+        title: `${prefix}-South`,
+        submittedAt: to,
+      });
+      outsider = await createLedgerFixture({
+        batchStatus: 'ready',
+        ledgerDate: '2020-08-02',
+        organizationId: outsiderOrg,
+        title: `${prefix}-Outside`,
+        submittedAt: new Date('2020-08-02T00:00:00.000Z'),
+      });
+      const reader = await createTestUser(app, { username: 'review-a3-reader', role: Role.USER });
+      readerId = reader.id;
+      const permission = await prisma.permission.upsert({
+        where: { code: 'attendance.read.sheet' },
+        create: {
+          code: 'attendance.read.sheet',
+          module: 'attendance',
+          action: 'read',
+          resourceType: 'sheet',
+        },
+        update: {},
+      });
+      roleId = (
+        await prisma.rbacRole.create({
+          data: {
+            code: 'review-a3-reader',
+            displayName: '审核读取专用测试角色',
+            rolePermissions: { create: { permissionId: permission.id } },
+          },
+        })
+      ).id;
+      bindingId = (
+        await prisma.roleBinding.create({
+          data: {
+            principalType: PrincipalType.USER,
+            principalId: readerId,
+            roleId,
+            scopeType: BindingScopeType.ORGANIZATION_TREE,
+            scopeOrgId: rootOrg,
+            status: 'ACTIVE',
+          },
+        })
+      ).id;
+      readerAuth = (await loginAs(app, reader.username)).authHeader;
+      const original = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+        where: { id: first.versionId },
+      });
+      const newer = await prisma.attendanceSettlementVersion.create({
+        data: {
+          settlementRunId: original.settlementRunId,
+          version: 2,
+          evidenceSealId: original.evidenceSealId,
+          evidenceRevision: 0,
+          populationRevision: 0,
+          workflowRevision: 0,
+          contentHash: 'review-a4-v2',
+          personCount: 1,
+          sessionParticipationCount: 1,
+          serviceSegmentCount: 1,
+          statusCode: 'returned',
+          createdByUserId: adminUserId,
+          submittedAt: new Date('2020-08-04T00:00:00.000Z'),
+          priorVersionId: original.id,
+        },
+      });
+      nextVersionId = newer.id;
+      await prisma.participantSettlementResultRevision.create({
+        data: {
+          settlementVersionId: newer.id,
+          participationIdentityId: first.identityId,
+          revision: 2,
+          resultCode: 'leave',
+          recognizedServiceHours: 0,
+          calculatedServiceHours: 2,
+          recognizedContributionPoints: 0,
+          calculatedContributionPoints: 1,
+          adjustmentReason: 'review-test-private-free-text',
+          statusCode: 'draft',
+          baseResultRevisionId: first.resultId,
+        },
+      });
+      await prisma.attendanceSettlementRun.update({
+        where: { id: original.settlementRunId },
+        data: { currentSubmittedVersion: 2 },
+      });
+    });
+
+    it.each([
+      ['q', 'REVIEW-A3-SUBMITTER'],
+      ['q', 'reviewneedle'],
+      ['q', `${prefix}-north`],
+      ['activityQ', `${prefix}-north`],
+    ])('搜索 %s=%s 命中正确版本而不泄露用户其他字段', async (field, value) => {
+      const response = await list({ [field]: value, statusCode: 'approved' }).expect(200);
+      expect(settlementVersionIds(response)).toEqual([first.versionId]);
+      expect(response.body.data.items[0].submittedBy).toEqual({
+        id: expect.any(String),
+        username: 'review-a3-submitter',
+        nickname: 'ReviewNeedle',
+      });
+      expect(response.body.data.items[0]).not.toHaveProperty('activity');
+    });
+
+    it('activityQ 不搜索提交人，q/activityQ/状态/活动范围共同求交', async () => {
+      expect((await list({ activityQ: 'ReviewNeedle' }).expect(200)).body.data.total).toBe(0);
+      const response = await list({
+        q: 'ReviewNeedle',
+        activityId: first.activityId,
+        statusCode: 'approved',
+      }).expect(200);
+      expect(settlementVersionIds(response)).toEqual([first.versionId]);
+      expect(
+        (await list({ q: 'ReviewNeedle', activityId: second.activityId }).expect(200)).body.data
+          .total,
+      ).toBe(0);
+      expect((await list({ activityId: 'missing-activity-a3' }).expect(200)).body.data.total).toBe(
+        0,
+      );
+    });
+
+    it('组织及后代与真实授权范围求交，外部组织和总数均不可见', async () => {
+      const own = await list(
+        { organizationId: rootOrg, statusCode: 'approved' },
+        readerAuth,
+      ).expect(200);
+      expect(settlementVersionIds(own)).toEqual([first.versionId]);
+      const tree = await list(
+        { organizationId: rootOrg, includeDescendants: true, statusCode: 'approved' },
+        readerAuth,
+      ).expect(200);
+      expect(settlementVersionIds(tree).sort()).toEqual([first.versionId, second.versionId].sort());
+      expect(tree.body.data.total).toBe(2);
+      expect(
+        (
+          await list({ organizationId: outsiderOrg, includeDescendants: true }, readerAuth).expect(
+            200,
+          )
+        ).body.data.total,
+      ).toBe(0);
+      expect(
+        settlementVersionIds(
+          await list({ organizationId: outsiderOrg }, adminAuthHeader).expect(200),
+        ),
+      ).toEqual([outsider.versionId]);
+    });
+
+    it('提交时间双端包含、顺序稳定、分页不漏不重；审核通过与入账状态区分', async () => {
+      const query = {
+        organizationId: rootOrg,
+        includeDescendants: true,
+        dateFrom: from.toISOString(),
+        dateTo: to.toISOString(),
+        statusCode: 'approved',
+        pageSize: 1,
+      };
+      const one = await list({ ...query, page: 1 }).expect(200);
+      const two = await list({ ...query, page: 2 }).expect(200);
+      expect(one.body.data.total).toBe(2);
+      expect(two.body.data.total).toBe(2);
+      expect(settlementVersionIds(one)).toEqual([second.versionId]);
+      expect(settlementVersionIds(two)).toEqual([first.versionId]);
+      expect(one.body.data.items[0]).toMatchObject({
+        statusCode: 'approved',
+        postingBatchStatusCode: 'committed',
+      });
+      expect(two.body.data.items[0]).toMatchObject({
+        statusCode: 'approved',
+        postingBatchStatusCode: 'ready',
+      });
+      expect((await list({ dateFrom: to.toISOString(), dateTo: from.toISOString() })).status).toBe(
+        400,
+      );
+    });
+
+    it('返回指定状态和活动上下文，未知扩展不能偷偷生效', async () => {
+      const response = await list({ statusCode: 'returned', expand: 'activity' }).expect(200);
+      expect(settlementVersionIds(response)).toEqual([nextVersionId]);
+      expect(response.body.data.items[0].activity).toEqual({
+        id: first.activityId,
+        title: `${prefix}-North`,
+        organizationId: rootOrg,
+        startAt: SESSION_START.toISOString(),
+      });
+      expect((await list({ statusCode: 'voided' }).expect(200)).body.data.total).toBe(0);
+      expect((await list({ statusCode: 'draft' }).expect(200)).body.data.total).toBe(0);
+    });
+
+    it.each([
+      { expand: 'member' },
+      { includeDescendants: 'yes' },
+      { statusCode: 'pending' },
+      { dateFrom: 'bad-date' },
+      { pageSize: 101 },
+      { q: 'a'.repeat(201) },
+      { raw: 'anything' },
+    ])('非法查询 %j 拒绝且不写成功审计', async (query) => {
+      const before = await prisma.auditLog.count();
+      expect((await list(query)).status).toBe(400);
+      expect(await prisma.auditLog.count()).toBe(before);
+    });
+
+    it('待审阶段按该版本的一审事实过滤，不把活动当前阶段套到历史版本', async () => {
+      const f = await createLedgerFixture({
+        batchStatus: 'ready',
+        ledgerDate: '2020-08-08',
+        title: `${prefix}-Stage`,
+      });
+      const base = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+        where: { id: f.versionId },
+      });
+      const pending = await prisma.attendanceSettlementVersion.create({
+        data: {
+          settlementRunId: base.settlementRunId,
+          version: 2,
+          evidenceSealId: base.evidenceSealId,
+          evidenceRevision: 0,
+          populationRevision: 0,
+          workflowRevision: 0,
+          contentHash: 'a3-stage-version',
+          personCount: 0,
+          sessionParticipationCount: 0,
+          serviceSegmentCount: 0,
+          statusCode: 'submitted',
+          submittedAt: from,
+          createdByUserId: adminUserId,
+        },
+      });
+      const query = { activityId: f.activityId };
+      const before = await list({ ...query, reviewStage: 'first' }).expect(200);
+      expect(settlementVersionIds(before)).toEqual([pending.id]);
+      expect(before.body.data.items[0].reviewStage).toBe('first');
+      expect((await list({ ...query, reviewStage: 'final' }).expect(200)).body.data.total).toBe(0);
+      await prisma.settlementReviewAction.create({
+        data: {
+          settlementVersionId: pending.id,
+          stageCode: 'first',
+          actionCode: 'approve',
+          actorUserId: readerId,
+          actedAt: from,
+          operationKey: 'a3-stage-first-approved',
+        },
+      });
+      expect((await list({ ...query, reviewStage: 'first' }).expect(200)).body.data.total).toBe(0);
+      const after = await list({ ...query, reviewStage: 'final' }).expect(200);
+      expect(settlementVersionIds(after)).toEqual([pending.id]);
+      expect(after.body.data.items[0].reviewStage).toBe('final');
+      expect(
+        (await list({ ...query, statusCode: 'approved', reviewStage: 'final' }).expect(200)).body
+          .data.total,
+      ).toBe(0);
+    });
+
+    it('逐人详情来自指定冻结版本，后续版本、当前指针及取消人员都不能替换历史', async () => {
+      await prisma.activityParticipationIdentity.update({
+        where: { id: first.identityId },
+        data: { currentStatusCode: 'cancelled', populationIncluded: false },
+      });
+      const old = await detail(first.versionId, {}, readerAuth).expect(200);
+      const newer = await detail(nextVersionId, {}, readerAuth).expect(200);
+      expect(old.body.data.results).toMatchObject({ total: 1, page: 1, pageSize: 20 });
+      expect(old.body.data.results.items[0]).toMatchObject({
+        id: first.resultId,
+        participationIdentityId: first.identityId,
+        resultCode: 'present',
+        recognizedServiceHours: '2.00',
+        recognizedContributionPoints: '1.00',
+        member: { id: first.memberId, memberNo: expect.any(String), label: expect.any(String) },
+      });
+      expect(newer.body.data.results.items[0]).toMatchObject({
+        resultCode: 'leave',
+        recognizedServiceHours: '0.00',
+        calculatedServiceHours: '2.00',
+        hasAdjustment: true,
+      });
+      expect(JSON.stringify(newer.body.data)).not.toContain('review-test-private-free-text');
+      const item: unknown = old.body.data.results.items[0];
+      if (
+        typeof item !== 'object' ||
+        item === null ||
+        !('member' in item) ||
+        typeof item.member !== 'object' ||
+        item.member === null
+      ) {
+        throw new Error('冻结结果缺少人员摘要');
+      }
+      expect(Object.keys(item.member).sort()).toEqual([
+        'id',
+        'label',
+        'memberNo',
+        'nickname',
+        'realName',
+      ]);
+      expect(Object.keys(item).sort()).toEqual(
+        [
+          'id',
+          'participationIdentityId',
+          'revision',
+          'resultCode',
+          'lateFlag',
+          'earlyLeaveFlag',
+          'recognizedServiceHours',
+          'calculatedServiceHours',
+          'recognizedContributionPoints',
+          'calculatedContributionPoints',
+          'hasAdjustment',
+          'member',
+          'session',
+          'timeResultState',
+          'timeBuckets',
+          'contributionResultState',
+          'nativeCalculatedContributionPoints',
+          'nativeRecognizedContributionPoints',
+        ].sort(),
+      );
+    });
+
+    it('无成员额外读权的原组织读者可审本组织版本，越权与不存在一致；撤权即时生效', async () => {
+      expect((await detail(first.versionId, {}, readerAuth)).status).toBe(200);
+      const denied = await detail(outsider.versionId, {}, readerAuth);
+      const missing = await detail('missing-version-a4', {}, readerAuth);
+      expect(denied.status).toBe(403);
+      expect(missing.body.code).toBe(denied.body.code);
+      await prisma.roleBinding.update({ where: { id: bindingId }, data: { status: 'ENDED' } });
+      try {
+        expect((await list({}, readerAuth)).status).toBe(403);
+        expect((await detail(first.versionId, {}, readerAuth)).status).toBe(403);
+      } finally {
+        await prisma.roleBinding.update({ where: { id: bindingId }, data: { status: 'ACTIVE' } });
+      }
+    });
+
+    it('超过100人的版本可翻页读全，不截断为证明预览；软删人员的冻结结果仍保留', async () => {
+      const f = await createLedgerFixture({
+        batchStatus: 'ready',
+        ledgerDate: '2020-08-06',
+        participantCount: 102,
+      });
+      const identity = await prisma.activityParticipationIdentity.findUniqueOrThrow({
+        where: { id: f.identityId },
+      });
+      const indices = Array.from({ length: 101 }, (_, i) => i);
+      await prisma.member.createMany({
+        data: indices.map((i) => ({
+          id: `a4-page-member-${i}`,
+          memberNo: `a4-page-member-${i}`,
+          ...memberIdentityData(`A4分页测试${i}`),
+          gradeCode: 'level-2',
+          status: MemberStatus.ACTIVE,
+        })),
+      });
+      await prisma.activityRegistration.createMany({
+        data: indices.map((i) => ({
+          id: `a4-page-registration-${i}`,
+          activityId: f.activityId,
+          memberId: `a4-page-member-${i}`,
+          statusCode: 'approved',
+        })),
+      });
+      await prisma.activityParticipationIdentity.createMany({
+        data: indices.map((i) => ({
+          id: `a4-page-identity-${i}`,
+          activityId: f.activityId,
+          sessionId: identity.sessionId,
+          memberId: `a4-page-member-${i}`,
+          registrationId: `a4-page-registration-${i}`,
+          currentStatusCode: 'pass',
+          populationIncluded: true,
+        })),
+      });
+      await prisma.participantSettlementResultRevision.createMany({
+        data: indices.map((i) => ({
+          settlementVersionId: f.versionId,
+          participationIdentityId: `a4-page-identity-${i}`,
+          revision: 1,
+          resultCode: 'present',
+          recognizedServiceHours: '1.25',
+          calculatedServiceHours: '1.25',
+          recognizedContributionPoints: '1.00',
+          calculatedContributionPoints: '1.00',
+          statusCode: 'draft',
+        })),
+      });
+      await prisma.member.update({
+        where: { id: 'a4-page-member-0' },
+        data: { deletedAt: new Date() },
+      });
+      const one = await detail(f.versionId, { page: 1, pageSize: 100 }).expect(200);
+      const two = await detail(f.versionId, { page: 2, pageSize: 100 }).expect(200);
+      const again = await detail(f.versionId, { page: 1, pageSize: 100 }).expect(200);
+      expect(one.body.data.version.personCount).toBe(102);
+      expect(one.body.data.results.total).toBe(102);
+      expect(two.body.data.results.total).toBe(102);
+      expect(one.body.data.results.items).toHaveLength(100);
+      expect(two.body.data.results.items).toHaveLength(2);
+      expect(again.body.data.results).toEqual(one.body.data.results);
+      const all: Array<{ participationIdentityId: string; recognizedServiceHours: string }> = [
+        ...one.body.data.results.items,
+        ...two.body.data.results.items,
+      ];
+      expect(new Set(all.map((row) => row.participationIdentityId)).size).toBe(102);
+      expect(all.find((row) => row.participationIdentityId === 'a4-page-identity-0')).toMatchObject(
+        { recognizedServiceHours: '1.25' },
+      );
+    });
+
+    it('可变 draft 仅保留已有元数据，results 明确为 null，不冒充冻结事实', async () => {
+      const original = await prisma.attendanceSettlementVersion.findUniqueOrThrow({
+        where: { id: first.versionId },
+      });
+      const draft = await prisma.attendanceSettlementVersion.create({
+        data: {
+          settlementRunId: original.settlementRunId,
+          version: 3,
+          evidenceSealId: original.evidenceSealId,
+          evidenceRevision: 0,
+          populationRevision: 0,
+          workflowRevision: 0,
+          contentHash: 'a4-mutable-draft',
+          personCount: 0,
+          sessionParticipationCount: 0,
+          serviceSegmentCount: 0,
+          statusCode: 'draft',
+        },
+      });
+      expect((await detail(draft.id).expect(200)).body.data.results).toBeNull();
+      expect(
+        settlementVersionIds(await list({ activityId: first.activityId }).expect(200)),
+      ).not.toContain(draft.id);
+    });
+
+    it('读取审计只记录字段名和计数，写入审计后再故障也不返回数据', async () => {
+      await list({ q: 'ReviewNeedle', statusCode: 'approved' }).expect(200);
+      const log = await prisma.auditLog.findFirstOrThrow({
+        where: {
+          event: 'attendance-sheet.read.other',
+          resourceType: 'attendance_settlement_version',
+          resourceId: 'collection',
+          actorUserId: adminUserId,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      const serialized = JSON.stringify(log);
+      expect(serialized).not.toContain('ReviewNeedle');
+      const audit = app.get(AuditLogsService);
+      const original = audit.log.bind(audit);
+      const spy = jest.spyOn(audit, 'log').mockImplementation(async (input) => {
+        await original(input);
+        throw new Error('A4 audit failure after write');
+      });
+      try {
+        for (const response of [await list(), await detail(first.versionId)]) {
+          expect(response.status).toBe(500);
+          expect(response.body.data == null).toBe(true);
+          expect(JSON.stringify(response.body)).not.toContain(first.memberId);
+        }
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
 
   it('GET attendance-settlements 按 page/pageSize 返回跨活动审核工作台', async () => {
     await createLedgerFixture({ batchStatus: 'preparing', ledgerDate: '2020-04-10' });

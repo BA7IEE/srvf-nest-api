@@ -1,5 +1,42 @@
 # 交接:后端 ↔ admin 前端(srvf-admin-web)
 
+## A3/A4 管理员结算搜索与逐人审核（独立 main 分支候选，未部署）
+
+本批扩展已有 Admin GET 接口，定向业务验收与契约已通过；完整 PR CI、前端页面适配和真实联调尚未完成。生成客户端是字段真相，不能据本节启用生产 Gate。与 #1415 的退役实现分开交付，没有引入其旧路由删除或数据库改动。
+
+### 查找版本
+
+`GET /api/admin/v1/attendance-settlements` 保留 `page/pageSize`、`items/total/page/pageSize`，新增：
+
+| 参数 | 语义 |
+| --- | --- |
+| `q` | 活动标题、该版本提交人的 username/nickname，忽略大小写的包含搜索 |
+| `activityQ` / `activityId` | 仅活动标题搜索 / 精确活动 ID |
+| `statusCode` | 新版版本状态：submitted、returned、approved、voided；draft 不进入审核列表 |
+| `reviewStage` | first / final，只筛选对应待审阶段的 submitted 版本；不沿用旧 Sheet 状态别名 |
+| `organizationId` / `includeDescendants` | 活动承办组织及可选子树，始终与服务端授权范围求交 |
+| `dateFrom` / `dateTo` | 按 submittedAt 过滤，双端包含；ISO8601，纯日期按 UTC 零点解释。整天查询请传明确时区的起止时间 |
+| `expand=activity` | 增加当前活动摘要 id/title/startAt/organizationId；默认省略 |
+
+各过滤条件相交；范围外组织或不存在的活动返回空页，不扩大可见范围。时间区间倒置、非法布尔值、未知扩展/字段和旧状态别名返回400。排序保持 submittedAt DESC、id DESC；同一活动可包含多个历史版本，不能把 total 当成活动数或待办数。
+
+每项新增 `submittedBy`（该版本创建/提交人，不回退当前负责人）和 `reviewStage`。非 submitted 版本的 reviewStage 为 null；submitted 的阶段来自本版本审核动作。`approved` 仅表示审核通过，必须结合 `postingBatchStatusCode=committed` 才能标成已正式入账。阶段和列表可见性均不能替代写接口授权。
+
+### 核查人员结果
+
+`GET /api/admin/v1/attendance-settlements/{settlementVersionId}/review-detail?page=1&pageSize=20`
+在既有 version/diff/sealRevisions/gaps/contributionProof 外增加 `results`。分页上限100，结果按参与身份/id稳定排序，total 是本版本场次参与身份数；同一队员多场次不合并。需要翻完全部页，不能把当前页或贡献证明的100条解释预览当成全量。
+
+- 送审后的结果只读取指定版本的 `ParticipantSettlementResultRevision`。后续草稿、重提、更正和当前指针不替换它；取消或软删人员也不删除旧结果。draft 的 results 明确为 null，前端不得显示成“已冻结0人”。
+- `timeResultState=legacy` 时展示冻结的 calculatedServiceHours/recognizedServiceHours；它们不是正式志愿小时证明。`ready` 时按 timeBuckets 的分类展示整数秒，不把培训等分类计成志愿时长。来源是对应已提交时间修订，或版本显式绑定的历史时间；已正式更正使用该版本的替换分录，不能再叠加原值。更正读面没有提供计算值时 calculatedSeconds 为 null。
+- `contributionResultState=ready` 时展示 nativeCalculatedContributionPoints/nativeRecognizedContributionPoints，后端对同版本本身份的完整评价集合汇总，未截断为预览。完整证明内无适用评价为0.00；未准备时为 null。legacy 仍使用原四个冻结十进制文本列。`pending` 必须展示来源尚不可用，不能降级成零或改查最新版本。
+- 以上分值是该版本的计算/认定结果，不是扣除封顶和冲回后的正式账本净分；即使结果已冻结，也不能在实际入账前显示为“已获得积分”。
+- 人员仅返回 id、memberNo、realName、nickname、统一 label；场次仅 id/code/name。这些展示资料是当前名称，不宣称为历史姓名快照。自由文本认定原因只给 hasAdjustment，不返回原始 GPS、证件、联系方式、来源 JSON 或政策配置。
+
+两个接口继续使用 `attendance.read.sheet`，service 执行原组织/活动资源判权；不授予 App 责任人身份、不额外要求 member.read 权限。无权和不可见版本沿既有统一拒绝，撤权后不能继续读取。查询成功后必须成功写入 `attendance-sheet.read.other` 才返回数据；审计只包含资源锚点、operation/count/filterFields，不记录查询值、人员资料或证据。
+
+姓名/编号/提交人摘要只用于有权限审核员辨认版本及人员；不增加存储、缓存或导出，保留既有人员生命周期和不可变结算历史策略。前端不得持久缓存为人员副本，退队不抹去已冻结的业务结果。与 #1415 后续集成时，review-detail 只保留一层读取审计，不叠加两个编排 wrapper。
+
 ## E4 原生贡献证明（Draft PR1380，未合并、未部署）
 
 2026-10-17受限首发候选：新active原生结算统一按完整活动准入，身份／current段各≤500、物理slice≤2500、evaluation units≤2000，并限制冻结政策复杂度、JSON字节、历史输入及完整服务段拆日成本。详细边界及实际结果见[当前实施记录](../plans/activity-os-r5-e4-assert-source-reuse-review.md#2026-10-17-统一夹具真实全链与500边界实际结果)。超界返回既有20225／HTTP409，业务事务回滚；前端应显示失败，不拆页／分批、截断人口或自动换key重试。旧回执重放及已有prepared／恢复沿原证明，不代表旧活动已取得新准入认证。测试提交9c5c60d6已通过极小先行及500受限真实全链，容量prepare4／4、最终账本COMMIT与清理完成；新独立小窗口已实测首个policy反例HTTP409／20225，但196表指纹因调度回执持久写失败；当前已将新active准入前移到首次回执写前，保留重放／legacy及生成器复核，当前增量以必需DI防止准入服务缺失时静默退化，26项定向回归通过；普通CI首轮在发布配置处失败，第二轮修复后发布已过但封场因测试v1.1开关缺失503／20153失败、尚未到generate；当前仅补同一测试app初始化期间的开关并精确恢复，第三轮已实测shape／bytes各409／20225及196表零变化通过；正例prepare因测试请求混入allocation字段400／40000失败，当前仅改显式prepare DTO并补离线契约测试，后续edf5c9aa普通CI已实测500整例／三个数量边界／shape和bytes零写／base账本通过；unchanged-time新测试oracle遗漏复制分支而失败，当前只复用已有前驱／根字段／文档全等／冻结oracle合同修正测试，后续resumable／V3／长来源仍待最终CI。该修复不证明两事务间的后续失败都零写。bytes负例已通过；纠错后续／完整长段反例仍NOT_RUN，required CI与人工门仍开放。默认off，前端和生产均不得据此启用。

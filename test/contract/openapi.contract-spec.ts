@@ -1942,6 +1942,46 @@ describe('OpenAPI 契约快照', () => {
     expect(hasBearer).toBe(true);
   });
 
+  it('Admin 结算审核明细提供有界分页冻结结果和安全人员摘要，不混入 App DTO 或原始证据', () => {
+    const schemas = doc.components?.schemas ?? {};
+    const detail = schemas.AdminSettlementReviewDetailDto as OpenApiSchema;
+    expect(detail.required).toContain('results');
+    expect(detail.properties?.results).toMatchObject({ nullable: true });
+    const page = schemas.AdminSettlementFrozenResultsPageDto as OpenApiSchema;
+    expect([...(page.required ?? [])].sort()).toEqual(['items', 'page', 'pageSize', 'total']);
+    const result = schemas.AdminSettlementFrozenResultDto as OpenApiSchema;
+    expect(result.properties?.recognizedServiceHours).toMatchObject({ type: 'string' });
+    expect(result.properties?.nativeRecognizedContributionPoints).toMatchObject({
+      type: 'string',
+      nullable: true,
+    });
+    expect(result.properties?.timeResultState?.enum).toEqual(['legacy', 'ready', 'pending']);
+    expect(
+      Object.keys(
+        (schemas.AdminSettlementResultMemberDto as OpenApiSchema).properties ?? {},
+      ).sort(),
+    ).toEqual(['id', 'label', 'memberNo', 'nickname', 'realName']);
+    for (const field of [
+      'adjustmentReason',
+      'exceptionFlagsJson',
+      'sourceSnapshotJson',
+      'checkInLongitude',
+      'checkInLatitude',
+      'mobile',
+      'documentNumber',
+    ]) {
+      expect(result.properties).not.toHaveProperty(field);
+    }
+    const item = schemas.AdminAttendanceSettlementListItemDto as OpenApiSchema;
+    expect(item.properties?.submittedBy).toBeDefined();
+    expect(item.properties?.activity).toBeDefined();
+    expect(item.properties?.reviewStage?.enum).toEqual(['first', 'final']);
+    const operation =
+      doc.paths['/api/admin/v1/attendance-settlements/{settlementVersionId}/review-detail'].get;
+    expect(operation?.tags).toEqual(['Admin - Attendance Settlements']);
+    expect(operation?.security).toEqual([{ bearer: [] }]);
+  });
+
   it('Integration 认证方案与 Human bearer 物理分名', () => {
     const securitySchemes = doc.components?.securitySchemes ?? {};
     expect(securitySchemes.integrationClientCredentials).toMatchObject({

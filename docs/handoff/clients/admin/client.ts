@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:ddd7b282a8a9305f1a4e5c2e19f2c79d9199d3c99690812c5b39fe0766770ddf
+// inputDigest: sha256:9e54fe31d7d8a802f8edf0bcdf8c78dfedcdd3c71bbc0c1ee9985f5f366c33e7
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -110,8 +110,14 @@ import type {
   AdminRetireTimePolicyVersionDto,
   AdminSaveSimpleActivityDto,
   AdminSelectActivityMetricSetDto,
+  AdminSettlementActivitySummaryDto,
   AdminSettlementApproveCommandDto,
+  AdminSettlementFrozenResultDto,
+  AdminSettlementFrozenResultsPageDto,
+  AdminSettlementFrozenTimeBucketDto,
   AdminSettlementPostingBatchDto,
+  AdminSettlementResultMemberDto,
+  AdminSettlementResultSessionDto,
   AdminSettlementReturnCommandDto,
   AdminSettlementReviewDetailDto,
   AdminSettlementReviewDiffDto,
@@ -119,6 +125,7 @@ import type {
   AdminSettlementReviewResponseDto,
   AdminSettlementReviewVersionDto,
   AdminSettlementSealRevisionDto,
+  AdminSettlementSubmitterDto,
   AdminSimpleActivityCreationResultDto,
   AdminSimpleActivityInstanceDto,
   AdminSimpleActivityPlaceDto,
@@ -830,8 +837,8 @@ export function createAdminClient(fetcher: Fetcher) {
     AttachmentsControllerDelete(id: string): Promise<ApiEnvelope<AttachmentResponseDto>> {
       return fetcher<AttachmentResponseDto>({ method: "DELETE", path: `/api/admin/v1/attachments/${id}` });
     },
-    /** 跨活动结算审核工作台（分页） [rbac: attendance.read.sheet] */
-    AdminAttendanceSettlementsControllerList(query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<PageResultDto & { "items": AdminAttendanceSettlementListItemDto[] }>> {
+    /** 跨活动结算审核列表（分页、搜索、组织与状态过滤） [rbac: attendance.read.sheet] */
+    AdminAttendanceSettlementsControllerList(query?: { "page"?: number; "pageSize"?: number; "q"?: string; "activityQ"?: string; "activityId"?: string; "statusCode"?: "draft" | "submitted" | "returned" | "approved" | "voided"; "reviewStage"?: "first" | "final"; "organizationId"?: string; "includeDescendants"?: boolean; "dateFrom"?: string; "dateTo"?: string; "expand"?: "activity" }): Promise<ApiEnvelope<PageResultDto & { "items": AdminAttendanceSettlementListItemDto[] }>> {
       return fetcher<PageResultDto & { "items": AdminAttendanceSettlementListItemDto[] }>({ method: "GET", path: "/api/admin/v1/attendance-settlements", query });
     },
     /** 终审通过结算版本并准备账本批次 [rbac: activity.settlement-final-review.record] */
@@ -854,9 +861,9 @@ export function createAdminClient(fetcher: Fetcher) {
     AdminAttendanceSettlementsControllerPostingBatch(id: string): Promise<ApiEnvelope<AdminSettlementPostingBatchDto>> {
       return fetcher<AdminSettlementPostingBatchDto>({ method: "GET", path: `/api/admin/v1/attendance-settlements/${id}/posting-batch` });
     },
-    /** 查看结算版本不可变审核详情、seal、差异与缺口 [rbac: attendance.read.sheet] */
-    AdminAttendanceSettlementsControllerReviewDetail(settlementVersionId: string): Promise<ApiEnvelope<AdminSettlementReviewDetailDto>> {
-      return fetcher<AdminSettlementReviewDetailDto>({ method: "GET", path: `/api/admin/v1/attendance-settlements/${settlementVersionId}/review-detail` });
+    /** 查看结算版本及分页逐人冻结结果、seal、差异与缺口 [rbac: attendance.read.sheet] */
+    AdminAttendanceSettlementsControllerReviewDetail(settlementVersionId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<AdminSettlementReviewDetailDto>> {
+      return fetcher<AdminSettlementReviewDetailDto>({ method: "GET", path: `/api/admin/v1/attendance-settlements/${settlementVersionId}/review-detail`, query });
     },
     /** 跨活动考勤单据横扫(审批工作台;分页 + 可选 statusCode/q/activityQ/organizationId/includeDescendants/dateFrom/dateTo/expand=activity;脱离 :activityId 路径段;item 带 activity 上下文) [rbac: attendance.read.sheet] */
     AttendanceSheetsResourceControllerListAll(query?: { "page"?: number; "pageSize"?: number; "statusCode"?: string; "q"?: string; "activityQ"?: string; "organizationId"?: string; "includeDescendants"?: boolean; "dateFrom"?: string; "dateTo"?: string; "expand"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": AdminAttendanceSheetListItemDto[] }>> {

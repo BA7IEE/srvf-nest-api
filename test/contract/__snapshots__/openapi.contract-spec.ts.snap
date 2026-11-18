@@ -3062,6 +3062,14 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "AdminAttendanceSettlementListItemDto": {
     "properties": {
+      "activity": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminSettlementActivitySummaryDto",
+          },
+        ],
+        "description": "仅 expand=activity 返回当前活动摘要，不是版本冻结内容",
+      },
       "activityId": {
         "type": "string",
       },
@@ -3069,6 +3077,15 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "postingBatchStatusCode": {
+        "nullable": true,
+        "type": "string",
+      },
+      "reviewStage": {
+        "description": "submitted 版本当前待审阶段，其他状态为null；不是操作授权",
+        "enum": [
+          "first",
+          "final",
+        ],
         "nullable": true,
         "type": "string",
       },
@@ -3083,6 +3100,16 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "nullable": true,
         "type": "string",
       },
+      "submittedBy": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminSettlementSubmitterDto",
+          },
+        ],
+        "description": "该版本的创建/提交人；不是当前活动负责人",
+        "nullable": true,
+        "type": "object",
+      },
       "version": {
         "minimum": 1,
         "type": "number",
@@ -3094,6 +3121,8 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "activityTitle",
       "version",
       "statusCode",
+      "reviewStage",
+      "submittedBy",
     ],
     "type": "object",
   },
@@ -4710,6 +4739,30 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AdminSettlementActivitySummaryDto": {
+    "properties": {
+      "id": {
+        "type": "string",
+      },
+      "organizationId": {
+        "type": "string",
+      },
+      "startAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "title": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "title",
+      "startAt",
+      "organizationId",
+    ],
+    "type": "object",
+  },
   "AdminSettlementApproveCommandDto": {
     "properties": {
       "contentHash": {
@@ -4762,6 +4815,170 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AdminSettlementFrozenResultDto": {
+    "properties": {
+      "calculatedContributionPoints": {
+        "type": "string",
+      },
+      "calculatedServiceHours": {
+        "description": "版本冻结的计算小时文本；不从当前打卡重算",
+        "type": "string",
+      },
+      "contributionResultState": {
+        "description": "原生分值来自本版本完整贡献证明，不对100条预览求和",
+        "enum": [
+          "legacy",
+          "ready",
+          "pending",
+        ],
+        "type": "string",
+      },
+      "earlyLeaveFlag": {
+        "type": "boolean",
+      },
+      "hasAdjustment": {
+        "description": "认定与计算存在调整；不返回自由文本说明",
+        "type": "boolean",
+      },
+      "id": {
+        "description": "该版本的人员结果修订 ID，不是当前草稿行",
+        "type": "string",
+      },
+      "lateFlag": {
+        "type": "boolean",
+      },
+      "member": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminSettlementResultMemberDto",
+          },
+        ],
+        "description": "当前人员最小展示资料；数值结果仍绑定历史版本，不宣称人员姓名为冻结快照",
+      },
+      "nativeCalculatedContributionPoints": {
+        "description": "本身份全部原生评价单元的计算分值，未准备为null",
+        "nullable": true,
+        "type": "string",
+      },
+      "nativeRecognizedContributionPoints": {
+        "description": "本身份全部原生评价单元的认定分值；完整证明中无适用评价为0.00",
+        "nullable": true,
+        "type": "string",
+      },
+      "participationIdentityId": {
+        "description": "同一队员多场次保留不同身份，不合并或截断",
+        "type": "string",
+      },
+      "recognizedContributionPoints": {
+        "description": "版本冻结的遗留认定分值；policy_v1 的正式贡献以 contributionProof 为准",
+        "type": "string",
+      },
+      "recognizedServiceHours": {
+        "description": "版本冻结的认定小时文本；不等于已正式生效的志愿小时",
+        "type": "string",
+      },
+      "resultCode": {
+        "type": "string",
+      },
+      "revision": {
+        "type": "number",
+      },
+      "session": {
+        "$ref": "#/components/schemas/AdminSettlementResultSessionDto",
+      },
+      "timeBuckets": {
+        "description": "请求版本自身或其不可变绑定的时间分类，不读当前指针；更正仅展示正式替换值，calculatedSeconds为空。不含来源JSON、政策配置和自由文本",
+        "items": {
+          "$ref": "#/components/schemas/AdminSettlementFrozenTimeBucketDto",
+        },
+        "nullable": true,
+        "type": "array",
+      },
+      "timeResultState": {
+        "description": "legacy 使用冻结遗留小时；ready 使用版本绑定的已提交分类或正式更正替换值；pending 不把缺证明显示为零",
+        "enum": [
+          "legacy",
+          "ready",
+          "pending",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "contributionResultState",
+      "nativeCalculatedContributionPoints",
+      "nativeRecognizedContributionPoints",
+      "timeResultState",
+      "timeBuckets",
+      "id",
+      "participationIdentityId",
+      "revision",
+      "resultCode",
+      "lateFlag",
+      "earlyLeaveFlag",
+      "recognizedServiceHours",
+      "calculatedServiceHours",
+      "recognizedContributionPoints",
+      "calculatedContributionPoints",
+      "hasAdjustment",
+      "member",
+      "session",
+    ],
+    "type": "object",
+  },
+  "AdminSettlementFrozenResultsPageDto": {
+    "properties": {
+      "items": {
+        "description": "当前页数据列表;实际元素类型由具体接口指定",
+        "items": {
+          "$ref": "#/components/schemas/AdminSettlementFrozenResultDto",
+        },
+        "type": "array",
+      },
+      "page": {
+        "description": "当前页码",
+        "example": 1,
+        "type": "number",
+      },
+      "pageSize": {
+        "description": "每页数量",
+        "example": 20,
+        "type": "number",
+      },
+      "total": {
+        "description": "总记录数",
+        "example": 0,
+        "type": "number",
+      },
+    },
+    "required": [
+      "items",
+      "total",
+      "page",
+      "pageSize",
+    ],
+    "type": "object",
+  },
+  "AdminSettlementFrozenTimeBucketDto": {
+    "properties": {
+      "calculatedSeconds": {
+        "nullable": true,
+        "type": "number",
+      },
+      "categoryCode": {
+        "type": "string",
+      },
+      "recognizedSeconds": {
+        "type": "number",
+      },
+    },
+    "required": [
+      "categoryCode",
+      "calculatedSeconds",
+      "recognizedSeconds",
+    ],
+    "type": "object",
+  },
   "AdminSettlementPostingBatchDto": {
     "properties": {
       "committedAt": {
@@ -4811,6 +5028,53 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "failureCount",
       "effective",
       "effectiveLabel",
+    ],
+    "type": "object",
+  },
+  "AdminSettlementResultMemberDto": {
+    "properties": {
+      "id": {
+        "type": "string",
+      },
+      "label": {
+        "type": "string",
+      },
+      "memberNo": {
+        "type": "string",
+      },
+      "nickname": {
+        "nullable": true,
+        "type": "string",
+      },
+      "realName": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "memberNo",
+      "realName",
+      "nickname",
+      "label",
+    ],
+    "type": "object",
+  },
+  "AdminSettlementResultSessionDto": {
+    "properties": {
+      "code": {
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+      "name": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "code",
+      "name",
     ],
     "type": "object",
   },
@@ -4886,6 +5150,16 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         },
         "type": "array",
       },
+      "results": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminSettlementFrozenResultsPageDto",
+          },
+        ],
+        "description": "按身份稳定分页的本版本冻结结果，total 为场次参与身份数；draft 返回 null，不把可变草稿冒充冻结结果",
+        "nullable": true,
+        "type": "object",
+      },
       "sealRevisions": {
         "items": {
           "$ref": "#/components/schemas/AdminSettlementSealRevisionDto",
@@ -4897,6 +5171,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       },
     },
     "required": [
+      "results",
       "version",
       "diff",
       "sealRevisions",
@@ -5146,6 +5421,26 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "workflowRevision",
       "manualReviewPendingCount",
       "sealedAt",
+    ],
+    "type": "object",
+  },
+  "AdminSettlementSubmitterDto": {
+    "properties": {
+      "id": {
+        "type": "string",
+      },
+      "nickname": {
+        "nullable": true,
+        "type": "string",
+      },
+      "username": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "username",
+      "nickname",
     ],
     "type": "object",
   },
@@ -61909,6 +62204,117 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
             "type": "number",
           },
         },
+        {
+          "description": "活动标题或版本提交人的 username/nickname，忽略大小写",
+          "in": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "maxLength": 200,
+            "type": "string",
+          },
+        },
+        {
+          "description": "仅搜索活动标题，忽略大小写",
+          "in": "query",
+          "name": "activityQ",
+          "required": false,
+          "schema": {
+            "maxLength": 200,
+            "type": "string",
+          },
+        },
+        {
+          "description": "精确活动 ID",
+          "in": "query",
+          "name": "activityId",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "新版版本状态；approved 不等于已入账。draft 不进入审核列表",
+          "in": "query",
+          "name": "statusCode",
+          "required": false,
+          "schema": {
+            "enum": [
+              "draft",
+              "submitted",
+              "returned",
+              "approved",
+              "voided",
+            ],
+            "type": "string",
+          },
+        },
+        {
+          "description": "仅筛选等待一审/终审的 submitted 版本，按该版本的审核动作判断",
+          "in": "query",
+          "name": "reviewStage",
+          "required": false,
+          "schema": {
+            "enum": [
+              "first",
+              "final",
+            ],
+            "type": "string",
+          },
+        },
+        {
+          "description": "活动承办组织，始终与授权范围求交",
+          "in": "query",
+          "name": "organizationId",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "有 organizationId 时包含下属组织",
+          "in": "query",
+          "name": "includeDescendants",
+          "required": false,
+          "schema": {
+            "default": false,
+            "type": "boolean",
+          },
+        },
+        {
+          "description": "submittedAt 下界，ISO8601，含边界",
+          "in": "query",
+          "name": "dateFrom",
+          "required": false,
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "description": "submittedAt 上界，ISO8601，含边界；纯日期按 UTC 当日零点解释",
+          "in": "query",
+          "name": "dateTo",
+          "required": false,
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "description": "按需返回活动摘要；默认省略",
+          "in": "query",
+          "name": "expand",
+          "required": false,
+          "schema": {
+            "enum": [
+              "activity",
+            ],
+            "type": "string",
+          },
+        },
       ],
       "responses": {
         "200": {
@@ -62069,7 +62475,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "跨活动结算审核工作台（分页） [rbac: attendance.read.sheet]",
+      "summary": "跨活动结算审核列表（分页、搜索、组织与状态过滤） [rbac: attendance.read.sheet]",
       "tags": [
         "Admin - Attendance Settlements",
       ],
@@ -63145,6 +63551,31 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
             "type": "string",
           },
         },
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
       ],
       "responses": {
         "200": {
@@ -63284,9 +63715,10 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "20001: 活动不存在",
+                    "description": "20001: 活动不存在; 20230: 分类时长账本不存在或不可访问",
                     "enum": [
                       20001,
+                      20230,
                     ],
                     "example": 20001,
                     "type": "integer",
@@ -63310,7 +63742,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "活动不存在(code=20001)",
+          "description": "活动不存在(code=20001) / 分类时长账本不存在或不可访问(code=20230)",
         },
       },
       "security": [
@@ -63318,7 +63750,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "查看结算版本不可变审核详情、seal、差异与缺口 [rbac: attendance.read.sheet]",
+      "summary": "查看结算版本及分页逐人冻结结果、seal、差异与缺口 [rbac: attendance.read.sheet]",
       "tags": [
         "Admin - Attendance Settlements",
       ],

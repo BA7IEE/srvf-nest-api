@@ -2,11 +2,225 @@ import { Prisma, Role, UserStatus } from '@prisma/client';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { ContributionProofSummary } from './activity-contribution-settlement-presenter';
+import { AdminSettlementReadService } from './admin-settlement-read.service';
+import { SettlementReviewQueryService } from './settlement-review-query.service';
 import {
   ACTIVITY_SETTLEMENT_ACTION,
   ActivitySettlementHttpService,
   buildActivitySettlementRequestHash,
 } from './activity-settlement-http.service';
+
+describe('Admin settlement sensitive-read boundary', () => {
+  const meta = { requestId: 'review-read-test', ip: null, ua: null };
+  const user = {
+    id: 'reader',
+    username: 'reader',
+    role: Role.USER,
+    status: UserStatus.ACTIVE,
+    memberId: null,
+  };
+  function setup() {
+    const core = { reviewDetail: jest.fn(), reviewWorkbench: jest.fn() };
+    const query = { results: jest.fn() };
+    const audit = { record: jest.fn() };
+    type Dependencies = ConstructorParameters<typeof AdminSettlementReadService>;
+    const service = new AdminSettlementReadService(
+      core as unknown as Dependencies[0],
+      query as unknown as Dependencies[1],
+      audit as unknown as Dependencies[2],
+    );
+    return { core, query, audit, service };
+  }
+  it('authorization rejection precedes per-person queries and successful-read audit', async () => {
+    const f = setup();
+    f.core.reviewDetail.mockRejectedValue(new BizException(BizCode.RBAC_FORBIDDEN));
+    await expect(
+      f.service.reviewDetail('version', { page: 1, pageSize: 20 }, user, meta),
+    ).rejects.toThrow(BizException);
+    expect(f.query.results).not.toHaveBeenCalled();
+    expect(f.audit.record).not.toHaveBeenCalled();
+  });
+  it('audit failure prevents returning the successfully queried list; filters contain names only', async () => {
+    const f = setup();
+    f.core.reviewWorkbench.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20 });
+    f.audit.record.mockRejectedValue(new Error('audit unavailable'));
+    await expect(
+      f.service.list({ page: 1, pageSize: 20, q: 'private-search' }, user, meta),
+    ).rejects.toThrow('audit unavailable');
+    expect(f.audit.record).toHaveBeenCalledWith(
+      user,
+      'collection',
+      'settlement-list',
+      0,
+      ['q'],
+      meta,
+    );
+  });
+  it('a draft is not projected as frozen participant results', async () => {
+    const f = setup();
+    f.core.reviewDetail.mockResolvedValue({ version: { id: 'draft', statusCode: 'draft' } });
+    const detail = await f.service.reviewDetail('draft', { page: 1, pageSize: 20 }, user, meta);
+    expect(detail.results).toBeNull();
+    expect(f.query.results).not.toHaveBeenCalled();
+    expect(f.audit.record).toHaveBeenCalledWith(
+      user,
+      'draft',
+      'settlement-review-detail',
+      0,
+      [],
+      meta,
+    );
+  });
+});
+
+describe('Admin frozen time sources', () => {
+  function source(id: string, native = false) {
+    return {
+      id,
+      settlementRunId: 'run',
+      contributionRegimeCode: native ? 'policy_v1' : 'legacy',
+      settlementTimeRevisions: [] as Array<{ id: string }>,
+      settlementContributionRevisions: [] as Array<{
+        id: string;
+        effectiveTimeSettlementVersionId: string;
+      }>,
+      correctionApplied: [] as Array<{
+        statusCode: string;
+        newPostingBatch: { statusCode: string };
+        correctionRequest: { baseSettlementVersionId: string };
+      }>,
+    };
+  }
+  function fixture(initial = source('requested')) {
+    const versions = new Map<string, ReturnType<typeof source>>([[initial.id, initial]]);
+    const db = {
+      $transaction: (queries: Promise<unknown>[]) => Promise.all(queries),
+      participantSettlementResultRevision: {
+        findMany: jest.fn().mockResolvedValue([{ participationIdentityId: 'person' }]),
+        count: jest.fn().mockResolvedValue(1),
+      },
+      attendanceSettlementVersion: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue(initial),
+        findFirst: jest
+          .fn()
+          .mockImplementation(({ where }: { where: { id: string; settlementRunId: string } }) => {
+            const row = versions.get(where.id);
+            return Promise.resolve(row?.settlementRunId === where.settlementRunId ? row : null);
+          }),
+      },
+      participantSettlementTimeBucket: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            participationIdentityId: 'person',
+            categoryCode: 'training',
+            calculatedSeconds: 4500,
+            recognizedSeconds: 3600,
+          },
+        ]),
+      },
+      participationTimeCorrectionManifest: { findFirst: jest.fn().mockResolvedValue(null) },
+      participantContributionEvaluation: { groupBy: jest.fn().mockResolvedValue([]) },
+    };
+    const query = new SettlementReviewQueryService(
+      db as unknown as ConstructorParameters<typeof SettlementReviewQueryService>[0],
+    );
+    return {
+      db,
+      versions,
+      query,
+      read: () => query.results(initial.id, { page: 1, pageSize: 20 }),
+    };
+  }
+  it('native time is independent of legacy contribution rules', async () => {
+    const version = source('submitted');
+    version.settlementTimeRevisions = [{ id: 'frozen-time' }];
+    const f = fixture(version);
+    const result = await f.read();
+    expect(result.timeState).toBe('ready');
+    expect(result.timeBuckets[0]).toMatchObject({
+      categoryCode: 'training',
+      recognizedSeconds: 3600,
+    });
+    expect(result.contributionReady).toBe(false);
+  });
+  it.each(['committed', 'preparing'])(
+    'unchanged-time correction %s follows only its explicit base and honors commit timing',
+    async (status) => {
+      const version = source('correction');
+      version.correctionApplied = [
+        {
+          statusCode: status,
+          newPostingBatch: { statusCode: status },
+          correctionRequest: { baseSettlementVersionId: 'base' },
+        },
+      ];
+      const f = fixture(version);
+      const base = source('base');
+      base.settlementTimeRevisions = [{ id: 'base-time' }];
+      f.versions.set(base.id, base);
+      const newer = source('newer-unrelated');
+      newer.settlementTimeRevisions = [{ id: 'newer-time' }];
+      f.versions.set(newer.id, newer);
+      const result = await f.read();
+      expect(result.timeState).toBe(status === 'committed' ? 'ready' : 'pending');
+      if (status === 'committed') {
+        expect(result.timeBuckets[0].recognizedSeconds).toBe(3600);
+        expect(f.db.participantSettlementTimeBucket.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { timeRevisionId: 'base-time', participationIdentityId: { in: ['person'] } },
+          }),
+        );
+      } else {
+        expect(result.timeBuckets).toEqual([]);
+        expect(f.db.participantSettlementTimeBucket.findMany).not.toHaveBeenCalled();
+      }
+    },
+  );
+  it('formal correction credit is the replacement, never added to the original hours', async () => {
+    const f = fixture(source('corrected', true));
+    f.db.participationTimeCorrectionManifest.findFirst.mockResolvedValue({
+      contentHash: 'frozen',
+      commitReceipt: { contentHash: 'frozen' },
+      postingBatch: { statusCode: 'committed' },
+      entries: [
+        { participationIdentityId: 'person', categoryCode: 'training', secondsDelta: 1800 },
+      ],
+    });
+    expect((await f.read()).timeBuckets).toEqual([
+      {
+        participationIdentityId: 'person',
+        categoryCode: 'training',
+        calculatedSeconds: null,
+        recognizedSeconds: 1800,
+      },
+    ]);
+  });
+  it('a committed manifest with missing receipt fails closed', async () => {
+    const f = fixture(source('invalid', true));
+    f.db.participationTimeCorrectionManifest.findFirst.mockResolvedValue({
+      contentHash: 'frozen',
+      commitReceipt: null,
+      postingBatch: { statusCode: 'committed' },
+      entries: [],
+    });
+    await expect(f.read()).rejects.toThrow(BizException);
+  });
+  it('cross-run or cyclic source references fail closed instead of borrowing current state', async () => {
+    const version = source('correction', true);
+    version.settlementContributionRevisions = [
+      { id: 'proof', effectiveTimeSettlementVersionId: 'outside' },
+    ];
+    const f = fixture(version);
+    f.versions.set('outside', { ...source('outside'), settlementRunId: 'other-run' });
+    await expect(f.read()).rejects.toThrow(BizException);
+    const cyclic = source('outside', true);
+    cyclic.settlementContributionRevisions = [
+      { id: 'other-proof', effectiveTimeSettlementVersionId: version.id },
+    ];
+    f.versions.set('outside', cyclic);
+    await expect(f.read()).rejects.toThrow(BizException);
+  });
+});
 
 describe('buildActivitySettlementRequestHash', () => {
   it('递归忽略 HTTP JSON object 的键序，但保留数组和动作语义', () => {
