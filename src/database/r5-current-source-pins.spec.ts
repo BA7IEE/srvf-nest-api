@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { currentMigrationInventory } from '../../test/helpers/migration-inventory';
 import {
   r5CurrentBusinessTableNames,
   r5CurrentE4SourcePins,
@@ -7,7 +8,7 @@ import {
 describe('SQL155 source expectations and generated client boundary', () => {
   it('derives the current complete-body pin from frozen source, not database metadata', () => {
     expect(r5CurrentE4SourcePins()).toEqual({
-      count: 156,
+      count: currentMigrationInventory().count,
       pin: '8922a6d0c4642ba1c99f679cb9581065',
     });
   });

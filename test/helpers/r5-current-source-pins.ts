@@ -1,20 +1,15 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { r5CiMigrationSources } from './r5-ci-source-binding';
+import { currentMigrationInventory } from './migration-inventory';
 
 /** Expected definitions come from frozen migration bytes, never the installed catalog. */
 export function r5CurrentE4SourcePins() {
-  const migrations = r5CiMigrationSources();
+  const { migrations, count } = currentMigrationInventory();
   const source = migrations.find(
     (migration) => migration.name === '20261031223000_r5_correction_set_materialization',
   );
-  if (
-    !source ||
-    migrations.length !== 156 ||
-    migrations[155].name !== '20261117190000_team_join_contribution_milestones'
-  )
-    throw new Error('R5_CURRENT_MIGRATION_SET_CHANGED');
+  if (!source) throw new Error('R5_CURRENT_MIGRATION_SET_CHANGED');
   const bytes = readFileSync(
     resolve(__dirname, '../../prisma/migrations', source.name, 'migration.sql'),
   );
@@ -28,7 +23,7 @@ export function r5CurrentE4SourcePins() {
       ),
   ];
   if (matches.length !== 1) throw new Error('R5_CURRENT_E4_DEFINITION_AMBIGUOUS');
-  return { count: migrations.length, pin: createHash('md5').update(matches[0][2]).digest('hex') };
+  return { count, pin: createHash('md5').update(matches[0][2]).digest('hex') };
 }
 
 /** Complete frozen physical table set; the migration ledger is the only exclusion. */

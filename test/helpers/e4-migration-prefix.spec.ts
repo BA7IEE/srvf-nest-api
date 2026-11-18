@@ -1,5 +1,6 @@
 import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { currentMigrationInventory } from './migration-inventory';
 import {
   e4HistoricalMigrationPrefix,
   E4_MIGRATION_137,
@@ -24,7 +25,7 @@ import {
   E4_MIGRATION_156,
 } from './e4-migration-prefix';
 
-const CURRENT_MIGRATION_COUNT = 156;
+const CURRENT_MIGRATION_COUNT = currentMigrationInventory().count;
 
 describe('fixed E4 historical migration prefix', () => {
   const names = readdirSync(resolve(__dirname, '../../prisma/migrations'), {

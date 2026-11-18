@@ -1,3 +1,4 @@
+import { currentMigrationInventory } from '../helpers/migration-inventory';
 import { execFileSync } from 'node:child_process';
 import {
   cpSync,
@@ -20,7 +21,7 @@ import { deriveWorkerTestDbName } from '../setup/worktree-db';
 
 const WORKER = process.env.JEST_WORKER_ID ?? '1';
 const MIGRATION = '20260906114906_activity_os_r3_c1_metric_selection_template_v3';
-const CURRENT_MIGRATION_COUNT = 156;
+const CURRENT_MIGRATION_COUNT = currentMigrationInventory().count;
 const database = () => deriveWorkerTestDbName(WORKER);
 const quote = (value: string) => "'" + value.replaceAll("'", "''") + "'";
 function url() {

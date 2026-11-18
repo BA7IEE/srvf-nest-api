@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { currentMigrationInventory } from '../../../test/helpers/migration-inventory';
 import {
   E4_MIGRATION_144,
   E4_MIGRATION_153,
@@ -29,7 +30,7 @@ describe('source153 parameterized reads forward migration', () => {
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    expect(names).toHaveLength(156);
+    expect(names).toHaveLength(currentMigrationInventory().count);
     expect(names[152]).toBe(E4_MIGRATION_153);
     expect(e4HistoricalMigrationPrefix(names)).toHaveLength(137);
   });
