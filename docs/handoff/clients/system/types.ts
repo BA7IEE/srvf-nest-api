@@ -3,7 +3,7 @@
 // surface: System 系统面
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:5f80661f4084b5c3fd66efc7c09e6ddb0172d36f5c017b85874bd60efbe6c078
+// inputDigest: sha256:9e54fe31d7d8a802f8edf0bcdf8c78dfedcdd3c71bbc0c1ee9985f5f366c33e7
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, PageResultDto } from '../shared/types';

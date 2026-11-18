@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { Prisma } from '@prisma/client';
+import { assertManualHoursWithinEvidence } from './settlement-manual-hours-policy';
 import {
   rebuildServiceSegments,
   resolveEffectiveFacts,
@@ -33,6 +35,97 @@ function event(
 ): ProjectorPunchEvent {
   return { id, eventTypeCode, occurredAt: new Date(occurredAt), supersedesEventId };
 }
+
+describe('legacy manual hours — complete effective evidence', () => {
+  function projection(spans: readonly [string, string][]) {
+    return rebuildServiceSegments(
+      spans.flatMap(([start, end], i) => [
+        event(`${i}-in`, 'check_in', `2020-03-01T${start}Z`),
+        event(`${i}-out`, 'check_out', `2020-03-01T${end}Z`),
+      ]),
+      THRESHOLDS,
+    );
+  }
+
+  it('zero is permitted; disconnected intervals sum to two hours, not their six-hour envelope', () => {
+    const facts = projection([
+      ['09:00:00', '10:00:00'],
+      ['14:00:00', '15:00:00'],
+    ]);
+    expect(() => assertManualHoursWithinEvidence(new Prisma.Decimal(0), facts)).not.toThrow();
+    expect(() => assertManualHoursWithinEvidence(new Prisma.Decimal(2), facts)).not.toThrow();
+    expect(() => assertManualHoursWithinEvidence(new Prisma.Decimal('2.01'), facts)).toThrow();
+    expect(() => assertManualHoursWithinEvidence(new Prisma.Decimal(6), facts)).toThrow();
+  });
+
+  it('uses evidence duration even when the machine result contains a deduction', () => {
+    const facts = projection([['09:00:00', '13:00:00']]);
+    facts.segments[0].serviceHours = 3;
+    expect(() => assertManualHoursWithinEvidence(new Prisma.Decimal(4), facts)).not.toThrow();
+    expect(() => assertManualHoursWithinEvidence(new Prisma.Decimal(5), facts)).toThrow();
+    expect(facts.segments[0].serviceHours).toBe(3);
+  });
+
+  it.each([
+    ['10:00:17.999', '1.00', '1.01'],
+    ['10:00:18.000', '1.01', '1.02'],
+    ['10:00:18.001', '1.01', '1.02'],
+  ])('honors exact two-decimal half-up boundary at %s', (end, accepted, rejected) => {
+    const facts = projection([['09:00:00', end]]);
+    expect(() =>
+      assertManualHoursWithinEvidence(new Prisma.Decimal(accepted), facts),
+    ).not.toThrow();
+    expect(() => assertManualHoursWithinEvidence(new Prisma.Decimal(rejected), facts)).toThrow();
+  });
+
+  it('sums rounded per-segment bounds with Decimal rather than losing a cent through binary addition', () => {
+    const facts = projection([
+      ['09:00:00', '09:30:18'],
+      ['10:00:00', '10:30:18'],
+    ]);
+    expect(() => assertManualHoursWithinEvidence(new Prisma.Decimal('1.02'), facts)).not.toThrow();
+    expect(() => assertManualHoursWithinEvidence(new Prisma.Decimal('1.03'), facts)).toThrow();
+  });
+
+  it('early departure is a zero outcome, not additional usable span', () => {
+    const facts = rebuildServiceSegments(
+      [
+        event('in', 'check_in', '2020-03-01T09:00:00Z'),
+        event('out', 'early_departure_close', '2020-03-01T10:00:00Z'),
+      ],
+      THRESHOLDS,
+    );
+    expect(() => assertManualHoursWithinEvidence(new Prisma.Decimal(0), facts)).not.toThrow();
+    expect(() => assertManualHoursWithinEvidence(new Prisma.Decimal('0.01'), facts)).toThrow();
+  });
+
+  it('zero cannot settle duplicate, open, or short-span unresolved evidence', () => {
+    for (const events of [
+      [event('in', 'check_in', '2020-03-01T09:00:00Z')],
+      [
+        event('in', 'check_in', '2020-03-01T09:00:00Z'),
+        event('duplicate', 'check_in', '2020-03-01T09:30:00Z'),
+        event('out', 'check_out', '2020-03-01T10:00:00Z'),
+      ],
+      [
+        event('in', 'check_in', '2020-03-01T09:00:00Z'),
+        event('out', 'check_out', '2020-03-01T09:10:00Z'),
+      ],
+    ]) {
+      expect(() =>
+        assertManualHoursWithinEvidence(
+          new Prisma.Decimal(0),
+          rebuildServiceSegments(events, THRESHOLDS),
+        ),
+      ).toThrow();
+    }
+  });
+
+  it('does not invent a zero limit for manual cases without machine records', () => {
+    const facts = rebuildServiceSegments([], THRESHOLDS);
+    expect(() => assertManualHoursWithinEvidence(new Prisma.Decimal(2), facts)).not.toThrow();
+  });
+});
 
 describe('settlement segment projector — 正常闭合', () => {
   it('check_in + check_out → 一个 valid 段,时长取两条事实之差', () => {

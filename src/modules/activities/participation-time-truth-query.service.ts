@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { splitSpanByBeijingDay } from '../../common/datetime/date-only.util';
+import { roundServiceHours } from '../../common/datetime/service-hours';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { ActivityTimeCutoverReceiptResult } from './activity-time-cutover-command';
@@ -221,9 +222,7 @@ function hasEmptyOfficialScope(input: OfficialParticipationTimeScope): boolean {
 
 export function eligibleSecondsToServiceHours(eligibleSeconds: number): Prisma.Decimal {
   if (!Number.isSafeInteger(eligibleSeconds) || eligibleSeconds < 0) invalidTruth();
-  return new Prisma.Decimal(eligibleSeconds)
-    .div(3_600)
-    .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+  return roundServiceHours(new Prisma.Decimal(eligibleSeconds).div(3_600));
 }
 
 export function sumOfficialEligibleSeconds(
