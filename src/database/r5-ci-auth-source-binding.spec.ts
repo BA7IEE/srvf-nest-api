@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -9,7 +9,7 @@ import {
   r5CiMigrationSources,
 } from '../../test/helpers/r5-ci-source-binding';
 import { humanCorrectionCatalogSha256 } from '../modules/activities/human-correction-trusted-connection';
-import { currentMigrationInventory } from '../../test/helpers/migration-inventory';
+import * as migrationInventory from '../../test/helpers/migration-inventory';
 
 const identity = {
   database: R5_CI_DATABASE,
@@ -104,7 +104,55 @@ describe('disposable CI source binding, no database or authentication', () => {
     expect(built.base.functions.filter((row) => !added.has(String(row.signature)))).toEqual(
       frozen.catalogs.base.functions,
     );
-    expect(r5CiMigrationSources()).toEqual(currentMigrationInventory().migrations);
+    expect(r5CiMigrationSources()).toEqual(
+      migrationInventory.currentMigrationInventory().migrations,
+    );
     expect(built.base.functions.filter((row) => added.has(String(row.signature)))).toHaveLength(3);
+  });
+
+  it.each([
+    {
+      kind: 'appended public function',
+      name: '20990101000000_unreviewed_catalog',
+      sql: "CREATE FUNCTION public.r5_ci_unreviewed_probe() RETURNS integer LANGUAGE sql AS 'SELECT 1';\n",
+      sha256: 'd3183633f0e9fcf60155c155a04c60dfd3474001ad64e66f747c40e9b028c17a',
+    },
+    {
+      kind: 'inserted public function',
+      name: '20261101000000_unreviewed_catalog',
+      sql: "CREATE FUNCTION public.r5_ci_unreviewed_probe() RETURNS integer LANGUAGE sql AS 'SELECT 1';\n",
+      sha256: 'd3183633f0e9fcf60155c155a04c60dfd3474001ad64e66f747c40e9b028c17a',
+    },
+    {
+      kind: 'migration without a function',
+      name: '20990101000000_unreviewed_catalog',
+      sql: 'SELECT 1;\n',
+      sha256: 'b4e0497804e46e0a0b0b8c31975b062152d551bac49c3c2e80932567b4085dcd',
+    },
+  ])('requires binding review for a registered $kind', ({ name, sql, sha256 }) => {
+    const scratch = mkdtempSync(join(tmpdir(), 'r5-ci-catalog-review-'));
+    try {
+      cpSync(join(process.cwd(), 'prisma/migrations'), join(scratch, 'prisma/migrations'), {
+        recursive: true,
+      });
+      const directory = join(scratch, 'prisma/migrations', name);
+      mkdirSync(directory);
+      writeFileSync(join(directory, 'migration.sql'), sql);
+      const reviewed = [...migrationInventory.reviewedMigrationSources(), { name, sha256 }].sort(
+        (a, b) => a.name.localeCompare(b.name),
+      );
+      const verified = migrationInventory.verifyMigrationInventory(scratch, reviewed);
+      const spy = jest
+        .spyOn(migrationInventory, 'currentMigrationInventory')
+        .mockReturnValue(verified);
+      try {
+        expect(r5CiMigrationSources(scratch)).toEqual(verified.migrations);
+        expect(() => r5CiSourceBinding(identity, scratch)).toThrow('R5_CI_CATALOG_REVIEW_REQUIRED');
+      } finally {
+        spy.mockRestore();
+      }
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
   });
 });
