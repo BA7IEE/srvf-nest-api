@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { currentMigrationInventory } from './migration-inventory';
+import { testTableNames } from './test-table-policy';
 
 /** Expected definitions come from frozen migration bytes, never the installed catalog. */
 export function r5CurrentE4SourcePins() {
@@ -26,26 +27,10 @@ export function r5CurrentE4SourcePins() {
   return { count, pin: createHash('md5').update(matches[0][2]).digest('hex') };
 }
 
-/** Complete frozen physical table set; the migration ledger is the only exclusion. */
+/** Business physical table set per approved profile; the migration ledger is excluded. */
 export function r5CurrentBusinessTableNames(
   profile: 'current' | 'current155' | 'pre155' = 'current',
 ) {
-  const bytes = readFileSync(resolve(__dirname, 'r5-setmat-table-manifest.json'));
-  if (
-    createHash('sha256').update(bytes).digest('hex') !==
-    '763ed265939d4a5e4e6e2ea218559f1458a8c25e265ca9d70b9bd3c5a97a1742'
-  )
-    throw new Error('R5_CURRENT_TABLE_MANIFEST_CHANGED');
-  const manifest = JSON.parse(bytes.toString('utf8')) as { tables: string[] };
-  const names = manifest.tables.filter((name) => name !== '_prisma_migrations').sort();
-  if (profile === 'current') {
-    r5CurrentE4SourcePins();
-    return [...names, 'TeamJoinContributionMilestone'].sort();
-  }
-  if (profile === 'current155') return names;
-  if (profile !== 'pre155') throw new Error('R5_TABLE_PROFILE_REFUSED');
-  r5CurrentE4SourcePins(); // qualify the migration that introduces exactly these tables
-  return names.filter(
-    (name) => !['CorrectionWritePhase', 'CorrectionApprovedInputItem'].includes(name),
-  );
+  if (profile !== 'current155') r5CurrentE4SourcePins();
+  return testTableNames(profile).filter((name) => name !== '_prisma_migrations');
 }

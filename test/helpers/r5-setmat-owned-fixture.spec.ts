@@ -11,6 +11,7 @@ import {
 import { R5_SETMAT_CALLER } from './r5-setmat-observation';
 import { assertR5TableManifest, R5_SETMAT_TABLES } from './r5-setmat-manifest';
 import { validateR5SetmatOwnedConfig, type R5SetmatOwnedConfig } from './r5-setmat-owned-fixture';
+import { CURRENT_TEST_TABLE_POLICIES } from './test-table-policy';
 
 describe('R5 safety fixture configuration pure checks (NO DATABASE)', () => {
   const config: R5SetmatOwnedConfig = {
@@ -61,8 +62,13 @@ describe('R5 safety fixture configuration pure checks (NO DATABASE)', () => {
     expect(raw.identities[0].memberId).toBe('fresh-participant-member');
   });
   it('freezes exact names from candidate models plus the approved SQL relations', () => {
+    // Post-155 tables must be explicitly declared in the table policy to stay
+    // out of the frozen manifest; an undeclared new model fails this check.
+    const post155 = new Set(CURRENT_TEST_TABLE_POLICIES.map(({ table }) => table));
     const wanted = [
-      ...Prisma.dmmf.datamodel.models.map((model) => model.dbName ?? model.name),
+      ...Prisma.dmmf.datamodel.models
+        .map((model) => model.dbName ?? model.name)
+        .filter((name) => !post155.has(name)),
       '_prisma_migrations',
       'CorrectionApprovedInputItem',
       'CorrectionWritePhase',
