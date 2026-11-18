@@ -5,6 +5,32 @@ E2E 跑在独立的 `app_test` 物理库,与开发库 `app` 完全隔离,**不�
 > 测试数量属于高频变化信息。本文不维护固定 spec / case 总数;
 > 当前数量以 `find test/e2e -name '*.ts'`、`pnpm test:e2e` 输出末尾汇总、CI 结果,以及 [`docs/current-state.md`](current-state.md) §2 "测试与契约" 段为准。
 
+## 编辑期定向验证
+
+先对改动的 TypeScript 文件运行 `pnpm exec eslint --max-warnings 0 <文件...>`，再选相关单测。迁移变化先运行以下离线检查；命令显式覆盖 `testRegex`，因为历史前缀 spec 不属于默认单测匹配：
+
+```bash
+pnpm exec jest --config test/jest-unit.config.ts --runInBand --runTestsByPath \
+  src/database/migration-inventory.spec.ts \
+  src/database/r5-ci-auth-source-binding.spec.ts \
+  test/helpers/e4-migration-prefix.spec.ts --testRegex='[.]spec[.]ts$'
+```
+
+公共依赖或装配变化，按受影响范围尽早运行现有独立 worker / Human 图检查：
+
+```bash
+pnpm exec jest --config test/jest-unit.config.ts --runInBand --runTestsByPath \
+  src/modules/activities/activity-batch-worker-registration.spec.ts \
+  src/modules/activities/activity-batch-worker-native.spec.ts \
+  src/modules/activities/human-correction-runtime-bootstrap.spec.ts
+```
+
+普通 `agent:check:quick` 已并行包含缓存 lint、完整 `typecheck`（src、test、scripts）和默认单测；`SRVF_CHECK_SERIAL=1` 时改为串行冷 lint、typecheck、单测。`agent:check:api` 已包含冷 lint、typecheck、单测、contract 及 OpenAPI/client/authz freshness；contract 会操作测试库，须先按下文取得范围授权。两者都不包含 build。
+
+同一内容上不要紧接着重复运行已包含的 typecheck、单测或 contract；修改后重跑受影响检查。缓存 lint 不代替冻结后的冷 lint；最终仍按仓库要求检查类型、必要构建和相关行为，全量 E2E 留给 PR CI。
+
+Human source-binding 的离线边界覆盖冻结迁移和已审阅后继。新增迁移即使不含函数也会要求先复核 catalog；应检查是否影响 `public` 函数及现有绑定，再显式更新审阅边界和必要的预期声明。离线检查不解析任意 SQL，也不能证明数据库中的函数体、owner、ACL、真实身份或回滚；这些仍由现有真实 PostgreSQL 验证负责。
+
 E2E **并行执行**(Harness 3.0 P1;默认 `maxWorkers: 50%`,CI 由 `JEST_MAX_WORKERS` 显式指定),并行安全由三层隔离保证:
 
 1. **per-worker 派生测试库**:globalSetup 对模板库(主仓 `app_test`;linked worktree `app_test_<slug>_<hash6>`)migrate deploy 一次,再按 `CREATE DATABASE ... TEMPLATE` 克隆出 `<模板名>_w<N>`,每个 jest worker 连自己的克隆库;globalTeardown 回收克隆库、保留模板。孤儿库用 `pnpm db:test:prune` 按 git worktree 白名单差集回收(默认 dry-run,`--force` 才删)。

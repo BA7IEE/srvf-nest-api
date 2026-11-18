@@ -105,11 +105,19 @@ export function r5CiSourceBinding(identity: R5CiInstanceIdentity, checkout = pro
     new Set(Object.values(identity.roles)).size !== 5
   )
     throw new Error('R5_CI_INSTANCE_IDENTITY_REJECTED');
+  let migrations: ReturnType<typeof r5CiMigrationSources>;
   try {
-    r5CiMigrationSources(checkout);
+    migrations = r5CiMigrationSources(checkout);
   } catch {
     throw new Error('R5_CI_MIGRATION_SOURCE_CHANGED');
   }
+  // A new migration may alter the public function catalog without a directly
+  // parseable declaration. Review the binding before extending this boundary.
+  if (
+    migrations.length !== source.migrations.length + 1 ||
+    migrations.at(-1)?.name !== MILESTONE_MIGRATION.name
+  )
+    throw new Error('R5_CI_CATALOG_REVIEW_REQUIRED');
   const additions = milestoneFunctions(checkout);
   const link = (input: unknown): Catalog => {
     const catalog = JSON.parse(JSON.stringify(input)) as Record<string, unknown>;
