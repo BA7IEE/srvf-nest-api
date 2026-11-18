@@ -138,7 +138,7 @@
 | `attendance-sheet.review` | 1 |  |
 | `attendance-sheet.final-review` | 1 |  |
 | `attendance-sheet.reopen` | 1 |  |
-| `attendance-sheet.read.other` | 1 |  |
+| `attendance-sheet.read.other` | 2 | AttendanceAuditRecorder、SettlementReadAuditRecorder（管理员结算列表及逐人复核） |
 
 ## attachment
 

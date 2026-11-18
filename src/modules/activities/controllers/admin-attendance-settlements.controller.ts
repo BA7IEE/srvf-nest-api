@@ -21,7 +21,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../../common/decorators/current-user.decorator';
-import { PageResultDto } from '../../../common/dto/pagination.dto';
+import { PageResultDto, PaginationQueryDto } from '../../../common/dto/pagination.dto';
 import { BizCode } from '../../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../../audit-logs/audit-logs.types';
 import {
@@ -43,29 +43,36 @@ import {
   ListAdminAttendanceSettlementsQueryDto,
 } from '../dto/admin/admin-settlement-read.dto';
 import { RequiresPermission } from '../../../common/decorators/route-authz.decorator';
+import { AdminSettlementReadService } from '../admin-settlement-read.service';
 
 @ApiTags('Admin - Attendance Settlements')
 @ApiBearerAuth()
 @Controller('admin/v1/attendance-settlements')
 export class AdminAttendanceSettlementsController {
-  constructor(private readonly settlements: ActivitySettlementHttpService) {}
+  constructor(
+    private readonly settlements: ActivitySettlementHttpService,
+    private readonly reads: AdminSettlementReadService,
+  ) {}
 
   @Get()
   @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
-  @ApiOperation({ summary: '跨活动结算审核工作台（分页） [rbac: attendance.read.sheet]' })
+  @ApiOperation({
+    summary: '跨活动结算审核列表（分页、搜索、组织与状态过滤） [rbac: attendance.read.sheet]',
+  })
   @ApiWrappedPageResponse(AdminAttendanceSettlementListItemDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
   list(
     @Query() query: ListAdminAttendanceSettlementsQueryDto,
     @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<PageResultDto<AdminAttendanceSettlementListItemDto>> {
-    return this.settlements.reviewWorkbench(query, user);
+    return this.reads.list(query, user, this.auditMeta(req));
   }
 
   @Get(':settlementVersionId/review-detail')
   @RequiresPermission('attendance.read.sheet', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
-    summary: '查看结算版本不可变审核详情、seal、差异与缺口 [rbac: attendance.read.sheet]',
+    summary: '查看结算版本及分页逐人冻结结果、seal、差异与缺口 [rbac: attendance.read.sheet]',
   })
   @ApiWrappedOkResponse(AdminSettlementReviewDetailDto)
   @ApiBizErrorResponse(
@@ -73,12 +80,15 @@ export class AdminAttendanceSettlementsController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_TIME_LEDGER_REFERENCE_UNAVAILABLE,
   )
   reviewDetail(
     @Param() params: AdminSettlementVersionReadParamsDto,
     @CurrentUser() user: CurrentUserPayload,
+    @Query() query: PaginationQueryDto,
+    @Req() req: Request,
   ): Promise<AdminSettlementReviewDetailDto> {
-    return this.settlements.reviewDetail(params.settlementVersionId, user);
+    return this.reads.reviewDetail(params.settlementVersionId, query, user, this.auditMeta(req));
   }
 
   @Get(':id/posting-batch')

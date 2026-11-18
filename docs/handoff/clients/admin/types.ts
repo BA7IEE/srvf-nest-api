@@ -3,7 +3,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:ec4e646e96e38e36cd34e93192751c9a0f40c08d6686d5f6f48da6677559a542
+// inputDigest: sha256:5f80661f4084b5c3fd66efc7c09e6ddb0172d36f5c017b85874bd60efbe6c078
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -598,8 +598,11 @@ export interface AdminAttendanceSettlementListItemDto {
   "activityTitle": string;
   "version": number;
   "statusCode": string;
+  "reviewStage": "first" | "final" | null;
   "submittedAt"?: string | null;
   "postingBatchStatusCode"?: string | null;
+  "submittedBy": AdminSettlementSubmitterDto;
+  "activity"?: AdminSettlementActivitySummaryDto;
 }
 
 export interface AdminAttendanceSheetExpandedActivityDto {
@@ -927,6 +930,13 @@ export interface AdminSelectActivityMetricSetDto {
   "metricSelection": AdminActivityMetricSelectionInputDto;
 }
 
+export interface AdminSettlementActivitySummaryDto {
+  "id": string;
+  "title": string;
+  "startAt": string;
+  "organizationId": string;
+}
+
 export interface AdminSettlementApproveCommandDto {
   "operationKey": string;
   "evidenceSealId": string;
@@ -935,6 +945,40 @@ export interface AdminSettlementApproveCommandDto {
   "workflowRevision": number;
   "contentHash": string;
   "note"?: string;
+}
+
+export interface AdminSettlementFrozenResultDto {
+  "contributionResultState": "legacy" | "ready" | "pending";
+  "nativeCalculatedContributionPoints": string | null;
+  "nativeRecognizedContributionPoints": string | null;
+  "timeResultState": "legacy" | "ready" | "pending";
+  "timeBuckets": AdminSettlementFrozenTimeBucketDto[] | null;
+  "id": string;
+  "participationIdentityId": string;
+  "revision": number;
+  "resultCode": string;
+  "lateFlag": boolean;
+  "earlyLeaveFlag": boolean;
+  "recognizedServiceHours": string;
+  "calculatedServiceHours": string;
+  "recognizedContributionPoints": string;
+  "calculatedContributionPoints": string;
+  "hasAdjustment": boolean;
+  "member": AdminSettlementResultMemberDto;
+  "session": AdminSettlementResultSessionDto;
+}
+
+export interface AdminSettlementFrozenResultsPageDto {
+  "items": AdminSettlementFrozenResultDto[];
+  "total": number;
+  "page": number;
+  "pageSize": number;
+}
+
+export interface AdminSettlementFrozenTimeBucketDto {
+  "categoryCode": string;
+  "calculatedSeconds": number | null;
+  "recognizedSeconds": number;
 }
 
 export interface AdminSettlementPostingBatchDto {
@@ -950,6 +994,20 @@ export interface AdminSettlementPostingBatchDto {
   "committedAt"?: string | null;
 }
 
+export interface AdminSettlementResultMemberDto {
+  "id": string;
+  "memberNo": string;
+  "realName": string;
+  "nickname": string | null;
+  "label": string;
+}
+
+export interface AdminSettlementResultSessionDto {
+  "id": string;
+  "code": string;
+  "name": string;
+}
+
 export interface AdminSettlementReturnCommandDto {
   "operationKey": string;
   "evidenceSealId": string;
@@ -961,6 +1019,7 @@ export interface AdminSettlementReturnCommandDto {
 }
 
 export interface AdminSettlementReviewDetailDto {
+  "results": AdminSettlementFrozenResultsPageDto;
   "contributionProof"?: AdminContributionProofDto;
   "version": AdminSettlementReviewVersionDto;
   "diff": AdminSettlementReviewDiffDto;
@@ -1023,6 +1082,12 @@ export interface AdminSettlementSealRevisionDto {
   "workflowRevision": number;
   "manualReviewPendingCount": number;
   "sealedAt": string;
+}
+
+export interface AdminSettlementSubmitterDto {
+  "id": string;
+  "username": string;
+  "nickname": string | null;
 }
 
 export interface AdminSimpleActivityCreationResultDto {
