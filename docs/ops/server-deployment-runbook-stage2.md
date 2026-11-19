@@ -230,6 +230,29 @@ docker run --rm --network <compose 网络> \
 
 **做完这一步再回头确认 1.4 的字典取值** —— 此后改 label 只能走管理接口。
 
+#### 隔离验收库的单账号初始化
+
+已有业务数据的验收库可使用同版本 tools 镜像内的离线 seed 模式
+`tsx prisma/seed.ts --acceptance-account-only`。该模式由具备数据库初始化权限的维护者执行，
+需要先通过此入口的红区审查。仅在已确认隔离的 test 或 smoke 环境使用。
+
+从已核准的目标库连接取得指纹，按下列 SQL 计算。通过维护者控制的运行环境将结果传给
+`ACCEPTANCE_DATABASE_FINGERPRINT`。应独立核对数据库归属，在正式执行连接上临时计算并自填预期值会失去核对意义。
+
+```sql
+SELECT encode(sha256(convert_to(system_identifier::text || ':' || current_database(),
+                                'UTF8')), 'hex')
+FROM pg_control_system();
+```
+
+用户名使用 `accept_` 加 6 至 24 位小写字母、数字或下划线。由维护者提供随机密码，
+沿用 seed 的凭据注入方式。拒绝已存在的用户名（含软删记录），仅在活跃 ADMIN 和 SUPER_ADMIN
+均为零时写入。成功事务写入一行 User 和一行审计，保留原有角色和绑定。
+已经初始化的库使用现有管理员及正常的成员与权限管理流程。
+
+测试身份退役沿用户管理的禁用、refresh 撤销及最后管理员保护执行。
+需要保留库时应先安排管理员接替；需要整体恢复时应先在隔离副本验证归档和恢复流程。
+
 ### D. COS bootstrap(先 dry-run,再落库)
 
 **D-1 写配置文件**(临时,用完即删):
