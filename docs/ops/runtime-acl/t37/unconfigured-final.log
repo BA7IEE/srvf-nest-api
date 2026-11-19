@@ -1,0 +1,15 @@
+{"actor":"lab","path":"/api/auth/v1/login","status":200,"code":0,"reqId":"cmwnomi7b01f60a56770d2f248c0dc0a6"}
+{"actor":"lab","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnomibz55811cc81593a9b527ac7c9b"}
+{"actor":"lab","path":"/api/system/v1/authz/me/effective-permissions","status":200,"code":0,"reqId":"cmwnomic27fcee1bbc20bc58acc3fb104"}
+{"actor":"lab","path":"/api/system/v1/dict-types","status":403,"code":30100,"reqId":"cmwnomim54f5617ac3e2e1e9d3d6f856f"}
+{"actor":"lab","path":"/api/admin/v1/meta/dashboard-summary","status":200,"code":0,"reqId":"cmwnomimj75c307a9e1eb6da81dd753f7"}
+{"actor":"lab","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnomitu8ce30a0d7c789adb3d3bbbb1"}
+{"actor":"lab","path":"/api/admin/v1/activities/cmwnoaq1z001lmq01zbw3x20q/simple-draft","status":200,"code":0,"reqId":"cmwnomity5857058878a6a02a569327a9"}
+{"actor":"lab","path":"/api/admin/v1/activities/cmwnoaq1z001lmq01zbw3x20q/publish-reviews","status":409,"code":20255,"reqId":"cmwnomiv04e15e232de79b58c6f51acc7"}
+{"actor":"lab","path":"/api/admin/v1/activities/organization-options","status":200,"code":0,"reqId":"cmwnomix0b36dde8b081bf0929aba2867"}
+{"actor":"lab","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnomj8m9ff06857cefc450601859065"}
+{"actor":"lab","path":"/api/admin/v1/activities/cmwnoaq1z001lmq01zbw3x20q/simple-draft","status":200,"code":0,"reqId":"cmwnomj98792e86f7d381952631227de3"}
+{"actor":"lab","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnomjfs33d18e3ab02e2dd5b90b4956"}
+{"actor":"lab","path":"/api/admin/v1/activities/cmwnoaq1z001lmq01zbw3x20q/simple-draft","status":200,"code":0,"reqId":"cmwnomjg6f5f8310322e5073c5b394ddb"}
+{"actor":"lab","path":"/api/admin/v1/activities/cmwnoaq1z001lmq01zbw3x20q/publish-reviews","status":400,"code":20174,"reqId":"cmwnomjhg0307d7c4f27ecd59e295815a"}
+PASS unconfigured refused

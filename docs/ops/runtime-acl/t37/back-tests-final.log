@@ -1,0 +1,10 @@
+
+> srvf-api@0.72.0 test /private/tmp/srvf-t37/back
+> jest --config test/jest-unit.config.ts --runInBand --runTestsByPath src/modules/activities/activity-review-metrics.spec.ts src/modules/activities/activity-metric-selection.spec.ts
+
+
+Test Suites: 2 passed, 2 total
+Tests:       31 passed, 31 total
+Snapshots:   0 total
+Time:        1.274 s
+Ran all test suites within paths "src/modules/activities/activity-review-metrics.spec.ts", "src/modules/activities/activity-metric-selection.spec.ts".
