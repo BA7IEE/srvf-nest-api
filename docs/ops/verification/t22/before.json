@@ -1,0 +1,1 @@
+[{"role" : "srvf_dp_acceptance_runtime", "table" : "public.\"Member\"", "select" : true, "insert" : false, "column_insert" : false, "update" : false}, {"role" : "srvf_dp_acceptance_runtime", "table" : "public.\"MemberNoReservation\"", "select" : true, "insert" : true, "column_insert" : true, "update" : true}]
