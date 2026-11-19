@@ -1,0 +1,3 @@
+PASS five correlated PostgreSQL 42501 blocks, insurance 26030, no partial write
+PASS stock API: two unprivileged members, real registrations/replays/conflicts/reads/cancels, five audits, three linked worker intents
+PASS fixture ACL restored with business history preserved; mobile entry closed as observed
