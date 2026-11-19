@@ -49,19 +49,11 @@
  * ci-control-plane 内)。为什么是两条别名而不是让 `--selftest` 走 pnpm 参数透传:
  * 本仓有过「`pnpm test:contract -- -u` 传不进去」的教训,别名比透传可靠。
  *
- * 🔴 **本文件自 2026-08-26 起在 `harness/redzone.json` 的 selfGuard 内**(具名一条,
- *    不是整个 `scripts/`)—— 改它要维护者发令牌。原因就是上一版这里写的那句
- *    「哪天把它接进 CI,同一个 PR 里必须同步把它写进 selfGuard」:同一天
- *    `--signoff` 接进了 `Diff guards`,而「CI 依赖一个 PR 可以随手改成恒 PASS 的裁判」
- *    正是该清单收窄当天被 ci-guard-coverage 当场纠正过的那种判断错误。
- *    ⚠️ 顺序不可反:**先收编、后接闸** —— 反过来做,`P4a ci-guard-coverage` 当场判红
- *    (它拿正则扫 ci.yml **全文,注释也算**,故收编之前连写在注释里都会红)。
- *
  * 退出码:0 = A 类判据全过(**不等于可以开闸** —— B/C 仍待维护者确认);
  *         1 = 有 A 类判据未过,或仪器自证失败。
  *
  * ──────────────────────────────────────────────────────────────────────────
- * 两种模式:全量(不接 CI)与 `--signoff`(接 CI)
+ * 两种模式:全量与 `--signoff`。Harness 精简(#1421)后，两者都不接每 PR CI。
  *
  * ⚠️ **全量仍然不接 CI**,原因一字未改:十条里今天还有必不过的(9a 尚有 it.todo,
  *    ⑩ 要部署侧产物),接了等于全仓永久红,而「闸红了没人消费 = 没有执法」
@@ -69,14 +61,11 @@
  *
  * ⭐ `--signoff` 是**另一件事**,别把两者读成一回事:
  *
- *    | 模式 | 判什么 | 今天是不是绿的 |
- *    |---|---|---|
- *    | 全量 | 十条切换前检查的**结论** | 否(9a / ⑩ 未过)⇒ 不接 CI |
- *    | `--signoff` | **签字登记表本身可不可信**(读数非退化 · 逐条对拍 · 签了不存在/A 类编号 · 规模档登记闭合) | **是** ⇒ 接 CI |
+ *    | 模式 | 判什么 |
+ *    |---|---|
+ *    | 全量 | 十条切换前检查的**结论** |
+ *    | `--signoff` | **签字登记表本身可不可信**(读数非退化 · 逐条对拍 · 签了不存在/A 类编号 · 规模档登记闭合) |
  *
- *    签字登记表是一份 `.md`,而它的判据此前**零执行位** —— 一个只改那份 .md 的 PR
- *    是 docs-only,连 `pnpm test` 都不跑。⇒ `--signoff` 挂在 `redzone-scan`
- *    (无 docs-only 短路、`fetch-depth: 0`),那是本仓已有的同一形状的落点。
  *    它**不跑** `collectAcceptance()` / `collectReconcile()` / `resolveBaselineCommit()`
  *    ——那三样要 jest、要生成的 Prisma client、要全量 git 历史,与「表可不可信」无关。
  *    ⚠️ 因此 `--signoff` 是全量的**子集**,不是替代:`assertSubIdsClosed()` 仍只在全量里跑。
@@ -196,18 +185,15 @@ const RUNBOOK_TOPICS: readonly { key: string; label: string; pattern: RegExp }[]
 ];
 
 /**
- * ④ 的对账命令 —— 与 `.github/workflows/ci.yml` 的 docs 守护行同一批,外加授权语义图。
- * 它们全是既有生成物的**新鲜度**判据:生成器重跑一遍与仓内产物逐字节比对,不一致即红。
+ * ④ 的对账命令与当前 CI 一致:保留三个生成物的新鲜度和 RBAC 代码校验。
+ * 规范性权限蕴含图、生成的 RBAC map、CODEMAP、文档计数和 read-tax 不再是活跃检查(#1421)。
+ * 本清单显式列出必跑命令，不根据 package.json 动态跳过缺失项。
  */
 const RECONCILE_COMMANDS: readonly { cmd: string; covers: string }[] = [
   { cmd: 'docs:openapi:check', covers: '合同快照(openapi.json)' },
-  { cmd: 'docs:authz:check', covers: '权限(ROUTE_AUTHZ 授权清单)' },
-  { cmd: 'gate:authz:graph:check', covers: '权限(授权语义图)' },
-  { cmd: 'docs:rbacmap:check', covers: '权限(RBAC map)' },
   { cmd: 'docs:feclient:check', covers: '合同快照(前端 client 生成物)' },
-  { cmd: 'docs:codemap:check', covers: '结构生成物(CODEMAP)' },
-  { cmd: 'docs:counts:check', covers: '文档计数生成物' },
-  { cmd: 'docs:readtax:check', covers: '恒读层预算' },
+  { cmd: 'docs:authz:check', covers: '权限(ROUTE_AUTHZ 授权清单)' },
+  { cmd: 'check:rbac', covers: '权限(RBAC 代码一致性)' },
 ];
 
 /** ⑧ 合同点名的四个开关。前三个是 per-instance env,第四个刻意不是(见 judgeFlagsFailFast)。 */
@@ -803,14 +789,19 @@ export function judgeOldMigrationsUnchanged(
     : { ok: false, evidence: bad };
 }
 
-/** ④-a 生成物对账:既有 `--check` 家族全绿(生成器重跑与仓内产物逐字节比对)。 */
+/** ④-a 生成物对账与 RBAC 代码校验:每个登记命令必须恰好执行一次且退出 0。 */
 export function judgeReconcile(
   results: readonly { cmd: string; covers: string; code: number; tail: string }[],
 ): Judgement {
-  if (results.length !== RECONCILE_COMMANDS.length) {
+  const pending = new Set(RECONCILE_COMMANDS.map((r) => r.cmd));
+  const unexpected = results.filter((r) => !pending.delete(r.cmd)).map((r) => r.cmd);
+  if (pending.size > 0 || unexpected.length > 0) {
     return {
       ok: false,
-      evidence: [`只跑到 ${results.length}/${RECONCILE_COMMANDS.length} 条对账命令 ⇒ 采集不全`],
+      evidence: [
+        ...(pending.size > 0 ? [`缺少对账命令: ${[...pending].join(' / ')}`] : []),
+        ...(unexpected.length > 0 ? [`重复或未登记的对账命令: ${unexpected.join(' / ')}`] : []),
+      ],
     };
   }
   const bad = results.filter((r) => r.code !== 0);
@@ -818,7 +809,7 @@ export function judgeReconcile(
     ? {
         ok: true,
         evidence: [
-          `${results.length} 条生成物新鲜度判据全绿:${results.map((r) => r.cmd).join(' / ')}`,
+          `${results.length} 条生成物与权限判据全绿:${results.map((r) => r.cmd).join(' / ')}`,
         ],
       }
     : { ok: false, evidence: bad.map((r) => `${r.cmd}(${r.covers})exit ${r.code}:${r.tail}`) };
@@ -1915,6 +1906,20 @@ export function positiveControls(): Control[] {
       run: () =>
         judgeReconcile(RECONCILE_COMMANDS.slice(1).map((c) => ({ ...c, code: 0, tail: '' }))),
     },
+    {
+      id: '4a″',
+      desc: '用重复的成功命令顶替另一个对账命令 ⇒ 计数相同仍必红',
+      must: 'red',
+      run: () =>
+        judgeReconcile(
+          RECONCILE_COMMANDS.map((c, i, all) => ({
+            ...c,
+            cmd: i === 1 ? all[0].cmd : c.cmd,
+            code: 0,
+            tail: '',
+          })),
+        ),
+    },
     // 4c 的正对照:变异只动审计登记表一个计数(攻击者改计数让总数对上)——
     // 判据本体(scripts/check-*-registry.ts)的 M1–M6 常驻变异对拍在 unit 轮全覆盖,
     // 这里再钉一层「cutover 引用面没接错」:喂同一个变异,④-c 必须红且点名漂移。
@@ -2726,12 +2731,7 @@ function buildItems(signoff: SignoffState, acceptance: AcceptanceEvidence): Item
     {
       text: CONTRACT_ITEMS[3],
       subs: [
-        sub(
-          '4a',
-          'A',
-          '权限与合同快照类生成物:重跑生成器与仓内产物逐字节对账',
-          judgeReconcile(reconcile),
-        ),
+        sub('4a', 'A', '合同与授权生成物新鲜度、RBAC 代码一致性', judgeReconcile(reconcile)),
         sub(
           '4c',
           'A',
@@ -3088,12 +3088,11 @@ function main(): void {
     return;
   }
 
-  // ── `--signoff`:只判「签字登记表本身可不可信」,接 CI 的就是这一段 ──────────
+  // ── `--signoff`:只判「签字登记表本身可不可信」 ──────────
   //
   // 🔴 与全量的分界线只有一条:**这里不判十条的结论**。
   //    故它不跑 collectAcceptance()(要 jest + 生成的 Prisma client)、
-  //    不跑 collectReconcile()(8 条生成物新鲜度判据)、不跑 resolveBaselineCommit()(要 git 历史)。
-  //    ⇒ 纯文件解析 + AST,秒级,可以留在无 Postgres、无 prisma:generate 的 diff-guards job 里。
+  //    不跑 collectReconcile()、不跑 resolveBaselineCommit()(要 git 历史)。
   // ⚠️ 它是全量的**子集**:`assertSubIdsClosed()` 仍只在全量里跑(它需要 buildItems 的真实产出)。
   if (signoffOnly) {
     const pkgVersion = (JSON.parse(read('package.json')) as { version: string }).version;
