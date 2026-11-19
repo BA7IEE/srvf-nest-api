@@ -3021,6 +3021,8 @@ const POSITION_ROLE_POLICY_CATALOG = Object.freeze(
   ),
 );
 
+// 活动三项预置映射的定向恢复工具见 scripts/ops/reconcile-activity-catalog.sql。
+// 修改下列角色契约时同步核验工具中的映射及其固定迁移清单。
 export const RBAC_SEED_CATALOG = Object.freeze({
   // ⚠️ `permissions` 的**各桶并集必须等于权限码全集** —— 这不是散文,由
   // `pnpm docs:catalog:check`(`scripts/check-permission-catalog-closure.ts`)机器执法。
