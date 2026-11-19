@@ -1,0 +1,16 @@
+检查	命令或入口	进程 exit	判定范围
+SSH	ssh -o BatchMode=yes -o StrictHostKeyChecking=yes srvf hostname	0	限定主机
+编译	pnpm build	0	配合六个编译产物的摘要
+单测	pnpm test --runInBand --runTestsByPath src/modules/activities/activity-simple-review-profile.spec.ts src/modules/activities/activity-simple-draft.service.spec.ts	0	49/49
+冷 lint	pnpm lint	0	2201 文件，零错误、零警告
+类型检查	pnpm typecheck；NODE_OPTIONS=--max-old-space-size=7168 pnpm typecheck	134 / 0	首次测试类型项目耗尽默认堆
+API 产物	pnpm docs:openapi:check && pnpm docs:feclient:check && pnpm docs:authz:check	1 / 0	首轮找不到本机对应引擎，复用生成时的 Prisma 缓存通过
+本地 Jest 契约	pnpm test:contract --runInBand	1	globalSetup 缺测试库清单，测试体未运行
+独立本地 E2E 准备	sh local-check.sh	2	约定容器名已存在，本地 E2E NOT_RUN
+无需指标	sh browser.sh not_required	0	真实页面到发布，变更 HTTP 到 pending
+必填指标	sh browser.sh required	1	已创建草稿，下一次登录触发 42900
+必填指标续测	sh resume.sh required	1 / 1	首次登录限流，下一次提审成功，审批按钮 disabled；批准 HTTP 未发出
+DB	docker exec -i <trial-pg> psql -X -v ON_ERROR_STOP=1 -U postgres -d srvf_staging < db-check.sql	0	活动、审批、权限、审计逐项读回
+Worker	sh worker.sh（隔离宿主目录）	0	两种意图均 succeeded、停止退出码 0
+公网	preflight.sh；curl -fsS /api/system/v1/health/live 和 /ready	0	公网版本和健康，业务 NOT_RUN
+退役	sh retire.sh（隔离宿主目录）	0	待处理为零，保留合成审计并回收
