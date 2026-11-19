@@ -1,0 +1,2 @@
+{"bind_permission" : 0, "roles_with_code" : 0}
+member_grade|1
