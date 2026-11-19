@@ -1,0 +1,20 @@
+lab POST /api/auth/v1/login 200 0 cmwnmrsit402fe0083d483137b4fe98c9
+lab GET /api/admin/v1/me 200 0 cmwnmrsm2f1e14cf4fed24a04471e0582
+lab GET /api/system/v1/authz/me/effective-permissions 200 0 cmwnmrsm6739b4f94a73e82cd7da5686f
+lab GET /api/system/v1/dict-types 403 30100 cmwnmrsttaf71a6a111f27bff9b04756f
+lab GET /api/admin/v1/meta/dashboard-summary 200 0 cmwnmrstw10f2a050e3de9de9c40dcf41
+lab GET /api/admin/v1/me 200 0 cmwnmrtu2e3a0e87445dffdb7f6205cf9
+lab GET /api/admin/v1/activities 200 0 cmwnmrtu5907a7a43d5e274351f148e83
+lab GET /api/system/v1/dict-types 403 30100 cmwnmrtty0fcbbbcd40d40d8ee31414f9
+lab final #/srvf/activities-domain/activities simple-create-visible true
+lab GET /api/admin/v1/me 200 0 cmwnmruiqf6b251979811534cf60ab078
+lab GET /api/admin/v1/activities/cmwnmmzir000flc0185gjiryj/simple-draft 200 0 cmwnmruitc222602eae07a3e4ce5b7293
+lab GET /api/admin/v1/activities/organization-options 200 0 cmwnmrul594e696c12ac078e5b52f3c6d
+lab GET /api/admin/v1/me 200 0 cmwnmrv0w2ccbfde4a6a97f85835eaf78
+lab GET /api/admin/v1/activities/cmwnmmzir000flc0185gjiryj/simple-draft 200 0 cmwnmrv197a9356cd1ecc9f256ce2c356
+lab GET /api/admin/v1/me 200 0 cmwnmrv6ja46d2f0089cdf5d633aa6f8e
+lab GET /api/admin/v1/activities/cmwnmmzir000flc0185gjiryj/simple-draft 200 0 cmwnmrv7bffc7322666cfcb76e7cf5c15
+confirmation keys confirmation,expectedDraftHash,operationKey response names rejected field true
+lab POST /api/admin/v1/activities/cmwnmmzir000flc0185gjiryj/publish-reviews 400 40000 cmwnmrv8u026419b1b3db58cdbc2ce8b0
+lab GET /api/admin/v1/me 200 0 cmwnmrv9nf300bfd6b4b6e7604755a486
+lab GET /api/admin/v1/activities/cmwnmmzir000flc0185gjiryj/simple-draft 200 0 cmwnmrva4d09aca4e468a149e002bd096

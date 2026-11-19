@@ -1,0 +1,20 @@
+/srvf-t35-TMGz2JIx-api running
+/srvf-t35-TMGz2JIx-web running
+lab POST /api/auth/v1/login 200 0 cmwnmlqu21af8266edb7b5fd70d11c3c7
+lab GET /api/admin/v1/me 200 0 cmwnmlr01828eab1e384936cc4de009bc
+lab GET /api/system/v1/authz/me/effective-permissions 200 0 cmwnmlr0de9070969beaf0d972b774186
+lab GET /api/system/v1/dict-types 403 30100 cmwnmlrbzbbb90564a4d9dace275c8b8b
+lab GET /api/admin/v1/meta/dashboard-summary 200 0 cmwnmlrc349f39d2be9d7855750e801f1
+lab GET /api/system/v1/dict-types 403 30100 cmwnmls5d340094ab5b7e8e8d28b04b4f
+lab GET /api/admin/v1/activities 200 0 cmwnmls5md0b2bb571fe3fce715128328
+lab GET /api/admin/v1/me 200 0 cmwnmls6f6280c7a39d1c63cc5b5a4043
+lab final #/srvf/activities-domain/activities simple-create-visible true
+reviewer POST /api/auth/v1/login 200 0 cmwnmlsst5ae430629acee9c5a9073bae
+reviewer GET /api/admin/v1/me 200 0 cmwnmlsxz7cdde2f7040b8f8821865a34
+reviewer GET /api/system/v1/authz/me/effective-permissions 200 0 cmwnmlsybeacab80b7571b5750e1d18f3
+reviewer GET /api/system/v1/dict-types 403 30100 cmwnmlt97a3e28f4b27db9c627427a74d
+reviewer GET /api/admin/v1/meta/dashboard-summary 200 0 cmwnmlt9c31c3ea5bc10bb0a598885783
+reviewer GET /api/admin/v1/me 200 0 cmwnmlu2x9fa5f6ec9fc7b780166ee4d9
+reviewer GET /api/system/v1/dict-types 403 30100 cmwnmlu2ub4fb37471f7f888a2580e639
+reviewer GET /api/admin/v1/activities 200 0 cmwnmlu322c38a9496e4831526951db37
+reviewer final #/srvf/activities-domain/activities simple-create-visible false

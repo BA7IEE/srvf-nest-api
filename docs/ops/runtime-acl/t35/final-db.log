@@ -1,0 +1,13 @@
+internal=true
+/srvf-t35-TMGz2JIx-web image=sha256:bfdfe2455c0d6ec8a056dde0b9e9f2f7ca19bd9ab568931ccbf0f9b64f010f22 published_ports={}
+/srvf-t35-TMGz2JIx-api image=sha256:1eb4e3ca321b141bca0c9c032e919f8665179f843dc623349fcd765ee6c89ffb published_ports={}
+/srvf-t35-TMGz2JIx-pg image=sha256:6a2e324ebe59af6031c4c1cd96c1d5072c2ebc36563d2196365e43b8297c062d published_ports={}
+migration|156
+draft|draft|not_required|1|t|0
+auth.login|cmwnmlqu21af8266edb7b5fd70d11c3c7|lab
+auth.login|cmwnmlsst5ae430629acee9c5a9073bae|reviewer
+auth.login|cmwnmmw5b559199cdf84b18be6bd649ed|lab
+activity.publish|cmwnmmzfq19dc20935681f3810ee26ebb|lab
+auth.login|cmwnmnodte63dec95f6c63c8101b76dc5|lab
+auth.login|cmwnmrsit402fe0083d483137b4fe98c9|lab
+queue|0|0|0
