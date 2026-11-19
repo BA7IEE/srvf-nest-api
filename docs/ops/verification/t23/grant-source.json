@@ -1,0 +1,1 @@
+{"grantor" : "postgres", "grantee" : "srvf_dp_acceptance_runtime", "column" : "updatedAt", "privilege" : "UPDATE", "grantable" : false}
