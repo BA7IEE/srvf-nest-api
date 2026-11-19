@@ -1,0 +1,37 @@
+{"actor":"lab","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnrvm7yde318b39adfd28fda4e668da"}
+{"actor":"lab","path":"/api/system/v1/authz/me/effective-permissions","status":200,"code":0,"reqId":"cmwnrvm819b4af00c6e0d7ba171fb7cac"}
+{"actor":"lab","path":"/api/system/v1/dict-types","status":403,"code":30100,"reqId":"cmwnrvmi6a92df63a4167645862b0499a"}
+{"actor":"lab","path":"/api/admin/v1/meta/dashboard-summary","status":200,"code":0,"reqId":"cmwnrvmib3693da0f91fe1062da2c5ad1"}
+{"actor":"reviewer","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnrvmtle1def7bc8efcbb2607731cb3"}
+{"actor":"reviewer","path":"/api/system/v1/authz/me/effective-permissions","status":200,"code":0,"reqId":"cmwnrvmtp9db4ed97b8891c688c0d33bb"}
+{"actor":"reviewer","path":"/api/system/v1/dict-types","status":403,"code":30100,"reqId":"cmwnrvn30229b38d06b4de2c6f87c8480"}
+{"actor":"reviewer","path":"/api/admin/v1/meta/dashboard-summary","status":200,"code":0,"reqId":"cmwnrvn350bb64979852c9d2cda822db4"}
+{"actor":"lab","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnrvndlfc551c8dd28ccfd3a5d1c832"}
+{"actor":"lab","path":"/api/admin/v1/activities/cmwnrt3zg000amy01t5z9qjve/simple-draft","status":200,"code":0,"reqId":"cmwnrvndp2e232e125c3e247861cb4944"}
+{"actor":"lab","path":"/api/app/v1/my/managed-activities/cmwnrt3zg000amy01t5z9qjve","status":200,"code":0,"reqId":"cmwnrvnfs0d936954e4330ab1fc07a5fd"}
+{"actor":"lab","path":"/api/admin/v1/activities/organization-options","status":200,"code":0,"reqId":"cmwnrvnfo36fb9b62b97322e34e9bc2c4"}
+{"actor":"lab","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnrvnted9e9139626f36eafc1d6a280"}
+{"actor":"lab","path":"/api/app/v1/my/managed-activities/cmwnrt3zg000amy01t5z9qjve","status":200,"code":0,"reqId":"cmwnrvnttcdf3ecfae8ed1e90dff2d752"}
+{"actor":"lab","path":"/api/admin/v1/activities/cmwnrt3zg000amy01t5z9qjve/simple-draft","status":200,"code":0,"reqId":"cmwnrvnto16f41ea9cd16ecf2a7672db5"}
+{"actor":"lab","path":"/api/app/v1/my/managed-activities/cmwnrt3zg000amy01t5z9qjve/change-reviews","status":200,"code":0,"reqId":"cmwnrvnvwdf4ad653bb62639765bc86de"}
+{"actor":"lab","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnrvnyac2828dd586bc3067ad827dbe"}
+{"actor":"lab","path":"/api/admin/v1/activities/cmwnrt3zg000amy01t5z9qjve/simple-draft","status":200,"code":0,"reqId":"cmwnrvnyc08faabd539bfb9ff4f50eca8"}
+{"actor":"lab","path":"/api/app/v1/my/managed-activities/cmwnrt3zg000amy01t5z9qjve","status":200,"code":0,"reqId":"cmwnrvo0l4a25e9ba857e7d0da93a1cf0"}
+{"actor":"lab","path":"/api/admin/v1/activities/organization-options","status":200,"code":0,"reqId":"cmwnrvo0g9a651cb41d06de0b8c1e542f"}
+{"actor":"reviewer","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnrvof8db07db604bafbc0fe03a5dd3"}
+{"actor":"reviewer","path":"/api/system/v1/authz/me/effective-permissions","status":200,"code":0,"reqId":"cmwnrvofba2e35ce0fab4119bf64ab5b8"}
+{"actor":"reviewer","path":"/api/admin/v1/activity-publish-reviews/cmwnrvnxt002qmy01o5n0aij2","status":200,"code":0,"reqId":"cmwnrvog3898f56054b9bdfd1facbe9fa"}
+{"actor":"reviewer","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnrvoh66b41069eece7f4d49bc49b05"}
+{"actor":"reviewer","path":"/api/system/v1/authz/me/effective-permissions","status":200,"code":0,"reqId":"cmwnrvoh87e35428196597092b84c6a34"}
+PASS five required definitions, limits and both options visible on review cmwnrvnxt002qmy01o5n0aij2
+{"actor":"reviewer","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnrvpkqea094f4a3b19cdc57458c6d6"}
+{"actor":"reviewer","path":"/api/system/v1/authz/me/effective-permissions","status":200,"code":0,"reqId":"cmwnrvpkud5862ef73697fcf420819d2e"}
+{"actor":"reviewer","path":"/api/admin/v1/activity-publish-reviews/cmwnrvnxt002qmy01o5n0aij2","status":200,"code":0,"reqId":"cmwnrvplp95293ae1daaa79fe2aff1f3f"}
+{"actor":"reviewer","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnrvpmi287747dc19e1e8a97d23fe40"}
+{"actor":"reviewer","path":"/api/system/v1/authz/me/effective-permissions","status":200,"code":0,"reqId":"cmwnrvpml72acdeb940a5fa43df6b9a2c"}
+{"actor":"reviewer","path":"/api/admin/v1/activity-publish-reviews/cmwnrvnxt002qmy01o5n0aij2/approve","status":409,"code":20147,"reqId":"cmwnrvpn6b859c350fc71408ebfc5ec35"}
+{"actor":"lab","path":"/api/system/v1/dict-types","status":403,"code":30100,"reqId":"cmwnrvq0c4f4accbe950b44470c4e09c8"}
+{"actor":"lab","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnrvq0h76c21203fc4ae276f699384f"}
+{"actor":"lab","path":"/api/admin/v1/meta/dashboard-summary","status":200,"code":0,"reqId":"cmwnrvq1e3b47ab27390f5334ca8ca17c"}
+{"actor":"lab","path":"/api/admin/v1/activities/cmwnrt3zg000amy01t5z9qjve/simple-draft","status":200,"code":0,"reqId":"cmwnrvq0j4ea080e4ac69d8985a93ce63"}
+PASS occupied capacity rejected; pending review retained; three layers unchanged

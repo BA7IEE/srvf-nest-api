@@ -1,0 +1,5 @@
+nginx: the configuration file /usr/local/openresty/nginx/conf/nginx.conf syntax is ok
+nginx: configuration file /usr/local/openresty/nginx/conf/nginx.conf test is successful
+Current candidate and all four upstreams verified; rollback config matches byte-for-byte.
+Retained image and complete new static manifest verified.
+verified manifest=9f44857d0e930bf2cda08703f31c9a2c1a57a6c66e8659c2aabf171fc1b10d1b api=sha256:826cd1241eef6e31d3925d4af80b2d1b6830c687d2cc37b67c1123fb9a433f75 revision=713d3416830d897852929731ff7f9b638038ab7c

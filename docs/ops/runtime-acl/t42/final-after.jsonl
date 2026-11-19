@@ -1,0 +1,24 @@
+{"state" : "aggregate", "hash" : "d577912812236a39b9209a89e3faa6b9", "buckets" : [["activity_person", null, 2, 2], ["position_participation", null, 2, 2], ["session_participation", null, 2, 2]], "active_reservations" : 6}
+{"kind" : "initial", "version" : 1, "status" : "approved", "id" : "cmwnrt559000lmy01varn5mhf", "submitted_role" : "USER", "reviewed_role" : "USER", "independent" : true, "activity_target" : 2, "session_target" : 2, "position_target" : 2, "activity_start" : "2026-12-01T01:00:00.000Z", "activity_location" : "T37 场地", "schedule_consistent" : true, "places_unchanged" : true}
+{"kind" : "change", "version" : 2, "status" : "approved", "id" : "cmwnrt99m001mmy01b3cnx7pf", "submitted_role" : "USER", "reviewed_role" : "USER", "independent" : true, "activity_target" : 12, "session_target" : 12, "position_target" : 12, "activity_start" : "2026-12-03T02:00:00.000Z", "activity_location" : "T41 东侧训练区", "schedule_consistent" : true, "places_unchanged" : true}
+{"kind" : "change", "version" : 3, "status" : "approved", "id" : "cmwnrtd8l001xmy01qymya4zg", "submitted_role" : "USER", "reviewed_role" : "USER", "independent" : true, "activity_target" : null, "session_target" : null, "position_target" : null, "activity_start" : "2026-12-03T02:00:00.000Z", "activity_location" : "T41 东侧训练区", "schedule_consistent" : true, "places_unchanged" : true}
+{"kind" : "change", "version" : 4, "status" : "pending", "id" : "cmwnrvnxt002qmy01o5n0aij2", "submitted_role" : "USER", "reviewed_role" : null, "independent" : null, "activity_target" : 1, "session_target" : 1, "position_target" : 1, "activity_start" : "2026-12-03T02:00:00.000Z", "activity_location" : "T41 东侧训练区", "schedule_consistent" : true, "places_unchanged" : true}
+{"event" : "auth.login", "reqId" : "cmwnrszlgcee60eb1c5df02221c7cbad3"}
+{"event" : "auth.login", "reqId" : "cmwnrt0p05aeb1c9c4d03c078b5f60f83"}
+{"event" : "activity.publish", "reqId" : "cmwnrt3v87146c0d795a8af66b9185459"}
+{"event" : "activity.publish", "reqId" : "cmwnrt51yd0893e90c4bbf1788cc1c190"}
+{"event" : "activity.publish", "reqId" : "cmwnrt6qj554ef8659e9e36f6698418b0"}
+{"event" : "activity.publish", "reqId" : "cmwnrt6qj554ef8659e9e36f6698418b0"}
+{"event" : "auth.login", "reqId" : "cmwnrt79pe3b8013cd834b2cca7386ef9"}
+{"event" : "auth.login", "reqId" : "cmwnrt7qge03849acd53990fbfdc64d8f"}
+{"event" : "auth.login", "reqId" : "cmwnrt88uf1edc7bf6972966e69996f68"}
+{"event" : "activity.publish", "reqId" : "cmwnrt97n12d3ab5cc295399c81b8950a"}
+{"event" : "activity.publish", "reqId" : "cmwnrtc8vd08cddc73b625b8ebc1b3b7a"}
+{"event" : "activity.publish", "reqId" : "cmwnrtc8vd08cddc73b625b8ebc1b3b7a"}
+{"event" : "activity.publish", "reqId" : "cmwnrtd6l51ee1b7de14d04d51ed487c0"}
+{"event" : "activity.publish", "reqId" : "cmwnrteto169653a88eb46e2f01d7a125"}
+{"event" : "auth.login", "reqId" : "cmwnruxobc8ec69477fcf4dee88b6d9a6"}
+{"event" : "auth.login", "reqId" : "cmwnruxso330f1f099b286e3d7ba76151"}
+{"event" : "auth.login", "reqId" : "cmwnrvm4ia1963ab3a5253461bde2c30c"}
+{"event" : "auth.login", "reqId" : "cmwnrvmq04d6aa35796ae88269ac7b172"}
+{"event" : "activity.publish", "reqId" : "cmwnrvnvwdf4ad653bb62639765bc86de"}
