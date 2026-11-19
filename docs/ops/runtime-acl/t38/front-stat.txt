@@ -1,0 +1,7 @@
+ src/api/srvf-activity-publish-review.ts            |  14 +-
+ .../activities-domain/activities/simple-draft.vue  |   4 +-
+ .../{title-change.vue => published-change.vue}     |  72 +++++---
+ src/views/srvf/workbench/publish-review/detail.vue |   6 +-
+ src/views/srvf/workbench/publish-review/state.ts   |  53 ++++--
+ tests/render/simple_freeze_server.cjs              | 197 ++++++++++++++++++++-
+ 6 files changed, 297 insertions(+), 49 deletions(-)

@@ -1,0 +1,66 @@
+[
+  {
+    "actor": "lab",
+    "path": "/api/admin/v1/activities/from-template",
+    "status": 201,
+    "code": 0,
+    "reqId": "cmwnpj1abe542ebe85046251a6dd02971",
+    "matching_business_audit": true
+  },
+  {
+    "actor": "lab-editor",
+    "path": "/api/app/v1/my/managed-activities/cmwnpj1d60021lc01glbd0w3t",
+    "status": 200,
+    "code": 0,
+    "reqId": "cmwnpj2l20d6f62ee35d924748ef31c29",
+    "matching_business_audit": true
+  },
+  {
+    "actor": "lab",
+    "path": "/api/admin/v1/activities/cmwnpj1d60021lc01glbd0w3t/publish-reviews",
+    "status": 409,
+    "code": 20255,
+    "reqId": "cmwnpj2m8fac7e1d65f95d80cb73fc183",
+    "matching_business_audit": false
+  },
+  {
+    "actor": "lab",
+    "path": "/api/admin/v1/activities/cmwnpj1d60021lc01glbd0w3t/publish-reviews",
+    "status": 200,
+    "code": 0,
+    "reqId": "cmwnpj42paf138d8655106d827ed40d66",
+    "matching_business_audit": true
+  },
+  {
+    "actor": "reviewer",
+    "path": "/api/admin/v1/activity-publish-reviews/cmwnpj47q002olc0168aznl7g/approve",
+    "status": 200,
+    "code": 0,
+    "reqId": "cmwnpj654520ae9a72c19d2fb38e69dca",
+    "matching_business_audit": true
+  },
+  {
+    "actor": "lab",
+    "path": "/api/app/v1/my/managed-activities/cmwnpj1d60021lc01glbd0w3t/change-reviews",
+    "status": 200,
+    "code": 0,
+    "reqId": "cmwnpj6imbb576282e9d7d12c562cfc7e",
+    "matching_business_audit": true
+  },
+  {
+    "actor": "reviewer",
+    "path": "/api/admin/v1/activity-publish-reviews/cmwnpj6ll003flc015mmrvg9d/approve",
+    "status": 200,
+    "code": 0,
+    "reqId": "cmwnpj8hvf72e8237cd3a1fb082f19971",
+    "matching_business_audit": true
+  },
+  {
+    "actor": "reviewer",
+    "path": "/api/app/v1/my/managed-activities/cmwnpj1d60021lc01glbd0w3t/change-reviews",
+    "status": 404,
+    "code": 20001,
+    "reqId": "cmwnpj8q9e97a52a15be55b5d7a638cfc",
+    "matching_business_audit": false
+  }
+]

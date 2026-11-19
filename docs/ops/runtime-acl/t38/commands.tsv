@@ -1,0 +1,12 @@
+实际调用入口（敏感路径参数省略）	exit	证据
+gh pr view 1444 / gh api graphql	0	backend-ci.json, backend-reviews.json
+gh pr view 2 / gh api compare	0	frontend-ci.json, private-lineage.json
+pnpm install --frozen-lockfile	0	冻结前端基线
+pnpm lint && pnpm typecheck && pnpm build	0	前端最终组合
+node .claude/hooks/harness.test.mjs && node .claude/hooks/harness-doctor.mjs && node .claude/hooks/readtax.mjs && git diff --exit-code	0	82 项成功，无结构漂移
+sh browser.sh SCENARIO=text_change_race (服务器隔离 Chromium)	0	final-browser.log
+psql -XAtq -v ON_ERROR_STOP=1 (隔离库 readback.sql)	0	readback.log, db.log, correlations.json
+sh worker.sh / sh retire.sh (隔离服务器)	0	worker.log, retired.log
+sh verify-pair.sh (服务器只读，退役后复核)	0	verify-after-retirement.log
+curl --fail /api/health/ready (首次路径误写)	22	HTTP 404
+curl --fail /api/system/v1/health/ready / 旧静态入口摘要核对	0	public-readback.txt
