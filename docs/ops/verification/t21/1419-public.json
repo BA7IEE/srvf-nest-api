@@ -1,0 +1,19 @@
+{
+  "oversize": {
+    "bytes": 102504,
+    "status": 413,
+    "code": 40000,
+    "exit": 0
+  },
+  "control": {
+    "bytes": 49,
+    "status": 404,
+    "code": 40400,
+    "exit": 0
+  },
+  "operator": "host_bridge",
+  "source_script_sha256": {
+    "srvf-t21-1419-probe.py": "d3aeba1bf8f76d8a0a891b191c06f5947e593a9d48f2280c3465fc6d7c23a15e",
+    "srvf-t21-1419-control.py": "2b058920ba302fa400b2bbf58a297e0d9b232d8768fbc4049eb886de719fc7d5"
+  }
+}

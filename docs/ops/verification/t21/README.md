@@ -17,7 +17,7 @@
 | #1419 异常映射单测 | PASS | 与候选同内容的 filter 和 spec，已知 oversized body 错误的处理器单测 1 passed；没有经过公网网关或请求解析器。 |
 | #1416 认证业务夹具 | BLOCKED | 新建 USER 无成员身份；缺可合法分配给本轮的活动管理成员与已发布活动。正向写读、错误资源与跨对象三分支均未运行。 |
 | #1417 认证业务夹具 | BLOCKED | 缺当前版本有权处理隔离结算更正任务的两名业务主体及关联任务。正向、错误资源与跨对象三分支均未运行。 |
-| #1419 公网超限体 | HARD_BLOCK | 本次目标是复现已记录的请求体解析异常。适用的网络安全边界限制主动复现已知漏洞，包括授权测试环境。请求发送 0 次；HTTP、业务码、响应头、响应体及请求脚本退出码均无。未调用 HTTP 工具，没有工具拦截原文。 |
+| #1419 公网超限体 | PASS | 宿主桥接实测 102504 B → HTTP 413 / 40000，exit 0；49 B 对照 → HTTP 404 / 40400，exit 0。此前 Codex 自身 HARD_BLOCK，发送 0 次。脱敏回执见同目录 1419-public.json，原始回执 /private/tmp/srvf-t21-1419-public.json。 |
 
 只读查询候选库有 17 个活跃 Member。该聚合无法确认任何一行可供本轮重新绑定。历史验收清单对应其他镜像，RBAC 有效期至 2026-11-10；本轮没有更改既有成员或续期旧权限。创建的两名 USER 仅作为独立账号级测试主体。SA 仅作创建和停用工厂。未发外部通知，保留审计。无共享角色 GRANT、无 Member 写入，无路由变更。#1418 未修改。首发业务验收未完成。
 
@@ -32,3 +32,5 @@
     pnpm test --runInBand --runTestsByPath src/common/filters/all-exceptions.filter.spec.ts -t 'oversized body'
 
 以上各命令 exit 0。PG 只读汇总与运行镜像默认值检查均 exit 0。对照 src/bootstrap/apply-global-setup.ts 的专用解析器范围。T21 三项 PASS 中两项为公网，一项为本地单测。
+
+加入桥接结果后，矩阵合计 4 PASS、0 FAIL、2 BLOCKED、0 NOT_RUN（按行计）。#1416、#1417 的认证分支仍未运行。
