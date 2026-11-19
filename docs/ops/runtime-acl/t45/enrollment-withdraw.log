@@ -1,0 +1,3 @@
+withdraw OK; 32 column privileges, 3 relations
+check OK; 32 column privileges, 3 relations
+closure write guard withdraw OK

@@ -1,0 +1,98 @@
+{
+  "AttendancePunchEvent": {
+    "SELECT": [
+      "id",
+      "activityId",
+      "sessionId",
+      "positionId",
+      "participationIdentityId",
+      "memberId",
+      "eventTypeCode",
+      "sourceCode",
+      "occurredAt",
+      "receivedAt",
+      "operatorUserId",
+      "reason",
+      "qrCredentialId",
+      "importJobItemId",
+      "offlinePackageId",
+      "offlineSequence",
+      "offlinePriorHash",
+      "offlineEventPayloadHash",
+      "deviceId",
+      "longitude",
+      "latitude",
+      "accuracy",
+      "distance",
+      "geoVerified",
+      "outOfRange",
+      "lowAccuracy",
+      "eventKey",
+      "requestHash",
+      "supersedesEventId",
+      "evidenceRevision"
+    ],
+    "INSERT": [
+      "id",
+      "createdAt",
+      "activityId",
+      "sessionId",
+      "positionId",
+      "participationIdentityId",
+      "memberId",
+      "eventTypeCode",
+      "sourceCode",
+      "occurredAt",
+      "receivedAt",
+      "operatorUserId",
+      "operatorMemberId",
+      "reason",
+      "qrCredentialId",
+      "longitude",
+      "latitude",
+      "accuracy",
+      "distance",
+      "geoVerified",
+      "outOfRange",
+      "lowAccuracy",
+      "eventKey",
+      "requestHash",
+      "supersedesEventId",
+      "evidenceRevision"
+    ]
+  },
+  "ParticipantServiceSegmentRevision": {
+    "INSERT": [
+      "id",
+      "createdAt",
+      "updatedAt",
+      "participationIdentityId",
+      "segmentKey",
+      "revision",
+      "sourceCheckInEventId",
+      "sourceCloseEventId",
+      "resultCode",
+      "statusCode",
+      "checkInAt",
+      "checkOutAt",
+      "serviceHours",
+      "lateFlag",
+      "earlyLeaveFlag",
+      "exceptionFlagsJson",
+      "baseRevisionId",
+      "effectiveBatchId"
+    ]
+  },
+  "ActivityEvidenceState": {
+    "UPDATE": [
+      "evidenceRevision",
+      "lastEvidenceAt"
+    ]
+  },
+  "CorrectionPendingTimeAllocation": {
+    "SELECT": [
+      "applicationId",
+      "targetSegmentRevisionId"
+    ]
+  }
+}
