@@ -245,6 +245,8 @@ SELECT encode(sha256(convert_to(system_identifier::text || ':' || current_databa
 FROM pg_control_system();
 ```
 
+执行前从独立审过的完整提交导出源码，用 `git show "$sha:prisma/seed.ts" | sha256sum` 取得入口摘要。向作业传入 `ACCEPTANCE_SOURCE_COMMIT` 和 `ACCEPTANCE_ENTRY_SHA256`。入口核对自身文件并将实测摘要和操作者声明的提交写入事务审计；其余挂载内容与工具镜像仍需独立留证。
+
 用户名使用 `accept_` 加 6 至 24 位小写字母、数字或下划线。由维护者提供随机密码，
 沿用 seed 的凭据注入方式。拒绝已存在的用户名（含软删记录），仅在活跃 ADMIN 和 SUPER_ADMIN
 均为零时写入。成功事务写入一行 User 和一行审计，保留原有角色和绑定。

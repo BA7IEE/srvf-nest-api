@@ -1,4 +1,5 @@
-import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import type { INestApplication } from '@nestjs/common';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -32,6 +33,10 @@ describe('offline acceptance bootstrap', () => {
           env: {
             ...process.env,
             APP_ENV: 'test',
+            ACCEPTANCE_SOURCE_COMMIT: 'a'.repeat(40),
+            ACCEPTANCE_ENTRY_SHA256: createHash('sha256')
+              .update(readFileSync('prisma/seed.ts'))
+              .digest('hex'),
             SUPER_ADMIN_USERNAME: name,
             SUPER_ADMIN_PASSWORD: password,
             ACCEPTANCE_DATABASE_FINGERPRINT: pin,
@@ -49,7 +54,7 @@ describe('offline acceptance bootstrap', () => {
         prisma.roleBinding.count(),
       ]);
     const [users, audits, ...rbac] = await snapshot();
-    expect(invoke('0'.repeat(64), username)).not.toBe(0);
+    expect(invoke('0'.repeat(64), username)).toBe(1);
     expect(await snapshot()).toEqual([users, audits, ...rbac]);
     expect(invoke(fingerprint, username)).toBe(0);
     const user = await prisma.user.findUniqueOrThrow({
@@ -62,7 +67,7 @@ describe('offline acceptance bootstrap', () => {
         where: { event: 'seed.acceptance-account.create', resourceId: user.id },
       }),
     ).toBe(1);
-    expect(invoke(fingerprint, username + '_b')).not.toBe(0);
+    expect(invoke(fingerprint, username + '_b')).toBe(1);
     expect(await snapshot()).toEqual([users + 1, audits + 1, ...rbac]);
   }, 30000);
 });
