@@ -1,0 +1,10 @@
+
+ RUN  v3.2.7 /private/tmp/srvf-t43/mobile
+
+ ✓ tests/contract/auth-transport.test.ts (2 tests) 6ms
+ ✓ tests/contract/activity-form-bridge.test.ts (2 tests) 43ms
+
+ Test Files  2 passed (2)
+      Tests  4 passed (4)
+   Start at  01:17:33
+   Duration  795ms (transform 206ms, setup 21ms, collect 275ms, tests 49ms, environment 619ms, prepare 75ms)
