@@ -159130,6 +159130,373 @@
           "places"
         ]
       },
+      "AdminMetricSetItemDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "sortOrder": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 99
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "metricDefinitionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "definitionHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "key",
+          "sortOrder",
+          "required",
+          "metricDefinitionId",
+          "definitionHash"
+        ]
+      },
+      "AdminMetricSetDefinitionV1Dto": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "number",
+            "enum": [
+              1
+            ]
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "version": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "items": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminMetricSetItemDto"
+            }
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "code",
+          "version",
+          "name",
+          "items"
+        ]
+      },
+      "AdminMetricIntegerConfigurationDto": {
+        "type": "object",
+        "properties": {
+          "kindCode": {
+            "type": "string",
+            "enum": [
+              "non_negative_integer"
+            ]
+          },
+          "unit": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "minimum": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "maximum": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "kindCode",
+          "unit",
+          "minimum",
+          "maximum"
+        ]
+      },
+      "AdminMetricDecimalConfigurationDto": {
+        "type": "object",
+        "properties": {
+          "kindCode": {
+            "type": "string",
+            "enum": [
+              "non_negative_decimal"
+            ]
+          },
+          "unit": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "scale": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 6
+          },
+          "minimum": {
+            "type": "string",
+            "description": "与 scale 一致的非负规范十进制字符串"
+          },
+          "maximum": {
+            "type": "string",
+            "description": "与 scale 一致的非负规范十进制字符串"
+          }
+        },
+        "required": [
+          "kindCode",
+          "unit",
+          "scale",
+          "minimum",
+          "maximum"
+        ]
+      },
+      "AdminMetricBooleanConfigurationDto": {
+        "type": "object",
+        "properties": {
+          "kindCode": {
+            "type": "string",
+            "enum": [
+              "boolean"
+            ]
+          },
+          "unit": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              null
+            ]
+          }
+        },
+        "required": [
+          "kindCode",
+          "unit"
+        ]
+      },
+      "AdminMetricTextConfigurationDto": {
+        "type": "object",
+        "properties": {
+          "kindCode": {
+            "type": "string",
+            "enum": [
+              "short_text"
+            ]
+          },
+          "unit": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              null
+            ]
+          },
+          "maxLength": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 500
+          }
+        },
+        "required": [
+          "kindCode",
+          "unit",
+          "maxLength"
+        ]
+      },
+      "AdminMetricChoiceOptionDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "code",
+          "label"
+        ]
+      },
+      "AdminMetricChoiceConfigurationDto": {
+        "type": "object",
+        "properties": {
+          "kindCode": {
+            "type": "string",
+            "enum": [
+              "single_choice"
+            ]
+          },
+          "unit": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              null
+            ]
+          },
+          "options": {
+            "minItems": 1,
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminMetricChoiceOptionDto"
+            }
+          }
+        },
+        "required": [
+          "kindCode",
+          "unit",
+          "options"
+        ]
+      },
+      "AdminMetricDefinitionV1Dto": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "number",
+            "enum": [
+              1
+            ]
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "version": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "configuration": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AdminMetricIntegerConfigurationDto"
+              },
+              {
+                "$ref": "#/components/schemas/AdminMetricDecimalConfigurationDto"
+              },
+              {
+                "$ref": "#/components/schemas/AdminMetricBooleanConfigurationDto"
+              },
+              {
+                "$ref": "#/components/schemas/AdminMetricTextConfigurationDto"
+              },
+              {
+                "$ref": "#/components/schemas/AdminMetricChoiceConfigurationDto"
+              }
+            ],
+            "discriminator": {
+              "propertyName": "kindCode"
+            }
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "code",
+          "version",
+          "name",
+          "configuration"
+        ]
+      },
+      "ReviewMetricDefinitionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "definitionHash": {
+            "type": "string"
+          },
+          "definition": {
+            "$ref": "#/components/schemas/AdminMetricDefinitionV1Dto"
+          }
+        },
+        "required": [
+          "id",
+          "definitionHash",
+          "definition"
+        ]
+      },
+      "ReviewMetricSetDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "精确指标集版本 ID",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "code": {
+            "type": "string",
+            "description": "指标集稳定编码",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "version": {
+            "type": "number",
+            "description": "显式版本号",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "schemaVersion": {
+            "type": "number",
+            "description": "指标集定义 schema 版本",
+            "enum": [
+              1
+            ]
+          },
+          "definitionHash": {
+            "type": "string",
+            "description": "精确版本内容 hash",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "definition": {
+            "$ref": "#/components/schemas/AdminMetricSetDefinitionV1Dto"
+          },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewMetricDefinitionDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "version",
+          "schemaVersion",
+          "definitionHash",
+          "definition",
+          "metrics"
+        ]
+      },
       "ActivityPublishReviewResponseDto": {
         "type": "object",
         "properties": {
@@ -159227,6 +159594,13 @@
             "type": "object",
             "additionalProperties": true,
             "description": "详情读面返回的服务端变更差异"
+          },
+          "frozenMetricSets": {
+            "description": "详情中已核验的冻结指标版本与完整定义，仅包含基线或目标实际引用的版本",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewMetricSetDto"
+            }
           },
           "affectedMemberCount": {
             "type": "number",
@@ -161530,228 +161904,6 @@
           "reason"
         ]
       },
-      "AdminMetricIntegerConfigurationDto": {
-        "type": "object",
-        "properties": {
-          "kindCode": {
-            "type": "string",
-            "enum": [
-              "non_negative_integer"
-            ]
-          },
-          "unit": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 32
-          },
-          "minimum": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "maximum": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          }
-        },
-        "required": [
-          "kindCode",
-          "unit",
-          "minimum",
-          "maximum"
-        ]
-      },
-      "AdminMetricDecimalConfigurationDto": {
-        "type": "object",
-        "properties": {
-          "kindCode": {
-            "type": "string",
-            "enum": [
-              "non_negative_decimal"
-            ]
-          },
-          "unit": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 32
-          },
-          "scale": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 6
-          },
-          "minimum": {
-            "type": "string",
-            "description": "与 scale 一致的非负规范十进制字符串"
-          },
-          "maximum": {
-            "type": "string",
-            "description": "与 scale 一致的非负规范十进制字符串"
-          }
-        },
-        "required": [
-          "kindCode",
-          "unit",
-          "scale",
-          "minimum",
-          "maximum"
-        ]
-      },
-      "AdminMetricBooleanConfigurationDto": {
-        "type": "object",
-        "properties": {
-          "kindCode": {
-            "type": "string",
-            "enum": [
-              "boolean"
-            ]
-          },
-          "unit": {
-            "type": "string",
-            "nullable": true,
-            "enum": [
-              null
-            ]
-          }
-        },
-        "required": [
-          "kindCode",
-          "unit"
-        ]
-      },
-      "AdminMetricTextConfigurationDto": {
-        "type": "object",
-        "properties": {
-          "kindCode": {
-            "type": "string",
-            "enum": [
-              "short_text"
-            ]
-          },
-          "unit": {
-            "type": "string",
-            "nullable": true,
-            "enum": [
-              null
-            ]
-          },
-          "maxLength": {
-            "type": "number",
-            "minimum": 1,
-            "maximum": 500
-          }
-        },
-        "required": [
-          "kindCode",
-          "unit",
-          "maxLength"
-        ]
-      },
-      "AdminMetricChoiceOptionDto": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "label": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 100
-          }
-        },
-        "required": [
-          "code",
-          "label"
-        ]
-      },
-      "AdminMetricChoiceConfigurationDto": {
-        "type": "object",
-        "properties": {
-          "kindCode": {
-            "type": "string",
-            "enum": [
-              "single_choice"
-            ]
-          },
-          "unit": {
-            "type": "string",
-            "nullable": true,
-            "enum": [
-              null
-            ]
-          },
-          "options": {
-            "minItems": 1,
-            "maxItems": 50,
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AdminMetricChoiceOptionDto"
-            }
-          }
-        },
-        "required": [
-          "kindCode",
-          "unit",
-          "options"
-        ]
-      },
-      "AdminMetricDefinitionV1Dto": {
-        "type": "object",
-        "properties": {
-          "schemaVersion": {
-            "type": "number",
-            "enum": [
-              1
-            ]
-          },
-          "code": {
-            "type": "string",
-            "maxLength": 64,
-            "pattern": "^[a-z][a-z0-9_]*$"
-          },
-          "version": {
-            "type": "number",
-            "minimum": 1,
-            "maximum": 2147483647
-          },
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 100
-          },
-          "configuration": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/AdminMetricIntegerConfigurationDto"
-              },
-              {
-                "$ref": "#/components/schemas/AdminMetricDecimalConfigurationDto"
-              },
-              {
-                "$ref": "#/components/schemas/AdminMetricBooleanConfigurationDto"
-              },
-              {
-                "$ref": "#/components/schemas/AdminMetricTextConfigurationDto"
-              },
-              {
-                "$ref": "#/components/schemas/AdminMetricChoiceConfigurationDto"
-              }
-            ],
-            "discriminator": {
-              "propertyName": "kindCode"
-            }
-          }
-        },
-        "required": [
-          "schemaVersion",
-          "code",
-          "version",
-          "name",
-          "configuration"
-        ]
-      },
       "AdminActivityMetricDefinitionResponseDto": {
         "type": "object",
         "properties": {
@@ -163053,79 +163205,6 @@
           "operationKey",
           "expectedDefinitionHash",
           "expectedStatusCode"
-        ]
-      },
-      "AdminMetricSetItemDto": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "sortOrder": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 99
-          },
-          "required": {
-            "type": "boolean"
-          },
-          "metricDefinitionId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "definitionHash": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{64}$"
-          }
-        },
-        "required": [
-          "key",
-          "sortOrder",
-          "required",
-          "metricDefinitionId",
-          "definitionHash"
-        ]
-      },
-      "AdminMetricSetDefinitionV1Dto": {
-        "type": "object",
-        "properties": {
-          "schemaVersion": {
-            "type": "number",
-            "enum": [
-              1
-            ]
-          },
-          "code": {
-            "type": "string",
-            "maxLength": 64,
-            "pattern": "^[a-z][a-z0-9_]*$"
-          },
-          "version": {
-            "type": "number",
-            "minimum": 1,
-            "maximum": 2147483647
-          },
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 100
-          },
-          "items": {
-            "maxItems": 100,
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AdminMetricSetItemDto"
-            }
-          }
-        },
-        "required": [
-          "schemaVersion",
-          "code",
-          "version",
-          "name",
-          "items"
         ]
       },
       "AdminActivityMetricSetResponseDto": {

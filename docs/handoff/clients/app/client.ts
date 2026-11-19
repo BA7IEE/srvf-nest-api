@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:b051715dce1e7cbcb76930adc2ccfd7b9daf2b5369dbc1673bcac5d61e2afb18
+// inputDigest: sha256:53ff7b6703230444ebfa99ec7a374f42e5579b8641691a28c330d69096d20e51
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -17,6 +17,15 @@ import type {
   ActivityCheckInLocationDto,
   ActivityPublishReviewResponseDto,
   ActivityTemplateResolutionResponseDto,
+  AdminMetricBooleanConfigurationDto,
+  AdminMetricChoiceConfigurationDto,
+  AdminMetricChoiceOptionDto,
+  AdminMetricDecimalConfigurationDto,
+  AdminMetricDefinitionV1Dto,
+  AdminMetricIntegerConfigurationDto,
+  AdminMetricSetDefinitionV1Dto,
+  AdminMetricSetItemDto,
+  AdminMetricTextConfigurationDto,
   AppActivityAllocationBatchDto,
   AppActivityAllocationCandidateDto,
   AppActivityAllocationCommandReceiptDto,
@@ -363,6 +372,8 @@ import type {
   RegistrationFormChoiceInputDto,
   RejectAppManagedRegistrationDto,
   ResubmitAppManagedAttendanceSheetDto,
+  ReviewMetricDefinitionDto,
+  ReviewMetricSetDto,
   RevokeAppManagedActivityInvitationDto,
   RevokeAppManagedAttendanceQrDto,
   SendMyPhoneCodeDto,

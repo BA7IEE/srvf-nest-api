@@ -596,6 +596,13 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "directPublish": {
         "type": "boolean",
       },
+      "frozenMetricSets": {
+        "description": "详情中已核验的冻结指标版本与完整定义，仅包含基线或目标实际引用的版本",
+        "items": {
+          "$ref": "#/components/schemas/ReviewMetricSetDto",
+        },
+        "type": "array",
+      },
       "id": {
         "type": "string",
       },
@@ -34247,6 +34254,78 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     "required": [
       "decision",
       "expectedVersion",
+    ],
+    "type": "object",
+  },
+  "ReviewMetricDefinitionDto": {
+    "properties": {
+      "definition": {
+        "$ref": "#/components/schemas/AdminMetricDefinitionV1Dto",
+      },
+      "definitionHash": {
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "definitionHash",
+      "definition",
+    ],
+    "type": "object",
+  },
+  "ReviewMetricSetDto": {
+    "properties": {
+      "code": {
+        "description": "指标集稳定编码",
+        "maxLength": 64,
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "type": "string",
+      },
+      "definition": {
+        "$ref": "#/components/schemas/AdminMetricSetDefinitionV1Dto",
+      },
+      "definitionHash": {
+        "description": "精确版本内容 hash",
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "id": {
+        "description": "精确指标集版本 ID",
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "metrics": {
+        "items": {
+          "$ref": "#/components/schemas/ReviewMetricDefinitionDto",
+        },
+        "type": "array",
+      },
+      "schemaVersion": {
+        "description": "指标集定义 schema 版本",
+        "enum": [
+          1,
+        ],
+        "type": "number",
+      },
+      "version": {
+        "description": "显式版本号",
+        "maximum": 2147483647,
+        "minimum": 1,
+        "type": "number",
+      },
+    },
+    "required": [
+      "id",
+      "code",
+      "version",
+      "schemaVersion",
+      "definitionHash",
+      "definition",
+      "metrics",
     ],
     "type": "object",
   },

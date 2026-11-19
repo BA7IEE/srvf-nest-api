@@ -1,3 +1,4 @@
+import { readFrozenReviewMetrics } from './activity-review-metrics';
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -184,8 +185,10 @@ export class ActivityPublishReviewQueryService {
       distinct: ['memberId'],
       select: { memberId: true },
     });
+    const metrics = await readFrozenReviewMetrics(this.prisma, row.snapshot);
     return {
       ...this.presenter.toDto(row),
+      ...(metrics.length ? { frozenMetricSets: metrics } : {}),
       changeDiff: this.changeDiff(row.snapshot),
       affectedMemberCount: affectedMembers.length,
     };

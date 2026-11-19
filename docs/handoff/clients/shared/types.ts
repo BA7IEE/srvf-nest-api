@@ -3,7 +3,7 @@
 // surface: shared —— 被两个及以上 surface 共用的类型(唯一定义处)
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:b051715dce1e7cbcb76930adc2ccfd7b9daf2b5369dbc1673bcac5d61e2afb18
+// inputDigest: sha256:53ff7b6703230444ebfa99ec7a374f42e5579b8641691a28c330d69096d20e51
 
 /** 统一响应 envelope —— 全仓契约恒为 { code, message, data }。 */
 export interface ApiEnvelope<T> {
@@ -52,7 +52,69 @@ export interface ActivityPublishReviewResponseDto {
   "organizationId": string;
   "initiatorMemberId": string | null;
   "changeDiff"?: Record<string, unknown>;
+  "frozenMetricSets"?: ReviewMetricSetDto[];
   "affectedMemberCount"?: number;
+}
+
+export interface AdminMetricBooleanConfigurationDto {
+  "kindCode": "boolean";
+  "unit": null | null;
+}
+
+export interface AdminMetricChoiceConfigurationDto {
+  "kindCode": "single_choice";
+  "unit": null | null;
+  "options": AdminMetricChoiceOptionDto[];
+}
+
+export interface AdminMetricChoiceOptionDto {
+  "code": string;
+  "label": string;
+}
+
+export interface AdminMetricDecimalConfigurationDto {
+  "kindCode": "non_negative_decimal";
+  "unit": string;
+  "scale": number;
+  "minimum": string;
+  "maximum": string;
+}
+
+export interface AdminMetricDefinitionV1Dto {
+  "schemaVersion": 1;
+  "code": string;
+  "version": number;
+  "name": string;
+  "configuration": AdminMetricIntegerConfigurationDto | AdminMetricDecimalConfigurationDto | AdminMetricBooleanConfigurationDto | AdminMetricTextConfigurationDto | AdminMetricChoiceConfigurationDto;
+}
+
+export interface AdminMetricIntegerConfigurationDto {
+  "kindCode": "non_negative_integer";
+  "unit": string;
+  "minimum": number;
+  "maximum": number;
+}
+
+export interface AdminMetricSetDefinitionV1Dto {
+  "schemaVersion": 1;
+  "code": string;
+  "version": number;
+  "name": string;
+  "items": AdminMetricSetItemDto[];
+}
+
+export interface AdminMetricSetItemDto {
+  "key": string;
+  "sortOrder": number;
+  "required": boolean;
+  "metricDefinitionId": string;
+  "definitionHash": string;
+}
+
+export interface AdminMetricTextConfigurationDto {
+  "kindCode": "short_text";
+  "unit": null | null;
+  "maxLength": number;
 }
 
 export interface ContentAttachmentDto {
@@ -98,6 +160,22 @@ export interface PageResultDto {
   "total": number;
   "page": number;
   "pageSize": number;
+}
+
+export interface ReviewMetricDefinitionDto {
+  "id": string;
+  "definitionHash": string;
+  "definition": AdminMetricDefinitionV1Dto;
+}
+
+export interface ReviewMetricSetDto {
+  "id": string;
+  "code": string;
+  "version": number;
+  "schemaVersion": 1;
+  "definitionHash": string;
+  "definition": AdminMetricSetDefinitionV1Dto;
+  "metrics": ReviewMetricDefinitionDto[];
 }
 
 export interface UserLinkedMemberDto {

@@ -3,11 +3,11 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:b051715dce1e7cbcb76930adc2ccfd7b9daf2b5369dbc1673bcac5d61e2afb18
+// inputDigest: sha256:53ff7b6703230444ebfa99ec7a374f42e5579b8641691a28c330d69096d20e51
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
-import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
-export type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto };
+import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, AdminMetricBooleanConfigurationDto, AdminMetricChoiceConfigurationDto, AdminMetricChoiceOptionDto, AdminMetricDecimalConfigurationDto, AdminMetricDefinitionV1Dto, AdminMetricIntegerConfigurationDto, AdminMetricSetDefinitionV1Dto, AdminMetricSetItemDto, AdminMetricTextConfigurationDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, ReviewMetricDefinitionDto, ReviewMetricSetDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
+export type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, AdminMetricBooleanConfigurationDto, AdminMetricChoiceConfigurationDto, AdminMetricChoiceOptionDto, AdminMetricDecimalConfigurationDto, AdminMetricDefinitionV1Dto, AdminMetricIntegerConfigurationDto, AdminMetricSetDefinitionV1Dto, AdminMetricSetItemDto, AdminMetricTextConfigurationDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, ReviewMetricDefinitionDto, ReviewMetricSetDto, UserLinkedMemberDto, UserResponseDto };
 
 export interface AccountAvatarDto {
   "attachmentId": string;
