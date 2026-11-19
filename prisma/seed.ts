@@ -2629,13 +2629,13 @@ async function seedAttendanceFinalReviewerRole(prisma: PrismaClient): Promise<vo
 async function seedAcceptanceAccountOnly(): Promise<void> {
   const username = process.env.SUPER_ADMIN_USERNAME ?? '';
   const password = process.env.SUPER_ADMIN_PASSWORD ?? '';
-  const sourceCommit = process.env.ACCEPTANCE_SOURCE_COMMIT ?? '';
+  const operatorDeclaredCommit = process.env.ACCEPTANCE_SOURCE_COMMIT ?? '';
   const entryDigest = createHash('sha256').update(readFileSync(__filename)).digest('hex');
   const fingerprint = process.env.ACCEPTANCE_DATABASE_FINGERPRINT ?? '';
   if (
     !['test', 'smoke'].includes(process.env.APP_ENV ?? '') ||
     !/^accept_[a-z0-9_]{6,24}$/.test(username) ||
-    !/^[a-f0-9]{40}$/.test(sourceCommit) ||
+    !/^[a-f0-9]{40}$/.test(operatorDeclaredCommit) ||
     process.env.ACCEPTANCE_ENTRY_SHA256 !== entryDigest ||
     !/^[a-f0-9]{64}$/.test(fingerprint) ||
     password.length < 24 ||
@@ -2682,7 +2682,7 @@ async function seedAcceptanceAccountOnly(): Promise<void> {
               requestId: username,
               ip: null,
               ua: null,
-              extra: { source: 'acceptance-seed', sourceCommit, entryDigest },
+              extra: { source: 'acceptance-seed', operatorDeclaredCommit, entryDigest },
             },
           },
         });

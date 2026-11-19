@@ -67,6 +67,13 @@ describe('offline acceptance bootstrap', () => {
         where: { event: 'seed.acceptance-account.create', resourceId: user.id },
       }),
     ).toBe(1);
+    const receipt = await prisma.auditLog.findFirstOrThrow({
+      where: { event: 'seed.acceptance-account.create', resourceId: user.id },
+      select: { context: true },
+    });
+    expect(receipt.context).toMatchObject({
+      extra: { operatorDeclaredCommit: 'a'.repeat(40) },
+    });
     expect(invoke(fingerprint, username + '_b')).toBe(1);
     expect(await snapshot()).toEqual([users + 1, audits + 1, ...rbac]);
   }, 30000);
