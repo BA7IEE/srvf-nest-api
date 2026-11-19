@@ -1,0 +1,8 @@
+{"route": "auth/v1/login", "http": 200, "code": 0}
+{"route": "admin/v1/users", "http": 201, "code": 0}
+{"route": "auth/v1/login", "http": 200, "code": 0}
+{"route": "admin/v1/me", "http": 200, "code": 0}
+{"route": "system/v1/dict-types", "http": 403, "code": 30100}
+{"route": "admin/v1/users/{id}/status", "http": 200, "code": 0}
+ordinary_denied_and_disabled PASS
+{"route": "auth/v1/logout", "http": 200, "code": 0}

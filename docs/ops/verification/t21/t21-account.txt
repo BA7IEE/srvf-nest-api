@@ -1,0 +1,16 @@
+{"route": "auth/v1/login", "http": 200, "code": 0}
+{"route": "admin/v1/users", "http": 201, "code": 0}
+{"route": "auth/v1/login", "http": 200, "code": 0}
+{"route": "app/v1/me", "http": 200, "code": 0}
+{"route": "app/v1/me/password", "http": 200, "code": 0}
+{"route": "auth/v1/login", "http": 200, "code": 0}
+{"route": "admin/v1/me", "http": 200, "code": 0}
+{"route": "auth/v1/logout", "http": 200, "code": 0}
+{"route": "admin/v1/users", "http": 201, "code": 0}
+{"route": "auth/v1/login", "http": 200, "code": 0}
+{"route": "app/v1/me", "http": 200, "code": 0}
+{"route": "auth/v1/logout", "http": 200, "code": 0}
+distinct ordinary subjects and normal password change readback PASS
+{"route": "admin/v1/users/{id}/status", "http": 200, "code": 0}
+{"route": "admin/v1/users/{id}/status", "http": 200, "code": 0}
+{"route": "auth/v1/logout", "http": 200, "code": 0}
