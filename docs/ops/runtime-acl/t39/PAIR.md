@@ -1,0 +1,9 @@
+# T39 配对部署与回退增量
+
+服务器隔离试验直接只读挂载 T38 的 final-web，前端源码 eb587bd2c82a96cd1b6fc77ae428ae7d894fbf64，入口 HTML SHA256 为 2625b6268ba53103ca78a943a70aace4398d86edbe7985cc4a3ecc2de232712d，完整静态清单 SHA256 为 c8fd30a91ef5e37032afb47ceb188bf6b75c203bd37de894c07b4f82571cbb2d。后端 OCI revision 为 713d3416830d897852929731ff7f9b638038ab7c，镜像 ID 为 sha256:826cd1241eef6e31d3925d4af80b2d1b6830c687d2cc37b67c1123fb9a433f75。
+
+新增实证为两个必填模板分别从创建、初审发布走到标题与说明的独立变更审批。每个模板的初审和变更申请均保留同一个 v1 指标集指针和内容摘要。新增内容只有测试驱动与证据。
+
+配对核验脚本在本轮开始和退役后均返回 0。服务器可找到完整新静态树和镜像。现行公网回退配对为静态版本 b7f3dac00a860e32c0cbc220f29da0755bce024b、后端 108feebb84b85c7e4955c5af8bbfc016702e4529。配置保全副本与现行配置逐字节相同，SHA256 为 86cacf43aefd1dab3fefc67d25ea81d6f81f700a43d81c34d26ee6bb13f958fc，四个上游均匹配现行容器，OpenResty 配置自检成功。公网 ready 返回 200，本轮公网业务与实际切换、回退演练 NOT_RUN。共享候选 B130 未批准，本轮共享候选新增 GRANT=0。
+
+[T38 精确部署前提、停止条件、原配对和回退顺序](https://github.com/BA7IEE/srvf-nest-api/blob/805ccde613f808ba4fa2ab18e63eb687e7be35d8/docs/ops/runtime-acl/t38/PAIR.md)
