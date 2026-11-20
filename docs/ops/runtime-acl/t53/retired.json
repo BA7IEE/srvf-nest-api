@@ -1,0 +1,8 @@
+{
+  "isolated_container_count_retired": 5,
+  "network_absent": true,
+  "temporary_database_storage": "tmpfs retired",
+  "private_test_directory_absent": true,
+  "external_deliveries_in_trial": 0,
+  "postcheck_exit": 0
+}

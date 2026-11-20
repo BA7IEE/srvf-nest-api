@@ -1,0 +1,40 @@
+{
+  "scope": "H5 ledger SELECT only; proposal only",
+  "shared_grants_executed": 0,
+  "shared_catalog_preflight_exit": 3,
+  "ledger_select_columns_missing": [
+    "activityId",
+    "cappedOutPointsDelta",
+    "creditedPointsDelta",
+    "entryKey",
+    "entryTypeCode",
+    "ledgerDate",
+    "memberId",
+    "participationIdentityId",
+    "postingBatchId",
+    "recognizedPointsDelta",
+    "resultRevisionId",
+    "serviceHoursDelta",
+    "sessionId"
+  ],
+  "batch_columns_already_granted": [
+    "id",
+    "statusCode"
+  ],
+  "risk": "Same database principal can read across members and posting states when using direct SQL. Scope does not include any write or protected function.",
+  "isolated_witness": {
+    "unmodified_shared_target_on_isolated_exit": 3,
+    "isolated_target_apply": 0,
+    "duplicate_apply": 3,
+    "rollback": 0,
+    "partial_baseline_apply": 3,
+    "partial_baseline_rollback": 3,
+    "preexisting_column_preserved": true,
+    "shared_grants": 0
+  },
+  "sha256": {
+    "preflight_sha256": "0890eed2dfe4ffbe89fcbd22994528c4fb30a04ef65bef268cd7dffd787f5c03",
+    "apply_sha256": "e356f2f2e24d478f6f7545165f986b9882bea8f09639085905bd550bc7203b78",
+    "rollback_sha256": "e41c091f98f397657fe748c97bb67bc4cf03c5910b5a8c80d68b49a4dd389654"
+  }
+}

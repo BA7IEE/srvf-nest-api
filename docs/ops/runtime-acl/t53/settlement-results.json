@@ -1,0 +1,87 @@
+{
+  "input": "published, synthetic prior staff attendance, 39 minutes",
+  "actual_request_audit": {
+    "seal": {
+      "actor": "lab",
+      "request_sha256": "fc4b1aca727380deaf5758813355b394f8825a1418f7a37d3a6c915ac02aa9a2",
+      "event_projection": [
+        [
+          "activity.publish",
+          null
+        ]
+      ]
+    },
+    "generate": {
+      "actor": "lab",
+      "request_sha256": "d2f9ffb93e03bad041e50c18fbf2de8d2f58b37ae866f40bdf805f8b27b0175c",
+      "event_projection": [
+        [
+          "activity.publish",
+          null
+        ]
+      ]
+    },
+    "submit": {
+      "actor": "lab",
+      "request_sha256": "cc9a9f2da231ca103b654a662dac4bf79fac30383b367c15ef4fc7b8aafad640",
+      "event_projection": [
+        [
+          "activity.publish",
+          null
+        ]
+      ]
+    },
+    "first_approve": {
+      "actor": "t53-first",
+      "request_sha256": "7288cb4df08ba639d7c6228355565a475fabb79a70f5f6cf7aa951975979d6a1",
+      "event_projection": [
+        [
+          "activity.publish",
+          null
+        ]
+      ]
+    }
+  },
+  "after_failed_commit": {
+    "run": "pending_final_review",
+    "batch": null,
+    "credited_member_rows": 0,
+    "all_committed_rows": 0,
+    "hours": null,
+    "points": null,
+    "batch_final_actor": 0,
+    "closure": 0,
+    "worker_jobs": [
+      [
+        "bulk_proxy",
+        "succeeded",
+        1,
+        0
+      ]
+    ],
+    "scoped_reviewers": 1
+  },
+  "final_approve": {
+    "http": 500,
+    "business_code": 50000,
+    "assert_exit": 1,
+    "pg_sqlstate": "42501",
+    "statement": "COMMIT",
+    "pg_error_count_during_one_request": 1,
+    "request_id_in_database_log": false,
+    "request_id_matched_in_application_log": false,
+    "reason": "deferred integrity trigger required an unavailable protected function in ordinary settlement"
+  },
+  "test_outbox_at_retirement": [
+    [
+      "pending",
+      6
+    ]
+  ],
+  "artifact_checksums": [
+    "228f974aa9194eaac638c7b9a50311ba69e8a7d99c1d29352ef2a095bb35f457  dist-final.tgz",
+    "26690daa8419e46af89c3a04de3cab452bd18dc8ecb31b46bbcc75a40c149672  h5-final.tgz"
+  ],
+  "admin_static_manifest": "9f44857d0e930bf2cda08703f31c9a2c1a57a6c66e8659c2aabf171fc1b10d1b",
+  "applied_migrations": 156
+}

@@ -1,0 +1,20 @@
+{
+  "dataset": "separate t53_read_ui, synthetic historical fixtures",
+  "read_model_before": {
+    "rows": 6,
+    "committed": 4,
+    "ready": 2,
+    "committed_members": 2
+  },
+  "read_model_after_withdrawal": {
+    "rows": 6,
+    "committed": 4,
+    "ready": 2,
+    "committed_members": 2
+  },
+  "main_flow_committed_entries": 0,
+  "effective_columns_before": 13,
+  "effective_columns_after": 7,
+  "revoke_sql_exit": 0,
+  "browser_assert_exit": 0
+}

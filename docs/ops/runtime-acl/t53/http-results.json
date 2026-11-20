@@ -1,0 +1,225 @@
+{
+  "real_settlement": [
+    {
+      "step": "seal",
+      "actor": "lab",
+      "http": 200,
+      "code": 0,
+      "request_sha256": "fc4b1aca727380deaf5758813355b394f8825a1418f7a37d3a6c915ac02aa9a2"
+    },
+    {
+      "step": "ordinary_generate_denied",
+      "actor": "t53-other",
+      "http": 403,
+      "code": 30100,
+      "request_sha256": "1032d8ebf5b63b99097e516d59793f35fc1d66f30385f8af12ff5a4e08ea14bd"
+    },
+    {
+      "step": "generate",
+      "actor": "lab",
+      "http": 409,
+      "code": 20113,
+      "request_sha256": "50da7a44da8e29ebf90f70c637c81ec706dc1abe5baece26141934e3430bf345"
+    },
+    {
+      "step": "generate",
+      "actor": "lab",
+      "http": 200,
+      "code": 0,
+      "request_sha256": "d2f9ffb93e03bad041e50c18fbf2de8d2f58b37ae866f40bdf805f8b27b0175c"
+    },
+    {
+      "step": "submit",
+      "actor": "lab",
+      "http": 500,
+      "code": 50000,
+      "request_sha256": "e4b4c461365f1728dcc78c2084f8b22a6546271a61199cf39b08ba70b1a1367a"
+    },
+    {
+      "step": "submit",
+      "actor": "lab",
+      "http": 500,
+      "code": 50000,
+      "request_sha256": "20cca3b6ca073caab3b8539557188564745d4f38600d3fdfc4397671fe25588c"
+    },
+    {
+      "step": "submit",
+      "actor": "lab",
+      "http": 500,
+      "code": 50000,
+      "request_sha256": "05da2059bbee191832ede84c2629cf9292f23a41290e44f64422734b4eb3ba6d"
+    },
+    {
+      "step": "submit",
+      "actor": "lab",
+      "http": 200,
+      "code": 0,
+      "request_sha256": "cc9a9f2da231ca103b654a662dac4bf79fac30383b367c15ef4fc7b8aafad640"
+    },
+    {
+      "step": "ordinary_review_denied",
+      "actor": "t53-other",
+      "http": 403,
+      "code": 30100,
+      "request_sha256": "b02980840464641537ac036636588a3d8baee48f56410725e0f5168135f6ca9d"
+    },
+    {
+      "step": "first_approve",
+      "actor": "t53-first",
+      "http": 500,
+      "code": 50000,
+      "request_sha256": "2855fa60e65660a13184969913b8e4dff4bcc63254e6460611c97b569689cc23"
+    },
+    {
+      "step": "first_approve",
+      "actor": "t53-first",
+      "http": 500,
+      "code": 50000,
+      "request_sha256": "61da73c5b61ef4155887b3122bb0edd4ec192a92f8be22066d26b861afa82d2e"
+    },
+    {
+      "step": "first_approve",
+      "actor": "t53-first",
+      "http": 200,
+      "code": 0,
+      "request_sha256": "7288cb4df08ba639d7c6228355565a475fabb79a70f5f6cf7aa951975979d6a1"
+    },
+    {
+      "step": "final_approve",
+      "actor": "t53-final",
+      "http": 500,
+      "code": 50000,
+      "request_sha256": "5a4f34beb7c9a3ed8b4748ff80f14977d0a9df8bea6f8b4aab12b7ab4689fdf9"
+    },
+    {
+      "step": "final_approve",
+      "actor": "t53-final",
+      "http": 500,
+      "code": 50000,
+      "request_sha256": "fd527598c4e2d38ffdcee18b4902a2a37c18e639a2f1d12486639139a21f7cb0"
+    }
+  ],
+  "last_final_approve": {
+    "step": "final_approve",
+    "actor": "t53-final",
+    "http": 500,
+    "code": 50000,
+    "request_sha256": "4a2f0180e634c57aae4a245efadb22c01e8eb661dde34558a85d0a2a1b209956"
+  },
+  "pages": {
+    "preposting-page.log": [
+      {
+        "step": "anonymous_ledger",
+        "http": 401,
+        "code": 40100,
+        "request_sha256": "25ad446d75e8356b74338246ff2d2bb2c01d8e2de10842cb3dab8842bad3bfcb"
+      },
+      {
+        "step": "H5_ledger",
+        "actor": "t53-member",
+        "phase": "preposting",
+        "http": 200,
+        "code": 0,
+        "summaryHTTP": 200,
+        "summaryCode": 0,
+        "rows": 0,
+        "request_sha256": "06fad0f15f24baecffb165867ff3f989b992b435ed44521a151ebe006ac8782c"
+      },
+      {
+        "step": "H5_DOM",
+        "actor": "t53-member",
+        "phase": "preposting",
+        "ok": true
+      },
+      {
+        "step": "H5_ledger",
+        "actor": "t53-other",
+        "phase": "preposting",
+        "http": 200,
+        "code": 0,
+        "summaryHTTP": 200,
+        "summaryCode": 0,
+        "rows": 0,
+        "request_sha256": "daf311173a362522681e4a92bbcc7a83a50dedffe49ecf7c6ef621ee1e362200"
+      },
+      {
+        "step": "H5_DOM",
+        "actor": "t53-other",
+        "phase": "preposting",
+        "ok": true
+      }
+    ],
+    "history-page.log": [
+      {
+        "step": "anonymous_ledger",
+        "http": 401,
+        "code": 40100,
+        "request_sha256": "0ad70a5d10436b4f3b76e8cbbf8131fdc3fd31a8a86910e9c0965dbd728353d5"
+      },
+      {
+        "step": "H5_ledger",
+        "actor": "t53-history-member",
+        "phase": "historical",
+        "http": 200,
+        "code": 0,
+        "summaryHTTP": 200,
+        "summaryCode": 0,
+        "rows": 2,
+        "request_sha256": "c037a87764dc5ae700d04d2721fc4dc56403105fcb62ab1e777a66c1641c6653"
+      },
+      {
+        "step": "H5_DOM",
+        "actor": "t53-history-member",
+        "phase": "historical",
+        "ok": true
+      },
+      {
+        "step": "H5_ledger",
+        "actor": "t53-history-other",
+        "phase": "historical",
+        "http": 200,
+        "code": 0,
+        "summaryHTTP": 200,
+        "summaryCode": 0,
+        "rows": 2,
+        "request_sha256": "7d218067820b9441de918649155d4101154059e8072cbe7b05590d3210c6ed2d"
+      },
+      {
+        "step": "H5_DOM",
+        "actor": "t53-history-other",
+        "phase": "historical",
+        "ok": true
+      }
+    ],
+    "history-revoked.log": [
+      {
+        "step": "anonymous_ledger",
+        "http": 401,
+        "code": 40100,
+        "request_sha256": "b357592fdc31a8a3c10e5e651e5a4384d1212f986d7c0f148ff864f159a4a61e"
+      },
+      {
+        "step": "H5_ledger",
+        "actor": "t53-history-member",
+        "phase": "revoked",
+        "http": 500,
+        "code": 50000,
+        "summaryHTTP": 200,
+        "summaryCode": 0,
+        "request_sha256": "de7688bfdf95ab4a3318dfae9a35aaee102b322e38765fb699a05c20d71d836a"
+      }
+    ]
+  },
+  "worker": [
+    {
+      "worker": "NotificationOutboxWorkerModule/ActivityBatchWorker",
+      "role": "srvf_dp_acceptance_runtime",
+      "claimed": false,
+      "items": 0,
+      "failed": 0,
+      "committed": false,
+      "attempted": false,
+      "commitError": null
+    }
+  ]
+}
