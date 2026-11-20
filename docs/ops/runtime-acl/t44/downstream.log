@@ -1,0 +1,11 @@
+{"step":"login","actor":"lab","status":200,"code":0,"reqId":"cmwnt7n8m1bde66b211e21b619f5fded6"}
+{"step":"login","actor":"t44-user-b","status":200,"code":0,"reqId":"cmwnt7nc1e974a04fdb9ccd0ffd775ea6"}
+{"step":"activity","actor":"t44-user-b","status":200,"code":0,"reqId":"cmwnt7nf6713b74d0f9c7e6e86c4bc26f"}
+{"step":"state","actor":"t44-user-b","status":200,"code":0,"reqId":"cmwnt7nfvbbef427ad9d694f91701a0e3","isPresent":false}
+{"step":"attendance_records","actor":"t44-user-b","status":200,"code":0,"reqId":"cmwnt7ng846236edc3d49f1ebf5509bc1","items":0}
+{"step":"participation_summary","actor":"t44-user-b","status":500,"code":50000,"reqId":"cmwnt7ngo178e8b96c8dc27ddf75d4e84"}
+{"step":"ordinary_qr","actor":"t44-user-b","status":403,"code":30100,"reqId":"cmwnt7nh6504545a2d254e31a409a66f8"}
+{"step":"list_qr","actor":"lab","status":200,"code":0,"reqId":"cmwnt7nhhe1538deaaf589f864e085c07","count":0}
+{"step":"issue","actor":"lab","status":201,"code":0,"reqId":"cmwnt7nhwd5f2cc001eec3b07ae4ca1f1","version":1,"state":"active"}
+{"step":"settlement","actor":"lab","status":404,"code":20219,"reqId":"cmwnt7nika05d214795b82113ce39baf6"}
+{"step":"settlement","actor":"t44-user-b","status":404,"code":20219,"reqId":"cmwnt7nj62c5a00a8a6dbc26ff51ba3fb"}

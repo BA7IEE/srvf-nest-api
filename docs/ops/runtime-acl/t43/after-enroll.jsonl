@@ -1,0 +1,14 @@
+{"kind" : "registration", "actor" : "t43-user-a", "header" : "cmwnsoect000bqd018uczfx10", "status" : "pass", "header_version" : 1, "identity_version" : 2, "identity_status" : "pass", "included" : true, "pointer_set" : true, "saved_revisions" : 1, "participation_versions" : 2, "active_reservations" : 3, "role" : "USER", "direct_bindings" : 0}
+{"kind" : "registration", "actor" : "t43-user-b", "header" : "cmwnsoek2000zqd01e1dwzvj1", "status" : "pass", "header_version" : 1, "identity_version" : 2, "identity_status" : "pass", "included" : true, "pointer_set" : true, "saved_revisions" : 1, "participation_versions" : 2, "active_reservations" : 3, "role" : "USER", "direct_bindings" : 0}
+{"kind" : "bucket", "scope" : "activity_person", "used" : 2, "version" : 2}
+{"kind" : "bucket", "scope" : "position_participation", "used" : 2, "version" : 2}
+{"kind" : "bucket", "scope" : "session_participation", "used" : 2, "version" : 2}
+{"kind" : "audit", "event" : "registration.review", "reqId" : "cmwnsoeb407b629168ac9adad1ed9619b", "actor" : "t43-user-a", "resource" : "cmwnsoect000bqd018uczfx10", "success" : true}
+{"kind" : "audit", "event" : "registration.create", "reqId" : "cmwnsoeb407b629168ac9adad1ed9619b", "actor" : "t43-user-a", "resource" : "cmwnsoect000bqd018uczfx10", "success" : true}
+{"kind" : "audit", "event" : "registration.review", "reqId" : "cmwnsoej09326ce1e6df3651700e2bb3d", "actor" : "t43-user-b", "resource" : "cmwnsoek2000zqd01e1dwzvj1", "success" : true}
+{"kind" : "audit", "event" : "registration.create", "reqId" : "cmwnsoej09326ce1e6df3651700e2bb3d", "actor" : "t43-user-b", "resource" : "cmwnsoek2000zqd01e1dwzvj1", "success" : true}
+{"kind" : "outbox", "id" : "cmwnsf5cc0014s301teruwy7i", "type" : "notification.targeted", "aggregate" : "activity_publish_review", "key_hash" : "ffd16d6b7329ae16ede7c87ce803eb4a", "state" : "pending", "attempts" : 0, "completed" : false}
+{"kind" : "outbox", "id" : "cmwnsf5cg0015s301dkbld1r1", "type" : "notification.system-broadcast", "aggregate" : "activity", "key_hash" : "1d92cbb604a18f0dedf6a89b570086d8", "state" : "pending", "attempts" : 0, "completed" : false}
+{"kind" : "outbox", "id" : "cmwnsoeei000rqd01a5lajjce", "type" : "notification.targeted", "aggregate" : "activity_registration", "key_hash" : "cd49732d9267662568c6619d79c37af0", "state" : "pending", "attempts" : 0, "completed" : false}
+{"kind" : "outbox", "id" : "cmwnsoel3001fqd01c8p7gbx7", "type" : "notification.targeted", "aggregate" : "activity_registration", "key_hash" : "4542930783074ec995efb844135b591b", "state" : "pending", "attempts" : 0, "completed" : false}
+{"kind" : "population", "revision" : 2, "evidence_revision" : 0, "version" : 2}

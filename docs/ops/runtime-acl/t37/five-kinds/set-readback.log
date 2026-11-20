@@ -1,0 +1,5 @@
+t37_full_set|boolean|t|1|published|2|t
+t37_full_set|non_negative_integer|t|1|published|2|t
+t37_full_set|non_negative_decimal|t|1|published|2|t
+t37_full_set|short_text|t|1|published|2|t
+t37_full_set|single_choice|t|1|published|2|t

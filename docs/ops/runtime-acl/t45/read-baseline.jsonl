@@ -1,0 +1,3 @@
+{"step":"summary","actor":"t45-user-b","status":500,"code":50000,"reqId":"cmwntwhiw61157483324ff195729517c1","projection":{}}
+{"step":"workbench","actor":"lab","status":500,"code":50000,"reqId":"cmwntwhmwea26981f2c51378dab5bd937","projection":{}}
+{"step":"workbench_denied","actor":"t45-user-b","status":403,"code":30100,"reqId":"cmwntwhr4aea1567675af20642c5976de","projection":{}}

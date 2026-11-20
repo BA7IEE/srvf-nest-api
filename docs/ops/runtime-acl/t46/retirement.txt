@@ -1,0 +1,3 @@
+safe_audits=38
+c053c0a55c237af501cc7d098a9bee9bac54efb92a496b1914df0c7f6c128b5a  retained-audit.jsonl
+isolated_containers_removed=5 isolated_network_removed=1 pending_intents=0 runtime_secrets_removed=yes

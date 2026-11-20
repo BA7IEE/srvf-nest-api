@@ -1,0 +1,11 @@
+src/api/srvf-activity-publish-review.ts
+src/views/srvf/activities-domain/activities/simple-draft.vue
+src/views/srvf/activities-domain/activities/simple/published-change.vue
+src/views/srvf/activities-domain/activities/simple/published-layout.ts
+src/views/srvf/workbench/publish-review/change-facts.ts
+src/views/srvf/workbench/publish-review/detail.vue
+src/views/srvf/workbench/publish-review/metrics.ts
+src/views/srvf/workbench/publish-review/snapshot.ts
+src/views/srvf/workbench/publish-review/state.ts
+tests/render/simple_freeze_server.cjs
+tests/render/simple_published_layout.cjs

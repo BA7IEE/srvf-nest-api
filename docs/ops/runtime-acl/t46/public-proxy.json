@@ -1,0 +1,14 @@
+{
+  "disk_config_sha256": "86cacf43aefd1dab3fefc67d25ea81d6f81f700a43d81c34d26ee6bb13f958fc",
+  "api_locations": [
+    "/api/auth/v1/login",
+    "/api/auth/v1/refresh",
+    "/api/auth/v1/logout",
+    "/api/"
+  ],
+  "same_upstream": true,
+  "host_header_preserved": 4,
+  "https_header_literal": true,
+  "candidate_trusted_proxy": "none",
+  "public_h5_acceptance": "NOT_RUN"
+}

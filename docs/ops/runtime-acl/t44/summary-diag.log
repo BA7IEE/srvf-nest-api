@@ -1,0 +1,4 @@
+{"step":"diagnostic_summary","status":500,"code":50000,"reqId":"cmwntdhpb80abf991a3e405b75dd725a8"}
+T44ERR {"id":"cmwntdhpb80abf991a3e405b75dd725a8","prisma":null,"sqlstate":null,"table":"ActivityTimeCutoverReceipt","model":null}
+      1 permission denied for table ActivityTimeCutoverReceipt
+      2 permission denied for table ParticipationLedgerEntry

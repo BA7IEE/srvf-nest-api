@@ -1,0 +1,9 @@
+{"step":"login","actor":"lab","status":200,"code":0,"reqId":"cmwnthphm6d14619149c199fb8ace1610"}
+{"step":"login","actor":"t44-user-b","status":200,"code":0,"reqId":"cmwnthpmac655f657f796d9f16b897d3f"}
+{"step":"activity","actor":"t44-user-b","status":200,"code":0,"reqId":"cmwnthppk256c98880b7e7c3d2fc2188e"}
+{"step":"settlement_workbench","actor":"lab","status":500,"code":50000,"reqId":"cmwnthpr1203350ebdce4418c819ec5b3"}
+{"step":"settlement_workbench","actor":"t44-user-b","status":403,"code":30100,"reqId":"cmwnthpsf82caee08ee0118f0a0073dda"}
+{"step":"qr_before","actor":"lab","status":200,"code":0,"reqId":"cmwnthptb09bc4a083e854961c2a22aae"}
+{"step":"revoke_qr","actor":"lab","status":200,"code":0,"reqId":"cmwnthptr950f6dc1c87c8290af4d14a4"}
+{"step":"qr_after","actor":"lab","status":200,"code":0,"reqId":"cmwnthpud30b239a5423bcb01d40790f5"}
+{"step":"retire_assert","only_credential":"revoked"}

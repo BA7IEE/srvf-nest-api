@@ -1,0 +1,12 @@
+{"events" : 1, "self_check_in" : 1, "participants" : 1}
+{"segments" : 1, "open_matching_event" : 1}
+{"audit_event" : "activity.publish", "operation" : "attendance-punch.create", "reqId" : "cmwof3xrj66ac956b4f35c20fe8a00a55", "success" : true, "event_link" : true, "actor_link" : true}
+{"cutover_receipts" : 0, "posted_ledger_for_fixture" : 0, "closure_for_fixture" : 0, "pending_corrections" : 0, "evidence_revision" : 1}
+{"nonowner" : true, "r5_caller_member" : false, "r5_writer_member" : false, "r5_pending_has_write" : false, "guard_invoker" : true}
+{"registration_count" : 1, "ordinary_owner" : true}
+{"event" : "registration.review", "request_id" : "cmwof3wu6eca77d80a7a10c21a233070a", "success" : true}
+{"event" : "registration.create", "request_id" : "cmwof3wu6eca77d80a7a10c21a233070a", "success" : true}
+{"event" : "activity.publish", "request_id" : "cmwof3xrj66ac956b4f35c20fe8a00a55", "success" : true}
+{"test_users_with_explicit_member_role" : 0}
+{"rotation_rows" : 3, "rotation_kept_deadline" : true, "families" : 2}
+{"applied_migrations" : 156}

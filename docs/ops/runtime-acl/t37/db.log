@@ -1,0 +1,85 @@
+Null display is "(null)".
+BEGIN
+            id             | metricRequirementCode | metricSelectionRevision | statusCode | workflowRevision | has_approved_title | pointer_matches | metric_set_version | fixture_initiator
+---------------------------+-----------------------+-------------------------+------------+------------------+--------------------+-----------------+--------------------+-------------------
+ cmwno8y150005mq011wi6ss7v | required              |                       1 | published  |                2 | t                  | t               |                  1 | t
+ cmwnoaq1z001lmq01zbw3x20q | (null)                |                       0 | draft      |                0 | f                  | (null)          |             (null) | t
+ cmwnog1520039mq01s6c1s6kq | required              |                       1 | published  |                2 | t                  | t               |                  1 | t
+ cmwnoj03w0053mq01hh8ovv86 | required              |                       1 | published  |                2 | t                  | t               |                  1 | t
+ cmwnokxpm006smq01y0wxj7ql | not_required          |                       1 | published  |                2 | t                  | (null)          |             (null) | t
+(5 rows)
+
+        activityId         |            id             | requestType | requestVersion |  status   | snapshot_version | submitter | reviewer | target_matches_current_title
+---------------------------+---------------------------+-------------+----------------+-----------+------------------+-----------+----------+------------------------------
+ cmwno8y150005mq011wi6ss7v | cmwno8z7g000gmq017o5wqh3l | initial     |              1 | approved  | 7                | lab       | reviewer | f
+ cmwno8y150005mq011wi6ss7v | cmwnoaw1a0026mq01vfpllmu5 | change      |              2 | withdrawn | 1                | lab       | (null)   | t
+ cmwno8y150005mq011wi6ss7v | cmwnoen81002wmq01c6zza93n | change      |              3 | approved  | 7                | lab       | reviewer | t
+ cmwnog1520039mq01s6c1s6kq | cmwnog2c9003pmq01jtkhbwqw | initial     |              1 | approved  | 7                | lab       | reviewer | f
+ cmwnog1520039mq01s6c1s6kq | cmwnog5vc004gmq01tpp4cy8h | change      |              2 | approved  | 7                | lab       | reviewer | t
+ cmwnoj03w0053mq01hh8ovv86 | cmwnoj1cy005jmq010c662jgs | initial     |              1 | approved  | 7                | lab       | reviewer | f
+ cmwnoj03w0053mq01hh8ovv86 | cmwnoj4ji006amq01hmoiy4p1 | change      |              2 | approved  | 7                | lab       | reviewer | t
+ cmwnokxpm006smq01y0wxj7ql | cmwnokywu0078mq019an37619 | initial     |              1 | approved  | 7                | lab       | reviewer | f
+ cmwnokxpm006smq01y0wxj7ql | cmwnol11s007zmq01qgm0pyew | change      |              2 | approved  | 7                | lab       | reviewer | t
+(9 rows)
+
+ username | role
+----------+------
+ reviewer | USER
+ lab      | USER
+(2 rows)
+
+           code            |  scopeType   | principalType | status | count
+---------------------------+--------------+---------------+--------+-------
+ activity-owner            | ACTIVITY     | MEMBER        | ACTIVE |     4
+ activity-publish-reviewer | ORGANIZATION | USER          | ACTIVE |     1
+ lab-scope-create          | ORGANIZATION | USER          | ACTIVE |     1
+(3 rows)
+
+      event       | actorRoleSnap | username | success |            request_id
+------------------+---------------+----------+---------+-----------------------------------
+ activity.publish | USER          | lab      | t       | cmwno8xwt92cb7ba62bb99895050b9681
+ activity.publish | USER          | lab      | t       | cmwno8z3y3acef47734bd63db1475ceca
+ activity.publish | USER          | reviewer | t       | cmwnoa6aqa1963d99595c1584f431caeb
+ activity.publish | USER          | reviewer | t       | cmwnoa6aqa1963d99595c1584f431caeb
+ activity.publish | USER          | lab      | t       | cmwnoaq034a6c00c1f986c469e6f8f016
+ activity.publish | USER          | lab      | t       | cmwnoaw081306fb85a465678e3554d60b
+ activity.publish | USER          | lab      | t       | cmwnodvty4a1a8896a4933b36eac65b54
+ activity.publish | USER          | lab      | t       | cmwnoen545ad568cfde0c05cb31bf1002
+ activity.publish | USER          | reviewer | t       | cmwnoeowx926a099828e7c19db9999632
+ activity.publish | USER          | lab      | t       | cmwnog11le21f2551154c342e21df225a
+ activity.publish | USER          | lab      | t       | cmwnog28jcc3a5a788f4abe139fa1f63e
+ activity.publish | USER          | reviewer | t       | cmwnog5df19a5511c6a26834bb3099380
+ activity.publish | USER          | reviewer | t       | cmwnog5df19a5511c6a26834bb3099380
+ activity.publish | USER          | lab      | t       | cmwnog5tmd8e47fa5b8c865133db13e27
+ activity.publish | USER          | reviewer | t       | cmwnog7jd6d6324fd82bbae701a5ea2b2
+ activity.publish | USER          | lab      | t       | cmwnoizzx13e216abe94a0335ac4a7d1a
+ activity.publish | USER          | lab      | t       | cmwnoj192e19fe0c4285de93a629e42d7
+ activity.publish | USER          | reviewer | t       | cmwnoj448b5fad13f3a9ce1b669d588f0
+ activity.publish | USER          | reviewer | t       | cmwnoj448b5fad13f3a9ce1b669d588f0
+ activity.publish | USER          | lab      | t       | cmwnoj4h9e96b39145ec6d0b6926cb4e4
+ activity.publish | USER          | reviewer | t       | cmwnoj67dc8c6c29b984f8fbdb53f0cf5
+ activity.publish | USER          | lab      | t       | cmwnokxm996b768f2f3ec49577f3ba8cb
+ activity.publish | USER          | lab      | t       | cmwnokyui44033a183e3aff6a2f30817f
+ activity.publish | USER          | reviewer | t       | cmwnol0jid6b5dcf53e7422e0051b915c
+ activity.publish | USER          | reviewer | t       | cmwnol0jid6b5dcf53e7422e0051b915c
+ activity.publish | USER          | lab      | t       | cmwnol10h1c780af5d7c92ffbacb388ad
+ activity.publish | USER          | reviewer | t       | cmwnol2d5dde38201504f6057115a1439
+(27 rows)
+
+           eventType           |  status   | attempts | count
+-------------------------------+-----------+----------+-------
+ notification.system-broadcast | succeeded |        1 |     4
+ notification.targeted         | succeeded |        1 |     8
+(2 rows)
+
+ migrations
+------------
+        156
+(1 row)
+
+ unscheduled_higher_privilege
+------------------------------
+                            0
+(1 row)
+
+ROLLBACK

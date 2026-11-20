@@ -1,0 +1,37 @@
+[
+  {
+    "job": "Contract + E2E (1)",
+    "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580686",
+    "log_exit": 0,
+    "matched_pass_files": [
+      "test/contract/openapi.contract-spec.ts",
+      "test/e2e/app-activities-detail.e2e-spec.ts"
+    ]
+  },
+  {
+    "job": "Contract + E2E (2)",
+    "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580717",
+    "log_exit": 0,
+    "matched_pass_files": [
+      "test/e2e/auth-h5-session.e2e-spec.ts"
+    ]
+  },
+  {
+    "job": "Contract + E2E (3)",
+    "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580653",
+    "log_exit": 0,
+    "matched_pass_files": []
+  },
+  {
+    "job": "Contract + E2E (4)",
+    "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580721",
+    "log_exit": 0,
+    "matched_pass_files": []
+  },
+  {
+    "job": "Contract + E2E (5)",
+    "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580718",
+    "log_exit": 0,
+    "matched_pass_files": []
+  }
+]

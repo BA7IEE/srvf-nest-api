@@ -1,0 +1,317 @@
+{
+  "timestamps_utc": {
+    "layout": "2026-11-20T10:22:10.518571+00:00",
+    "site": "2026-11-20T10:22:44.912351+00:00",
+    "runtime": "2026-11-20T10:24:50.936572+00:00",
+    "extra": "2026-11-20T10:28:16.946125+00:00",
+    "lastobs": "2026-11-20T10:29:40.911833+00:00",
+    "contract": "2026-11-20T10:31:56.185345+00:00"
+  },
+  "ssh_host_verified": "ED25519 fingerprint matched the session-pinned public host key",
+  "containers": {
+    "srvf-dp-acceptance-runtime-api-1": {
+      "id": "3178498257e1f00f54169b7fc7bd6d47fa258c88e9d9f312dd74c4a77508b0c4",
+      "image": "sha256:1eb4e3ca321b141bca0c9c032e919f8665179f843dc623349fcd765ee6c89ffb",
+      "state": "running",
+      "start": "2026-11-19T12:19:26.567567424Z",
+      "ended": "0001-01-01T00:00:00Z",
+      "exit": "0",
+      "restart": "no",
+      "health": "",
+      "image_fields": "[]|108feebb84b85c7e4955c5af8bbfc016702e4529|2026-11-18T23:30:07.242321468+08:00|[\"srvf-staging-api:108feebb\"]",
+      "networks": [
+        "srvf-dp-acceptance-runtime_egress 172.25.0.2",
+        "srvf-dp-acceptance_data 172.23.0.3"
+      ],
+      "service": "api"
+    },
+    "1Panel-openresty-grND": {
+      "id": "8c05c177d77c1d04ea5ff0bda4fe37e0c03c1095676993d05391e9ecab0ffe54",
+      "image": "sha256:bfdfe2455c0d6ec8a056dde0b9e9f2f7ca19bd9ab568931ccbf0f9b64f010f22",
+      "state": "running",
+      "start": "2026-09-15T14:11:22.771344512Z",
+      "ended": "0001-01-01T00:00:00Z",
+      "exit": "0",
+      "restart": "always",
+      "health": "",
+      "image_fields": "[\"1panel/openresty@sha256:1f3316a78af30040bd1e2bb4145957cae6492ecd0d525254ae761dbe289713bb\"]|517e3aee4e2601bc5bb6ca79b7caefaf01af64e5|2026-08-18T10:43:37.530542224Z|[\"1panel/openresty:1.31.1.1-2-4-noble\"]",
+      "networks": [
+        "host"
+      ],
+      "service": "openresty"
+    },
+    "srvf-dp-acceptance-pg-1": {
+      "id": "88eb4a85a15e0a3799123da4660be761cb41469fd090d5bf54520401e05c0a3c",
+      "image": "sha256:3cbd775daa28461ef484ed88ca1e5a5a72ff126e196deeebce6fec764edf1200",
+      "state": "running",
+      "start": "2026-11-18T17:35:38.785011536Z",
+      "ended": "0001-01-01T00:00:00Z",
+      "exit": "0",
+      "restart": "no",
+      "health": "healthy",
+      "image_fields": "[\"postgres@sha256:a2f7e20374cd8fd8ed4a588b79549e10589bea7b1686e77922f5ac741b80b8a1\"]||2026-11-12T20:59:48.942437128Z|[]",
+      "networks": [
+        "srvf-dp-acceptance_data 172.23.0.2"
+      ],
+      "service": "pg"
+    },
+    "srvf-test-api-fa476663-20261108": {
+      "id": "bc497f386b4bb21e941a7cb2df917139d2d3a3d66c7f0c916003ea1e0e4316ab",
+      "image": "sha256:01ea21257673d5f148bb997d8c0b87979cb3e48167f3e715f67e46c3ecd15e98",
+      "state": "running",
+      "start": "2026-11-11T07:38:00.791997892Z",
+      "ended": "2026-11-11T07:30:33.43117676Z",
+      "exit": "0",
+      "restart": "no",
+      "health": "healthy",
+      "image_fields": "[]||2026-11-07T21:39:59.646461201Z|[\"u-nest-api-starter:ci\"]",
+      "networks": [
+        "srvf-test-internal 172.21.0.3"
+      ],
+      "service": "<no value>"
+    },
+    "srvf-dp-acceptance-migration-1": {
+      "id": "8f769083c274c3a4577e06cbf48192af5b4d3ea4d54fdcfff9378a08b81debc4",
+      "image": "sha256:38a341827d92292c26d9adc0b461c4bfa531500a583fb5d58a24551f4d4da9da",
+      "state": "exited",
+      "start": "2026-11-18T18:45:41.870216765Z",
+      "ended": "2026-11-18T18:45:51.184508327Z",
+      "exit": "0",
+      "restart": "no",
+      "health": "",
+      "image_fields": "[]|108feebb84b85c7e4955c5af8bbfc016702e4529|2026-11-18T23:30:12.006164015+08:00|[\"srvf-staging-tools:108feebb\"]",
+      "networks": [
+        "srvf-dp-acceptance_data"
+      ],
+      "service": "migration"
+    }
+  },
+  "api_source": {
+    "flags": {
+      "dist/main": true,
+      "dist/notification": false,
+      "worker": false,
+      "DATABASE_URL": false,
+      "/runtime/": true,
+      "/app/": false,
+      "require(": true,
+      "dotenv": false
+    },
+    "startup_module_refs": [
+      "./dist/main.js"
+    ],
+    "app_files": {
+      "dist/main.js": {
+        "sha256": "e10ab72e6e77b1a299072bdb63f6eaeed82358a4feead875c465e0b03ea9c12a",
+        "mtime": "2026-11-18T15:29:56+00:00"
+      },
+      "dist/notification-outbox-worker.js": {
+        "sha256": "40fe6a89e0a0d5f5244bb599c50e99862f3e2b1ed2ba3d86b3f053eea8ca9462",
+        "mtime": "2026-11-18T15:29:56+00:00"
+      },
+      "package.json": {
+        "sha256": "988c1f7ac7dd6aea19c0aa83c2a124c5901ac83db913b95c7afa53065bbf71cb",
+        "mtime": "2026-11-18T13:36:55+00:00"
+      }
+    }
+  },
+  "node_contract": {
+    "dist/modules/auth/h5-session.js": "ABSENT",
+    "dist/modules/activities/app-activities.service.js": "6dc7bb96fdc3c4b0b32968b1f4954050be12f904e9a8a6b4c60c0468b21a071e",
+    "dist/modules/activities/activity-simple-draft.service.js": "2bf69990c4be5dda5ce0f0f19b7ebd9b22a44124907dc13a098ff07381612f2f"
+  },
+  "api_overlay_changes": {
+    "exit": 0,
+    "dist_changes": 0,
+    "pkg_changes": 0
+  },
+  "api_mounts": [
+    {
+      "type": "volume",
+      "destination": "/runtime",
+      "rw": "false"
+    }
+  ],
+  "project_worker_containers": [
+    "srvf-dp-acceptance-worker-preflight-check-1|srvf-staging-api:108feebb|exited"
+  ],
+  "host_node_sampling": [
+    10,
+    0
+  ],
+  "api_container_modes_only": {
+    "APP_ENV": "production",
+    "NODE_ENV": "production",
+    "APP_TRUSTED_PROXY_CIDRS": "none",
+    "ACTIVITY_V11_WORKFLOW_ENABLED": "false",
+    "ACTIVITY_E4_CONTRIBUTION_SETTLEMENT_MODE": "off",
+    "NOTIFICATION_OUTBOX_WORKER_ENABLED": "UNSET",
+    "ACTIVITY_HUMAN_V3_ENABLED": "UNSET"
+  },
+  "dp_site": {
+    "disk_sha256": "86cacf43aefd1dab3fefc67d25ea81d6f81f700a43d81c34d26ee6bb13f958fc",
+    "disk_mtime": "2026-11-19T10:18:16.622306+00:00",
+    "directives": [
+      "listen 80 ;",
+      "listen 443 ssl ;",
+      "server_name dp.srvf.team;",
+      "index index.php index.html index.htm default.php default.htm default.html;",
+      "location ~ ^/(\\.user.ini|\\.htaccess|\\.git|\\.env|\\.svn|\\.project|LICENSE|README.md) {",
+      "location ^~ /.well-known/acme-challenge {",
+      "root /usr/share/nginx/html;",
+      "root /www/sites/dp.srvf.team/releases/b7f3dac00a860e32c0cbc220f29da0755bce024b/webroot;",
+      "location = /api/auth/v1/login {",
+      "proxy_pass http://172.25.0.2:3000;",
+      "location = /api/auth/v1/refresh {",
+      "proxy_pass http://172.25.0.2:3000;",
+      "location = /api/auth/v1/logout {",
+      "proxy_pass http://172.25.0.2:3000;",
+      "location /api/ {",
+      "proxy_pass http://172.25.0.2:3000;",
+      "location / { try_files $uri $uri/ /index.html; }"
+    ],
+    "worker_start": [
+      "PID                 STARTED             COMMAND",
+      "4876                Tue                 Sep 15 22:11:22 2026 openresty",
+      "3167704             Thu                 Nov 19 18:18:16 2026 openresty",
+      "3167705             Thu                 Nov 19 18:18:16 2026 openresty",
+      "3167706             Thu                 Nov 19 18:18:16 2026 openresty",
+      "3167707             Thu                 Nov 19 18:18:16 2026 openresty"
+    ],
+    "site_aliases": [
+      [
+        "dp.srvf.team"
+      ],
+      [
+        "ops.srvf.team"
+      ]
+    ],
+    "website_types": [
+      [
+        "ops.srvf.team",
+        "HTTPS",
+        "proxy",
+        "Running"
+      ],
+      [
+        "dp.srvf.team",
+        "HTTPS",
+        "static",
+        "Running"
+      ]
+    ],
+    "roots_mount": [
+      "bind ",
+      " /opt/1panel/www ",
+      " /www ",
+      " true"
+    ],
+    "headers": {
+      "Host": [
+        "$host",
+        "$host",
+        "$host",
+        "$host"
+      ],
+      "X-Forwarded-Proto": [
+        "https",
+        "https",
+        "https",
+        "https",
+        "https"
+      ],
+      "X-Forwarded-For": [
+        "$remote_addr",
+        "$remote_addr",
+        "$remote_addr",
+        "$remote_addr"
+      ],
+      "X-Real-IP": []
+    }
+  },
+  "serving_static": {
+    "metadata": {
+      "roots": [
+        "static/js/*.{js,css}",
+        "static/css/*.{js,css}",
+        "static/*.{js,css}",
+        "index.html",
+        "platform-config.json"
+      ],
+      "n": 302,
+      "manifest": "f490c32360e6fda779ea5ab4e1244bb9ec297017dd2466a67827fe3276fc2249",
+      "max_mtime": "2026-11-08T04:41:39.866240+00:00",
+      "release_is_symlink": false,
+      "platform_config_sha256": "fde5a0db313b5fbbb06dfe737989d8cc07ca424bd9fff8eaddabd76ca396f7a1",
+      "site_conf_domains": [
+        "dp.srvf.team.conf"
+      ],
+      "includes": []
+    },
+    "indexes": {
+      "index.html": {
+        "sha256": "ae73cbd7964b002e705a9ce22c882fd2e5ec5a7f689ab510d21961b9ea3a1253",
+        "mtime": "2026-11-08T04:41:39.790240+00:00",
+        "bytes": 2147
+      }
+    },
+    "referenced_assets": {
+      "/static/js/index-B9y9s-Nz.js": "28cd1e9ad7eb6c5ae7dc28d3c364b8f61671729c503ee8bfa228b3c5dc8b86fd",
+      "/static/js/asyncToGenerator-C8TAONZD.js": "bc225f0f0117e9f4abf24db7ad435ad184441889e31591c8f2f60503ff914fad",
+      "/static/js/objectSpread2-D4cznNc1.js": "f9d4c459157e6cdb81799f38f161eccaab6fc040bc7495269fe3fb3398305c39",
+      "/static/js/vue.runtime.esm-bundler-B3_iY2eV.js": "600a27048f80e34a4ef7e4a373035c542ba12c72db1d7ebaf566817ecaa14bcf",
+      "/static/js/dayjs.min-DQNlRcGN.js": "d1ad3b7c73fb3220047af70ff4f82cfb2c53f039a4fc7e5a7ef482fbc8b3f269",
+      "/static/js/es-VleF5va1.js": "3c6508a6d1e8baf45cb3a0ab6c893b82d3649f8175770e732e1a42acb97bea5d",
+      "/static/js/vue-router-BmAxi2dp.js": "557201a9ff8f8c542d35fb03a0518ccff53a86e0ea5ee61a2efb45bf3aeffa8f",
+      "/static/js/router-h2BPx77m.js": "7251d53fb6de01fc2a961275feec2578de6e1929e6ce3dcaf5b1c51315ec1d24",
+      "/static/js/fullscreen-exit-fill-n6YcrixL.js": "3849671d955a1e55db672aae23d1c1e88153639f1f42d22900be39d42dbe2b09",
+      "/static/css/router-Dkowby2T.css": "0e4d316c8a73b4efbcdd0a4983a678e590a4241d8c993b085e0467ccfb99899e",
+      "/static/css/index-Cl1Zm_ol.css": "f9a054d24abd77bbcfdb2c67b0740477b082e03d6d141f5bbc4aeb6fb87feccf"
+    },
+    "served_local_https": {
+      "/": {
+        "exit": 0,
+        "http_tls": "200|0",
+        "body_sha256": "ae73cbd7964b002e705a9ce22c882fd2e5ec5a7f689ab510d21961b9ea3a1253",
+        "bytes": 2147
+      },
+      "/index.html": {
+        "exit": 0,
+        "http_tls": "200|0",
+        "body_sha256": "ae73cbd7964b002e705a9ce22c882fd2e5ec5a7f689ab510d21961b9ea3a1253",
+        "bytes": 2147
+      },
+      "/h5/": {
+        "exit": 0,
+        "http_tls": "200|0",
+        "body_sha256": "ae73cbd7964b002e705a9ce22c882fd2e5ec5a7f689ab510d21961b9ea3a1253",
+        "bytes": 2147
+      },
+      "/admin/": {
+        "exit": 0,
+        "http_tls": "200|0",
+        "body_sha256": "ae73cbd7964b002e705a9ce22c882fd2e5ec5a7f689ab510d21961b9ea3a1253",
+        "bytes": 2147
+      }
+    }
+  },
+  "health_local_https": {
+    "/api/system/v1/health/live": [
+      0,
+      "200|0"
+    ],
+    "/api/system/v1/health/ready": [
+      0,
+      "200|0"
+    ]
+  },
+  "initial_noncontract_404": {
+    "curl_exit": 0,
+    "http_tls": "404|0",
+    "socket_query_exits": [
+      0,
+      0
+    ],
+    "new_time_wait_tuples_target_3000": 1
+  }
+}

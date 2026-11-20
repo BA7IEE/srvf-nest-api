@@ -1,0 +1,14 @@
+{"label": "activity", "actor": "t43-user-a", "method": "GET", "path": "/api/app/v1/activities/cmwnsf27c000as301irxu32ux", "status": 200, "code": 0, "reqId": "cmwnsp2zp71f81e5fd93440c68d7ab724"}
+{"label": "own_list", "actor": "t43-user-a", "method": "GET", "path": "/api/app/v1/my/registrations", "status": 200, "code": 0, "reqId": "cmwnsp30k66e53991513861e16dcd8eb2"}
+{"label": "own_detail", "actor": "t43-user-a", "method": "GET", "path": "/api/app/v1/my/registrations/cmwnsoect000bqd018uczfx10", "status": 200, "code": 0, "reqId": "cmwnsp30z4be5a5be78104d920da5bbb9"}
+{"label": "activity", "actor": "t43-user-b", "method": "GET", "path": "/api/app/v1/activities/cmwnsf27c000as301irxu32ux", "status": 200, "code": 0, "reqId": "cmwnsp31df257727e949b082dd40a0004"}
+{"label": "own_list", "actor": "t43-user-b", "method": "GET", "path": "/api/app/v1/my/registrations", "status": 200, "code": 0, "reqId": "cmwnsp32qa6e4d44cdf4534d339c8ce73"}
+{"label": "own_detail", "actor": "t43-user-b", "method": "GET", "path": "/api/app/v1/my/registrations/cmwnsoek2000zqd01e1dwzvj1", "status": 200, "code": 0, "reqId": "cmwnsp33ofb9de4b7c4e429eba6ac6720"}
+{"label": "cross_read", "actor": "t43-user-a", "method": "GET", "path": "/api/app/v1/my/registrations/cmwnsoek2000zqd01e1dwzvj1", "status": 404, "code": 21001, "reqId": "cmwnsp34af6bc777afaa3291f1e417e04"}
+{"label": "cross_cancel", "actor": "t43-user-a", "method": "PATCH", "path": "/api/app/v1/my/registrations/cmwnsoek2000zqd01e1dwzvj1/cancel", "status": 404, "code": 21001, "reqId": "cmwnsp34s6b0f2c901391b05f8a2826c5"}
+{"label": "cross_read", "actor": "t43-user-b", "method": "GET", "path": "/api/app/v1/my/registrations/cmwnsoect000bqd018uczfx10", "status": 404, "code": 21001, "reqId": "cmwnsp35adbda60e4981d6d4de383fe14"}
+{"label": "cross_cancel", "actor": "t43-user-b", "method": "PATCH", "path": "/api/app/v1/my/registrations/cmwnsoect000bqd018uczfx10/cancel", "status": 404, "code": 21001, "reqId": "cmwnsp35p9530006f645416345e01d2ef"}
+{"label": "self_cancel", "actor": "t43-user-a", "method": "PATCH", "path": "/api/app/v1/my/registrations/cmwnsoect000bqd018uczfx10/cancel", "status": 200, "code": 0, "reqId": "cmwnsp367269236da12fafca812189ca4"}
+{"label": "cancel_readback", "actor": "t43-user-a", "method": "GET", "path": "/api/app/v1/my/registrations/cmwnsoect000bqd018uczfx10", "status": 200, "code": 0, "reqId": "cmwnsp38lf2932790e448f336f2ce1ae4"}
+{"label": "repeat_cancel", "actor": "t43-user-a", "method": "PATCH", "path": "/api/app/v1/my/registrations/cmwnsoect000bqd018uczfx10/cancel", "status": 409, "code": 21030, "reqId": "cmwnsp38x7b768c8dd5593ad8fc9a58e6"}
+{"label": "peer_unchanged", "actor": "t43-user-b", "method": "GET", "path": "/api/app/v1/my/registrations/cmwnsoek2000zqd01e1dwzvj1", "status": 200, "code": 0, "reqId": "cmwnsp39c21a4ec01a090908fd5fdc99a"}

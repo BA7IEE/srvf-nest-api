@@ -1,0 +1,6 @@
+4137caa7f0991b54448754900ddd9df977d1eaa9d94a14eb7195d868620b6ed7  image/dist/modules/activities/activity-simple-draft.service.js
+5427a6635373be365866dd85def90fee92347091081ca595a06468aa6437b436  image/dist/modules/activities/activity-simple-review-profile.js
+793f57608a73a7d08223f8d14c0c358e41d42aed51b9cb5c0d4f906354541940  image/dist/modules/activities/controllers/admin-simple-activities.controller.js
+7fb0c78bd4ed51671bc5eee53624b1a4912cb56adb34073a02faf72ff09d3ed8  image/dist/common/exceptions/biz-code.constant.js
+8f381f70f29b1ea790c0000994711b50406088344a51d6fa0bbca00a4dc38005  image/dist/modules/activities/dto/admin/admin-simple-activity.dto.js
+d8887ab7bd141398cc977adedc5ee43411df042b9b6a358c7cdbc47cceb59f62  image/dist/modules/activities/activity-publish-review-submit.service.js

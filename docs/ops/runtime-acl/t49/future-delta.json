@@ -1,0 +1,24 @@
+{
+  "database": "srvf_staging",
+  "role": "srvf_dp_acceptance_runtime",
+  "table": "ParticipationLedgerEntry",
+  "privilege": "SELECT",
+  "columns": [
+    "activityId",
+    "cappedOutPointsDelta",
+    "creditedPointsDelta",
+    "entryKey",
+    "entryTypeCode",
+    "ledgerDate",
+    "memberId",
+    "participationIdentityId",
+    "postingBatchId",
+    "recognizedPointsDelta",
+    "resultRevisionId",
+    "serviceHoursDelta",
+    "sessionId"
+  ],
+  "baseline_sha256": "a2cc9eb5970ed4e956375fb551f19f90a26a1dfeed21827c078a1ec9e86f7060",
+  "grant_draft": "GRANT SELECT (\"activityId\", \"cappedOutPointsDelta\", \"creditedPointsDelta\", \"entryKey\", \"entryTypeCode\", \"ledgerDate\", \"memberId\", \"participationIdentityId\", \"postingBatchId\", \"recognizedPointsDelta\", \"resultRevisionId\", \"serviceHoursDelta\", \"sessionId\") ON public.\"ParticipationLedgerEntry\" TO srvf_dp_acceptance_runtime;",
+  "withdraw_if_exact_delta_applied": "REVOKE SELECT (\"activityId\", \"cappedOutPointsDelta\", \"creditedPointsDelta\", \"entryKey\", \"entryTypeCode\", \"ledgerDate\", \"memberId\", \"participationIdentityId\", \"postingBatchId\", \"recognizedPointsDelta\", \"resultRevisionId\", \"serviceHoursDelta\", \"sessionId\") ON public.\"ParticipationLedgerEntry\" FROM srvf_dp_acceptance_runtime;"
+}

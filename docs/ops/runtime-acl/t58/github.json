@@ -1,0 +1,204 @@
+{
+  "utc": "2026-11-20T10:25:46.518892+00:00",
+  "repos": {
+    "srvf-nest-api": {
+      "pr": "https://github.com/BA7IEE/srvf-nest-api/pull/1447",
+      "merged_utc": "2026-11-20T09:11:14Z",
+      "reviewed_head": "65d1d6ea4caaa815faac0e79ead8846b6cc3ade9",
+      "merge": "65bad1ccb7e6a4bb7a3cda46b49512f092d04779",
+      "current_main": "65bad1ccb7e6a4bb7a3cda46b49512f092d04779",
+      "merge_tree": "5df974c3c70425566a712d7b21fc1f5b415f5519",
+      "reviewed_tree": "5df974c3c70425566a712d7b21fc1f5b415f5519",
+      "repo_hooks_exit": 0,
+      "repo_hook_count": 0,
+      "workflow_runs": [
+        {
+          "id": 44708578967,
+          "workflow": "CI",
+          "event": "push",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44708578967",
+          "artifacts": [
+            {
+              "name": "r5-authenticated-ci-1",
+              "digest": "sha256:3182b567f34cc431783b2781105f7b86d289fb68fae83c746adbbd3b0cfef653",
+              "expired": false
+            }
+          ]
+        }
+      ]
+    },
+    "SRVFMobileWeb": {
+      "pr": "https://github.com/BA7IEE/SRVFMobileWeb/pull/5",
+      "merged_utc": "2026-11-20T09:12:37Z",
+      "reviewed_head": "529ee3a3c441eaaf992049cbbe6ee32f1414fa63",
+      "merge": "ae2e3b0ad5202a214d4dcfdc54342e52f9f270a1",
+      "current_main": "ae2e3b0ad5202a214d4dcfdc54342e52f9f270a1",
+      "merge_tree": "a48294c88b9fbb6eedb0a27fc0a38df7c4feffef",
+      "reviewed_tree": "a48294c88b9fbb6eedb0a27fc0a38df7c4feffef",
+      "repo_hooks_exit": 0,
+      "repo_hook_count": 0,
+      "workflow_runs": [
+        {
+          "id": 44708773107,
+          "workflow": "Frontend foundation checks",
+          "event": "push",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/BA7IEE/SRVFMobileWeb/actions/runs/44708773107",
+          "artifacts": [
+            {
+              "name": "foundation-evidence",
+              "digest": "sha256:83d653bc0ec324283bbd3360f62ddabf1527dfe9eb4cfb6283868d9f2bf54a04",
+              "expired": false
+            }
+          ]
+        }
+      ]
+    },
+    "srvf-admin-web": {
+      "pr": "https://github.com/BA7IEE/srvf-admin-web/pull/172",
+      "merged_utc": "2026-11-20T09:13:47Z",
+      "reviewed_head": "104e524c0b76826a79b1d48fad37fb07dcdfb8e8",
+      "merge": "2626116889affe3bda3758f7ed1ce006272503bf",
+      "current_main": "2626116889affe3bda3758f7ed1ce006272503bf",
+      "merge_tree": "609cfa7eb4480f2d884c800dc6aeed51aa18f1e7",
+      "reviewed_tree": "8f4eb1aa094cd7482a5b76207db3ee068f723338",
+      "repo_hooks_exit": 0,
+      "repo_hook_count": 0,
+      "workflow_runs": [
+        {
+          "id": 44708940910,
+          "workflow": "ci",
+          "event": "push",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/BA7IEE/srvf-admin-web/actions/runs/44708940910",
+          "artifacts": []
+        }
+      ]
+    }
+  },
+  "admin_reviewed_head_to_merge": {
+    "status": "ahead",
+    "ahead": 2,
+    "behind": 0,
+    "files": [
+      [
+        "modified",
+        "README.md"
+      ]
+    ]
+  },
+  "workflow_at_merge_and_deployment_records": {
+    "srvf-nest-api": {
+      "workflows_at_merge": {
+        "activity-os-r5-e4-d0-diagnostic.yml": {
+          "blob": "17899d705df0407f798b11337d83879c8079fa6c",
+          "indicators": {
+            "self_hosted": false,
+            "registry_push": false,
+            "remote_delivery": false,
+            "direct_srvf_hostname": false,
+            "other_workflow_trigger": false
+          }
+        },
+        "activity-os-r5-e4-validation.yml": {
+          "blob": "426352c6bc560f8496dfc24a8ea3c9c9e450e592",
+          "indicators": {
+            "self_hosted": false,
+            "registry_push": false,
+            "remote_delivery": false,
+            "direct_srvf_hostname": false,
+            "other_workflow_trigger": false
+          }
+        },
+        "ci.yml": {
+          "blob": "71325adb57a788dc64ff0f866ea350713a897c25",
+          "indicators": {
+            "self_hosted": false,
+            "registry_push": false,
+            "remote_delivery": false,
+            "direct_srvf_hostname": false,
+            "other_workflow_trigger": false
+          }
+        },
+        "docker-smoke.yml": {
+          "blob": "5ae967e47622ff6d69756ea3ecc7c0169f9c2ed6",
+          "indicators": {
+            "self_hosted": false,
+            "registry_push": false,
+            "remote_delivery": false,
+            "direct_srvf_hostname": false,
+            "other_workflow_trigger": false
+          }
+        },
+        "nightly-e2e-leaks.yml": {
+          "blob": "22a7a9e69cf76bac432d19846167065cf166dba8",
+          "indicators": {
+            "self_hosted": false,
+            "registry_push": false,
+            "remote_delivery": false,
+            "direct_srvf_hostname": false,
+            "other_workflow_trigger": false
+          }
+        },
+        "redzone-trusted.yml": {
+          "blob": "6f18c6ab6ea991b66a6d0f40ff2e3e67847f59ec",
+          "indicators": {
+            "self_hosted": false,
+            "registry_push": false,
+            "remote_delivery": false,
+            "direct_srvf_hostname": false,
+            "other_workflow_trigger": false
+          }
+        },
+        "release-audit.yml": {
+          "blob": "5f0dc72c32a7cc73c1bcfe970b7259cbdcde3b1d",
+          "indicators": {
+            "self_hosted": false,
+            "registry_push": false,
+            "remote_delivery": false,
+            "direct_srvf_hostname": false,
+            "other_workflow_trigger": false
+          }
+        }
+      },
+      "deployment_api_exit": 0,
+      "deployment_records_for_merge_sha": 0
+    },
+    "SRVFMobileWeb": {
+      "workflows_at_merge": {
+        "check.yml": {
+          "blob": "58f8ba8bed14a135bac06fb9a073118342345d0a",
+          "indicators": {
+            "self_hosted": false,
+            "registry_push": false,
+            "remote_delivery": false,
+            "direct_srvf_hostname": false,
+            "other_workflow_trigger": false
+          }
+        }
+      },
+      "deployment_api_exit": 0,
+      "deployment_records_for_merge_sha": 0
+    },
+    "srvf-admin-web": {
+      "workflows_at_merge": {
+        "ci.yml": {
+          "blob": "d82c4e9280848fc6806174c257127243cef4f450",
+          "indicators": {
+            "self_hosted": false,
+            "registry_push": false,
+            "remote_delivery": false,
+            "direct_srvf_hostname": false,
+            "other_workflow_trigger": false
+          }
+        }
+      },
+      "deployment_api_exit": 0,
+      "deployment_records_for_merge_sha": 0
+    }
+  }
+}

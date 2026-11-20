@@ -1,0 +1,36 @@
+{"actor":"lab","path":"/api/auth/v1/login","status":200,"code":0,"reqId":"cmwnn6q14f790540bd040b3be818f773e"}
+{"actor":"lab","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnn6q4qce80426c058677a4c1ed2f72"}
+{"actor":"lab","path":"/api/system/v1/authz/me/effective-permissions","status":200,"code":0,"reqId":"cmwnn6q4t252b7ca1e7c6aa23d6cafa87"}
+{"actor":"lab","path":"/api/system/v1/dict-types","status":403,"code":30100,"reqId":"cmwnn6qd6da4a51470f6695775921f4b0"}
+{"actor":"lab","path":"/api/admin/v1/meta/dashboard-summary","status":200,"code":0,"reqId":"cmwnn6qd956e2636a00e92ebd8c22acdb"}
+{"actor":"lab","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnn6qh2b5da40e685a4dd4b84dc263a"}
+{"actor":"lab","path":"/api/admin/v1/activities/cmwnn3o3f001pnz01xjnt7fnz/simple-draft","status":200,"code":0,"reqId":"cmwnn6qh5bfd60e26d5b3289d89d0e976"}
+{"actor":"lab","path":"/api/admin/v1/activities/cmwnn3o3f001pnz01xjnt7fnz/publish-reviews","status":409,"code":20255,"reqId":"cmwnn6qmj8218270fb1d11c8ad5d8533a"}
+{"actor":"lab","path":"/api/admin/v1/activities/organization-options","status":200,"code":0,"reqId":"cmwnn6qnp35375e7d380a76ccb24d71aa"}
+{"actor":"lab","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnn6qxr302a501a1679bf4c4cea0975"}
+{"actor":"lab","path":"/api/admin/v1/activities/cmwnn3o3f001pnz01xjnt7fnz/simple-draft","status":200,"code":0,"reqId":"cmwnn6qya9224922f227458addc4fac00"}
+{"actor":"lab","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnn6r2p30d4dda8038716aad0cdb61d"}
+{"actor":"lab","path":"/api/admin/v1/activities/cmwnn3o3f001pnz01xjnt7fnz/simple-draft","status":200,"code":0,"reqId":"cmwnn6r3363f646d546651af490a30b8c"}
+{"actor":"lab","path":"/api/admin/v1/activities/cmwnn3o3f001pnz01xjnt7fnz/publish-reviews","status":200,"code":0,"reqId":"cmwnn6r40c94fbcf7861f61026300adad"}
+PASS confirmed version cmwnn3o3f001pnz01xjnt7fnz cmwnn6r76002cnz01jg1o5qto
+{"actor":"lab","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnn6r7i34b8edbbde1d86665f3c5bc4"}
+{"actor":"lab","path":"/api/admin/v1/activities/cmwnn3o3f001pnz01xjnt7fnz/simple-draft","status":200,"code":0,"reqId":"cmwnn6r7u6492fd6d99b708ec639ff693"}
+{"actor":"reviewer","path":"/api/auth/v1/login","status":200,"code":0,"reqId":"cmwnn6rl199638c45ad904917c8671159"}
+{"actor":"reviewer","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnn6rooc3e45a8284cf8edc8a3cc9fc"}
+{"actor":"reviewer","path":"/api/system/v1/authz/me/effective-permissions","status":200,"code":0,"reqId":"cmwnn6rou5d74f34fd93d06c2bd5195f7"}
+{"actor":"reviewer","path":"/api/system/v1/dict-types","status":403,"code":30100,"reqId":"cmwnn6rxpdee03905389aead03e05cae5"}
+{"actor":"reviewer","path":"/api/admin/v1/meta/dashboard-summary","status":200,"code":0,"reqId":"cmwnn6rxtf48651b1b647b06d3bacbdfb"}
+{"actor":"reviewer","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnn6s2a778540c4599c8916229267b5"}
+{"actor":"reviewer","path":"/api/system/v1/authz/me/effective-permissions","status":200,"code":0,"reqId":"cmwnn6s2d1e5de9e870ae31d90114f547"}
+{"actor":"reviewer","path":"/api/admin/v1/activity-publish-reviews/cmwnn6r76002cnz01jg1o5qto","status":200,"code":0,"reqId":"cmwnn6s2x29b8be93042a73dee9a3e01d"}
+{"actor":"reviewer","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnn6s3n274a1457324e8314af472ee3"}
+{"actor":"reviewer","path":"/api/system/v1/authz/me/effective-permissions","status":200,"code":0,"reqId":"cmwnn6s3r70eea470ad940f101423cf0b"}
+approval blocked [
+  '本页尚未完整支持这份申请，不能通过冻结申请.base.metricSetPointer：含未支持的专业内容，未完整展开冻结申请.metricSetPointer：含未支持的专业内容，未完整展开 可按权限写明原因退回；请勿把未展开内容视为不存在。 '
+]
+TimeoutError locator.click: Timeout 9000ms exceeded.
+Call log:
+  - waiting for getByRole('button', { name: '通过并发布', exact: true })
+    - locator resolved to <button disabled type="button" data-v-6585e183="" aria-disabled="true" class="el-button el-button--primary is-disabled">…</button>
+  - attempting click action
+    2 × waiting for element to be visible, enab

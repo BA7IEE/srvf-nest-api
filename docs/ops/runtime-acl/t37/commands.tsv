@@ -1,0 +1,7 @@
+断言	调用入口（夹具参数脱敏）	exit	证据
+最终组合，单必填布尔	browser.sh SCENARIO=required	0	required-final.log
+最终组合，无需指标	browser.sh SCENARIO=not_required	0	not-required-final.log
+最终组合，历史模板未配置	browser.sh SCENARIO=unconfigured ACTIVITY_ID=<isolated draft>	0	unconfigured-final.log
+合法用户缺失对象	node issue1416.cjs (isolated stack)	0	issue1416.log
+五种指标组合，两次页面审批	kinds/browser.sh SCENARIO=required	0	five-kinds/verified.log
+后端 CI	gh run watch 44548708050 --exit-status	0	back-ci.json

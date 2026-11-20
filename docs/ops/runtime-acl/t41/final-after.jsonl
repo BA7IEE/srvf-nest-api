@@ -1,0 +1,15 @@
+{"state": "aggregate", "hash": "d5ffc393ee0009f68d62d12b8990bb62", "buckets": [["activity_person", null, 2, 2], ["position_participation", null, 2, 2], ["session_participation", null, 2, 2]], "active_reservations": 6}
+{"kind": "initial", "version": 1, "status": "approved", "id": "cmwnrels3002znw01e94ddi54", "submitted_role": "USER", "reviewed_role": "USER", "independent": true, "activity_target": 2, "session_target": 2, "position_target": 2, "activity_start": "2026-12-01T01:00:00.000Z", "activity_location": "T37 场地", "schedule_consistent": true, "places_unchanged": true}
+{"kind": "change", "version": 2, "status": "approved", "id": "cmwnreq5y0040nw01ivq9lqw5", "submitted_role": "USER", "reviewed_role": "USER", "independent": true, "activity_target": 12, "session_target": 12, "position_target": 12, "activity_start": "2026-12-03T02:00:00.000Z", "activity_location": "T41 东侧训练区", "schedule_consistent": true, "places_unchanged": true}
+{"kind": "change", "version": 3, "status": "approved", "id": "cmwnretp2004bnw01spwink6a", "submitted_role": "USER", "reviewed_role": "USER", "independent": true, "activity_target": null, "session_target": null, "position_target": null, "activity_start": "2026-12-03T02:00:00.000Z", "activity_location": "T41 东侧训练区", "schedule_consistent": true, "places_unchanged": true}
+{"kind": "change", "version": 4, "status": "pending", "id": "cmwnrh43x004vnw01pevlnj31", "submitted_role": "USER", "reviewed_role": null, "independent": null, "activity_target": 1, "session_target": 1, "position_target": 1, "activity_start": "2026-12-03T02:00:00.000Z", "activity_location": "T41 东侧训练区", "schedule_consistent": true, "places_unchanged": true}
+{"event": "activity.publish", "reqId": "cmwnrekiq09b3f6f4338e6498347cb8d6"}
+{"event": "activity.publish", "reqId": "cmwnrelp337899ae52517dcdffe739d4c"}
+{"event": "activity.publish", "reqId": "cmwnrengj85aa72aa62bf134af88b0d25"}
+{"event": "activity.publish", "reqId": "cmwnrengj85aa72aa62bf134af88b0d25"}
+{"event": "activity.publish", "reqId": "cmwnreq44ff9d2431c0d9e537767a6107"}
+{"event": "activity.publish", "reqId": "cmwnresr5e9df015acdecf75d6bce4d5a"}
+{"event": "activity.publish", "reqId": "cmwnresr5e9df015acdecf75d6bce4d5a"}
+{"event": "activity.publish", "reqId": "cmwnretn3cbfdd6b7223290dd16ae0ca2"}
+{"event": "activity.publish", "reqId": "cmwnrevcg5222b6f7d63af43a2ed4dc2d"}
+{"event": "activity.publish", "reqId": "cmwnrh40x81ac6d12071d7d4e7ca2bd8f"}

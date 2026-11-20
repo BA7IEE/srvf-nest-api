@@ -1,0 +1,3 @@
+{"step":"permissions","own":{"status":200,"code":0,"reqId":"cmwodlbit6cd09ea6d25d3c9e643c0b9d"},"foreign":{"status":404,"code":21001,"reqId":"cmwodlbjtbc5a6bb109ae6ca857ed70e7"},"admin":{"status":403,"code":30100,"reqId":"cmwodlbkaa6ffe8b2ffef681394c4b83c"}}
+{"step":"disabled","status":401,"code":10007,"reqId":"cmwodlbta8f29611dd87e9692e7176461"}
+{"step":"end","exit":0}

@@ -1,0 +1,8 @@
+check OK; 32 column privileges, 3 relations
+closure write guard install OK
+apply OK; 32 column privileges, 3 relations
+check OK; 32 column privileges, 3 relations
+closure write guard verify OK
+check OK; 32 column privileges, 3 relations
+check OK; 32 column privileges, 3 relations
+closure write guard verify OK

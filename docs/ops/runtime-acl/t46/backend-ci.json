@@ -1,0 +1,38 @@
+[
+  {
+    "job": "134964502205",
+    "exit": 0,
+    "passed": [
+      "test/e2e/auth-refresh.e2e-spec.ts",
+      "test/e2e/users-password-reset.e2e-spec.ts"
+    ]
+  },
+  {
+    "job": "134964502459",
+    "exit": 0,
+    "passed": [
+      "test/e2e/app-me-password.e2e-spec.ts",
+      "test/e2e/auth-h5-session.e2e-spec.ts"
+    ]
+  },
+  {
+    "job": "134964577339",
+    "exit": 0,
+    "passed": []
+  },
+  {
+    "job": "134964502774",
+    "exit": 0,
+    "passed": [
+      "test/e2e/auth-password-reset.e2e-spec.ts",
+      "test/e2e/users-admin-crud.e2e-spec.ts"
+    ]
+  },
+  {
+    "job": "134964502349",
+    "exit": 0,
+    "passed": [
+      "test/e2e/auth-refresh-throttle.e2e-spec.ts"
+    ]
+  }
+]

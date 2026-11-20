@@ -1,0 +1,8 @@
+{"actor":"lab","method":"GET","path":"/api/admin/v1/activities/cmwnrt3zg000amy01t5z9qjve/simple-draft","status":200,"code":0,"reqId":"cmwnrwjmx3f98498707e8285a7214b1ea"}
+{"actor":"lab","method":"GET","path":"/api/app/v1/my/registrations","status":200,"code":0,"reqId":"cmwnrwjnx74574d915febb4a7a40bbfe5"}
+{"actor":"lab","method":"GET","path":"/api/app/v1/my/registrations/cmwnrvjsd0001s401enaqpy9m","status":200,"code":0,"reqId":"cmwnrwjogbe9b3a1ff34a2fe4c9ae36e8"}
+{"actor":"reviewer","method":"GET","path":"/api/app/v1/my/registrations","status":200,"code":0,"reqId":"cmwnrwjou36c26233f198a1d831ee448e"}
+{"actor":"reviewer","method":"GET","path":"/api/app/v1/my/registrations/cmwnrvjst000bs401hgtgcoib","status":200,"code":0,"reqId":"cmwnrwjpd9531be96db29e05e9578c3ba"}
+{"actor":"reviewer","method":"GET","path":"/api/app/v1/my/registrations/cmwnrvjsd0001s401enaqpy9m","status":404,"code":21001,"reqId":"cmwnrwjpt42519ce87ca94fab3ab0898d"}
+{"actor":"lab","method":"GET","path":"/api/app/v1/my/registrations/cmwnrvjst000bs401hgtgcoib","status":404,"code":21001,"reqId":"cmwnrwjqj11cdf28cf7e1d2255ad27838"}
+PASS two own lists and details; cross-subject reads rejected

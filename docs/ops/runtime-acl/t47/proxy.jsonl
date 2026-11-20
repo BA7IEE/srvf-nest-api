@@ -1,0 +1,1 @@
+[{"test":"http peer","http":403,"code":40300,"requestId":"cmwofeegd40aa56d78081f5dfe27234d4","noStore":true},{"test":"second origin","http":403,"code":40300,"requestId":"cmwofeeha209c5366f102efb2c3b4b2d7","noStore":true},{"test":"same-origin HTTPS","http":200,"code":0,"requestId":"cmwofeehk996c48b5e0cf61a671fd2d0e","noStore":true}]

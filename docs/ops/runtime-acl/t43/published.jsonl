@@ -1,0 +1,3 @@
+{"actor":"lab","path":"/api/admin/v1/activities/from-template","status":201,"code":0,"reqId":"cmwnsf23j6e9963618163aac257a8dc09"}
+{"actor":"lab","path":"/api/admin/v1/activities/cmwnsf27c000as301irxu32ux/publish-reviews","status":200,"code":0,"reqId":"cmwnsf3e995a9dd1feca70fcfbe7bfd88"}
+{"actor":"reviewer","path":"/api/admin/v1/activity-publish-reviews/cmwnsf3kd000ls301l1oyunxa/approve","status":200,"code":0,"reqId":"cmwnsf57c0da700b7acf28a049e96baa1"}

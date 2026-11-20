@@ -1,0 +1,9 @@
+BEFORE
+notification.system-broadcast|pending|0|1|0|0|
+notification.targeted|pending|0|2|0|0|
+WORKER running sha256:826cd1241eef6e31d3925d4af80b2d1b6830c687d2cc37b67c1123fb9a433f75 ["node","dist/notification-outbox-worker"]
+AFTER
+notification.system-broadcast|succeeded|1|1|1|1|
+notification.targeted|succeeded|1|2|2|2|
+      2 worker started
+STOP exited 0
