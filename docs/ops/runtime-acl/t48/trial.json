@@ -1,0 +1,415 @@
+{
+  "admin": [
+    {
+      "actor": "lab",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwogp61nc677131ce815ff5c418fd173",
+      "path": "/api/admin/v1/activities/template-version-options"
+    },
+    {
+      "actor": "lab",
+      "status": 201,
+      "code": 0,
+      "reqId": "cmwogp6yc5eaa6cb0ebbdb1d269d9e02a",
+      "path": "/api/admin/v1/activities/from-template"
+    },
+    {
+      "actor": "lab",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwogp75j7d7e9e4a7ff4a87b523bf57b",
+      "path": "/api/admin/v1/activities/:id/simple-draft"
+    },
+    {
+      "actor": "lab",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwogp7ld90cc4c86452f07c5e8174af0",
+      "path": "/api/admin/v1/activities/:id/simple-draft"
+    },
+    {
+      "actor": "lab",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwogp831c1eacea4f6088e2e2151a04b",
+      "path": "/api/admin/v1/activities/:id/simple-draft"
+    },
+    {
+      "actor": "lab",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwogp880db44d9898256289b12882d7c",
+      "path": "/api/admin/v1/activities/:id/simple-draft"
+    },
+    {
+      "actor": "lab",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwogp8cm2dd912142dadb21611036e93",
+      "path": "/api/admin/v1/activities/:id/simple-draft"
+    },
+    {
+      "actor": "reviewer",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwogpa7ic853fc9390e02ee296f9fc09",
+      "path": "/api/admin/v1/activity-publish-reviews/:id/approve"
+    }
+  ],
+  "ordinary_release": true,
+  "browser": {
+    "business": [
+      {
+        "step": "/api/auth/v1/h5/refresh",
+        "status": 401,
+        "code": 10007,
+        "reqId": "cmwogpsjq3fda0e9ad2aaa7971b2d2205"
+      },
+      {
+        "step": "reload and rotate",
+        "http": 200,
+        "reqId": "cmwogpsyya914023c0dd65aedc80bfaa4"
+      },
+      {
+        "step": "own insurance true",
+        "status": 200,
+        "code": 0,
+        "reqId": "cmwogpt5j2d5c4ef27f3079d86b369ba5"
+      },
+      {
+        "step": "registered",
+        "status": 201,
+        "code": 0,
+        "reqId": "cmwogptu569133d5f7fdde8ef8947e67f"
+      },
+      {
+        "step": "own insurance true",
+        "status": 200,
+        "code": 0,
+        "reqId": "cmwogptz08b376e0096e3600a130af968"
+      },
+      {
+        "step": "issuer login",
+        "status": 200,
+        "code": 0,
+        "reqId": "cmwogpu6s3fce7ff7e1399a98d690f206"
+      },
+      {
+        "step": "issue actual session QR",
+        "status": 201,
+        "code": 0,
+        "reqId": "cmwogpuak9447294b70e270190fc12544"
+      },
+      {
+        "step": "render",
+        "status": 201,
+        "code": 0,
+        "reqId": "cmwogpuc968e06229c182c9dde7735e23"
+      },
+      {
+        "step": "H5 self QR",
+        "status": 201,
+        "code": 0,
+        "reqId": "cmwogsl54ec9218bd3037f0db9fcbb513"
+      },
+      {
+        "step": "present readback",
+        "status": 200,
+        "code": 0,
+        "reqId": "cmwogsl86308d2e9b6911039a59afa94e"
+      },
+      {
+        "exit": 0,
+        "zeroWebStorage": true,
+        "independentOriginTLS": true,
+        "crossTabLogout": true,
+        "imagePicker": true
+      },
+      {
+        "step": "retire QR",
+        "status": 200,
+        "code": 0,
+        "reqId": "cmwogsolo7db7b0a58a2b218ef290c5f8"
+      }
+    ],
+    "fallback": [
+      {
+        "exit": 0,
+        "api": 0,
+        "page": "/#/system/not-configured"
+      }
+    ],
+    "recovered": [
+      {
+        "step": "恢复后原队员登录和本人签到读回",
+        "http": 200,
+        "code": 0,
+        "exit": 0,
+        "reqId": "cmwogtq9pdc953bccac194c5035a4e5e3",
+        "present": true
+      }
+    ],
+    "followup": [
+      {
+        "step": "participation-summary",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwogty4qa548698f7d77dee22fe48d24"
+      },
+      {
+        "step": "participation-ledger",
+        "http": 500,
+        "code": 50000,
+        "reqId": "cmwogty5we0c85558f99dc98f3ab65563"
+      },
+      {
+        "exit": 1,
+        "error": "AssertionError"
+      }
+    ],
+    "observed-page": [
+      {
+        "step": "participation-summary",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwogvx072adc3ab0b9d46e23fbdbedf7"
+      },
+      {
+        "step": "participation-ledger",
+        "http": 500,
+        "code": 50000,
+        "reqId": "cmwogvx1rd15c390e3f51be894bf4ed5b"
+      },
+      {
+        "exit": 1,
+        "error": "AssertionError"
+      }
+    ],
+    "ledger-retest": [
+      {
+        "step": "participation-summary",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwogw9os1e1e1176c7f0d0af0939e172"
+      },
+      {
+        "step": "participation-ledger",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwogw9qy9798fde11def39420256e10f"
+      },
+      {
+        "step": "参与页与未结算状态",
+        "exit": 0,
+        "awardedHours": 0,
+        "ledgerRows": 0
+      },
+      {
+        "step": "registration-insurance",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwogwae4b5b9f18643269540cc156b7d"
+      },
+      {
+        "step": "严格保险下无保障主体可见本人不符合",
+        "exit": 0,
+        "eligible": false,
+        "required": true
+      }
+    ],
+    "after-withdraw": [
+      {
+        "step": "participation-summary",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwogxdsmc67d592c29e3858d6815aade"
+      },
+      {
+        "step": "participation-ledger",
+        "http": 500,
+        "code": 50000,
+        "reqId": "cmwogxdta700bca8e0f1efd660f6f15ab"
+      },
+      {
+        "exit": 1,
+        "error": "AssertionError"
+      }
+    ]
+  },
+  "projections": {
+    "before": {
+      "punchReqId": "cmwogsl54ec9218bd3037f0db9fcbb513",
+      "signupReqId": "cmwogptu569133d5f7fdde8ef8947e67f",
+      "complete_join": 1,
+      "wrong_request": 0,
+      "registration_audits": [
+        "registration.create",
+        "registration.review"
+      ],
+      "team_evidence": 1,
+      "source_kind": "team_insurance_coverage",
+      "migrations": 156,
+      "bindings": 0,
+      "outbox_pending": 0,
+      "activity_state": "published"
+    },
+    "backup_restore": {
+      "punchReqId": "cmwogsl54ec9218bd3037f0db9fcbb513",
+      "signupReqId": "cmwogptu569133d5f7fdde8ef8947e67f",
+      "complete_join": 1,
+      "wrong_request": 0,
+      "registration_audits": [
+        "registration.create",
+        "registration.review"
+      ],
+      "team_evidence": 1,
+      "source_kind": "team_insurance_coverage",
+      "migrations": 156,
+      "bindings": 0,
+      "outbox_pending": 0,
+      "activity_state": "published"
+    },
+    "fallback": {
+      "punchReqId": "cmwogsl54ec9218bd3037f0db9fcbb513",
+      "signupReqId": "cmwogptu569133d5f7fdde8ef8947e67f",
+      "complete_join": 1,
+      "wrong_request": 0,
+      "registration_audits": [
+        "registration.create",
+        "registration.review"
+      ],
+      "team_evidence": 1,
+      "source_kind": "team_insurance_coverage",
+      "migrations": 156,
+      "bindings": 0,
+      "outbox_pending": 0,
+      "activity_state": "published"
+    },
+    "recovered": {
+      "punchReqId": "cmwogsl54ec9218bd3037f0db9fcbb513",
+      "signupReqId": "cmwogptu569133d5f7fdde8ef8947e67f",
+      "complete_join": 1,
+      "wrong_request": 0,
+      "registration_audits": [
+        "registration.create",
+        "registration.review"
+      ],
+      "team_evidence": 1,
+      "source_kind": "team_insurance_coverage",
+      "migrations": 156,
+      "bindings": 0,
+      "outbox_pending": 0,
+      "activity_state": "published"
+    },
+    "retired": {
+      "punchReqId": "cmwogsl54ec9218bd3037f0db9fcbb513",
+      "signupReqId": "cmwogptu569133d5f7fdde8ef8947e67f",
+      "complete_join": 1,
+      "wrong_request": 0,
+      "registration_audits": [
+        "registration.create",
+        "registration.review"
+      ],
+      "team_evidence": 1,
+      "source_kind": "team_insurance_coverage",
+      "migrations": 156,
+      "bindings": 0,
+      "outbox_pending": 0,
+      "activity_state": "published"
+    }
+  },
+  "flags": {
+    "strict": true,
+    "refresh90": true,
+    "access15": true,
+    "trust32": true
+  },
+  "observation": {
+    "id": "cmwogvx1rd15c390e3f51be894bf4ed5b",
+    "prisma": "P2010",
+    "sqlstate": "42501",
+    "table": "ParticipationLedgerEntry",
+    "model": null
+  },
+  "acl_missing": {
+    "shared_read_only": [
+      "ParticipationLedgerEntry.activityId",
+      "ParticipationLedgerEntry.cappedOutPointsDelta",
+      "ParticipationLedgerEntry.creditedPointsDelta",
+      "ParticipationLedgerEntry.entryKey",
+      "ParticipationLedgerEntry.entryTypeCode",
+      "ParticipationLedgerEntry.ledgerDate",
+      "ParticipationLedgerEntry.memberId",
+      "ParticipationLedgerEntry.participationIdentityId",
+      "ParticipationLedgerEntry.postingBatchId",
+      "ParticipationLedgerEntry.recognizedPointsDelta",
+      "ParticipationLedgerEntry.resultRevisionId",
+      "ParticipationLedgerEntry.serviceHoursDelta",
+      "ParticipationLedgerEntry.sessionId"
+    ],
+    "isolated_baseline": [
+      "ParticipationLedgerEntry.cappedOutPointsDelta",
+      "ParticipationLedgerEntry.entryKey",
+      "ParticipationLedgerEntry.entryTypeCode",
+      "ParticipationLedgerEntry.participationIdentityId",
+      "ParticipationLedgerEntry.recognizedPointsDelta",
+      "ParticipationLedgerEntry.sessionId"
+    ],
+    "restored_db_baseline": [
+      "ParticipationLedgerEntry.cappedOutPointsDelta",
+      "ParticipationLedgerEntry.entryKey",
+      "ParticipationLedgerEntry.entryTypeCode",
+      "ParticipationLedgerEntry.participationIdentityId",
+      "ParticipationLedgerEntry.recognizedPointsDelta",
+      "ParticipationLedgerEntry.sessionId"
+    ],
+    "isolated_with_delta": [],
+    "isolated_withdrawn": [
+      "ParticipationLedgerEntry.cappedOutPointsDelta",
+      "ParticipationLedgerEntry.entryKey",
+      "ParticipationLedgerEntry.entryTypeCode",
+      "ParticipationLedgerEntry.participationIdentityId",
+      "ParticipationLedgerEntry.recognizedPointsDelta",
+      "ParticipationLedgerEntry.sessionId"
+    ]
+  },
+  "worker": [
+    "BEFORE",
+    "notification.system-broadcast|pending|0|1|0|0|",
+    "notification.targeted|pending|0|2|0|0|",
+    "WORKER running sha256:1eb4e3ca321b141bca0c9c032e919f8665179f843dc623349fcd765ee6c89ffb [\"node\",\"dist/notification-outbox-worker\"]",
+    "AFTER",
+    "notification.system-broadcast|succeeded|1|1|1|1|",
+    "notification.targeted|succeeded|1|2|2|2|",
+    "      2 worker started",
+    "STOP exited 0"
+  ],
+  "retirement": [
+    "撤回后页面断言 exit=1",
+    "withdrawn ledger cmwogxdta700bca8e0f1efd660f6f15ab 500 50000",
+    "retained sanitized audits=23",
+    "8a2e404896cb66cf6efd717de8189522a6e9e0abb04e0fb56f58531dc0f4c8f4  retained-audit.jsonl",
+    "10 named trial containers and internal network retired; no pending intents; trial passwords, keys, synthetic data dump retired; normalized audit retained"
+  ],
+  "backup_files": {
+    "overlay.tgz": "48963826773554a668a36745c23693ba59c842d6ab5ad3661d58552b1db31065",
+    "h5.tgz": "ac60a379559ccf2fa2345efab8b14ddf522e274c4d70f7e8acab608f87126e16",
+    "admin.tgz": "12f530ab96e3f5d575d9a5c4368340dd05805e46500a3fa39c67c528854ddd5d",
+    "admin.manifest": "9f44857d0e930bf2cda08703f31c9a2c1a57a6c66e8659c2aabf171fc1b10d1b",
+    "gateway.conf": "5326a606ae318fa09f690db59124abe74d56e2ea5908493055fe96a0d7042244",
+    "synthetic.pgdump": "a4b72ea64c6662ab7acdde5fc20983ef2bca6c967b42417b5abd8211105aca9c"
+  },
+  "fallback_pair": [
+    "pair=fallback ready=200 verified_tls=true no_host_ports=true",
+    "32cb437a2d44bddf5574d6ec262342f6f92f8e5dc666c0824e1f97e9158c383a  fallback-index",
+    "f9ed7b6ad8f5cdc26a9acbc0d9fc60bb7f701fba6ef6021a0027aa36c3eaed81  fallback-admin-index",
+    "api=sha256:826cd1241eef6e31d3925d4af80b2d1b6830c687d2cc37b67c1123fb9a433f75"
+  ],
+  "restored_pair": [
+    "pair=recovered ready=200 verified_tls=true no_host_ports=true",
+    "58ccd7a4a11710099de5dfa013adcd12665102b0353cf4f9388abad279ce8a5b  recovered-index",
+    "f9ed7b6ad8f5cdc26a9acbc0d9fc60bb7f701fba6ef6021a0027aa36c3eaed81  recovered-admin-index",
+    "api=sha256:1eb4e3ca321b141bca0c9c032e919f8665179f843dc623349fcd765ee6c89ffb"
+  ]
+}

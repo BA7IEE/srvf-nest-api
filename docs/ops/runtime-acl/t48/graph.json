@@ -1,0 +1,21 @@
+{
+  "simple->backend": 0,
+  "cookie->backend": 0,
+  "backend_main_ancestor": 0,
+  "h5_cookie->h5": 0,
+  "h5_base->h5": 0,
+  "mobile_main_ancestor": 128,
+  "mobile_exact_first_parent_chain": [
+    "529ee3a3c441eaaf992049cbbe6ee32f1414fa63",
+    "7ea8036fd1b7fae5a9e5398f7f9391c7d2399c70",
+    "5e5be8dc11daf86781cf648c8c35572b3e79df60",
+    "81823988cf40cb92c6a0ee50e5225bb374461323",
+    "ce14f84b5add85de11816136a0ef975a28ff7b7e",
+    "009976a22cce757ee13d48983764c1f5b6c07764"
+  ],
+  "mobile_local_history": "older than main incomplete",
+  "admin_local_merge": "75d23f365fcf1f94093e9ff0f9f63fa6c58178b5",
+  "admin_diff_from_verified_build": [
+    "README.md"
+  ]
+}
