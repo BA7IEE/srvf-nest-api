@@ -1,0 +1,2 @@
+entry http=200 tls_verify=0
+ready http=200 tls_verify=0
