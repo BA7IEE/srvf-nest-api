@@ -140,3 +140,13 @@ docker port <api 容器>                                 # 只应有 127.0.0.1:3
 真实 `APP_CORS_ORIGIN` · 切 `APP_ENV=production` · 前后端**同源**部署(2026-08-03 拍板的拓扑)。
 
 **第二阶段必须基于届时的仓库实况重新制定,不得机械沿用本文。**
+
+### 启用 H5 本人参与账本时
+
+确认应用连接的集群、数据库和当前 PostgreSQL 角色后，在同目标使用正常 psql 连接执行只读预检，并保存逐列回执。
+
+```sh
+docs/ops/runtime-acl/t49/check-ledger.sh "$app_database" "$app_runtime_role"
+```
+
+查询读取分录 13 列及批次的 id、statusCode。退出 0 表示该角色具备该读面的列权限；回执另列已有的表级读权。缺列或目标不符时退出非零，部署方据回执复核角色契约。共享角色的额外授权、应用判权、已入账业务数据和设备验收各自留证。[隔离逐列见证与回退边界](https://github.com/BA7IEE/srvf-nest-api/tree/669fe55c9473a30a7a67d94f9ed0a7ba2d07372b/docs/ops/runtime-acl/t49)
