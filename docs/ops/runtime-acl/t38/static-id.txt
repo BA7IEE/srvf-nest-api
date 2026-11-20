@@ -1,0 +1,2 @@
+2625b6268ba53103ca78a943a70aace4398d86edbe7985cc4a3ecc2de232712d  final-web/index.html
+c8fd30a91ef5e37032afb47ceb188bf6b75c203bd37de894c07b4f82571cbb2d  release.sha256

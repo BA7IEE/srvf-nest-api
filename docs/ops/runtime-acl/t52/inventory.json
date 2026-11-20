@@ -1,0 +1,4806 @@
+{
+  "assembled_utc": "2026-11-20T06:25:14+00:00",
+  "mains": {
+    "srvf-nest-api": "2b3eee0a954ea65abaef3edb35fd391eaa1567e9",
+    "SRVFMobileWeb": "009976a22cce757ee13d48983764c1f5b6c07764",
+    "srvf-admin-web": "b12093c67fdd5d7b5650dcaf15b6783984e4075a"
+  },
+  "backend_process_checks": [
+    "Lint / Typecheck / E2E",
+    "Docker image build",
+    "Diff guards",
+    "Red-zone (trusted)"
+  ],
+  "open_prs": [
+    {
+      "number": 1446,
+      "title": "ops: 本人参与账本的只读部署预检",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1446",
+      "headRefOid": "4c8cba0af25abe4587533c513489729a5f219fbe",
+      "headRefName": "ops/member-ledger-read-contract",
+      "baseRefName": "main",
+      "baseRefOid": "2b3eee0a954ea65abaef3edb35fd391eaa1567e9",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "首发必需",
+      "owner": "后端、部署维护者",
+      "follow_up": "部署含账本的 H5 时须执行预检；含短信确认修复。与 #1445 分叉，合并顺序、生成文件及新组合 CI 见配对说明。",
+      "independent_review": "T51 PASS，限本 SHA 短信、账本预检及原生 CI。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44682887628/job/136110371225"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44682885542/job/136110237680"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44682885542/job/136110354830"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44682887628/job/136110371143"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44682887628/job/136110436398"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44682885542/job/136110352942"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44682887628/job/136110436463"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44682887628/job/136110436479"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44682887628/job/136110436516"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44682887628/job/136110436472"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44682887628/job/136110436475"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44682887628/job/136110436478"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44682887628/job/136110436499"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44682887628/job/136110436425"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44682887628/job/136118449507"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "SUCCESS"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 11
+    },
+    {
+      "number": 1445,
+      "title": "Integrate H5 cookie sessions with Simple activity release and member attendance",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1445",
+      "headRefOid": "dd62ce308f9142e8b3be04e9c4d52f548c0ebb17",
+      "headRefName": "integration/t47-h5-activity",
+      "baseRefName": "main",
+      "baseRefOid": "2b3eee0a954ea65abaef3edb35fd391eaa1567e9",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "首发必需",
+      "owner": "后端维护者",
+      "follow_up": "首选 H5 Cookie、活动及签到组合。单 SHA 的红区成功；候选场景仍受部署合同约束。",
+      "independent_review": "T48 PASS，限非公网三端配对。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061517817"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667827144/job/136061403551"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061518062"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667827144/job/136061481394"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580693"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667827144/job/136073697307"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580686"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580717"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580653"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580721"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580718"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580685"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580643"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580639"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136069009512"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "SUCCESS"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 57
+    },
+    {
+      "number": 1444,
+      "title": "activities: 首发 Simple 页面草稿版本确认回移及隔离验收",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1444",
+      "headRefOid": "713d3416830d897852929731ff7f9b638038ab7c",
+      "headRefName": "ops/simple-trial-isolated-t34",
+      "baseRefName": "main",
+      "baseRefOid": "2b3eee0a954ea65abaef3edb35fd391eaa1567e9",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "已被组合替代待关",
+      "owner": "后端维护者",
+      "follow_up": "已在 #1445 祖先链。#1445 进入 main 后核目标树、草稿版本保护及回归记录，再决定是否关闭。",
+      "independent_review": "T36–T42 限已测 Simple；T48 核最终组合。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44548708050/job/135646245130"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44548698125/job/135646212899"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44548698125/job/135646408777"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44548708050/job/135646245548"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44548708050/job/135646376978"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44548698125/job/135646405756"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44548708050/job/135646377134"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44548708050/job/135646377218"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44548708050/job/135646377261"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44548708050/job/135646377216"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44548708050/job/135646377195"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44548708050/job/135646377022"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44548708050/job/135646376930"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44548708050/job/135646377094"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44548708050/job/135660935504"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "SUCCESS"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 43
+    },
+    {
+      "number": 1443,
+      "title": "ops: 活动权限目录及预置角色的只读部署预检",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1443",
+      "headRefOid": "2a0fd5adbaddf01ee9cac5c16d49cfc21790aed7",
+      "headRefName": "ops/t28-activity-catalog-preflight",
+      "baseRefName": "main",
+      "baseRefOid": "2b3eee0a954ea65abaef3edb35fd391eaa1567e9",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "未满足不得关",
+      "owner": "部署与权限维护者",
+      "follow_up": "受保护的三码恢复工具与预检。保留收据、映射和退役路径；其余创建目录与产品模板不在此工具内。",
+      "independent_review": "T31b 独审仅覆盖限定的候选写集。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44527962465/job/135573648312"
+        },
+        {
+          "name": "Container boot + API smoke + graceful shutdown",
+          "workflow": "Docker Smoke",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44527962461/job/135573446056"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44527955087/job/135573427972"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44527962465/job/135573648810"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44527955087/job/135573578020"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44527962465/job/135573741818"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44527955087/job/135589755065"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44527962465/job/135573742002"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44527962465/job/135573742078"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44527962465/job/135573742009"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44527962465/job/135573742011"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44527962465/job/135573742010"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44527962465/job/135573741891"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44527962465/job/135573742021"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44527962465/job/135573741953"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44527962465/job/135585469896"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "SUCCESS"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 11
+    },
+    {
+      "number": 1442,
+      "title": "ops: 成员与授权链数据库角色只读预检",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1442",
+      "headRefOid": "61d2f71171620d92c7d00a5f3b08510d1bd051a1",
+      "headRefName": "ops/t25-runtime-acl-preflight",
+      "baseRefName": "main",
+      "baseRefOid": "2b3eee0a954ea65abaef3edb35fd391eaa1567e9",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "BLOCKED",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "未满足不得关",
+      "owner": "运维证据维护者",
+      "follow_up": "含可执行预检、试验材料与历史快照；证据树可固定引用。合并整枝需要独立裁剪与解决材料分支失败检查。",
+      "independent_review": "历轮按各材料与 SHA 独审；整枝无一揽子通过结论。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44685465040/job/136118616134"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44685461586/job/136118607719"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "FAILURE",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44685465040/job/136118615779"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44685461586/job/136118689143"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44685465040/job/136118678913"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44685461586/job/136118687281"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44685465040/job/136118678903"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44685465040/job/136118679040"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "IN_PROGRESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44685465040/job/136118678899"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "IN_PROGRESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44685465040/job/136118678935"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44685465040/job/136118678975"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44685465040/job/136118678938"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44685465040/job/136118678928"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44685465040/job/136118678942"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "FAILURE"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 506
+    },
+    {
+      "number": 1441,
+      "title": "feat(seed): 隔离验收库单账号初始化与审计",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1441",
+      "headRefOid": "a985743025783ef8e03e6cf6cdcdae7abfb6f92b",
+      "headRefName": "feat/reviewed-acceptance-bootstrap",
+      "baseRefName": "main",
+      "baseRefOid": "2b3eee0a954ea65abaef3edb35fd391eaa1567e9",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "BLOCKED",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "未满足不得关",
+      "owner": "数据库与安全维护者",
+      "follow_up": "a9857430 为未来入口，保留既有审计；旧版单账号执行与当前工具分开，失败 CI 待作者处理。",
+      "independent_review": "当前 tip 缺可用于执行的肯定结论。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44513312757/job/135523012763"
+        },
+        {
+          "name": "Container boot + API smoke + graceful shutdown",
+          "workflow": "Docker Smoke",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44513312875/job/135522795234"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44513306412/job/135522824661"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44513312757/job/135523013588"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44513306412/job/135522936603"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "FAILURE",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44513312757/job/135523132120"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44513306412/job/135590083753"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44513312757/job/135523132388"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44513312757/job/135523132266"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44513312757/job/135523132308"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44513312757/job/135523132209"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44513312757/job/135523132358"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44513312757/job/135523132057"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44513312757/job/135523132081"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44513312757/job/135523132100"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "FAILURE",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44513312757/job/135533327923"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "FAILURE"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 5
+    },
+    {
+      "number": 1439,
+      "title": "feat(auth): add same-origin H5 Cookie sessions",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1439",
+      "headRefOid": "479594029d46bb9ab0e00e01411368830e2e6a24",
+      "headRefName": "feat/h5-cookie-auth",
+      "baseRefName": "main",
+      "baseRefOid": "108feebb84b85c7e4955c5af8bbfc016702e4529",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "已被组合替代待关",
+      "owner": "后端维护者",
+      "follow_up": "Cookie 会话提交在 #1445 祖先链；目标 main 已含等价实现且测试保留后，才可决定关闭独立 PR。",
+      "independent_review": "T47/T48 的认证与组合证据；限对应版本与场景。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44339872408/job/134964569846"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44339867727/job/134926575168"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44339872408/job/134964500329"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44339867727/job/134926691326"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44339872408/job/134964502004"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44339867727/job/134943234340"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44339872408/job/134964502205"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44339872408/job/134964502459"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44339872408/job/134964577339"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44339872408/job/134964502774"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44339872408/job/134964502349"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44339872408/job/134964498013"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44339872408/job/134964501491"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44339872408/job/134964564800"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44339872408/job/134972255899"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "SUCCESS"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 26
+    },
+    {
+      "number": 1437,
+      "title": "test(harness): surface source binding changes early",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1437",
+      "headRefOid": "0bdf65ca96c112bf0e0d871741420ff8bd696943",
+      "headRefName": "chore/harness-validation-feedback",
+      "baseRefName": "chore/harness-test-table-policy",
+      "baseRefOid": "505915f61a8a80b9c732c7cf8c7ef29c8e444fd6",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "后续非阻断",
+      "owner": "测试基础设施",
+      "follow_up": "叠在 #1436；治理仓库测试策略。合入前核基线与守护，和 H5 发布分开。",
+      "independent_review": "本轮未取得绑定该 HEAD 的独审结论。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44230541686/job/134554193902"
+        },
+        {
+          "name": "Container boot + API smoke + graceful shutdown",
+          "workflow": "Docker Smoke",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44230541623/job/134554193168"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44230541572/job/134554196444"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44230541572/job/134554269851"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44230541686/job/134554194201"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44230541686/job/134554267628"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44230541572/job/134554268198"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44230541686/job/134554267748"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44230541686/job/134554267733"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44230541686/job/134554267759"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44230541686/job/134554267670"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44230541686/job/134554267698"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44230541686/job/134554267625"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44230541686/job/134554267775"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44230541686/job/134554267659"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44230541686/job/134561562615"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "SUCCESS"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 3
+    },
+    {
+      "number": 1436,
+      "title": "refactor(harness): centralize current test table policy",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1436",
+      "headRefOid": "fb05c7205307dd876aa8b185d1a15ca03f0a0f94",
+      "headRefName": "chore/harness-test-table-policy",
+      "baseRefName": "main",
+      "baseRefOid": "f180dcb2475ac07297ebfdc52bfce9ea82cdc839",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "BLOCKED",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "后续非阻断",
+      "owner": "测试基础设施",
+      "follow_up": "测试表策略重构有失败检查，保留待修；不属于三个界面运行配对。",
+      "independent_review": "本轮未取得绑定该 HEAD 的独审结论。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44294793877/job/134768900384"
+        },
+        {
+          "name": "Container boot + API smoke + graceful shutdown",
+          "workflow": "Docker Smoke",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44294793894/job/134768900631"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44294787878/job/134768888562"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44294793877/job/134768900750"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44294787878/job/134768983523"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44294793877/job/134769023959"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44294787878/job/134772979555"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44294793877/job/134769023949"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44294793877/job/134769023926"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "FAILURE",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44294793877/job/134769023991"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44294793877/job/134769024086"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44294793877/job/134769023964"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44294793877/job/134769023913"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44294793877/job/134769023876"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44294793877/job/134769023816"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "FAILURE",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44294793877/job/134779420835"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "FAILURE"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 7
+    },
+    {
+      "number": 1432,
+      "title": "test(activities): 迁移 A7 正式更正验收并登记退役后续决定",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1432",
+      "headRefOid": "a11832ceca1390949feef72b03f6e87548d576f7",
+      "headRefName": "test/retirement-correction-acceptance",
+      "baseRefName": "codex/retire-legacy-attendance-20261112",
+      "baseRefOid": "89ec2a4aad212b73d94f9baa4efffc7934ea88da",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "UNSTABLE",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "未满足不得关",
+      "owner": "考勤维护者",
+      "follow_up": "叠在旧考勤退役分支；关联 #1408，需正式更正与历史数据兼容结论、恢复绿色检查。",
+      "independent_review": "本轮未取得绑定该 HEAD 的独审结论。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44018897708/job/133823391955"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44018897683/job/133823394641"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44018897683/job/133823469160"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44018897708/job/133823392396"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44018897708/job/133823451473"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44018897683/job/133823467887"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "FAILURE",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44018897708/job/133823451580"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "FAILURE",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44018897708/job/133823451738"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "FAILURE",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44018897708/job/133823451679"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "FAILURE",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44018897708/job/133823451789"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "FAILURE",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44018897708/job/133823451671"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44018897708/job/133823451414"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44018897708/job/133823451531"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44018897708/job/133823451563"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "FAILURE",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44018897708/job/133831305080"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "FAILURE"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 3
+    },
+    {
+      "number": 1415,
+      "title": "refactor(attendances): retire legacy endpoints and migrate summaries",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1415",
+      "headRefOid": "89ec2a4aad212b73d94f9baa4efffc7934ea88da",
+      "headRefName": "codex/retire-legacy-attendance-20261112",
+      "baseRefName": "fix/v11-punch-chain-projector-20261111",
+      "baseRefOid": "65ce51102c848d494bcaa0f57078c4b1de6b2444",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "UNSTABLE",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "未满足不得关",
+      "owner": "考勤维护者",
+      "follow_up": "旧端点退役及汇总迁移有独立行为和红灯，不能由一次扫码签到验收代替。",
+      "independent_review": "本轮未取得绑定该 HEAD 的独审结论。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43906569635/job/133436892674"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43906569635/job/133436892435"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43906569635/job/133437018859"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "FAILURE",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43906569635/job/133437018766"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "FAILURE",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43906569635/job/133437018771"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "FAILURE",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43906569635/job/133437018815"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "FAILURE",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43906569635/job/133437018743"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "FAILURE",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43906569635/job/133437018839"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43906569635/job/133437018645"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43906569635/job/133437018536"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43906569635/job/133437018845"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "FAILURE",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43906569635/job/133450258799"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "FAILURE"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": []
+      },
+      "changed_files": 248
+    },
+    {
+      "number": 1414,
+      "title": "docs: record ongoing deployed acceptance testing",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1414",
+      "headRefOid": "07ed72a67edd41a3b44571c241bdd21451965066",
+      "headRefName": "codex/acceptance-20261113",
+      "baseRefName": "main",
+      "baseRefOid": "00f5e46b91d01c617a791389b9a6dda5808de7f0",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "仅文档",
+      "owner": "文档维护者",
+      "follow_up": "部署验收历史记录，核证据时点与版本再归档；不带入运行制品。",
+      "independent_review": "本轮未取得绑定该 HEAD 的独审结论。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43703067209/job/132778191507"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43703065437/job/132778187733"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43703065437/job/132784627374"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43703067209/job/132778191248"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43703067209/job/132782659176"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43703065437/job/132784626589"
+        },
+        {
+          "name": "Contract + E2E",
+          "workflow": "CI",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43703067209/job/132782660240"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43703067209/job/132782659905"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43703067209/job/132782660151"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43703067209/job/132782659200"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43703067209/job/132783465770"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "SUCCESS"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 66
+    },
+    {
+      "number": 1412,
+      "title": "fix(activities): resolve superseded punch chains",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1412",
+      "headRefOid": "65ce51102c848d494bcaa0f57078c4b1de6b2444",
+      "headRefName": "fix/v11-punch-chain-projector-20261111",
+      "baseRefName": "fix/v11-feedback-current-eligibility-20261111",
+      "baseRefOid": "fc2af7a80e7b2690cf531bd9e877580651e083f0",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "未满足不得关",
+      "owner": "考勤维护者",
+      "follow_up": "旧打卡链被替代后的投影；需专门的更正链、重放回归。",
+      "independent_review": "本轮未取得绑定该 HEAD 的独审结论。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706433696/job/132788506603"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706432263/job/132788418113"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706432263/job/132788523806"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706433696/job/132788506923"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706433696/job/132788543597"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706432263/job/132788522599"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706433696/job/132788543709"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706433696/job/132788543813"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706433696/job/132788543700"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706433696/job/132788543684"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706433696/job/132788543703"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706433696/job/132788543643"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706433696/job/132788543619"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706433696/job/132788543630"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706433696/job/132795111513"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "SUCCESS"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 5
+    },
+    {
+      "number": 1411,
+      "title": "fix(feedback): use current settlement eligibility",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1411",
+      "headRefOid": "fc2af7a80e7b2690cf531bd9e877580651e083f0",
+      "headRefName": "fix/v11-feedback-current-eligibility-20261111",
+      "baseRefName": "fix/v11-ledger-current-count-20261111",
+      "baseRefOid": "f9aa7381884130f36a222f02d4cb528ef55af41e",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "未满足不得关",
+      "owner": "反馈维护者",
+      "follow_up": "结算后的反馈资格另行验证；现有 H5 报名/签到证据不覆盖反馈。",
+      "independent_review": "本轮未取得绑定该 HEAD 的独审结论。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706426837/job/132788502142"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706424811/job/132788393682"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706424811/job/132788499593"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706426837/job/132788502338"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706426837/job/132788542168"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706424811/job/132788498501"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706426837/job/132788542201"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706426837/job/132788542199"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706426837/job/132788542220"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706426837/job/132788542253"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706426837/job/132788542208"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706426837/job/132788542198"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706426837/job/132788542164"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706426837/job/132788542186"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43706426837/job/132794041629"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "SUCCESS"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 14
+    },
+    {
+      "number": 1410,
+      "title": "fix(activities): count current posted participation days",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1410",
+      "headRefOid": "f9aa7381884130f36a222f02d4cb528ef55af41e",
+      "headRefName": "fix/v11-ledger-current-count-20261111",
+      "baseRefName": "fix/review-referenced-policy-read",
+      "baseRefOid": "08cb8b2d450c3ebc80eb38810755d0306c58b04d",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "未满足不得关",
+      "owner": "账本维护者",
+      "follow_up": "参与天数按当前已入账记录计数，与本人分录分页是两份合同。需核历史更正、重算。",
+      "independent_review": "本轮未取得绑定该 HEAD 的独审结论。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702880029/job/132777621682"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702878356/job/132777618534"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702878356/job/132781374464"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702880029/job/132777621903"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702880029/job/132777944098"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702878356/job/132781372957"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702880029/job/132777944173"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702880029/job/132777944153"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702880029/job/132777944165"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702880029/job/132777944180"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702880029/job/132777944121"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702880029/job/132777944127"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702880029/job/132777944113"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702880029/job/132777944110"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702880029/job/132790028131"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "SUCCESS"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 7
+    },
+    {
+      "number": 1409,
+      "title": "docs(attendances): clarify single-flow direction",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1409",
+      "headRefOid": "85bce83795ef7cc4f20034a7efa81a697504ce93",
+      "headRefName": "docs/attendance-single-flow-20261111",
+      "baseRefName": "fix/review-referenced-policy-read",
+      "baseRefOid": "08cb8b2d450c3ebc80eb38810755d0306c58b04d",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "仅文档",
+      "owner": "考勤文档维护者",
+      "follow_up": "单流程方向文档；确认与现行 #1408 的退役范围一致后处理。",
+      "independent_review": "本轮未取得绑定该 HEAD 的独审结论。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702863408/job/132777570184"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702861147/job/132777565229"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702861147/job/132779931166"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702863408/job/132777570001"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702863408/job/132777865358"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702861147/job/132779930243"
+        },
+        {
+          "name": "Contract + E2E",
+          "workflow": "CI",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702863408/job/132777866702"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702863408/job/132777867219"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702863408/job/132777866584"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702863408/job/132777865369"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702863408/job/132784037565"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "SUCCESS"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 2
+    },
+    {
+      "number": 1407,
+      "title": "fix(activities): avoid unused qualification locks for no-rule details",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1407",
+      "headRefOid": "120e85cbe85f923a7924da332b8ab7a0e7a6f495",
+      "headRefName": "fix/app-detail-no-rule-locks",
+      "baseRefName": "fix/review-referenced-policy-read",
+      "baseRefOid": "08cb8b2d450c3ebc80eb38810755d0306c58b04d",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "后续非阻断",
+      "owner": "活动维护者",
+      "follow_up": "无资质规则详情的锁优化；按其基线独立核锁与详情回归。",
+      "independent_review": "本轮未取得绑定该 HEAD 的独审结论。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702841315/job/132777503700"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702839220/job/132777498849"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702839220/job/132778026292"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702841315/job/132777503436"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702841315/job/132780098950"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702839220/job/132778024931"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702841315/job/132780099044"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702841315/job/132780098981"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702841315/job/132780099018"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702841315/job/132780099036"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702841315/job/132780099054"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702841315/job/132780098966"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702841315/job/132780098936"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702841315/job/132780098953"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702841315/job/132788928297"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "SUCCESS"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 6
+    },
+    {
+      "number": 1406,
+      "title": "ci: retain reviewed image for isolated verification",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1406",
+      "headRefOid": "fa4766637f17d32f836c30bee8c2feedd5bcb0dc",
+      "headRefName": "ci/review-image-retention",
+      "baseRefName": "fix/review-referenced-policy-read",
+      "baseRefOid": "923c6c57673883d4b4834ea7e2ff0c8e18b5da5d",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "DIRTY",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "后续非阻断",
+      "owner": "CI 维护者",
+      "follow_up": "保留已审查镜像的工作流，与运行代码配对分别维护。",
+      "independent_review": "本轮未取得绑定该 HEAD 的独审结论。",
+      "checks": [
+        {
+          "name": "Change set",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/42416805839/job/128536563340"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/42416805870/job/128536564501"
+        },
+        {
+          "name": "Harness selftests",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/42416805839/job/128536563459"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/42416805870/job/128536604358"
+        },
+        {
+          "name": "Incident replay",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/42416805839/job/128536563437"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/42416805870/job/128554676029"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/42416805839/job/128536563479"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/42416805839/job/128536563428"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/42416805839/job/128536590206"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/42416805839/job/128536590062"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/42416805839/job/128536590050"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/42416805839/job/128536590026"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/42416805839/job/128536590529"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/42416805839/job/128536590098"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/42416805839/job/128536590008"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/42416805839/job/128536590051"
+        },
+        {
+          "name": "Red-zone approval (report-only)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/42416805839/job/128536685816"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/42416805839/job/128541719118"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "SUCCESS"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 1
+    },
+    {
+      "number": 1405,
+      "title": "feat(activities): expose review-scoped policy definitions",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1405",
+      "headRefOid": "08cb8b2d450c3ebc80eb38810755d0306c58b04d",
+      "headRefName": "fix/review-referenced-policy-read",
+      "baseRefName": "fix/simple-submit-confirmation",
+      "baseRefOid": "53d2de0d9d26341a9605fdb002a3fcab5fd7143e",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "未满足不得关",
+      "owner": "活动与权限维护者",
+      "follow_up": "冻结审核展示有局部覆盖；与 #1445 分叉，受限策略定义读面仍须逐项对照。",
+      "independent_review": "本轮未取得绑定该 HEAD 的独审结论。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702821377/job/132777444403"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702818598/job/132777437932"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702821377/job/132777444189"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702818598/job/132777704876"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702821377/job/132777807108"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702818598/job/132805267436"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702821377/job/132777807188"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702821377/job/132777807167"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702821377/job/132777807153"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702821377/job/132777807169"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702821377/job/132777807172"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702821377/job/132777807120"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702821377/job/132777807131"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702821377/job/132777807098"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702821377/job/132789233842"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "SUCCESS"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 27
+    },
+    {
+      "number": 1404,
+      "title": "fix(activities): guard draft submissions and resolve V3 CI images",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1404",
+      "headRefOid": "53d2de0d9d26341a9605fdb002a3fcab5fd7143e",
+      "headRefName": "fix/simple-submit-confirmation",
+      "baseRefName": "fix/activity-r04a-review",
+      "baseRefOid": "5816f06df04443e545cb5fc6ea587d3c5456e911",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "未满足不得关",
+      "owner": "活动维护者",
+      "follow_up": "草稿确认已回移；原分支还包括镜像/不同基线变化，与 #1445 分叉。不能整 PR 宣称替代。",
+      "independent_review": "本轮未取得绑定该 HEAD 的独审结论。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702809722/job/132777409231"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702806299/job/132777400901"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702806299/job/132777455897"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702809722/job/132777409496"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702809722/job/132777453230"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702806299/job/132777455207"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702809722/job/132777453374"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702809722/job/132777453410"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702809722/job/132777453324"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702809722/job/132777453311"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702809722/job/132777453348"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702809722/job/132777453280"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702809722/job/132777453422"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702809722/job/132777453310"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702809722/job/132785800227"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "SUCCESS"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 26
+    },
+    {
+      "number": 1403,
+      "title": "fix: preserve correction replay and role step-up checks",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1403",
+      "headRefOid": "5816f06df04443e545cb5fc6ea587d3c5456e911",
+      "headRefName": "fix/activity-r04a-review",
+      "baseRefName": "main",
+      "baseRefOid": "4eb39ecd9e6799e79cb6fe3ba5f1dc6004383d4f",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "DIRTY",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "未满足不得关",
+      "owner": "更正与权限维护者",
+      "follow_up": "更正重放、角色升阶独立核验，普通 H5 写读链不覆盖。",
+      "independent_review": "本轮未取得绑定该 HEAD 的独审结论。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702795622/job/132777365294"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702793570/job/132777362081"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702795622/job/132777365517"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702793570/job/132777413362"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702795622/job/132777412358"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702793570/job/132805438323"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702795622/job/132777412436"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702795622/job/132777412463"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702795622/job/132777412440"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702795622/job/132777412446"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702795622/job/132777412435"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702795622/job/132777412343"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702795622/job/132777412356"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702795622/job/132777412403"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702795622/job/132784587099"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "SUCCESS"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 11
+    },
+    {
+      "number": 1392,
+      "title": "test(nightly): balance workloads and preserve historical context",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1392",
+      "headRefOid": "12400ddee4b2e82b1418ca2bdfe2c160aa0ee178",
+      "headRefName": "codex/nightly-context-workload-20261027",
+      "baseRefName": "main",
+      "baseRefOid": "4eb39ecd9e6799e79cb6fe3ba5f1dc6004383d4f",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "srvf-nest-api",
+      "category": "后续非阻断",
+      "owner": "CI 维护者",
+      "follow_up": "夜间任务分配及历史上下文，交 nightly 流程独立收尾。",
+      "independent_review": "本轮未取得绑定该 HEAD 的独审结论。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702784483/job/132777330713"
+        },
+        {
+          "name": "Container boot + API smoke + graceful shutdown",
+          "workflow": "Docker Smoke",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702784340/job/132777330095"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702782527/job/132777326693"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702784483/job/132777331030"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702782527/job/132777372737"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702784483/job/132777398640"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702782527/job/132805352528"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702784483/job/132777398664"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702784483/job/132777398680"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702784483/job/132777398672"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702784483/job/132777398694"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702784483/job/132777398671"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702784483/job/132777398620"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702784483/job/132777398619"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702784483/job/132777398610"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702784483/job/132782772792"
+        }
+      ],
+      "process_checks": {
+        "Lint / Typecheck / E2E": [
+          "SUCCESS"
+        ],
+        "Docker image build": [
+          "SUCCESS"
+        ],
+        "Diff guards": [
+          "SUCCESS"
+        ],
+        "Red-zone (trusted)": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 4
+    },
+    {
+      "number": 5,
+      "title": "Connect member H5 insurance and attendance to the combined API",
+      "url": "https://github.com/BA7IEE/SRVFMobileWeb/pull/5",
+      "headRefOid": "529ee3a3c441eaaf992049cbbe6ee32f1414fa63",
+      "headRefName": "fix/h5-attendance-insurance",
+      "baseRefName": "feat/h5-same-origin-session",
+      "baseRefOid": "5e5be8dc11daf86781cf648c8c35572b3e79df60",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "SRVFMobileWeb",
+      "category": "首发必需",
+      "owner": "移动端维护者",
+      "follow_up": "在 #4 上增加保险与签到；#5 的树含 #3/#4。冻结三层目标，保留顺序与原生 CI。",
+      "independent_review": "T48 PASS，限非公网浏览器、保险及签到范围。",
+      "checks": [
+        {
+          "name": "check",
+          "workflow": "Frontend foundation checks",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/SRVFMobileWeb/actions/runs/44667834661/job/136061383971"
+        },
+        {
+          "name": "check",
+          "workflow": "Frontend foundation checks",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/SRVFMobileWeb/actions/runs/44667827714/job/136061362132"
+        }
+      ],
+      "process_checks": {
+        "check": [
+          "SUCCESS",
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 12
+    },
+    {
+      "number": 4,
+      "title": "feat(h5): 接入同源 Cookie 会话与队员页面",
+      "url": "https://github.com/BA7IEE/SRVFMobileWeb/pull/4",
+      "headRefOid": "5e5be8dc11daf86781cf648c8c35572b3e79df60",
+      "headRefName": "feat/h5-same-origin-session",
+      "baseRefName": "feat/limited500-h5",
+      "baseRefOid": "ce14f84b5add85de11816136a0ef975a28ff7b7e",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "SRVFMobileWeb",
+      "category": "首发必需",
+      "owner": "移动端维护者",
+      "follow_up": "Cookie 会话及队员页面，base 是 #3 分支；接入后核目标基线再处理 #5。",
+      "independent_review": "T46–T48 组合内对应范围。",
+      "checks": [
+        {
+          "name": "check",
+          "workflow": "Frontend foundation checks",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/SRVFMobileWeb/actions/runs/44663041441/job/136045603447"
+        },
+        {
+          "name": "check",
+          "workflow": "Frontend foundation checks",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/SRVFMobileWeb/actions/runs/44663036686/job/136045588285"
+        }
+      ],
+      "process_checks": {
+        "check": [
+          "SUCCESS",
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 33
+    },
+    {
+      "number": 3,
+      "title": "首发认证准备：同源传输与换号隔离",
+      "url": "https://github.com/BA7IEE/SRVFMobileWeb/pull/3",
+      "headRefOid": "ce14f84b5add85de11816136a0ef975a28ff7b7e",
+      "headRefName": "feat/limited500-h5",
+      "baseRefName": "main",
+      "baseRefOid": "009976a22cce757ee13d48983764c1f5b6c07764",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "SRVFMobileWeb",
+      "category": "首发必需",
+      "owner": "移动端维护者",
+      "follow_up": "堆叠底座，base=main；准备同源传输。依序整合并复核下一层的 base。",
+      "independent_review": "T46–T48 组合内对应范围。",
+      "checks": [
+        {
+          "name": "check",
+          "workflow": "Frontend foundation checks",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/SRVFMobileWeb/actions/runs/44326274888/job/134878276339"
+        },
+        {
+          "name": "check",
+          "workflow": "Frontend foundation checks",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/SRVFMobileWeb/actions/runs/44326245705/job/134878178552"
+        }
+      ],
+      "process_checks": {
+        "check": [
+          "SUCCESS",
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 10
+    },
+    {
+      "number": 172,
+      "title": "修复活动冻结指标展示与发布后变更审核",
+      "url": "https://github.com/BA7IEE/srvf-admin-web/pull/172",
+      "headRefOid": "104e524c0b76826a79b1d48fad37fb07dcdfb8e8",
+      "headRefName": "fix/simple-published-activity-review",
+      "baseRefName": "main",
+      "baseRefOid": "6375148a61445972e792ce37cb401fd8e5162538",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "srvf-admin-web",
+      "category": "首发必需",
+      "owner": "管理端维护者",
+      "follow_up": "Simple 发布审核页、冻结指标及发布后变更；面板其余业务按各入口单列。",
+      "independent_review": "T41/T42 对应页面独审；T48 最终配对独立发布。",
+      "checks": [
+        {
+          "name": "verify",
+          "workflow": "ci",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-admin-web/actions/runs/44565714648/job/135706747311"
+        }
+      ],
+      "process_checks": {
+        "verify": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 11
+    },
+    {
+      "number": 171,
+      "title": "新增受限首发结算审核工作台",
+      "url": "https://github.com/BA7IEE/srvf-admin-web/pull/171",
+      "headRefOid": "7b6825c408ada2a3a4e5af36455989ee304e6b1b",
+      "headRefName": "feat/limited500-settlement-review",
+      "baseRefName": "main",
+      "baseRefOid": "6375148a61445972e792ce37cb401fd8e5162538",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "srvf-admin-web",
+      "category": "未满足不得关",
+      "owner": "管理端与结算维护者",
+      "follow_up": "管理员结算工作台，与 #172 分叉；搭配后端 #1431 单独核真实审核页和读回，决定进入哪一批。",
+      "independent_review": "本轮未取得绑定该 HEAD 的独审结论。",
+      "checks": [
+        {
+          "name": "verify",
+          "workflow": "ci",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-admin-web/actions/runs/44301109141/job/134790754957"
+        }
+      ],
+      "process_checks": {
+        "verify": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 8
+    },
+    {
+      "number": 170,
+      "title": "fix: 修复队员建档与姓名展示",
+      "url": "https://github.com/BA7IEE/srvf-admin-web/pull/170",
+      "headRefOid": "2ab02a346799bbed2cbe89b2e80e7fb516bc9aea",
+      "headRefName": "codex/fix-member-create-20261113",
+      "baseRefName": "main",
+      "baseRefOid": "6375148a61445972e792ce37cb401fd8e5162538",
+      "state": "OPEN",
+      "isDraft": true,
+      "mergeStateStatus": "CLEAN",
+      "reviewDecision": "",
+      "repo": "srvf-admin-web",
+      "category": "未满足不得关",
+      "owner": "管理端与成员维护者",
+      "follow_up": "成员建档与姓名展示，与 #172 分叉；API 建档回执不能代替该页面验收。两者配对前留开。",
+      "independent_review": "本轮未取得绑定该 HEAD 的独审结论。",
+      "checks": [
+        {
+          "name": "verify",
+          "workflow": "ci",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-admin-web/actions/runs/43350699156/job/131640778689"
+        }
+      ],
+      "process_checks": {
+        "verify": [
+          "SUCCESS"
+        ]
+      },
+      "changed_files": 14
+    }
+  ],
+  "open_backend_issues": [
+    {
+      "number": 1430,
+      "title": "[暂停归档] D5/D6/D7 2000 人 prepare 偶发 P2028（60 秒预算）诊断跟踪",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/1430",
+      "category": "后续非阻断",
+      "owner": "性能维护者",
+      "follow_up": "按原暂停决定留存 2000 人超时诊断；首发试验样本不足以关闭。"
+    },
+    {
+      "number": 1419,
+      "title": "超限 JSON body(~1MB)触发裸 500(应 413/40000)",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/1419",
+      "category": "未满足不得关",
+      "owner": "API 维护者",
+      "follow_up": "main 已合 #1420；T21d 授权桥接 102504 字节→413/40000；模型未发包。本次无重复请求；维护者核原验收范围决定关单。"
+    },
+    {
+      "number": 1418,
+      "title": "内容 publish 在 storage enabled=false 环境恒返 13034（零附件草稿同样被阻断）",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/1418",
+      "category": "未满足不得关",
+      "owner": "内容产品维护者",
+      "follow_up": "storage 关闭时空附件发布的语义未定；保留业务决定与 13034，发布流程无替代证据。"
+    },
+    {
+      "number": 1417,
+      "title": "[prod-smoke] commit-jobs detail 查询不存在 ID 时未兜底,服务层抛 500",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/1417",
+      "category": "未满足不得关",
+      "owner": "更正链维护者",
+      "follow_up": "main 已合 #1420；T28 普通连接的 503/50300 有公网实测；合法受信身份的正向、缺失 ID 404 和跨对象仍缺成套证据。"
+    },
+    {
+      "number": 1416,
+      "title": "[prod-smoke] submit-change-review 资源不存在时未兜底,抛 TypeError 500",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/1416",
+      "category": "未满足不得关",
+      "owner": "活动维护者",
+      "follow_up": "main 已合 #1420；隔离已测发布后变更、独立审核，最终配对公网目标仍待部署验收。"
+    },
+    {
+      "number": 1408,
+      "title": "考勤去旧留新：v1.1 唯一业务链、旧 GPS/考勤单退役与历史兼容清理",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/1408",
+      "category": "未满足不得关",
+      "owner": "考勤维护者",
+      "follow_up": "去旧与历史兼容仍须验证，见 #1415/#1432。"
+    },
+    {
+      "number": 1332,
+      "title": "🌙 Nightly E2E leaks 失败",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/1332",
+      "category": "后续非阻断",
+      "owner": "CI 维护者",
+      "follow_up": "夜间泄漏失败留在原作业定位；PR 的绿色分片不结案。"
+    },
+    {
+      "number": 1109,
+      "title": "CI docs-only 快路径跳过单测 —— 读 docs 的 5 个 spec 因此不设防,红会转嫁给下一个非 docs PR",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/1109",
+      "category": "后续非阻断",
+      "owner": "CI 维护者",
+      "follow_up": "docs-only 快路径对读文档的规格是否充分，归独立 CI 事项。"
+    },
+    {
+      "number": 1055,
+      "title": "[P1] 队员视觉身份资产终态升级：分离账号头像、队员标准照与身份证件影像",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/1055",
+      "category": "未满足不得关",
+      "owner": "成员与隐私维护者",
+      "follow_up": "区分照片与证件资产的保护和保留，用正式放行口径复核。"
+    },
+    {
+      "number": 947,
+      "title": "[P1] 建立任务级 AI Coding Context Pack，降低 Harness 上下文成本",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/947",
+      "category": "后续非阻断",
+      "owner": "开发工具维护者",
+      "follow_up": "上下文包归长期工程，不影响本次三端定版。"
+    },
+    {
+      "number": 946,
+      "title": "[P1] 建立 API、BizCode 与权限码长期治理门禁",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/946",
+      "category": "后续非阻断",
+      "owner": "契约维护者",
+      "follow_up": "长期治理 API、业务码和权限码；单版预检仅覆盖其自身合同。"
+    },
+    {
+      "number": 945,
+      "title": "[P1] 清理架构文档与源码注释漂移，建立可验证的新鲜度门禁",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/945",
+      "category": "后续非阻断",
+      "owner": "文档维护者",
+      "follow_up": "持续治理文档新鲜度；本次归档不关闭长期门禁。"
+    },
+    {
+      "number": 944,
+      "title": "[P1] 清零主 CI 的 Jest Worker 强制退出 Warning",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/944",
+      "category": "后续非阻断",
+      "owner": "测试基础设施",
+      "follow_up": "追查 Jest Worker 退出告警、保留 nightly 证据。"
+    },
+    {
+      "number": 942,
+      "title": "[P1] PostgreSQL 控制平面治理：连接、锁、事务与容量可观测性",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/942",
+      "category": "后续非阻断",
+      "owner": "数据库运维",
+      "follow_up": "连接/锁/容量观测按治理项验收，与隔离实例撤权实验证据分列。"
+    },
+    {
+      "number": 941,
+      "title": "[P0] 建立第二维护者独立接管能力与灾备演练",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/941",
+      "category": "未满足不得关",
+      "owner": "维护者与接任者",
+      "follow_up": "生产前独立接管与灾备演练仍需专门回执。"
+    },
+    {
+      "number": 940,
+      "title": "[P0] 生产放行硬门总控：维持 loginEnabled/messageEnabled NO-GO 直至验收闭环",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/940",
+      "category": "未满足不得关",
+      "owner": "发布负责人",
+      "follow_up": "总放行项保持，生产登录、消息与真正开放由维护者单独决定。"
+    },
+    {
+      "number": 939,
+      "title": "[P1] 引入 CodeQL、SBOM 与依赖漏洞扫描供应链门禁",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/939",
+      "category": "后续非阻断",
+      "owner": "安全工程",
+      "follow_up": "跟踪代码/依赖供应链门禁；按正式放行策略另审。"
+    },
+    {
+      "number": 937,
+      "title": "[P1] CMS 内容状态迁移统一锁/CAS，修复并发竞态",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/937",
+      "category": "未满足不得关",
+      "owner": "内容维护者",
+      "follow_up": "CMS 状态迁移并发安全未在活动/账本实验证实。"
+    },
+    {
+      "number": 936,
+      "title": "[P1] 通知广播批量化改造，解决大规模发送瓶颈",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/936",
+      "category": "后续非阻断",
+      "owner": "通知维护者",
+      "follow_up": "广播批量和容量专项；通知闭环不代替外部投递容量验收。"
+    },
+    {
+      "number": 935,
+      "title": "[P0] 完成真实外部供应商链路验证（企业微信/COS/短信）",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/935",
+      "category": "未满足不得关",
+      "owner": "供应商与运维",
+      "follow_up": "真实企业微信、COS、短信需供应商链路批准与实测。"
+    },
+    {
+      "number": 934,
+      "title": "[P0] 完成生产迁移、备份恢复与回滚演练",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/934",
+      "category": "未满足不得关",
+      "owner": "数据库运维",
+      "follow_up": "目标环境生产迁移、备份恢复/回退演练，隔离恢复只覆盖隔离。"
+    },
+    {
+      "number": 933,
+      "title": "[P1] 附件上传增加病毒扫描/隔离状态机",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/933",
+      "category": "未满足不得关",
+      "owner": "附件与安全维护者",
+      "follow_up": "病毒扫描与隔离未验证；公开附件入口另核。"
+    },
+    {
+      "number": 932,
+      "title": "[P0] 建立生产级可观测性与 Worker 健康监控体系",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/932",
+      "category": "未满足不得关",
+      "owner": "SRE",
+      "follow_up": "生产 Worker 可观测与告警待独立验收；隔离排队与排空仅覆盖试验。"
+    },
+    {
+      "number": 931,
+      "title": "[P1] Storage 加密密钥版本化与轮换机制",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/931",
+      "category": "后续非阻断",
+      "owner": "存储安全",
+      "follow_up": "密钥版本和轮换按存储治理验证。"
+    },
+    {
+      "number": 930,
+      "title": "[P1] PostgreSQL 限流桶增加自动清理与容量治理",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/930",
+      "category": "后续非阻断",
+      "owner": "数据库运维",
+      "follow_up": "限流桶容量/清理策略归专属治理。"
+    },
+    {
+      "number": 929,
+      "title": "[P1] 安全审计拆分业务审计与安全审计通道",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/929",
+      "category": "后续非阻断",
+      "owner": "安全审计维护者",
+      "follow_up": "安全与业务审计分流归架构治理。"
+    },
+    {
+      "number": 928,
+      "title": "[P1] Authz 请求级上下文优化，降低重复查询",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/928",
+      "category": "后续非阻断",
+      "owner": "授权维护者",
+      "follow_up": "单请求查询优化保留原权限正确性边界。"
+    },
+    {
+      "number": 927,
+      "title": "[P1] Worker Supervisor 重构：避免单 Worker 死亡导致隐性故障",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/927",
+      "category": "后续非阻断",
+      "owner": "Worker 维护者",
+      "follow_up": "Supervisor 容错按故障场景独立验证。"
+    },
+    {
+      "number": 926,
+      "title": "[P0] 生产上线前补齐高敏个人信息字段保护",
+      "state": "OPEN",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/issues/926",
+      "category": "未满足不得关",
+      "owner": "隐私与发布负责人",
+      "follow_up": "生产高敏字段保护是正式开放前 P0，需单独隐私证据。"
+    }
+  ],
+  "merged_backend_since_1420": [
+    {
+      "number": 1440,
+      "title": "fix(cutover): reconcile active artifact and RBAC checks",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1440",
+      "headRefOid": "94f06f0a86a70aebae5dcda1545f7c9d29ea708e",
+      "mergeCommit": {
+        "oid": "2b3eee0a954ea65abaef3edb35fd391eaa1567e9"
+      },
+      "baseRefName": "main",
+      "mergedAt": "2026-11-19T06:51:57Z",
+      "state": "MERGED",
+      "reviewDecision": "",
+      "category": "已合并修复",
+      "owner": "后端维护者",
+      "included_in": [
+        "2b3eee0a954ea65abaef3edb35fd391eaa1567e9",
+        "dd62ce308f9142e8b3be04e9c4d52f548c0ebb17"
+      ],
+      "follow_up": "切换核对已合入，实际目标部署仍需回执。",
+      "independent_review": "本轮只核提交包含关系和原生 CI。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44469099262/job/135373921144"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44469099031/job/135373924129"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44469099031/job/135373998614"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44469099262/job/135373921457"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44469099262/job/135373995044"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44469099031/job/135373997562"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44469099262/job/135373995174"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44469099262/job/135373995159"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44469099262/job/135373995168"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44469099262/job/135373995266"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44469099262/job/135373995226"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44469099262/job/135373995031"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44469099262/job/135373995047"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44469099262/job/135373995060"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44469099262/job/135382990648"
+        }
+      ]
+    },
+    {
+      "number": 1438,
+      "title": "test: restrict organization lock cleanup to owned backends",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1438",
+      "headRefOid": "b6f1796e62c5eace8d9ceb63079258b58e80c69c",
+      "mergeCommit": {
+        "oid": "f180dcb2475ac07297ebfdc52bfce9ea82cdc839"
+      },
+      "baseRefName": "main",
+      "mergedAt": "2026-11-18T11:02:24Z",
+      "state": "MERGED",
+      "reviewDecision": "",
+      "category": "已合并修复",
+      "owner": "后端维护者",
+      "included_in": [
+        "2b3eee0a954ea65abaef3edb35fd391eaa1567e9",
+        "dd62ce308f9142e8b3be04e9c4d52f548c0ebb17"
+      ],
+      "follow_up": "保留 main 中既有变更；部署和生产放行另记。",
+      "independent_review": "本轮只核提交包含关系和原生 CI。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44286730587/job/134741201063"
+        },
+        {
+          "name": "Container boot + API smoke + graceful shutdown",
+          "workflow": "Docker Smoke",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44286730592/job/134741200069"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44286730896/job/134741206859"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44286730896/job/134741397289"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44286730587/job/134741200595"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44286730587/job/134741307268"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44286730896/job/134741393409"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44286730587/job/134741307590"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44286730587/job/134741307402"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44286730587/job/134741307383"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44286730587/job/134741307501"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44286730587/job/134741307760"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44286730587/job/134741307372"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44286730587/job/134741307413"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44286730587/job/134741307495"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44286730587/job/134752826632"
+        }
+      ]
+    },
+    {
+      "number": 1435,
+      "title": "refactor(harness): centralize reviewed migration inventory",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1435",
+      "headRefOid": "be1c3cbb89bf1b6fdf5265419600069f1799725c",
+      "mergeCommit": {
+        "oid": "8eaa0e461e066842c787b33d260f5661cd52c867"
+      },
+      "baseRefName": "main",
+      "mergedAt": "2026-11-18T07:25:21Z",
+      "state": "MERGED",
+      "reviewDecision": "",
+      "category": "已合并修复",
+      "owner": "后端维护者",
+      "included_in": [
+        "2b3eee0a954ea65abaef3edb35fd391eaa1567e9",
+        "dd62ce308f9142e8b3be04e9c4d52f548c0ebb17"
+      ],
+      "follow_up": "保留 main 中既有变更；部署和生产放行另记。",
+      "independent_review": "本轮只核提交包含关系和原生 CI。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44252616370/job/134626673723"
+        },
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44254309181/job/134632345074"
+        },
+        {
+          "name": "Container boot + API smoke + graceful shutdown",
+          "workflow": "Docker Smoke",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44252616372/job/134626673287"
+        },
+        {
+          "name": "Container boot + API smoke + graceful shutdown",
+          "workflow": "Docker Smoke",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44254309289/job/134632193652"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44252614281/job/134626671572"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44254311058/job/134632205335"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44252614281/job/134626744636"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44254311058/job/134632264434"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44252616370/job/134626674209"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44254309181/job/134632344763"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44252616370/job/134626757614"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44254309181/job/134632426473"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44252614281/job/134626743205"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44254311058/job/134632263222"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "CANCELLED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44252616370/job/134626757736"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44254309181/job/134632426485"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "CANCELLED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44252616370/job/134626757493"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44254309181/job/134632426463"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "CANCELLED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44252616370/job/134626757538"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44254309181/job/134632426477"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "CANCELLED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44252616370/job/134626757563"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44254309181/job/134632426435"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "CANCELLED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44252616370/job/134626757733"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44254309181/job/134632426512"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44252616370/job/134626757522"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44254309181/job/134632426460"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44252616370/job/134626757568"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44254309181/job/134632426439"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44252616370/job/134626757574"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44254309181/job/134632426537"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "FAILURE",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44252616370/job/134632300299"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44254309181/job/134639559138"
+        }
+      ]
+    },
+    {
+      "number": 1434,
+      "title": "feat(team-join): persist contribution threshold reminders on ledger commit",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1434",
+      "headRefOid": "a387fcf39f36d5ce42b568baba693d3e645cb3a5",
+      "mergeCommit": {
+        "oid": "d75e5179f18589e71c0760aa007c0fcb0629dd25"
+      },
+      "baseRefName": "main",
+      "mergedAt": "2026-11-18T05:55:55Z",
+      "state": "MERGED",
+      "reviewDecision": "",
+      "category": "已合并修复",
+      "owner": "后端维护者",
+      "included_in": [
+        "2b3eee0a954ea65abaef3edb35fd391eaa1567e9",
+        "dd62ce308f9142e8b3be04e9c4d52f548c0ebb17"
+      ],
+      "follow_up": "贡献阈值提醒另核消息语义和外发边界。",
+      "independent_review": "本轮只核提交包含关系和原生 CI。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44094765901/job/134078863092"
+        },
+        {
+          "name": "Container boot + API smoke + graceful shutdown",
+          "workflow": "Docker Smoke",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44094766086/job/134078864443"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44094761342/job/134078906325"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44094765901/job/134078862655"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44094761342/job/134079026633"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44094765901/job/134078972059"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44094761342/job/134169331387"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44094765901/job/134078972274"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44094765901/job/134078972139"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44094765901/job/134078972196"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44094765901/job/134078972228"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44094765901/job/134078972389"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44094765901/job/134078971980"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44094765901/job/134078972149"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44094765901/job/134078972159"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44094765901/job/134091604811"
+        }
+      ]
+    },
+    {
+      "number": 1433,
+      "title": "fix(activities): cap manual settlement hours by complete evidence",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1433",
+      "headRefOid": "6cf86fc17bbacfc60db4609de8d28af1041c9eec",
+      "mergeCommit": {
+        "oid": "108feebb84b85c7e4955c5af8bbfc016702e4529"
+      },
+      "baseRefName": "main",
+      "mergedAt": "2026-11-18T13:36:56Z",
+      "state": "MERGED",
+      "reviewDecision": "",
+      "category": "已合并修复",
+      "owner": "后端维护者",
+      "included_in": [
+        "2b3eee0a954ea65abaef3edb35fd391eaa1567e9",
+        "dd62ce308f9142e8b3be04e9c4d52f548c0ebb17"
+      ],
+      "follow_up": "结算工时上限归活动结算验收。",
+      "independent_review": "本轮只核提交包含关系和原生 CI。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44312142601/job/134828723352"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44312136126/job/134828706712"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44312136126/job/134828845406"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44312142601/job/134828723713"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44312142601/job/134828848467"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44312136126/job/134828844009"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44312142601/job/134828848146"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44312142601/job/134828848067"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44312142601/job/134828848106"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44312142601/job/134828848135"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44312142601/job/134828848164"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44312142601/job/134828847997"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44312142601/job/134828847838"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44312142601/job/134828847925"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44312142601/job/134839492563"
+        }
+      ]
+    },
+    {
+      "number": 1431,
+      "title": "feat(activities): 管理员结算搜索与逐人冻结审核结果（A3/A4）",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1431",
+      "headRefOid": "0f2a89344d942d2e782e3abf58013431e0444a50",
+      "mergeCommit": {
+        "oid": "5d2b923159857f2d31890343615d9c3e706f8586"
+      },
+      "baseRefName": "main",
+      "mergedAt": "2026-11-18T12:51:26Z",
+      "state": "MERGED",
+      "reviewDecision": "",
+      "category": "已合并修复",
+      "owner": "后端维护者",
+      "included_in": [
+        "2b3eee0a954ea65abaef3edb35fd391eaa1567e9",
+        "dd62ce308f9142e8b3be04e9c4d52f548c0ebb17"
+      ],
+      "follow_up": "管理端 #171 的工作台按功能另验。",
+      "independent_review": "本轮只核提交包含关系和原生 CI。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44300340502/job/134788120565"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44300336852/job/134788112698"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44300336852/job/134788377587"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44300340502/job/134788121068"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44300340502/job/134788222566"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44300336852/job/134788375930"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44300340502/job/134788222613"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44300340502/job/134788222844"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44300340502/job/134788222818"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44300340502/job/134788222891"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44300340502/job/134788222582"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44300340502/job/134788222660"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44300340502/job/134788222793"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44300340502/job/134788222733"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44300340502/job/134797881138"
+        }
+      ]
+    },
+    {
+      "number": 1425,
+      "title": "ci: reduce repeated approvals and documentation-only container work",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1425",
+      "headRefOid": "d4d662b61d79c7514545018644d1b21187687b95",
+      "mergeCommit": {
+        "oid": "4eb39ecd9e6799e79cb6fe3ba5f1dc6004383d4f"
+      },
+      "baseRefName": "main",
+      "mergedAt": "2026-11-15T10:07:57Z",
+      "state": "MERGED",
+      "reviewDecision": "",
+      "category": "已合并修复",
+      "owner": "后端维护者",
+      "included_in": [
+        "2b3eee0a954ea65abaef3edb35fd391eaa1567e9",
+        "dd62ce308f9142e8b3be04e9c4d52f548c0ebb17"
+      ],
+      "follow_up": "保留 main 中既有变更；部署和生产放行另记。",
+      "independent_review": "本轮只核提交包含关系和原生 CI。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43700360819/job/132770045350"
+        },
+        {
+          "name": "Container boot + API smoke + graceful shutdown",
+          "workflow": "Docker Smoke",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43700360840/job/132769940185"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43700357226/job/132769960875"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43700360819/job/132770045557"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43700357226/job/132769999014"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43700360819/job/132770082895"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43700357226/job/132776568902"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43700360819/job/132770083028"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43700360819/job/132770082962"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43700360819/job/132770082995"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43700360819/job/132770082989"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43700360819/job/132770082991"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43700360819/job/132770082914"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43700360819/job/132770082940"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43700360819/job/132770082932"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43700360819/job/132775498668"
+        }
+      ]
+    },
+    {
+      "number": 1424,
+      "title": "test(activities): observe C3 prepare phases in D7 capacity regression",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1424",
+      "headRefOid": "759548d75aa605f28b9ff596bf91605102fac7bb",
+      "mergeCommit": {
+        "oid": "00f5e46b91d01c617a791389b9a6dda5808de7f0"
+      },
+      "baseRefName": "main",
+      "mergedAt": "2026-11-15T10:12:02Z",
+      "state": "MERGED",
+      "reviewDecision": "",
+      "category": "已合并修复",
+      "owner": "后端维护者",
+      "included_in": [
+        "2b3eee0a954ea65abaef3edb35fd391eaa1567e9",
+        "dd62ce308f9142e8b3be04e9c4d52f548c0ebb17"
+      ],
+      "follow_up": "保留 main 中既有变更；部署和生产放行另记。",
+      "independent_review": "本轮只核提交包含关系和原生 CI。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43698275103/job/132763529304"
+        },
+        {
+          "name": "Container boot + API smoke + graceful shutdown",
+          "workflow": "Docker Smoke",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43698275101/job/132763528940"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43698275460/job/132763533632"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702536194/job/132776577221"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43698275460/job/132763581876"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702536194/job/132776617018"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43698275103/job/132763529219"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43698275103/job/132763529314"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43698275460/job/132763580690"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43702536194/job/132776615421"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43698275103/job/132763573053"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43698275103/job/132763573124"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43698275103/job/132763573137"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43698275103/job/132763573148"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43698275103/job/132763573069"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43698275103/job/132763573102"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43698275103/job/132763573056"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43698275103/job/132763573096"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43698275103/job/132768212952"
+        }
+      ]
+    },
+    {
+      "number": 1423,
+      "title": "test(activities): add redacted D5 HTTP failure diagnostics",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1423",
+      "headRefOid": "51366f1eb7d4705f6359b5ae08dbeb088c21819a",
+      "mergeCommit": {
+        "oid": "35f9358b4624533f3f296d6506fd3c148c1238ca"
+      },
+      "baseRefName": "main",
+      "mergedAt": "2026-11-15T07:04:07Z",
+      "state": "MERGED",
+      "reviewDecision": "",
+      "category": "已合并修复",
+      "owner": "后端维护者",
+      "included_in": [
+        "2b3eee0a954ea65abaef3edb35fd391eaa1567e9",
+        "dd62ce308f9142e8b3be04e9c4d52f548c0ebb17"
+      ],
+      "follow_up": "保留 main 中既有变更；部署和生产放行另记。",
+      "independent_review": "本轮只核提交包含关系和原生 CI。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43676506551/job/132697715659"
+        },
+        {
+          "name": "Container boot + API smoke + graceful shutdown",
+          "workflow": "Docker Smoke",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43676506550/job/132697715400"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43676506573/job/132697717725"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43688233893/job/132733123493"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43676506573/job/132697802019"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43688233893/job/132733162498"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43676506551/job/132697715807"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43676506551/job/132697715759"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43676506573/job/132697800851"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43688233893/job/132733161366"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43676506551/job/132697755458"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43676506551/job/132697755517"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43676506551/job/132697755564"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43676506551/job/132697755523"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43676506551/job/132697755534"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43676506551/job/132697755494"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43676506551/job/132697755482"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43676506551/job/132697755499"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43676506551/job/132701903252"
+        }
+      ]
+    },
+    {
+      "number": 1422,
+      "title": "docs(harness): compress module rules while retaining business invariants",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1422",
+      "headRefOid": "8978aebd63f6a96231e154c99d6c73ee1bd9da76",
+      "mergeCommit": {
+        "oid": "b2b5f6f3f03d1c009c398ca602803c3709a665d1"
+      },
+      "baseRefName": "main",
+      "mergedAt": "2026-11-15T01:44:18Z",
+      "state": "MERGED",
+      "reviewDecision": "",
+      "category": "已合并修复",
+      "owner": "后端维护者",
+      "included_in": [
+        "2b3eee0a954ea65abaef3edb35fd391eaa1567e9",
+        "dd62ce308f9142e8b3be04e9c4d52f548c0ebb17"
+      ],
+      "follow_up": "保留 main 中既有变更；部署和生产放行另记。",
+      "independent_review": "本轮只核提交包含关系和原生 CI。",
+      "checks": [
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "CANCELLED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43662947842/job/132656036832"
+        },
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43662949465/job/132656039766"
+        },
+        {
+          "name": "Container boot + API smoke + graceful shutdown",
+          "workflow": "Docker Smoke",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43662949464/job/132656039347"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43662949698/job/132656064708"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "CANCELLED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43662947842/job/132656043386"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43662949465/job/132656039524"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43662949698/job/132656111833"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "FAILURE",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43662947842/job/132656042800"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43662949465/job/132656039792"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43662949698/job/132660563593"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43662949465/job/132656086839"
+        },
+        {
+          "name": "Contract + E2E",
+          "workflow": "CI",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43662949465/job/132656088174"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43662949465/job/132656088361"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SKIPPED",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43662949465/job/132656088288"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43662949465/job/132656575667"
+        }
+      ]
+    },
+    {
+      "number": 1421,
+      "title": "chore(harness): 精简开发底座与 CI 流程",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1421",
+      "headRefOid": "2b292ce98107b9d9c4cc0dabf2d2df37481accea",
+      "mergeCommit": {
+        "oid": "bdce33b105c2ccc4e9c8cabdbe47e41771f3e0ed"
+      },
+      "baseRefName": "main",
+      "mergedAt": "2026-11-15T01:23:22Z",
+      "state": "MERGED",
+      "reviewDecision": "",
+      "category": "已合并修复",
+      "owner": "后端维护者",
+      "included_in": [
+        "2b3eee0a954ea65abaef3edb35fd391eaa1567e9",
+        "dd62ce308f9142e8b3be04e9c4d52f548c0ebb17"
+      ],
+      "follow_up": "保留 main 中既有变更；部署和生产放行另记。",
+      "independent_review": "本轮只核提交包含关系和原生 CI。",
+      "checks": [
+        {
+          "name": "changeset",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43626198621/job/132542430443"
+        },
+        {
+          "name": "Container boot + API smoke + graceful shutdown",
+          "workflow": "Docker Smoke",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43626198681/job/132542430563"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43626196237/job/132542466475"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43659859784/job/132646523426"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43626198621/job/132542430258"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43626196237/job/132542550910"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43659859784/job/132646628166"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43626198621/job/132542430418"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43626196237/job/132646395657"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43659859784/job/132655663199"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43626198621/job/132542484169"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43626198621/job/132542484146"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43626198621/job/132542484144"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43626198621/job/132542484226"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43626198621/job/132542484099"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43626198621/job/132542484137"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43626198621/job/132542484139"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43626198621/job/132542484086"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43626198621/job/132548126772"
+        }
+      ]
+    },
+    {
+      "number": 1420,
+      "title": "fix: 兜底活动审核、后台任务与超限 JSON 的裸 500（#1416 #1417 #1419）",
+      "url": "https://github.com/BA7IEE/srvf-nest-api/pull/1420",
+      "headRefOid": "171adba7b87abaca2dce0b03fcffb63bf453b2dd",
+      "mergeCommit": {
+        "oid": "9bc703caf9b8f8102cf8cecccd7c04711ed78ab0"
+      },
+      "baseRefName": "main",
+      "mergedAt": "2026-11-14T18:11:25Z",
+      "state": "MERGED",
+      "reviewDecision": "",
+      "category": "已合并修复",
+      "owner": "后端维护者",
+      "included_in": [
+        "2b3eee0a954ea65abaef3edb35fd391eaa1567e9",
+        "dd62ce308f9142e8b3be04e9c4d52f548c0ebb17"
+      ],
+      "follow_up": "仍开放的三个 Issue 按上表分别验收。",
+      "independent_review": "本轮只核提交包含关系和原生 CI。",
+      "checks": [
+        {
+          "name": "Change set",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43573839878/job/132383678412"
+        },
+        {
+          "name": "Container boot + API smoke + graceful shutdown",
+          "workflow": "Docker Smoke",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43573839755/job/132383677189"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43573837355/job/132383671826"
+        },
+        {
+          "name": "Red-zone trusted scan",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43624998893/job/132538759634"
+        },
+        {
+          "name": "Harness selftests",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43573839878/job/132383678185"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43573837355/job/132383725233"
+        },
+        {
+          "name": "Red-zone trusted approval",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43624998893/job/132538840836"
+        },
+        {
+          "name": "Incident replay",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43573839878/job/132383678429"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43573837355/job/132385499548"
+        },
+        {
+          "name": "Red-zone (trusted)",
+          "workflow": "Red-zone (trusted)",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43624998893/job/132539287282"
+        },
+        {
+          "name": "Diff guards",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43573839878/job/132383678686"
+        },
+        {
+          "name": "Docker image build",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43573839878/job/132383678437"
+        },
+        {
+          "name": "Fast checks",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43573839878/job/132383699763"
+        },
+        {
+          "name": "Contract + E2E (1)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43573839878/job/132383699796"
+        },
+        {
+          "name": "Contract + E2E (2)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43573839878/job/132383699824"
+        },
+        {
+          "name": "Contract + E2E (3)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43573839878/job/132383699782"
+        },
+        {
+          "name": "Contract + E2E (4)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43573839878/job/132383699794"
+        },
+        {
+          "name": "Contract + E2E (5)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43573839878/job/132383699809"
+        },
+        {
+          "name": "Authenticated Human V3",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43573839878/job/132383699769"
+        },
+        {
+          "name": "Golden journeys",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43573839878/job/132383699743"
+        },
+        {
+          "name": "Red-zone approval (report-only)",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43573839878/job/132383808803"
+        },
+        {
+          "name": "Lint / Typecheck / E2E",
+          "workflow": "CI",
+          "result": "SUCCESS",
+          "url": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/43573839878/job/132388731825"
+        }
+      ]
+    }
+  ]
+}

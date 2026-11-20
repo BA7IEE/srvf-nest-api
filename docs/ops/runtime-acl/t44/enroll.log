@@ -1,0 +1,17 @@
+{"label":"login","actor":"t44-user-a","method":"POST","path":"/api/auth/v1/login","status":200,"code":0,"reqId":"cmwnt66rh699d967f5237333fe7bac4ad"}
+{"label":"login","actor":"t44-user-b","method":"POST","path":"/api/auth/v1/login","status":200,"code":0,"reqId":"cmwnt66v5cff0cb9f53b440b4d2c27f47"}
+{"label":"activity","actor":"t44-user-a","method":"GET","path":"/api/app/v1/activities/cmwnt49rl000kor01likbvf58","status":200,"code":0,"reqId":"cmwnt66z5a78ed5ad8f118b7faec61c6f"}
+{"label":"enroll","actor":"t44-user-a","method":"POST","path":"/api/app/v1/activities/cmwnt49rl000kor01likbvf58/registrations","status":201,"code":0,"reqId":"cmwnt670n4416c8f9ec4190fa177c29c0"}
+{"label":"exact_replay","actor":"t44-user-a","method":"POST","path":"/api/app/v1/activities/cmwnt49rl000kor01likbvf58/registrations","status":201,"code":0,"reqId":"cmwnt674vb8259a2d189aa01e373e4dbb"}
+{"label":"changed_payload","actor":"t44-user-a","method":"POST","path":"/api/app/v1/activities/cmwnt49rl000kor01likbvf58/registrations","status":409,"code":21003,"reqId":"cmwnt675fbde99d6b2d2ea0b5777c00bd"}
+{"label":"own_list","actor":"t44-user-a","method":"GET","path":"/api/app/v1/my/registrations","status":200,"code":0,"reqId":"cmwnt675v7cc0f809de2807c18c93f44c"}
+{"label":"own_detail","actor":"t44-user-a","method":"GET","path":"/api/app/v1/my/registrations/cmwnt6726001ror0102ebhv7v","status":200,"code":0,"reqId":"cmwnt676b091068c672baac7d6d821a01"}
+{"label":"activity","actor":"t44-user-b","method":"GET","path":"/api/app/v1/activities/cmwnt49rl000kor01likbvf58","status":200,"code":0,"reqId":"cmwnt676pbbf40c19807c29e4a39f3e3d"}
+{"label":"enroll","actor":"t44-user-b","method":"POST","path":"/api/app/v1/activities/cmwnt49rl000kor01likbvf58/registrations","status":201,"code":0,"reqId":"cmwnt677gb06362ec0830b15193455fa3"}
+{"label":"exact_replay","actor":"t44-user-b","method":"POST","path":"/api/app/v1/activities/cmwnt49rl000kor01likbvf58/registrations","status":201,"code":0,"reqId":"cmwnt679fe97708366176a291fdf40f4d"}
+{"label":"changed_payload","actor":"t44-user-b","method":"POST","path":"/api/app/v1/activities/cmwnt49rl000kor01likbvf58/registrations","status":409,"code":21003,"reqId":"cmwnt679sea4798572fd7387ea51c718a"}
+{"label":"own_list","actor":"t44-user-b","method":"GET","path":"/api/app/v1/my/registrations","status":200,"code":0,"reqId":"cmwnt67a5ac2b2ea7a9756a55cd1dd122"}
+{"label":"own_detail","actor":"t44-user-b","method":"GET","path":"/api/app/v1/my/registrations/cmwnt6784002for01o607ieb8","status":200,"code":0,"reqId":"cmwnt67ah220bec924497b8947fc91dd3"}
+{"label":"cross_read","actor":"t44-user-a","method":"GET","path":"/api/app/v1/my/registrations/cmwnt6784002for01o607ieb8","status":404,"code":21001,"reqId":"cmwnt67aq47e882b8a629de3c562324df"}
+{"label":"cross_read","actor":"t44-user-b","method":"GET","path":"/api/app/v1/my/registrations/cmwnt6726001ror0102ebhv7v","status":404,"code":21001,"reqId":"cmwnt67az397a9ee1f9023e23331ede0d"}
+PASS mode=enroll two ordinary subjects

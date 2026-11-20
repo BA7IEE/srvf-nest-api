@@ -1,0 +1,17 @@
+{
+  "source": "setup.log, successful target checks in acl.py and post-request DB snapshot",
+  "cluster": "7709936420661141545",
+  "database": "srvf_staging",
+  "runtime_role": "srvf_dp_acceptance_runtime",
+  "applied_migrations_checked": 156,
+  "tmpfs_checked": true,
+  "private_network_checked": true,
+  "api_pg_ports_checked": 0,
+  "r5_and_ownership": {
+    "nonowner": true,
+    "r5_caller_member": false,
+    "r5_writer_member": false,
+    "r5_pending_has_write": false,
+    "guard_invoker": true
+  }
+}

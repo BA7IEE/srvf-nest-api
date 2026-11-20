@@ -1,0 +1,40 @@
+{
+  "scope": "operator shell entry, synthetic system-catalog fixture",
+  "runtime_is_observer": true,
+  "missing": {
+    "schema_usage": true,
+    "database_connect": true,
+    "observer_is_runtime": true,
+    "exit": 3,
+    "missing": 15
+  },
+  "ready": {
+    "schema_usage": true,
+    "database_connect": true,
+    "observer_is_runtime": true,
+    "exit": 0,
+    "missing": 0
+  },
+  "no_schema": {
+    "schema_usage": false,
+    "database_connect": true,
+    "observer_is_runtime": true,
+    "exit": 3,
+    "missing": 0
+  },
+  "no_connect": {
+    "schema_usage": true,
+    "database_connect": false,
+    "observer_is_runtime": false,
+    "exit": 3,
+    "missing": 0
+  },
+  "restored": {
+    "schema_usage": true,
+    "database_connect": true,
+    "observer_is_runtime": true,
+    "exit": 0,
+    "missing": 0
+  },
+  "temp_container_retired": true
+}

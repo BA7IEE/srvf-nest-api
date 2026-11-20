@@ -1,0 +1,7 @@
+{
+ "ActivityTimeCutoverReceipt":{"SELECT":["id","operationKey","requestHash","deployedMainSha","evidenceBundleHash","actorUserId","cutoverAt","formatVersion","contentHash","createdAt"]},
+ "ParticipationLedgerEntry":{"SELECT":["memberId","ledgerDate","serviceHoursDelta","creditedPointsDelta","postingBatchId"]},
+ "LedgerPostingBatch":{"SELECT":["id","statusCode"]},
+ "ActivitySettlementClosureRevision":{"SELECT":["activityId","id","revision","statusCode","settlementVersionId","postingBatchId","closedAt"]},
+ "EvidenceSeal":{"SELECT":["activityId","id","sealRevision","statusCode","evidenceRevision","populationRevision","workflowRevision","manualReviewPendingCount"]}
+}

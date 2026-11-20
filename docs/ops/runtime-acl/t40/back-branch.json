@@ -1,0 +1,1 @@
+{"protected":true,"required_checks":{"checks":[{"app_id":15368,"context":"Lint / Typecheck / E2E"},{"app_id":15368,"context":"Docker image build"},{"app_id":15368,"context":"Diff guards"},{"app_id":15368,"context":"Red-zone (trusted)"}],"contexts":["Lint / Typecheck / E2E","Docker image build","Diff guards","Red-zone (trusted)"],"enforcement_level":"everyone"}}

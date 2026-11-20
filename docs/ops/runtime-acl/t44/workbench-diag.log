@@ -1,0 +1,3 @@
+{"step":"diagnostic_workbench","status":500,"code":50000,"reqId":"cmwntitqt25986f4041c6ca7aaf20f44a"}
+T44ERR {"id":"cmwntitqt25986f4041c6ca7aaf20f44a","prisma":null,"sqlstate":null,"table":"ActivitySettlementClosureRevision","model":null}
+      1 permission denied for table ActivitySettlementClosureRevision

@@ -1,0 +1,15 @@
+
+> srvf-api@0.72.0 docs:openapi:check /private/tmp/srvf-t36-src
+> ts-node --project tsconfig.json scripts/generate-openapi.ts --check
+
+✓ docs/handoff/openapi.json 与当前代码一致
+
+> srvf-api@0.72.0 docs:feclient:check /private/tmp/srvf-t36-src
+> tsx scripts/generate-fe-client.ts --check
+
+FE client 产物新鲜:13 个文件,6 个 surface。
+
+> srvf-api@0.72.0 docs:authz:check /private/tmp/srvf-t36-src
+> tsx scripts/generate-authz-manifest.ts --check
+
+Route Authorization Policy current: 672 endpoints, all code-declared.

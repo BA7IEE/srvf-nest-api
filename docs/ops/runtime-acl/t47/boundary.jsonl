@@ -1,0 +1,2 @@
+{"own":{"status":200,"code":0,"reqId":"cmwof7u6q3a6e23b87c233c29c1f6f37b"},"other":{"status":404,"code":21001,"reqId":"cmwof7u7faa38e0d299282f07a63cb871"},"admin":{"status":403,"code":30100,"reqId":"cmwof7u7u1ea9b0eca9cb171f1804925d"},"uninsured":{"status":409,"code":26030,"reqId":"cmwof7u97ab03d8201f98bd0c708a7905"},"logout":200}
+{"step":"permission and insurance","exit":0}

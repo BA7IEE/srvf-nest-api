@@ -1,0 +1,14 @@
+{"label": "activity", "actor": "t43-user-a", "method": "GET", "path": "/api/app/v1/activities/cmwnsf27c000as301irxu32ux", "status": 200, "code": 0, "reqId": "cmwnsoe9843ab5ccd5b1bcbc93cdfe054"}
+{"label": "enroll", "actor": "t43-user-a", "method": "POST", "path": "/api/app/v1/activities/cmwnsf27c000as301irxu32ux/registrations", "status": 201, "code": 0, "reqId": "cmwnsoeb407b629168ac9adad1ed9619b"}
+{"label": "exact_replay", "actor": "t43-user-a", "method": "POST", "path": "/api/app/v1/activities/cmwnsf27c000as301irxu32ux/registrations", "status": 201, "code": 0, "reqId": "cmwnsoef1f18622b83b970f0ffa58169d"}
+{"label": "changed_payload", "actor": "t43-user-a", "method": "POST", "path": "/api/app/v1/activities/cmwnsf27c000as301irxu32ux/registrations", "status": 409, "code": 21003, "reqId": "cmwnsoefu79717b3e6884f951ac7b680f"}
+{"label": "own_list", "actor": "t43-user-a", "method": "GET", "path": "/api/app/v1/my/registrations", "status": 200, "code": 0, "reqId": "cmwnsoegj9eac2ce7e63c815177c29b61"}
+{"label": "own_detail", "actor": "t43-user-a", "method": "GET", "path": "/api/app/v1/my/registrations/cmwnsoect000bqd018uczfx10", "status": 200, "code": 0, "reqId": "cmwnsoeh8f2a221d05ade44a65780c150"}
+{"label": "activity", "actor": "t43-user-b", "method": "GET", "path": "/api/app/v1/activities/cmwnsf27c000as301irxu32ux", "status": 200, "code": 0, "reqId": "cmwnsoehv3de46446f2e99d659ab97817"}
+{"label": "enroll", "actor": "t43-user-b", "method": "POST", "path": "/api/app/v1/activities/cmwnsf27c000as301irxu32ux/registrations", "status": 201, "code": 0, "reqId": "cmwnsoej09326ce1e6df3651700e2bb3d"}
+{"label": "exact_replay", "actor": "t43-user-b", "method": "POST", "path": "/api/app/v1/activities/cmwnsf27c000as301irxu32ux/registrations", "status": 201, "code": 0, "reqId": "cmwnsoelee3a734197b6e4f92616ca8b0"}
+{"label": "changed_payload", "actor": "t43-user-b", "method": "POST", "path": "/api/app/v1/activities/cmwnsf27c000as301irxu32ux/registrations", "status": 409, "code": 21003, "reqId": "cmwnsoelt221e9d89a1c0d33de2fc97a2"}
+{"label": "own_list", "actor": "t43-user-b", "method": "GET", "path": "/api/app/v1/my/registrations", "status": 200, "code": 0, "reqId": "cmwnsoem9367e33b1e225d986629137b8"}
+{"label": "own_detail", "actor": "t43-user-b", "method": "GET", "path": "/api/app/v1/my/registrations/cmwnsoek2000zqd01e1dwzvj1", "status": 200, "code": 0, "reqId": "cmwnsoemo52e5f1b8fd75850157ab57af"}
+{"label": "cross_read", "actor": "t43-user-a", "method": "GET", "path": "/api/app/v1/my/registrations/cmwnsoek2000zqd01e1dwzvj1", "status": 404, "code": 21001, "reqId": "cmwnsoemz07d754d14691e739649906ec"}
+{"label": "cross_read", "actor": "t43-user-b", "method": "GET", "path": "/api/app/v1/my/registrations/cmwnsoect000bqd018uczfx10", "status": 404, "code": 21001, "reqId": "cmwnsoenaa8e3cd220cdda3ec46c5c7e2"}

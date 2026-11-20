@@ -1,0 +1,9 @@
+{
+  "before": "137518b0627e88b20ad70d5925d2f6b52f08b115",
+  "after": "dd62ce308f9142e8b3be04e9c4d52f548c0ebb17",
+  "js_changed": [
+    "dist/modules/activities/app-activities.service.js",
+    "dist/modules/activities/dto/app/app-activity-detail.dto.js"
+  ],
+  "js_unchanged": 1042
+}

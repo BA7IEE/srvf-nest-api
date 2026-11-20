@@ -1,0 +1,26 @@
+lab POST /api/auth/v1/login 200 0 cmwnmmw5b559199cdf84b18be6bd649ed
+lab GET /api/admin/v1/me 200 0 cmwnmmw9m99b92452fae38fd77dae32fa
+lab GET /api/system/v1/authz/me/effective-permissions 200 0 cmwnmmw9r21f70613c84615b7eabf2af0
+lab GET /api/system/v1/dict-types 403 30100 cmwnmmwhvf4bc3a845d891eb16a61b9f9
+lab GET /api/admin/v1/meta/dashboard-summary 200 0 cmwnmmwhz0e36ecd903eb2addf5be79c7
+lab GET /api/system/v1/dict-types 403 30100 cmwnmmxg47b547bd858456da72c3eb8aa
+lab GET /api/admin/v1/activities 200 0 cmwnmmxgbbf6ae6097b976de16d4df7af
+lab GET /api/admin/v1/me 200 0 cmwnmmxgt3eda28446cc6d566e9adb53a
+lab final #/srvf/activities-domain/activities simple-create-visible true
+lab GET /api/admin/v1/activities/organization-options 200 0 cmwnmmxzk7c85f610824cef3e59235223
+lab GET /api/admin/v1/activities/template-version-options 200 0 cmwnmmyk3bca652b34b9c720484961feb
+lab GET /api/admin/v1/me 200 0 cmwnmmzf4ed8b8b9b72ac393836ded0e4
+lab POST /api/admin/v1/activities/from-template 201 0 cmwnmmzfq19dc20935681f3810ee26ebb
+lab GET /api/admin/v1/me 200 0 cmwnmmzk693d034017bdc72ca55b44c30
+lab GET /api/admin/v1/activities/cmwnmmzir000flc0185gjiryj/simple-draft 200 0 cmwnmmzku7403da5f4189222a0f3dcede
+lab GET /api/admin/v1/me 200 0 cmwnmn0023964645bf06d0a5f3cc5bd3b
+lab GET /api/admin/v1/activities/cmwnmmzir000flc0185gjiryj/simple-draft 200 0 cmwnmn005d0fbe101ae3d072a8db93c7f
+lab GET /api/admin/v1/activities/organization-options 200 0 cmwnmn021421bf1fd43f02e5af4dd88c1
+lab GET /api/admin/v1/me 200 0 cmwnmn0ri6cfba548ccbb788832991ac6
+lab GET /api/admin/v1/activities/cmwnmmzir000flc0185gjiryj/simple-draft 200 0 cmwnmn0rwd3b91eb1871d1b125682e41b
+TimeoutError locator.check: Timeout 6500ms exceeded.
+Call log:
+  - waiting for getByRole('checkbox', { name: /我已核对/ })
+    - locator resolved to <input type="checkbox" class="el-checkbox__original"/>
+  - attempting click action
+    2 × waiting

@@ -1,0 +1,8 @@
+M	src/api/srvf-activity-publish-review.ts
+M	src/views/srvf/activities-domain/activities/simple-draft.vue
+M	src/views/srvf/activities-domain/activities/simple/published-change.vue
+A	src/views/srvf/activities-domain/activities/simple/published-layout.ts
+A	src/views/srvf/workbench/publish-review/change-facts.ts
+M	src/views/srvf/workbench/publish-review/state.ts
+M	tests/render/simple_freeze_server.cjs
+A	tests/render/simple_published_layout.cjs

@@ -1,0 +1,235 @@
+{
+  "basis": "isolated PostgreSQL and Chromium; synthetic ordinary owner and reviewer",
+  "before_failed_capacity_decision": {
+    "state": "aggregate",
+    "hash": "d5ffc393ee0009f68d62d12b8990bb62",
+    "buckets": [
+      [
+        "activity_person",
+        null,
+        2,
+        2
+      ],
+      [
+        "position_participation",
+        null,
+        2,
+        2
+      ],
+      [
+        "session_participation",
+        null,
+        2,
+        2
+      ]
+    ],
+    "active_reservations": 6
+  },
+  "after_failed_capacity_decision": {
+    "state": "aggregate",
+    "hash": "d5ffc393ee0009f68d62d12b8990bb62",
+    "buckets": [
+      [
+        "activity_person",
+        null,
+        2,
+        2
+      ],
+      [
+        "position_participation",
+        null,
+        2,
+        2
+      ],
+      [
+        "session_participation",
+        null,
+        2,
+        2
+      ]
+    ],
+    "active_reservations": 6
+  },
+  "reviews": [
+    {
+      "kind": "initial",
+      "version": 1,
+      "status": "approved",
+      "id": "cmwnrels3002znw01e94ddi54",
+      "submitted_role": "USER",
+      "reviewed_role": "USER",
+      "independent": true,
+      "activity_target": 2,
+      "session_target": 2,
+      "position_target": 2,
+      "activity_start": "2026-12-01T01:00:00.000Z",
+      "activity_location": "T37 场地",
+      "schedule_consistent": true,
+      "places_unchanged": true
+    },
+    {
+      "kind": "change",
+      "version": 2,
+      "status": "approved",
+      "id": "cmwnreq5y0040nw01ivq9lqw5",
+      "submitted_role": "USER",
+      "reviewed_role": "USER",
+      "independent": true,
+      "activity_target": 12,
+      "session_target": 12,
+      "position_target": 12,
+      "activity_start": "2026-12-03T02:00:00.000Z",
+      "activity_location": "T41 东侧训练区",
+      "schedule_consistent": true,
+      "places_unchanged": true
+    },
+    {
+      "kind": "change",
+      "version": 3,
+      "status": "approved",
+      "id": "cmwnretp2004bnw01spwink6a",
+      "submitted_role": "USER",
+      "reviewed_role": "USER",
+      "independent": true,
+      "activity_target": null,
+      "session_target": null,
+      "position_target": null,
+      "activity_start": "2026-12-03T02:00:00.000Z",
+      "activity_location": "T41 东侧训练区",
+      "schedule_consistent": true,
+      "places_unchanged": true
+    },
+    {
+      "kind": "change",
+      "version": 4,
+      "status": "pending",
+      "id": "cmwnrh43x004vnw01pevlnj31",
+      "submitted_role": "USER",
+      "reviewed_role": null,
+      "independent": null,
+      "activity_target": 1,
+      "session_target": 1,
+      "position_target": 1,
+      "activity_start": "2026-12-03T02:00:00.000Z",
+      "activity_location": "T41 东侧训练区",
+      "schedule_consistent": true,
+      "places_unchanged": true
+    }
+  ],
+  "requests": [
+    {
+      "actor": "lab",
+      "path": "/api/admin/v1/activities/from-template",
+      "status": 201,
+      "code": 0,
+      "reqId": "cmwnrekiq09b3f6f4338e6498347cb8d6",
+      "audit_events": [
+        "activity.publish"
+      ]
+    },
+    {
+      "actor": "lab",
+      "path": "/api/admin/v1/activities/cmwnrekmu002onw01tct4ij7b/publish-reviews",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwnrelp337899ae52517dcdffe739d4c",
+      "audit_events": [
+        "activity.publish"
+      ]
+    },
+    {
+      "actor": "reviewer",
+      "path": "/api/admin/v1/activity-publish-reviews/cmwnrels3002znw01e94ddi54/approve",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwnrengj85aa72aa62bf134af88b0d25",
+      "audit_events": [
+        "activity.publish",
+        "activity.publish"
+      ]
+    },
+    {
+      "actor": "lab",
+      "path": "/api/app/v1/my/managed-activities/cmwnrekmu002onw01tct4ij7b/change-reviews",
+      "status": 400,
+      "code": 20015,
+      "reqId": "cmwnreofh42dba4de8c2bad5a5674b9cd",
+      "audit_events": []
+    },
+    {
+      "actor": "lab",
+      "path": "/api/app/v1/my/managed-activities/cmwnrekmu002onw01tct4ij7b/change-reviews",
+      "status": 400,
+      "code": 40000,
+      "reqId": "cmwnreoutdaf8b89fa0d0de2a29e40355",
+      "audit_events": []
+    },
+    {
+      "actor": "lab",
+      "path": "/api/app/v1/my/managed-activities/cmwnrekmu002onw01tct4ij7b/change-reviews",
+      "status": 400,
+      "code": 20134,
+      "reqId": "cmwnrepcvd977cd4d61e1cfdfbf993669",
+      "audit_events": []
+    },
+    {
+      "actor": "lab",
+      "path": "/api/app/v1/my/managed-activities/cmwnrekmu002onw01tct4ij7b/change-reviews",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwnreq44ff9d2431c0d9e537767a6107",
+      "audit_events": [
+        "activity.publish"
+      ]
+    },
+    {
+      "actor": "reviewer",
+      "path": "/api/admin/v1/activity-publish-reviews/cmwnreq5y0040nw01ivq9lqw5/approve",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwnresr5e9df015acdecf75d6bce4d5a",
+      "audit_events": [
+        "activity.publish",
+        "activity.publish"
+      ]
+    },
+    {
+      "actor": "lab",
+      "path": "/api/app/v1/my/managed-activities/cmwnrekmu002onw01tct4ij7b/change-reviews",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwnretn3cbfdd6b7223290dd16ae0ca2",
+      "audit_events": [
+        "activity.publish"
+      ]
+    },
+    {
+      "actor": "reviewer",
+      "path": "/api/admin/v1/activity-publish-reviews/cmwnretp2004bnw01spwink6a/approve",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwnrevcg5222b6f7d63af43a2ed4dc2d",
+      "audit_events": [
+        "activity.publish"
+      ]
+    },
+    {
+      "actor": "lab",
+      "path": "/api/app/v1/my/managed-activities/cmwnrekmu002onw01tct4ij7b/change-reviews",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwnrh40x81ac6d12071d7d4e7ca2bd8f",
+      "audit_events": [
+        "activity.publish"
+      ]
+    },
+    {
+      "actor": "reviewer",
+      "path": "/api/admin/v1/activity-publish-reviews/cmwnrh43x004vnw01pevlnj31/approve",
+      "status": 409,
+      "code": 20147,
+      "reqId": "cmwnrh5sm06fb8e05b1c96f625340f8fc",
+      "audit_events": []
+    }
+  ]
+}

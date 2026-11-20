@@ -1,0 +1,12 @@
+调用（精简参数）	exit	证据
+sh verify-pair.sh（T38 脚本，开始和退役后各一次）	0	pair-before.log / pair-after.log
+ssh srvf sh -s < start.sh（全新内部网络与隔离库）	0	setup-summary.log
+sh browser.sh SCENARIO=required_boolean_text_change	0	browser-boolean.log
+sh browser.sh SCENARIO=required_five_text_change（首次登录被限流）	1	first-five.log
+sh browser.sh SCENARIO=required_five_text_change（窗口届满）	0	browser-five.log
+psql -XAtq -v ON_ERROR_STOP=1 < verify.sql	0	readback.jsonl
+python3 assert-results.py	0	assertion.log / correlations.json
+sh worker.sh / sh retire.sh	0	worker.log / retired.log
+sh build-runner.sh <前端源码checkout> && cmp <产物> <最终驱动>	0	私有回归材料提供基线、补丁与产物摘要
+gh pr view / gh api graphql	0	backend-ci.json / backend-reviews.json / frontend-ci.json / delivery.json
+curl --fail /api/system/v1/health/ready	0	public-health.txt

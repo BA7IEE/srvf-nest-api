@@ -1,4 +1,20 @@
-# 活动部署权限目录与更正详情验收
+# 活动权限目录只读预检
+
+在仓库根目录用已核对目标库的只读连接运行：
+
+```sh
+psql -X --file=docs/ops/runtime-acl/check-activity-catalog.sql
+```
+
+连接使用 libpq 的常规参数。预检在同一只读事务中读取 `public.permissions(id, code)`、`public.roles(id, code, "deletedAt")` 和 `public.role_permissions("roleId", "permissionId")`。输出一个 JSON 数组，三项按权限码排列，逐项给出权限、有效预置角色和指定映射是否存在。三个映射齐全时输出 `PASS` 并退出 0。缺项、角色软删或指定映射缺失时先输出各项结果，再以脚本错误退出 3。查询权限不足也退出 3，原因见标准错误。连接失败等客户端错误按 psql 原始非零退出码处理。
+
+通过只证明下表的三个指定映射存在。用户绑定、额外角色的权限、运行账号 SQL 权限和实际业务判权需各自的证据。运行账号与单 Worker 业务链已有固定包的隔离记录。[T63 回执](../t63/receipts.json)
+
+## 历史现场记录
+
+下文及同目录两个 `.exit` 文件记录 T28 当时的结果。随后 T31b 用固定提交 `2a0fd5ad` 在获准的候选库补齐了三个映射。旧工具与当时审批可按提交追溯；本轮没有连接该库复测。[T31b 执行回执](../t31b/README.md)
+
+### T28 活动部署权限目录与更正详情验收
 
 运行版本 108feebb84b85c7e4955c5af8bbfc016702e4529 与 main 2b3eee0a954ea65abaef3edb35fd391eaa1567e9 的 prisma/seed.ts 和 permission-catalog.ts 内容一致。RBAC_SEED_CATALOG.roles 展开后，三项受检操作的预置映射如下。此表只规定种子角色的权限集，业务授权仍须按实际活动责任、角色绑定范围和资源条件检查。
 

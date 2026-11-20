@@ -1,0 +1,5 @@
+{"actor":"lab","path":"/api/auth/v1/login","status":429,"code":42900,"reqId":"cmwnq07434d3c98479022cf73a85ee242"}
+TimeoutError page.waitForURL: Timeout 10000ms exceeded.
+=========================== logs ===========================
+waiting for navigation until "load"
+============================================================

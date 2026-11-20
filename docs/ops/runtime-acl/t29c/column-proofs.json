@@ -1,0 +1,782 @@
+[
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "activityTypeCode",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "allocationModeCode",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "archiveWaitingDays",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "capacity",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "contributionPolicySelectionRevision",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "createFromTemplateOperationKey",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "createFromTemplateRequestHash",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "createdAt",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "currentEvidenceRevision",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "currentPopulationRevision",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "endAt",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "galleryAttachmentIds",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "galleryImageKeys",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "id",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "initiatorMemberId",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "isPublicRegistration",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "location",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "metricRequirementCode",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "metricSelectionRevision",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "organizationId",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "requiresInsurance",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "selectedMetricSetDefinitionHash",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "selectedMetricSetVersionId",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "selectedTemplateVersionId",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "startAt",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "statusCode",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "timePolicySelectionRevision",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "title",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "updatedAt",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "INSERT",
+    "c": "workflowRevision",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "activityTypeCode",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "allocationModeCode",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "archiveWaitingDays",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "capacity",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "content",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "currentPopulationRevision",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "defaultCheckInRadiusMeters",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "defaultLocationRequired",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "description",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "endAt",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "genderRequirementCode",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "isPublicRegistration",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "location",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "locationLatitude",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "locationLongitude",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "organizationId",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "publishedAt",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "publishedBy",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "registrationDeadline",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "registrationModeCode",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "registrationNotes",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "registrationSchema",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "requiresInsurance",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "startAt",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "statusCode",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "title",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "updatedAt",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "visibilityCode",
+    "n": 1
+  },
+  {
+    "t": "Activity",
+    "k": "UPDATE",
+    "c": "workflowRevision",
+    "n": 1
+  },
+  {
+    "t": "ActivityRuleSnapshot",
+    "k": "INSERT",
+    "c": "activityId",
+    "n": 1
+  },
+  {
+    "t": "ActivityRuleSnapshot",
+    "k": "INSERT",
+    "c": "contributionPolicySelectionRevisionId",
+    "n": 1
+  },
+  {
+    "t": "ActivityRuleSnapshot",
+    "k": "INSERT",
+    "c": "createdAt",
+    "n": 1
+  },
+  {
+    "t": "ActivityRuleSnapshot",
+    "k": "INSERT",
+    "c": "createdByReviewId",
+    "n": 1
+  },
+  {
+    "t": "ActivityRuleSnapshot",
+    "k": "INSERT",
+    "c": "id",
+    "n": 1
+  },
+  {
+    "t": "ActivityRuleSnapshot",
+    "k": "INSERT",
+    "c": "resolvedConfig",
+    "n": 1
+  },
+  {
+    "t": "ActivityRuleSnapshot",
+    "k": "INSERT",
+    "c": "snapshotHash",
+    "n": 1
+  },
+  {
+    "t": "ActivityRuleSnapshot",
+    "k": "INSERT",
+    "c": "templateVersionId",
+    "n": 1
+  },
+  {
+    "t": "ActivityRuleSnapshot",
+    "k": "INSERT",
+    "c": "timePolicySelectionRevisionId",
+    "n": 1
+  },
+  {
+    "t": "ActivityRuleSnapshot",
+    "k": "INSERT",
+    "c": "workflowRevision",
+    "n": 1
+  },
+  {
+    "t": "ActivityRuleSnapshot",
+    "k": "SELECT",
+    "c": "activityId",
+    "n": 1
+  },
+  {
+    "t": "ActivityRuleSnapshot",
+    "k": "SELECT",
+    "c": "contributionPolicySelectionRevisionId",
+    "n": 1
+  },
+  {
+    "t": "ActivityRuleSnapshot",
+    "k": "SELECT",
+    "c": "createdAt",
+    "n": 1
+  },
+  {
+    "t": "ActivityRuleSnapshot",
+    "k": "SELECT",
+    "c": "createdByReviewId",
+    "n": 1
+  },
+  {
+    "t": "ActivityRuleSnapshot",
+    "k": "SELECT",
+    "c": "id",
+    "n": 1
+  },
+  {
+    "t": "ActivityRuleSnapshot",
+    "k": "SELECT",
+    "c": "resolvedConfig",
+    "n": 1
+  },
+  {
+    "t": "ActivityRuleSnapshot",
+    "k": "SELECT",
+    "c": "snapshotHash",
+    "n": 1
+  },
+  {
+    "t": "ActivityRuleSnapshot",
+    "k": "SELECT",
+    "c": "templateVersionId",
+    "n": 1
+  },
+  {
+    "t": "ActivityRuleSnapshot",
+    "k": "SELECT",
+    "c": "timePolicySelectionRevisionId",
+    "n": 1
+  },
+  {
+    "t": "ActivityRuleSnapshot",
+    "k": "SELECT",
+    "c": "workflowRevision",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "INSERT",
+    "c": "activityId",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "INSERT",
+    "c": "assignedByUserId",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "INSERT",
+    "c": "canManageAttendance",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "INSERT",
+    "c": "canManageRegistrations",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "INSERT",
+    "c": "createdAt",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "INSERT",
+    "c": "id",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "INSERT",
+    "c": "memberId",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "INSERT",
+    "c": "responsibilityType",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "INSERT",
+    "c": "source",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "INSERT",
+    "c": "startedAt",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "INSERT",
+    "c": "status",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "INSERT",
+    "c": "updatedAt",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "SELECT",
+    "c": "activityId",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "SELECT",
+    "c": "assignedByUserId",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "SELECT",
+    "c": "canManageAttendance",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "SELECT",
+    "c": "canManageRegistrations",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "SELECT",
+    "c": "endedAt",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "SELECT",
+    "c": "endedByUserId",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "SELECT",
+    "c": "id",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "SELECT",
+    "c": "memberId",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "SELECT",
+    "c": "reason",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "SELECT",
+    "c": "responsibilityType",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "SELECT",
+    "c": "source",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "SELECT",
+    "c": "startedAt",
+    "n": 1
+  },
+  {
+    "t": "activity_responsibility_assignments",
+    "k": "SELECT",
+    "c": "status",
+    "n": 1
+  },
+  {
+    "t": "notification_outbox_intents",
+    "k": "INSERT",
+    "c": "aggregateId",
+    "n": 1
+  },
+  {
+    "t": "notification_outbox_intents",
+    "k": "INSERT",
+    "c": "aggregateType",
+    "n": 1
+  },
+  {
+    "t": "notification_outbox_intents",
+    "k": "INSERT",
+    "c": "attempts",
+    "n": 1
+  },
+  {
+    "t": "notification_outbox_intents",
+    "k": "INSERT",
+    "c": "availableAt",
+    "n": 1
+  },
+  {
+    "t": "notification_outbox_intents",
+    "k": "INSERT",
+    "c": "createdAt",
+    "n": 1
+  },
+  {
+    "t": "notification_outbox_intents",
+    "k": "INSERT",
+    "c": "destinationRef",
+    "n": 1
+  },
+  {
+    "t": "notification_outbox_intents",
+    "k": "INSERT",
+    "c": "destinationType",
+    "n": 1
+  },
+  {
+    "t": "notification_outbox_intents",
+    "k": "INSERT",
+    "c": "eventKey",
+    "n": 1
+  },
+  {
+    "t": "notification_outbox_intents",
+    "k": "INSERT",
+    "c": "eventType",
+    "n": 1
+  },
+  {
+    "t": "notification_outbox_intents",
+    "k": "INSERT",
+    "c": "id",
+    "n": 1
+  },
+  {
+    "t": "notification_outbox_intents",
+    "k": "INSERT",
+    "c": "payload",
+    "n": 1
+  },
+  {
+    "t": "notification_outbox_intents",
+    "k": "INSERT",
+    "c": "payloadVersion",
+    "n": 1
+  },
+  {
+    "t": "notification_outbox_intents",
+    "k": "INSERT",
+    "c": "status",
+    "n": 1
+  },
+  {
+    "t": "notification_outbox_intents",
+    "k": "INSERT",
+    "c": "updatedAt",
+    "n": 1
+  },
+  {
+    "t": "role_bindings",
+    "k": "INSERT",
+    "c": "createdAt",
+    "n": 1
+  },
+  {
+    "t": "role_bindings",
+    "k": "INSERT",
+    "c": "createdByUserId",
+    "n": 1
+  },
+  {
+    "t": "role_bindings",
+    "k": "INSERT",
+    "c": "id",
+    "n": 1
+  },
+  {
+    "t": "role_bindings",
+    "k": "INSERT",
+    "c": "note",
+    "n": 1
+  },
+  {
+    "t": "role_bindings",
+    "k": "INSERT",
+    "c": "principalId",
+    "n": 1
+  },
+  {
+    "t": "role_bindings",
+    "k": "INSERT",
+    "c": "principalType",
+    "n": 1
+  },
+  {
+    "t": "role_bindings",
+    "k": "INSERT",
+    "c": "roleId",
+    "n": 1
+  },
+  {
+    "t": "role_bindings",
+    "k": "INSERT",
+    "c": "scopeActivityId",
+    "n": 1
+  },
+  {
+    "t": "role_bindings",
+    "k": "INSERT",
+    "c": "scopeType",
+    "n": 1
+  },
+  {
+    "t": "role_bindings",
+    "k": "INSERT",
+    "c": "startedAt",
+    "n": 1
+  },
+  {
+    "t": "role_bindings",
+    "k": "INSERT",
+    "c": "status",
+    "n": 1
+  },
+  {
+    "t": "role_bindings",
+    "k": "INSERT",
+    "c": "updatedAt",
+    "n": 1
+  }
+]

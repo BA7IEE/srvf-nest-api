@@ -1,0 +1,2 @@
+{"rls": false, "table": "LedgerPostingBatch", "policies": 0, "force_rls": false, "select_source": ["direct role"]}
+{"rls": false, "table": "ParticipationLedgerEntry", "policies": 0, "force_rls": false, "select_source": []}

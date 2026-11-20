@@ -1,0 +1,19 @@
+{
+  "backend": "dd62ce308f9142e8b3be04e9c4d52f548c0ebb17",
+  "backend_tree": "b3db43284b1c5d5cf6a8f09fe16e77fb1924c5e2",
+  "mobile": "529ee3a3c441eaaf992049cbbe6ee32f1414fa63",
+  "mobile_tree": "a48294c88b9fbb6eedb0a27fc0a38df7c4feffef",
+  "admin": "104e524c0b76826a79b1d48fad37fb07dcdfb8e8",
+  "admin_static_manifest": "9f44857d0e930bf2cda08703f31c9a2c1a57a6c66e8659c2aabf171fc1b10d1b",
+  "base_image": "sha256:1eb4e3ca321b141bca0c9c032e919f8665179f843dc623349fcd765ee6c89ffb",
+  "tarballs": {
+    "dist-final.tgz": "75c0dfa0f5158a28efc8d014c5311a4b81a938f36c5affb117a47167f27f0382",
+    "h5-final.tgz": "26690daa8419e46af89c3a04de3cab452bd18dc8ecb31b46bbcc75a40c149672"
+  },
+  "files": {
+    "dist/modules/auth/h5-session.js": "77e82e4dbb3cdbee60b4d6cc4a33933912c0826aefe7a98f37e878ecd76d480d",
+    "dist/modules/activities/app-activities.service.js": "e09783fbaa154e6391538b101a001fadc584cd9fc0399f181c27fb1a024bbf3a",
+    "dist/modules/activities/activity-simple-draft.service.js": "4137caa7f0991b54448754900ddd9df977d1eaa9d94a14eb7195d868620b6ed7",
+    "h5_index": "58ccd7a4a11710099de5dfa013adcd12665102b0353cf4f9388abad279ce8a5b"
+  }
+}

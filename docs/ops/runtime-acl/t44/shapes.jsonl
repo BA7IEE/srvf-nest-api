@@ -1,0 +1,4 @@
+{"table" : "ActivityEvidenceState", "op" : "INSERT", "columns" : ["id","createdAt","updatedAt","activityId","evidenceRevision","populationRevision","version","lastPopulationAt"], "calls" : 1}
+{"table" : "ActivityEvidenceState", "op" : "UPDATE", "columns" : ["populationRevision","version","lastPopulationAt","updatedAt"], "calls" : 2}
+{"table" : "ActivityParticipationIdentity", "op" : "INSERT", "columns" : ["id","createdAt","updatedAt","activityId","sessionId","registrationId","memberId","currentRevision","currentStatusCode","currentPositionId","populationIncluded","version"], "calls" : 2}
+{"table" : "ActivityParticipationIdentity", "op" : "UPDATE", "columns" : ["currentRevision","currentStatusCode","currentPositionId","capacityReservationId","populationIncluded","version","updatedAt"], "calls" : 5}

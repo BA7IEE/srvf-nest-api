@@ -1,0 +1,171 @@
+{
+  "sha": "6e7b30e51e9a3ae5416b5efccfe9ce1ea69f7e5f",
+  "count": 50,
+  "files": [
+    {
+      "path": "docs/ops/runtime-acl/t27/baseline.sql",
+      "lines": [
+        24,
+        32,
+        41
+      ],
+      "references": [
+        "docs/ops/runtime-acl/t27/SHA256SUMS"
+      ],
+      "original_commit": "02e980be6128c4d25259b3e26e43b37b367e3304",
+      "original_sha256": "910a176bfbe33b9f406b6648a25d70a643f691265242493e6c3ee11436b3a83c",
+      "normalized_sha256": "1e4e64a25b75b315bd5cbfa425b8bd5a7f556b5516d49e3ae45d78903c608e7b"
+    },
+    {
+      "path": "docs/ops/runtime-acl/t27/trace.sql",
+      "lines": [
+        24,
+        32,
+        41,
+        68,
+        88,
+        97
+      ],
+      "references": [
+        "docs/ops/runtime-acl/t27/SHA256SUMS"
+      ],
+      "original_commit": "02e980be6128c4d25259b3e26e43b37b367e3304",
+      "original_sha256": "5f3cd459e68bdfc4a56873ed31b3827eaaa16e38ecbd3bd99367956dc2685e5b",
+      "normalized_sha256": "13202a7092e7916435c0b59f22bfbe37a43287cf58dc34297212dee8b45c2608"
+    },
+    {
+      "path": "docs/ops/runtime-acl/t29b/functional-trace.sql",
+      "lines": [
+        46,
+        113,
+        155,
+        158,
+        213,
+        223,
+        251,
+        262
+      ],
+      "references": [
+        "docs/ops/runtime-acl/t29b/SHA256SUMS",
+        "docs/ops/runtime-acl/t29c/SHA256SUMS"
+      ],
+      "original_commit": "02e980be6128c4d25259b3e26e43b37b367e3304",
+      "original_sha256": "1332bc5258d80b66abf3419aec3ec564e5033be34c9a6d711dc8e629c4900d72",
+      "normalized_sha256": "ac58f288a230ec984d7e9213a5f148c48b85fb8e7a675a42e2430e8122de5e34"
+    },
+    {
+      "path": "docs/ops/runtime-acl/t29b/v3-denial.sql",
+      "lines": [
+        46
+      ],
+      "references": [
+        "docs/ops/runtime-acl/t29b/SHA256SUMS"
+      ],
+      "original_commit": "02e980be6128c4d25259b3e26e43b37b367e3304",
+      "original_sha256": "25098e64cbb1f14ce7952b9d341dcde27d2bc6b8b099a50da7c468c5e70c2005",
+      "normalized_sha256": "6725cc3faea0ead27a072f308824ee9b1728768e374d03e3ae0b42c4f840ab72"
+    },
+    {
+      "path": "docs/ops/runtime-acl/t29c/functional-trace.sql",
+      "lines": [
+        46,
+        113,
+        155,
+        158,
+        213,
+        223,
+        251,
+        262
+      ],
+      "references": [
+        "docs/ops/runtime-acl/t29b/SHA256SUMS",
+        "docs/ops/runtime-acl/t29c/SHA256SUMS"
+      ],
+      "original_commit": "02e980be6128c4d25259b3e26e43b37b367e3304",
+      "original_sha256": "1332bc5258d80b66abf3419aec3ec564e5033be34c9a6d711dc8e629c4900d72",
+      "normalized_sha256": "ac58f288a230ec984d7e9213a5f148c48b85fb8e7a675a42e2430e8122de5e34"
+    },
+    {
+      "path": "docs/ops/runtime-acl/t29c/trace.sql",
+      "lines": [
+        47,
+        114,
+        156,
+        159,
+        214,
+        224,
+        252,
+        263,
+        310
+      ],
+      "references": [
+        "docs/ops/runtime-acl/t29c/SHA256SUMS"
+      ],
+      "original_commit": "02e980be6128c4d25259b3e26e43b37b367e3304",
+      "original_sha256": "c111a1f7e6250ef9018f23eba655adb5e5f0274fa55c75fae82f660cf2d7c318",
+      "normalized_sha256": "5a24aaa70eace8c6587bcfdcc9a84264437374e271ec7d7294b44af23561eeac"
+    },
+    {
+      "path": "docs/ops/runtime-acl/t33/trace.sql",
+      "lines": [
+        24,
+        32,
+        41,
+        68
+      ],
+      "references": [],
+      "original_commit": "02e980be6128c4d25259b3e26e43b37b367e3304",
+      "original_sha256": "29350e7df0413668067617cf99417cc77147d146bcf44b8367288d556800448d",
+      "normalized_sha256": "47e686e7f646283280ec4f8a3ebb45f0ac278abaf8be9bbbb2e042a67f58f310"
+    },
+    {
+      "path": "docs/ops/runtime-acl/t36/db-final.log",
+      "lines": [
+        2,
+        7,
+        13,
+        20,
+        26,
+        33,
+        43
+      ],
+      "references": [],
+      "original_commit": "02e980be6128c4d25259b3e26e43b37b367e3304",
+      "original_sha256": "a907e12a05486df1a89bbc104094dc0188ce0300bc76766685e7a1c9b8b51f93",
+      "normalized_sha256": "1fded120e3ad5c69163880547f1cdf49072259ee9dfe8d862653102549882b97"
+    },
+    {
+      "path": "docs/ops/runtime-acl/t36/identity.log",
+      "lines": [
+        5,
+        6
+      ],
+      "references": [],
+      "original_commit": "02e980be6128c4d25259b3e26e43b37b367e3304",
+      "original_sha256": "86ae3921742a5d3658d5c15740284b2c3c2630b8898d8c4513e8c4bec5b69511",
+      "normalized_sha256": "c7e29c570853bc7b117eb48232dacb096eba62e4375dc5e9e6caab37dbe9e6eb"
+    },
+    {
+      "path": "docs/ops/runtime-acl/t36/journey.cjs",
+      "lines": [
+        70
+      ],
+      "references": [],
+      "original_commit": "02e980be6128c4d25259b3e26e43b37b367e3304",
+      "original_sha256": "f8cba6836cf48705254065a5a9b673e2429713aebec0b91a1784aa6facb0fd3d",
+      "normalized_sha256": "cea33a61f20a2b8ef9dc63100955ea9d558292315ea2ae100f59ad5dc087a449"
+    },
+    {
+      "path": "docs/ops/runtime-acl/t36/required.log",
+      "lines": [
+        18
+      ],
+      "references": [],
+      "original_commit": "02e980be6128c4d25259b3e26e43b37b367e3304",
+      "original_sha256": "7fa224125b5b4ab8289413c16259b2b4f9047e515e31d839eee8b780fc069489",
+      "normalized_sha256": "2509def606e00ac9f8daebd5a71864e6ce961c9db8223b04a273d3347e40ec30"
+    }
+  ],
+  "exit": 2,
+  "job": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44687773919/job/136126210700"
+}

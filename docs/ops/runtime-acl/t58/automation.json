@@ -1,0 +1,593 @@
+{
+  "additional_entry_checks": {
+    "panel_scripts": {
+      "agent": {
+        "total": 7,
+        "mentions_srvf": 0,
+        "git_follow": 0,
+        "image_follow": 0,
+        "recreate": 0,
+        "hooks": 0
+      },
+      "core": {
+        "total": 9,
+        "mentions_srvf": 0,
+        "git_follow": 0,
+        "image_follow": 0,
+        "recreate": 0,
+        "hooks": 0
+      }
+    },
+    "unit_name_auto_update_matches": [],
+    "api_app_git_dir": false,
+    "known_doc_checkout_exists": false
+  },
+  "fixed_window_utc": [
+    "2026-11-20 09:00:00 UTC",
+    "2026-11-20 10:20:00 UTC"
+  ],
+  "sources_observed_utc": {
+    "first": "2026-11-20T10:21:02.842346+00:00",
+    "schedulers": "2026-11-20T10:24:11.741495+00:00",
+    "panel": "2026-11-20T10:22:45.430905+00:00",
+    "lastobs": "2026-11-20T10:29:40.911833+00:00",
+    "window": "2026-11-20T10:30:20.663313+00:00"
+  },
+  "cron": [
+    {
+      "path": "/etc/crontab",
+      "active_lines": 4,
+      "disabled_relevant": 0,
+      "scheduled": [
+        {
+          "schedule": "17 * * * *",
+          "flags": []
+        },
+        {
+          "schedule": "25 6 * * *",
+          "flags": []
+        },
+        {
+          "schedule": "47 6 * * 7",
+          "flags": []
+        },
+        {
+          "schedule": "52 6 1 * *",
+          "flags": []
+        }
+      ],
+      "referenced": []
+    },
+    {
+      "path": "/etc/cron.d/e2scrub_all",
+      "active_lines": 2,
+      "disabled_relevant": 0,
+      "scheduled": [
+        {
+          "schedule": "30 3 * * 0",
+          "flags": []
+        },
+        {
+          "schedule": "10 3 * * *",
+          "flags": []
+        }
+      ],
+      "referenced": []
+    },
+    {
+      "path": "/etc/cron.d/sgagenttask",
+      "active_lines": 1,
+      "disabled_relevant": 0,
+      "scheduled": [
+        {
+          "schedule": "* * * * *",
+          "flags": []
+        }
+      ],
+      "referenced": []
+    },
+    {
+      "path": "/etc/cron.d/yunjing",
+      "active_lines": 2,
+      "disabled_relevant": 0,
+      "scheduled": [
+        {
+          "schedule": "*/30 * * * *",
+          "flags": []
+        },
+        {
+          "schedule": "macro/anacron",
+          "flags": []
+        }
+      ],
+      "referenced": [
+        {
+          "file": "YDCrontab.sh",
+          "flags": []
+        },
+        {
+          "file": "YDCrontab.sh",
+          "flags": []
+        }
+      ]
+    },
+    {
+      "path": "/etc/cron.daily/apport",
+      "active_lines": 0,
+      "disabled_relevant": 0,
+      "scheduled": [],
+      "referenced": [],
+      "script_flags": [],
+      "executable": true
+    },
+    {
+      "path": "/etc/cron.daily/apt-compat",
+      "active_lines": 0,
+      "disabled_relevant": 0,
+      "scheduled": [],
+      "referenced": [],
+      "script_flags": [],
+      "executable": true
+    },
+    {
+      "path": "/etc/cron.daily/dpkg",
+      "active_lines": 0,
+      "disabled_relevant": 0,
+      "scheduled": [],
+      "referenced": [],
+      "script_flags": [],
+      "executable": true
+    },
+    {
+      "path": "/etc/cron.daily/logrotate",
+      "active_lines": 0,
+      "disabled_relevant": 0,
+      "scheduled": [],
+      "referenced": [],
+      "script_flags": [
+        "rotation"
+      ],
+      "executable": true
+    },
+    {
+      "path": "/etc/cron.daily/man-db",
+      "active_lines": 0,
+      "disabled_relevant": 0,
+      "scheduled": [],
+      "referenced": [],
+      "script_flags": [],
+      "executable": true
+    },
+    {
+      "path": "/etc/cron.daily/ntp",
+      "active_lines": 0,
+      "disabled_relevant": 0,
+      "scheduled": [],
+      "referenced": [],
+      "script_flags": [],
+      "executable": true
+    },
+    {
+      "path": "/etc/cron.weekly/man-db",
+      "active_lines": 0,
+      "disabled_relevant": 0,
+      "scheduled": [],
+      "referenced": [],
+      "script_flags": [],
+      "executable": true
+    },
+    {
+      "path": "/var/spool/cron/crontabs/root",
+      "active_lines": 1,
+      "disabled_relevant": 0,
+      "scheduled": [
+        {
+          "schedule": "*/5 * * * *",
+          "flags": []
+        }
+      ],
+      "referenced": []
+    }
+  ],
+  "referenced_cron_scripts": {
+    "sgagenttask": [
+      {
+        "name": "stargate.lock"
+      },
+      {
+        "name": "start.sh",
+        "project": false,
+        "deployment": false
+      }
+    ],
+    "yunjing": [
+      {
+        "name": "YDCrontab.sh",
+        "project": false,
+        "deployment": false
+      }
+    ],
+    "e2scrub_all": [
+      {
+        "name": "e2scrub_all_cron"
+      },
+      {
+        "name": "e2scrub_all"
+      }
+    ],
+    "root": [
+      {
+        "name": "stargate.lock"
+      },
+      {
+        "name": "start.sh",
+        "project": false,
+        "deployment": false
+      }
+    ]
+  },
+  "systemd_units_examined": 189,
+  "srvf_units": [
+    {
+      "kind": "service",
+      "enabled": "static",
+      "active": "failed",
+      "count": 1
+    },
+    {
+      "kind": "service",
+      "enabled": "static",
+      "active": "inactive",
+      "count": 72
+    },
+    {
+      "kind": "timer",
+      "enabled": "disabled",
+      "active": "inactive",
+      "count": 59
+    }
+  ],
+  "active_timers": {
+    "apt-daily-upgrade.timer": {
+      "last": "Fri 2026-11-20 06:29:42 CST",
+      "triggers": [
+        "apt-daily-upgrade.service"
+      ]
+    },
+    "apt-daily.timer": {
+      "last": "Fri 2026-11-20 18:14:53 CST",
+      "triggers": [
+        "apt-daily.service"
+      ]
+    },
+    "dpkg-db-backup.timer": {
+      "last": "Fri 2026-11-20 00:00:00 CST",
+      "triggers": [
+        "dpkg-db-backup.service"
+      ]
+    },
+    "e2scrub_all.timer": {
+      "last": "Sun 2026-11-15 03:10:18 CST",
+      "triggers": [
+        "e2scrub_all.service"
+      ]
+    },
+    "fstrim.timer": {
+      "last": "Mon 2026-11-16 00:09:27 CST",
+      "triggers": [
+        "fstrim.service"
+      ]
+    },
+    "fwupd-refresh.timer": {
+      "last": "Fri 2026-11-20 10:43:34 CST",
+      "triggers": [
+        "fwupd-refresh.service"
+      ]
+    },
+    "logrotate.timer": {
+      "last": "Fri 2026-11-20 00:00:00 CST",
+      "triggers": [
+        "logrotate.service"
+      ]
+    },
+    "man-db.timer": {
+      "last": "Fri 2026-11-20 11:44:36 CST",
+      "triggers": [
+        "man-db.service"
+      ]
+    },
+    "motd-news.timer": {
+      "last": "Fri 2026-11-20 16:31:01 CST",
+      "triggers": [
+        "motd-news.service"
+      ]
+    },
+    "systemd-tmpfiles-clean.timer": {
+      "last": "Thu 2026-11-19 22:13:48 CST",
+      "triggers": [
+        "systemd-tmpfiles-clean.service"
+      ]
+    },
+    "update-notifier-download.timer": {
+      "last": "Thu 2026-11-19 22:03:58 CST",
+      "triggers": [
+        "update-notifier-download.service"
+      ]
+    },
+    "update-notifier-motd.timer": {
+      "last": "Thu 2026-11-19 07:24:36 CST",
+      "triggers": [
+        "update-notifier-motd.service"
+      ]
+    }
+  },
+  "failed_service": [
+    "Result=exit-code",
+    "ExecMainStartTimestamp=Tue 2026-11-10 02:40:29 CST",
+    "ExecMainExitTimestamp=Tue 2026-11-10 02:40:30 CST",
+    "ActiveState=failed"
+  ],
+  "user_cron_and_systemd": {
+    "0": {
+      "unit_files": [],
+      "bus": true,
+      "user_bus_query_exit": 0,
+      "relevant_units": []
+    },
+    "1000": {
+      "unit_files": [],
+      "bus": false,
+      "user_bus_query_exit": null,
+      "relevant_units": []
+    },
+    "1001": {
+      "unit_files": [],
+      "bus": false,
+      "user_bus_query_exit": null,
+      "relevant_units": []
+    }
+  },
+  "global_and_vendor_user_units": [
+    [
+      "sockets.target.wants"
+    ],
+    [
+      "systemd-tmpfiles-clean.timer"
+    ]
+  ],
+  "journal_and_docker_window": {
+    "range": [
+      "2026-11-20 09:00:00 UTC",
+      "2026-11-20 10:20:00 UTC"
+    ],
+    "cron_exit": 0,
+    "cron_cmd_events": 100,
+    "cron_flags": {},
+    "cron_capped": false,
+    "docker_exit": 0,
+    "docker_records_seen": 0,
+    "docker_oldest_retained_epoch": null,
+    "docker_events": [],
+    "any_image_actions": {},
+    "journal_units": {
+      "docker.service": {
+        "exit": 0,
+        "rows": 0,
+        "capped": false,
+        "project_relevant_deploy_indicators": 0
+      },
+      "1panel-agent.service": {
+        "exit": 0,
+        "rows": 176,
+        "capped": false,
+        "project_relevant_deploy_indicators": 0
+      },
+      "1panel-core.service": {
+        "exit": 0,
+        "rows": 0,
+        "capped": false,
+        "project_relevant_deploy_indicators": 0
+      }
+    }
+  },
+  "project_journal_crosscheck": {
+    "exit": 0,
+    "rows": 2976,
+    "cap": 20001,
+    "project_unit_or_service_events": {}
+  },
+  "journal_wildcard_initial_exit": 124,
+  "docker_retention_probe": {
+    "exit": 0,
+    "rows": 256,
+    "earliest_epoch": "1795170550",
+    "latest_epoch": "1795170620"
+  },
+  "panel_schedulers": {
+    "agent": {
+      "jobs": [],
+      "jobs_total": 0,
+      "records_total": 0,
+      "latest": null,
+      "utc_window_runs": [],
+      "local_clock_alternative_runs": [],
+      "script_count_project_or_pull": [
+        7,
+        0,
+        0
+      ],
+      "hook_named_tables": []
+    },
+    "core": {
+      "script_count_project_or_pull": [
+        9,
+        0,
+        0
+      ],
+      "hook_named_tables": []
+    },
+    "1Panel": {
+      "jobs": [],
+      "jobs_total": 0,
+      "records_total": 0,
+      "latest": null,
+      "utc_window_runs": [],
+      "local_clock_alternative_runs": [],
+      "hook_named_tables": []
+    },
+    "task": {
+      "task_history": [],
+      "hook_named_tables": []
+    },
+    "xpack": {
+      "hook_named_tables": []
+    }
+  },
+  "panel_live_db_handles": {
+    "1panel-agent.service": [
+      "agent",
+      "core",
+      "task",
+      "xpack"
+    ],
+    "1panel-core.service": [
+      "agent",
+      "core",
+      "task",
+      "xpack"
+    ]
+  },
+  "panel_task_store_total_latest": [
+    132,
+    "2026-11-20 01:56:00.003485327+08:00"
+  ],
+  "panel_hook_key_counts": {
+    "agent": {
+      "settings": 0
+    },
+    "core": {
+      "settings": 0
+    },
+    "xpack": {}
+  },
+  "project_compose_git": [
+    {
+      "compose": "srvf-dp-acceptance",
+      "git_here": false,
+      "git_parent": false
+    },
+    {
+      "compose": "srvf-dp-acceptance-mount-probe",
+      "git_here": false,
+      "git_parent": false
+    },
+    {
+      "compose": "srvf-dp-acceptance-candidate",
+      "git_here": false,
+      "git_parent": false
+    },
+    {
+      "compose": "srvf-dp-acceptance-runtime",
+      "git_here": false,
+      "git_parent": false
+    },
+    {
+      "compose": "srvf-dp-acceptance-diagnosis",
+      "git_here": false,
+      "git_parent": false
+    },
+    {
+      "compose": "srvf-dp-acceptance-business",
+      "git_here": false,
+      "git_parent": false
+    },
+    {
+      "compose": "srvf-dp-acceptance-review",
+      "git_here": false,
+      "git_parent": false
+    },
+    {
+      "compose": "srvf-dp-acceptance-worker-preflight",
+      "git_here": false,
+      "git_parent": false
+    },
+    {
+      "compose": "srvf-dp-acceptance-settlement-isolation",
+      "git_here": false,
+      "git_parent": false
+    }
+  ],
+  "watch_containers": [],
+  "watch_labels": {
+    "com.centurylinklabs.watchtower.enable": "",
+    "com.centurylinklabs.watchtower.monitor-only": ""
+  },
+  "direct_socket_mounts": {
+    "active_containers_checked": 13,
+    "direct_socket_count": 0
+  },
+  "project_compose": {
+    "srvf-dp-acceptance-runtime": {
+      "git_metadata": false,
+      "hash": "d1ad35c44149ad4e2570e33ef7b25c01d14ff4a6a2e5280f801d3cf32d0e9b1d",
+      "mtime": "2026-11-19T12:19:25.883421+00:00",
+      "image_and_policy": [
+        [
+          "image",
+          "srvf-staging-api:108feebb"
+        ],
+        [
+          "pull_policy",
+          "never"
+        ],
+        [
+          "restart",
+          "no"
+        ],
+        [
+          "image",
+          "srvf-staging-tools:108feebb"
+        ],
+        [
+          "pull_policy",
+          "never"
+        ],
+        [
+          "restart",
+          "no"
+        ]
+      ],
+      "git_ref_present": false
+    },
+    "srvf-dp-acceptance": {
+      "git_metadata": false,
+      "hash": "3713ed3b70d87ecf1c4b9c1735a3c644a959ecb05b1857f63b9eaa3e48b88e39",
+      "mtime": "2026-11-18T18:45:41.081229+00:00",
+      "image_and_policy": [
+        [
+          "image",
+          "postgres@sha256:a2f7e20374cd8fd8ed4a588b79549e10589bea7b1686e77922f5ac741b80b8a1"
+        ],
+        [
+          "image",
+          "srvf-staging-tools:108feebb"
+        ],
+        [
+          "pull_policy",
+          "never"
+        ],
+        [
+          "restart",
+          "no"
+        ]
+      ],
+      "git_ref_present": false
+    },
+    "b7f3dac00a860e32c0cbc220f29da0755bce024b": {
+      "git_metadata": false
+    },
+    "webroot": {
+      "git_metadata": false
+    }
+  }
+}

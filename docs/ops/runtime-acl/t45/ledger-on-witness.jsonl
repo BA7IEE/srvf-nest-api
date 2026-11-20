@@ -1,0 +1,2 @@
+{"table": "ParticipationLedgerEntry", "column": "activityId", "with_grant": "00000", "after_single_revoke": "42501", "query_sha256": "9de7aec5a55cc6a87e1a8e333d2454036a8975bdc43d485448b5003db8f960c0"}
+{"table": "ParticipationLedgerEntry", "column": "resultRevisionId", "with_grant": "00000", "after_single_revoke": "42501", "query_sha256": "9de7aec5a55cc6a87e1a8e333d2454036a8975bdc43d485448b5003db8f960c0"}

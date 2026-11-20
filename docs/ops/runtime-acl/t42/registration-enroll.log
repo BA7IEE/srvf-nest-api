@@ -1,0 +1,3 @@
+{"actor":"lab","method":"GET","path":"/api/admin/v1/activities/cmwnrt3zg000amy01t5z9qjve/simple-draft","status":200,"code":0,"reqId":"cmwnruxw76a3a82940bbadfe51ea7d8d7"}
+{"actor":"lab","method":"POST","path":"/api/app/v1/activities/cmwnrt3zg000amy01t5z9qjve/registrations","status":500,"code":50000,"reqId":"cmwnruxx748535b00a72ab1c329a8c304"}
+500 !== 201

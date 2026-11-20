@@ -1,0 +1,140 @@
+{
+  "boolean": {
+    "activity": "cmwnpzvlg0005qr01f8qj3wzq",
+    "writes": [
+      {
+        "actor": "lab",
+        "path": "/api/admin/v1/activities/from-template",
+        "status": 201,
+        "code": 0,
+        "reqId": "cmwnpzve8985833fa01382bebd4b9153c",
+        "success_audit_matched": true
+      },
+      {
+        "actor": "lab-editor",
+        "path": "/api/app/v1/my/managed-activities/cmwnpzvlg0005qr01f8qj3wzq",
+        "status": 200,
+        "code": 0,
+        "reqId": "cmwnpzx5xadb860103b97f6bc62879fed",
+        "success_audit_matched": true
+      },
+      {
+        "actor": "lab",
+        "path": "/api/admin/v1/activities/cmwnpzvlg0005qr01f8qj3wzq/publish-reviews",
+        "status": 409,
+        "code": 20255,
+        "reqId": "cmwnpzx7j92771ec501eec2f886ff74b3",
+        "success_audit_matched": false
+      },
+      {
+        "actor": "lab",
+        "path": "/api/admin/v1/activities/cmwnpzvlg0005qr01f8qj3wzq/publish-reviews",
+        "status": 200,
+        "code": 0,
+        "reqId": "cmwnpzyvc0860f922cc127a903ca63a10",
+        "success_audit_matched": true
+      },
+      {
+        "actor": "reviewer",
+        "path": "/api/admin/v1/activity-publish-reviews/cmwnpzyyn000sqr01nps5qljw/approve",
+        "status": 200,
+        "code": 0,
+        "reqId": "cmwnq01u5efe558adc9336822fc5a1cd5",
+        "success_audit_matched": true
+      },
+      {
+        "actor": "lab",
+        "path": "/api/app/v1/my/managed-activities/cmwnpzvlg0005qr01f8qj3wzq/change-reviews",
+        "status": 200,
+        "code": 0,
+        "reqId": "cmwnq02d037d9d565202004bd2a9eccd3",
+        "success_audit_matched": true
+      },
+      {
+        "actor": "reviewer",
+        "path": "/api/admin/v1/activity-publish-reviews/cmwnq02en001jqr01p3qwdihb/approve",
+        "status": 200,
+        "code": 0,
+        "reqId": "cmwnq04mx47bbeccfcd452366022b2c5d",
+        "success_audit_matched": true
+      },
+      {
+        "actor": "reviewer",
+        "path": "/api/app/v1/my/managed-activities/cmwnpzvlg0005qr01f8qj3wzq/change-reviews",
+        "status": 404,
+        "code": 20001,
+        "reqId": "cmwnq04x8c00f4a71061dcd0e61e177c6",
+        "success_audit_matched": false
+      }
+    ]
+  },
+  "five": {
+    "activity": "cmwnq1vil0022qr015lnfquxu",
+    "writes": [
+      {
+        "actor": "lab",
+        "path": "/api/admin/v1/activities/from-template",
+        "status": 201,
+        "code": 0,
+        "reqId": "cmwnq1vfla226bfd3907f67dff565d9c2",
+        "success_audit_matched": true
+      },
+      {
+        "actor": "lab-editor",
+        "path": "/api/app/v1/my/managed-activities/cmwnq1vil0022qr015lnfquxu",
+        "status": 200,
+        "code": 0,
+        "reqId": "cmwnq1x238b7a87c60e46ddebe5b8a8b5",
+        "success_audit_matched": true
+      },
+      {
+        "actor": "lab",
+        "path": "/api/admin/v1/activities/cmwnq1vil0022qr015lnfquxu/publish-reviews",
+        "status": 409,
+        "code": 20255,
+        "reqId": "cmwnq1x3hcee0ce377bc764f0dfb6feea",
+        "success_audit_matched": false
+      },
+      {
+        "actor": "lab",
+        "path": "/api/admin/v1/activities/cmwnq1vil0022qr015lnfquxu/publish-reviews",
+        "status": 200,
+        "code": 0,
+        "reqId": "cmwnq1ytd578c1869027e3d2aad20e4c8",
+        "success_audit_matched": true
+      },
+      {
+        "actor": "reviewer",
+        "path": "/api/admin/v1/activity-publish-reviews/cmwnq1yzz002pqr01xn9iyp9j/approve",
+        "status": 200,
+        "code": 0,
+        "reqId": "cmwnq21kgbf43c23889a186e4ebdd5e4b",
+        "success_audit_matched": true
+      },
+      {
+        "actor": "lab",
+        "path": "/api/app/v1/my/managed-activities/cmwnq1vil0022qr015lnfquxu/change-reviews",
+        "status": 200,
+        "code": 0,
+        "reqId": "cmwnq226h6f85845561f56959adce258f",
+        "success_audit_matched": true
+      },
+      {
+        "actor": "reviewer",
+        "path": "/api/admin/v1/activity-publish-reviews/cmwnq229t003gqr01uwpz2it4/approve",
+        "status": 200,
+        "code": 0,
+        "reqId": "cmwnq255v04ddb8c17a49b0c0f245ab1f",
+        "success_audit_matched": true
+      },
+      {
+        "actor": "reviewer",
+        "path": "/api/app/v1/my/managed-activities/cmwnq1vil0022qr015lnfquxu/change-reviews",
+        "status": 404,
+        "code": 20001,
+        "reqId": "cmwnq25ele2161a25c27a556cead192af",
+        "success_audit_matched": false
+      }
+    ]
+  }
+}

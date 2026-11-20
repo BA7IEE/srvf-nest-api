@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import {
   CertificateIssuerPolicy,
   CertificateNumberMode,
@@ -2623,6 +2625,76 @@ async function seedAttendanceFinalReviewerRole(prisma: PrismaClient): Promise<vo
   );
 }
 
+// Operator-only seed mode. No HTTP route or runtime bootstrap imports this function.
+async function seedAcceptanceAccountOnly(): Promise<void> {
+  const username = process.env.SUPER_ADMIN_USERNAME ?? '';
+  const password = process.env.SUPER_ADMIN_PASSWORD ?? '';
+  const operatorDeclaredCommit = process.env.ACCEPTANCE_SOURCE_COMMIT ?? '';
+  const entryDigest = createHash('sha256').update(readFileSync(__filename)).digest('hex');
+  const fingerprint = process.env.ACCEPTANCE_DATABASE_FINGERPRINT ?? '';
+  if (
+    !['test', 'smoke'].includes(process.env.APP_ENV ?? '') ||
+    !/^accept_[a-z0-9_]{6,24}$/.test(username) ||
+    !/^[a-f0-9]{40}$/.test(operatorDeclaredCommit) ||
+    process.env.ACCEPTANCE_ENTRY_SHA256 !== entryDigest ||
+    !/^[a-f0-9]{64}$/.test(fingerprint) ||
+    password.length < 24 ||
+    Buffer.byteLength(password) > 72
+  ) {
+    throw new Error('Invalid acceptance bootstrap configuration');
+  }
+
+  const passwordHash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
+  const prisma = new PrismaClient({ log: [] });
+  try {
+    await prisma.$transaction(
+      async (tx) => {
+        const target = await tx.$queryRaw<{ fingerprint: string }[]>`
+        SELECT encode(sha256(convert_to(system_identifier::text || ':' || current_database(),
+                                        'UTF8')), 'hex') AS fingerprint
+        FROM pg_control_system()
+      `;
+        if (target.length !== 1 || target[0].fingerprint !== fingerprint) {
+          throw new Error('Unexpected acceptance database');
+        }
+        // NOWAIT bounds interference with existing writers. Under READ COMMITTED the
+        // subsequent count sees any administrator committed before we obtained the lock.
+        await tx.$executeRaw`LOCK TABLE "User" IN SHARE ROW EXCLUSIVE MODE NOWAIT`;
+        const activeAdmins = await tx.user.count({
+          where: {
+            role: { in: [Role.ADMIN, Role.SUPER_ADMIN] },
+            status: UserStatus.ACTIVE,
+            deletedAt: null,
+          },
+        });
+        if (activeAdmins !== 0) throw new Error('An active administrator already exists');
+
+        const user = await tx.user.create({
+          data: { username, passwordHash, role: Role.SUPER_ADMIN, status: UserStatus.ACTIVE },
+          select: { id: true },
+        });
+        await tx.auditLog.create({
+          data: {
+            event: 'seed.acceptance-account.create',
+            resourceType: 'user',
+            resourceId: user.id,
+            context: {
+              requestId: username,
+              ip: null,
+              ua: null,
+              extra: { source: 'acceptance-seed', operatorDeclaredCommit, entryDigest },
+            },
+          },
+        });
+      },
+      { isolationLevel: 'ReadCommitted' },
+    );
+    console.log('[seed] Acceptance account and audit receipt committed');
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
 export async function main(): Promise<void> {
   const usernameRaw = process.env.SUPER_ADMIN_USERNAME ?? '';
   const username = usernameRaw.trim().toLowerCase();
@@ -3021,8 +3093,6 @@ const POSITION_ROLE_POLICY_CATALOG = Object.freeze(
   ),
 );
 
-// 活动三项预置映射的定向恢复工具见 scripts/ops/reconcile-activity-catalog.sql。
-// 修改下列角色契约时同步核验工具中的映射及其固定迁移清单。
 export const RBAC_SEED_CATALOG = Object.freeze({
   // ⚠️ `permissions` 的**各桶并集必须等于权限码全集** —— 这不是散文,由
   // `pnpm docs:catalog:check`(`scripts/check-permission-catalog-closure.ts`)机器执法。
@@ -3356,7 +3426,18 @@ async function seedAmateurRadioCertificateStandards(prisma: PrismaClient): Promi
 }
 
 if (require.main === module) {
-  void main().catch((err: unknown) => {
+  const args = process.argv.slice(2);
+  const accountOnly = args.length === 1 && args[0] === '--acceptance-account-only';
+  if (args.length > 0 && !accountOnly) {
+    console.error('[seed] Unknown seed arguments');
+    process.exit(1);
+  }
+  const operation = accountOnly ? seedAcceptanceAccountOnly() : main();
+  void operation.catch((err: unknown) => {
+    if (accountOnly) {
+      console.error('[seed] Acceptance bootstrap refused or rolled back');
+      process.exit(1);
+    }
     console.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
   });

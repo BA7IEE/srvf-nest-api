@@ -60,6 +60,9 @@ export class AppActivityDetailSessionDto {
   @ApiProperty()
   locationText!: string;
 
+  @ApiProperty({ description: '本场次签到签退是否需要队员主动提供定位' })
+  locationRequired!: boolean;
+
   @ApiPropertyOptional({ nullable: true })
   capacity!: number | null;
 
@@ -68,6 +71,14 @@ export class AppActivityDetailSessionDto {
 
   @ApiProperty({ type: () => AppActivityQualificationDto })
   qualification!: AppActivityQualificationDto;
+}
+
+export class AppRegistrationInsuranceEligibilityDto {
+  @ApiProperty({ description: '活动是否要求保险' })
+  required!: boolean;
+
+  @ApiProperty({ description: '当前队员是否满足此活动的保险条件，提交时重新核验' })
+  eligible!: boolean;
 }
 
 export class AppActivityDetailInvitationDto {
@@ -194,6 +205,9 @@ export class AppActivityDetailDto {
     nullable: true,
   })
   registrationMode!: string | null;
+
+  @ApiProperty({ description: '当前活动允许公开报名；提交时仍重新校验本人资格与名额' })
+  publicRegistrationOpen!: boolean;
 
   @ApiPropertyOptional({
     description: '当前 active 报名表版本；无自定义报名表时为 NULL',

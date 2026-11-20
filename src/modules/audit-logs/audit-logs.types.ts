@@ -17,6 +17,7 @@
 // - **绝对禁止**:在本 union 自行新增字符串值;新增审计事件必须先经评审稿或 goal 显式预授权(D6 v1.1 §8.1 / §16)
 
 export type AuditLogEvent =
+  | 'seed.acceptance-account.create'
   | 'activity.contribution-shadow.evidence-read'
   | 'activity.contribution-shadow.window-register'
   | 'activity.contribution-shadow.disposition-sign'

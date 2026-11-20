@@ -1,0 +1,155 @@
+{
+  "role": "srvf_dp_acceptance_runtime",
+  "rows": [
+    {
+      "table": "LedgerPostingBatch",
+      "column": "id",
+      "select": true,
+      "owner_access": false,
+      "table_select": true,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "LedgerPostingBatch",
+      "column": "statusCode",
+      "select": true,
+      "owner_access": false,
+      "table_select": true,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "activityId",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "cappedOutPointsDelta",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "creditedPointsDelta",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "entryKey",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "entryTypeCode",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "ledgerDate",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "memberId",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "participationIdentityId",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "postingBatchId",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "recognizedPointsDelta",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "resultRevisionId",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "serviceHoursDelta",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "sessionId",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    }
+  ],
+  "database": "srvf_staging",
+  "column_count": 15,
+  "schema_usage": true,
+  "database_connect": true,
+  "observer_is_runtime": false,
+  "captured_utc": "2026-11-20T06:17:57.195741+00:00",
+  "shared_grants": 0,
+  "sql_exit": 3,
+  "assertion_exit": 0,
+  "active_database_session_matched_runtime_container_ip": true,
+  "expected_database": "srvf_staging",
+  "observer": "catalog read only",
+  "sql_sha256": "0890eed2dfe4ffbe89fcbd22994528c4fb30a04ef65bef268cd7dffd787f5c03",
+  "candidate_image_id": "sha256:1eb4e3ca321b141bca0c9c032e919f8665179f843dc623349fcd765ee6c89ffb",
+  "candidate_revision_label": "108feebb84b85c7e4955c5af8bbfc016702e4529"
+}

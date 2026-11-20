@@ -25,7 +25,18 @@ export const MILESTONE_MIGRATION = Object.freeze({
   name: '20261117190000_team_join_contribution_milestones',
   sha256: '5c2aae1c4e6d83d8a06989761c52c77c6efaab3bdbec73d9e7b6a79bbaffb39d',
 });
-const successors: readonly MigrationSource[] = Object.freeze([MILESTONE_MIGRATION]);
+const SETTLEMENT_GUARD_MIGRATION = Object.freeze({
+  name: '20261120073000_settlement_deferred_correction_guard',
+  sha256: '38867d6ba7ebf72a2ca652c064bdbe8ffc674fba8c3b56d292d806cba1183d82',
+});
+const successors: readonly MigrationSource[] = Object.freeze([
+  MILESTONE_MIGRATION,
+  SETTLEMENT_GUARD_MIGRATION,
+  {
+    name: '20261120073100_settlement_correction_proof_lookup',
+    sha256: 'c5ba4ff229d717f52ed46d9d2c30585976f08a1196a955f10032629bc2517bd7',
+  },
+]);
 
 // This large fixture is runtime data, not a giant inferred TypeScript literal.
 // Pin all bytes before parsing; no fields or checks are omitted at runtime.

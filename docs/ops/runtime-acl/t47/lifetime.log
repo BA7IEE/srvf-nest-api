@@ -1,0 +1,8 @@
+combined_ready=true v11=true
+nginx: the configuration file /tmp/trial.conf syntax is ok
+nginx: configuration file /tmp/trial.conf test is successful
+2026/11/20 03:41:23 [notice] 39#39: signal process started
+{"access":"15m","refresh":"90d"}
+{"login":200,"loginReq":"cmwofmpgh2c11c3d2a99f894c6ca19214","refresh":200,"refreshReq":"cmwofmpsg2f4b15f4da3698d328461f49","seenRegistration":true,"present":true,"stateReq":"cmwofmq261bd0f60cc0d9bad96b7e91d7","exit":0}
+{"days" : 7, "families" : 16, "deadlines_stable" : true, "rotated_families" : 3}
+{"days" : 90, "families" : 1, "deadlines_stable" : true, "rotated_families" : 1}

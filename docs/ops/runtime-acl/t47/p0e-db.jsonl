@@ -1,0 +1,4 @@
+{"families" : 16, "one_deadline_per_family" : true, "absolute_lifetime_days_min_rounded" : 7, "absolute_lifetime_days_max_rounded" : 7}
+{"revoke_reason" : "rotated", "count" : 5}
+{"revoke_reason" : "logout", "count" : 4}
+{"revoke_reason" : "self-password-change", "count" : 5}

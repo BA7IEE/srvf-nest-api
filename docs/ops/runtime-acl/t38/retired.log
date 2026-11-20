@@ -1,0 +1,4 @@
+outstanding=0
+89dea4a3f4defa69d8253d1070fdc0dd6d5a496ed7faf60088abe0e3a22371f8  synthetic-audits.sql
+audit file mode=600
+removed four isolated containers, tmpfs DB, network and generated login files
