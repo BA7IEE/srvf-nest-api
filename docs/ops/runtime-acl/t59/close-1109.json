@@ -1,0 +1,32 @@
+{
+  "at": "2026-11-20T19:18:17.584005+08:00",
+  "command": [
+    "gh",
+    "issue",
+    "close",
+    "1109",
+    "-R",
+    "BA7IEE/srvf-nest-api",
+    "--reason",
+    "completed"
+  ],
+  "exit": 0,
+  "before": {
+    "closedAt": null,
+    "number": 1109,
+    "state": "OPEN",
+    "stateReason": "",
+    "title": "CI docs-only \u5feb\u8def\u5f84\u8df3\u8fc7\u5355\u6d4b \u2014\u2014 \u8bfb docs \u7684 5 \u4e2a spec \u56e0\u6b64\u4e0d\u8bbe\u9632,\u7ea2\u4f1a\u8f6c\u5ac1\u7ed9\u4e0b\u4e00\u4e2a\u975e docs PR",
+    "updatedAt": "2026-11-02T13:29:33Z",
+    "url": "https://github.com/BA7IEE/srvf-nest-api/issues/1109"
+  },
+  "after": {
+    "closedAt": "2026-11-20T11:18:15Z",
+    "number": 1109,
+    "state": "CLOSED",
+    "stateReason": "COMPLETED",
+    "title": "CI docs-only \u5feb\u8def\u5f84\u8df3\u8fc7\u5355\u6d4b \u2014\u2014 \u8bfb docs \u7684 5 \u4e2a spec \u56e0\u6b64\u4e0d\u8bbe\u9632,\u7ea2\u4f1a\u8f6c\u5ac1\u7ed9\u4e0b\u4e00\u4e2a\u975e docs PR",
+    "updatedAt": "2026-11-20T11:18:15Z",
+    "url": "https://github.com/BA7IEE/srvf-nest-api/issues/1109"
+  }
+}

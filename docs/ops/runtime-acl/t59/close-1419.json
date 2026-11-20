@@ -1,0 +1,32 @@
+{
+  "at": "2026-11-20T19:17:12.144668+08:00",
+  "command": [
+    "gh",
+    "issue",
+    "close",
+    "1419",
+    "-R",
+    "BA7IEE/srvf-nest-api",
+    "--reason",
+    "completed"
+  ],
+  "exit": 0,
+  "before": {
+    "closedAt": null,
+    "number": 1419,
+    "state": "OPEN",
+    "stateReason": "",
+    "title": "\u8d85\u9650 JSON body(~1MB)\u89e6\u53d1\u88f8 500(\u5e94 413/40000)",
+    "updatedAt": "2026-11-13T14:50:04Z",
+    "url": "https://github.com/BA7IEE/srvf-nest-api/issues/1419"
+  },
+  "after": {
+    "closedAt": "2026-11-20T11:17:10Z",
+    "number": 1419,
+    "state": "CLOSED",
+    "stateReason": "COMPLETED",
+    "title": "\u8d85\u9650 JSON body(~1MB)\u89e6\u53d1\u88f8 500(\u5e94 413/40000)",
+    "updatedAt": "2026-11-20T11:17:10Z",
+    "url": "https://github.com/BA7IEE/srvf-nest-api/issues/1419"
+  }
+}
