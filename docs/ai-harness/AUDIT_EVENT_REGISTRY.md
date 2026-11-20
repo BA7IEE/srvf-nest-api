@@ -19,7 +19,7 @@
 > **三条写库漏斗**(全部 `event: AuditLogEvent` 类型锁,新增事件不进 union 编译不过):
 > `AuditLogsService.log()` · `writeConfigAudit()`(permissions)· `user-roles.service` 内联薄封装。
 
-**审计事件(机器核对):178 个 · 活跃(≥1 次出现):173 · 已退役/零产出:5**
+**审计事件(机器核对):179 个 · 活跃(≥1 次出现):173 · 已退役/零产出:6**
 
 
 ## profile
@@ -376,6 +376,12 @@
 | `user.soft-delete` | 1 |  |
 | `user.avatar.change.self` | 1 |  |
 | `user.avatar.clear.self` | 1 |  |
+
+## seed
+
+| event | 仓内出现次数 | 备注 |
+|---|---|---|
+| `seed.acceptance-account.create` | 0 | `src/**` 扫描范围内零产出。离线入口 `prisma/seed.ts --acceptance-account-only` 在创建账号的同一事务写入一条审计。 |
 
 ## storage-setting
 
