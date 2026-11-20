@@ -1,0 +1,248 @@
+{
+  "scope": "Implementation self-test, disposable PG16 and same-origin desktop Chrome",
+  "versions": {
+    "apiWorker": "65bad1ccb7e6a4bb7a3cda46b49512f092d04779",
+    "h5": "ae2e3b0ad5202a214d4dcfdc54342e52f9f270a1",
+    "admin": "2626116889affe3bda3758f7ed1ce006272503bf"
+  },
+  "packagesSHA256": {
+    "admin-26261168.files": "e9f7587fbba063b106acd6471d2b672efbbd2aa251177b973a441acd4402ff23",
+    "admin-26261168.tar.gz": "04e010d4d1dd695422eb2cdb850d9800b40dc3e1d4e39d2b761ad1e1bc1507c2",
+    "api-65bad1cc.files": "c0ffe57c1e245aebf690e09748ce77037b5c9adbb459705a6ff8c85e7aa17a2a",
+    "api-65bad1cc.tar": "da16d1245e234f1192225ab5e9121e9cb9ad0ae731ebc834f9aece2874aeb077",
+    "h5-ae2e3b0a.files": "78140baa655dad1aefe091c8f6e72732c8f8290085e32f14eee1663e08ede9c0",
+    "h5-ae2e3b0a.tar.gz": "dc6714e567f6a0999366200f8a104da02e7e3ec1b356aa9de69c169b529ed599"
+  },
+  "t66EvidenceSHA256": {
+    "browser/settled/desktop.json": "261adb8fc06ed2d5b7abeda98209dee1e1a6770539bb48bcd8f170055809eb7f",
+    "browser/settled/isolated/denials.json": "02df16080c71e31201d0e634e4d974f3a189705abe5f6142a7f04c38e4881d2e",
+    "evidence/pg.jsonl": "8bf1645d436acc7939097b890bf998efe4a004708c5d9e0a5703e1e6477708d2",
+    "acl/diff.json": "547baa82614ada4fa544e405ddbc8d4aaad1d3311f36e491a546aacf95f7168c"
+  },
+  "pairing": {
+    "ready": {
+      "http": 200,
+      "code": 0,
+      "db": "up",
+      "reqId": "cmwp5utee6addd2808b7306d3073b62b2"
+    },
+    "staticFiles": {
+      "admin-26261168": 310,
+      "h5-ae2e3b0a": 40
+    }
+  },
+  "installed": {
+    "phase": "installed",
+    "chrome": "158.0.8127.36",
+    "origin": "https://t63.test",
+    "responses": [
+      {
+        "path": "/api/auth/v1/h5/login",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp5uy0136ff3c016a6804adeadef8ea"
+      },
+      {
+        "path": "/api/app/v1/me",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp5uybm1f1c1d35be60e422fd550cbd"
+      },
+      {
+        "path": "/api/app/v1/me/capabilities",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp5uycn7481132fb6840dcf876e55a9"
+      },
+      {
+        "path": "/api/auth/v1/h5/refresh",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp5uyo8aabbbd1bcb89e3ef7cfb9618"
+      },
+      {
+        "path": "/api/app/v1/me",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp5uyp945836b53d3850ad1783b4c1d"
+      },
+      {
+        "path": "/api/app/v1/me/capabilities",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp5uypo67d9e8a4f2b58ae504fb91c8"
+      }
+    ],
+    "pageChecks": [
+      {
+        "step": "after-login",
+        "route": "/my",
+        "syntheticMemberVisible": true
+      },
+      {
+        "step": "after-refresh",
+        "route": "/my",
+        "syntheticMemberVisible": true
+      }
+    ],
+    "rotatedCookie": true
+  },
+  "rotation": {
+    "rows": 2,
+    "familyCount": 1,
+    "active": 1,
+    "linked": 1,
+    "actorAuditReqIds": {
+      "login": "cmwp5uy0136ff3c016a6804adeadef8ea",
+      "refresh": "cmwp5uyo8aabbbd1bcb89e3ef7cfb9618"
+    }
+  },
+  "withdrawn": {
+    "phase": "withdrawn",
+    "chrome": "158.0.8127.36",
+    "origin": "https://t63.test",
+    "responses": [
+      {
+        "path": "/api/auth/v1/h5/login",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp5v47340d17aa9ef98442fcf6fc13d"
+      },
+      {
+        "path": "/api/app/v1/me",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp5v4hbb388ad89093132aa3b0dc55d"
+      },
+      {
+        "path": "/api/app/v1/me/capabilities",
+        "http": 500,
+        "code": 50000,
+        "reqId": "cmwp5v4hr876562880e911a96d0c6832f"
+      },
+      {
+        "path": "/api/auth/v1/h5/refresh",
+        "http": 500,
+        "code": 50000,
+        "reqId": "cmwp5v4lp17b5f6d93350825e8eb58c5e"
+      }
+    ],
+    "pageChecks": [
+      {
+        "step": "withdrawn",
+        "loginFormVisible": true
+      }
+    ]
+  },
+  "withdrawnErrors": [
+    {
+      "utc": "2026-11-20 15:55:49.512 UTC",
+      "role": "t63_api",
+      "sqlstate": "42501",
+      "message": "permission denied for table activity_responsibility_assignments"
+    },
+    {
+      "utc": "2026-11-20 15:55:49.661 UTC",
+      "role": "t63_api",
+      "sqlstate": "42501",
+      "message": "permission denied for table refresh_tokens"
+    }
+  ],
+  "browserPlanDistinctColumnOps": 140,
+  "browserPlanRelations": 11,
+  "changedColumnsPlans": [
+    {
+      "role": "t63_api",
+      "table": "activity_responsibility_assignments",
+      "op": "SELECT",
+      "columns": ["canManageAttendance", "canManageRegistrations", "id", "memberId", "status"],
+      "sqlSHA256": ["b92de24fa1a47dc909a24685b78c34845e69692165168c50ed9f6f40dbeec8ce"]
+    },
+    {
+      "role": "t63_api",
+      "table": "refresh_tokens",
+      "op": "UPDATE",
+      "columns": ["replacedById"],
+      "sqlSHA256": ["2c687c3d17a4eee92ec9b974120cb17fceab169234520617ebe398dff13139d9"]
+    },
+    {
+      "role": "t63_api",
+      "table": "refresh_tokens",
+      "op": "UPDATE",
+      "columns": ["revokedAt", "revokedReason", "rotatedAt"],
+      "sqlSHA256": ["544548a7c1d62f85fb10ce4485f72fadbc6f1053b6898dcfde3da75112be5d4f"]
+    }
+  ],
+  "base": [
+    {
+      "mode": "setup",
+      "expected": true,
+      "exit": 0,
+      "expectedError": null
+    },
+    {
+      "mode": "preflight",
+      "expected": true,
+      "exit": 0,
+      "expectedError": null
+    },
+    {
+      "mode": "preflight",
+      "expected": true,
+      "exit": 0,
+      "expectedError": null
+    },
+    {
+      "mode": "rollback",
+      "expected": true,
+      "exit": 0,
+      "expectedError": null
+    }
+  ],
+  "extension": [
+    {
+      "mode": "preflight",
+      "exit": 1,
+      "expectedMissing": true
+    },
+    {
+      "mode": "setup",
+      "exit": 0,
+      "expectedMissing": false
+    },
+    {
+      "mode": "setup",
+      "exit": 0,
+      "expectedMissing": false
+    },
+    {
+      "mode": "preflight",
+      "exit": 0,
+      "expectedMissing": false
+    },
+    {
+      "mode": "rollback",
+      "exit": 0,
+      "expectedMissing": false
+    },
+    {
+      "mode": "rollback",
+      "exit": 0,
+      "expectedMissing": false
+    },
+    {
+      "mode": "preflight",
+      "exit": 1,
+      "expectedMissing": true
+    }
+  ],
+  "screenshotsSHA256": {
+    "after-login.png": "03eba060a0d6708a2669a4438decb622c1d79d53b1082f7fd9bb4cedd14e98cf",
+    "after-refresh.png": "03eba060a0d6708a2669a4438decb622c1d79d53b1082f7fd9bb4cedd14e98cf"
+  },
+  "retired": {
+    "containersRemoved": 5,
+    "networkRemoved": true,
+    "publishedPorts": 0
+  }
+}
