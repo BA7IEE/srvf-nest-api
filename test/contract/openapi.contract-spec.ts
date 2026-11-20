@@ -313,6 +313,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 0 新 BizCode(复用既有 ACTIVITY_NOT_FOUND=20001);0 schema 变更;
   // 行为契约沿 §11.4 锁定。
   ['get', '/api/app/v1/activities/{id}'],
+  ['get', '/api/app/v1/activities/{id}/registration-insurance'],
 
   // 活动业务改造 v1.1 第 4 批：队员只读 active Form；附件会话由后端中转 multipart，
   // 不开放 provider signed upload URL。④的 canonical 报名命令只接受 operationKey、
@@ -1232,7 +1233,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 675; // Three same-origin HTTPS H5 session routes added.
+const EXPECTED_ROUTE_COUNT = 676; // Includes self-only registration insurance eligibility.
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -1602,6 +1603,7 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   // AppActivityDetailDto:详情出参在旧 17 项基础上只加 registrationMode / formVersion /
   // sessions；sessions 的岗位 projection 独立 App DTO，禁止继承 Admin DTO。
   'AppActivityDetailDto',
+  'AppRegistrationInsuranceEligibilityDto',
   'AppActivityDetailSessionDto',
   'AppActivityDetailSessionPositionDto',
   'AppActivityDirectoryListItemDto',

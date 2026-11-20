@@ -16,9 +16,9 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.1.0 |
-| inputDigest | sha256:8462ec8aa8aaa15a846fa57e5a639ff857d90b08d81e7f5b2ff0790d722f282a |
-| endpoint count | 675 |
-| legacy [auth] count | 187 |
+| inputDigest | sha256:3e50c71781775711d80d740c2f588701dd0f2aa89bbfff29587d5bc298a08f63 |
+| endpoint count | 676 |
+| legacy [auth] count | 188 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
 | per-route truth source | code |
@@ -30,7 +30,7 @@
 | surface | routes | declared in code | undeclared |
 |---|---:|---:|---:|
 | admin | 322 | 322 | 0 |
-| app | 208 | 208 | 0 |
+| app | 209 | 209 | 0 |
 | system | 102 | 102 | 0 |
 | auth | 25 | 25 | 0 |
 | open | 16 | 16 | 0 |
@@ -42,7 +42,7 @@
 |---|---:|
 | public | 36 |
 | rbac | 452 |
-| auth | 187 |
+| auth | 188 |
 | unclassified | 0 |
 
 ## Phase 0 decision record
@@ -67,7 +67,7 @@
 | admin individual | GET /api/admin/v1/meta/participation-overview | RBAC; admission=-; codes=activity-registration.read.record,attendance.read.sheet; require=all; scopes=-; engine=authz-scoped | code | src/modules/meta/meta.controller.ts:71; src/modules/meta/meta.controller.ts:86 |
 | admin individual | POST /api/admin/v1/activities/:id/publish-reviews | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-simple-activities.controller.ts:201; src/modules/activities/controllers/admin-simple-activities.controller.ts:233 |
 | admin individual | POST /api/admin/v1/contents/:id/attachments/confirm | RBAC; admission=-; codes=attachment.upload.content-file,attachment.upload.content-image; require=any; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:248; src/modules/content/content-admin.controller.ts:274 |
-| app tag family | Mobile - Activities (4) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=visibility:app-activity-catalog; engine=authz-scoped | code | src/modules/activities/controllers/app-activities.controller.ts:47 |
+| app tag family | Mobile - Activities (5) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=visibility:app-activity-catalog; engine=authz-scoped | code | src/modules/activities/controllers/app-activities.controller.ts:50 |
 | app tag family | Mobile - Activity Registration Upload Sessions (2) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-registration-upload-sessions.controller.ts:78 |
 | app tag family | Mobile - Activity Registrations (1) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-activity-registrations.controller.ts:29 |
 | app tag family | Mobile - Content (2) | LOGIN_SCOPED; admission=app-member; codes=content.read.record; require=all; scopes=visibility:content-visibility; engine=authz-scoped | code | src/modules/content/content-app.controller.ts:36 |
@@ -117,7 +117,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.1.0",
-  "inputDigest": "sha256:8462ec8aa8aaa15a846fa57e5a639ff857d90b08d81e7f5b2ff0790d722f282a",
+  "inputDigest": "sha256:3e50c71781775711d80d740c2f588701dd0f2aa89bbfff29587d5bc298a08f63",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -3509,6 +3509,22 @@
       "routeKey": "GET /api/app/v1/activities/:id",
       "controller": "AppActivitiesController",
       "handler": "findOne",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [
+          "visibility:app-activity-catalog"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "GET /api/app/v1/activities/:id/registration-insurance",
+      "controller": "AppActivitiesController",
+      "handler": "registrationInsurance",
       "legacy": "auth",
       "policy": {
         "admission": "app-member",
@@ -12945,11 +12961,12 @@
 | GET | /api/admin/v1/users | Admin - Users | rbac | RBAC; admission=-; codes=user.read.account; require=all; scopes=-; engine=rbac-global | code | src/modules/users/users.controller.ts:64; src/modules/users/users.controller.ts:73 |
 | GET | /api/admin/v1/users/:id | Admin - Users | rbac | RBAC; admission=-; codes=user.read.account; require=all; scopes=-; engine=rbac-global | code | src/modules/users/users.controller.ts:114; src/modules/users/users.controller.ts:129 |
 | GET | /api/admin/v1/users/options | Admin - Users | rbac | RBAC; admission=-; codes=user.read.account; require=all; scopes=-; engine=rbac-global | code | src/modules/users/users.controller.ts:77; src/modules/users/users.controller.ts:89 |
-| GET | /api/app/v1/activities | Mobile - Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=visibility:app-activity-catalog; engine=authz-scoped | code | src/modules/activities/controllers/app-activities.controller.ts:47; src/modules/activities/controllers/app-activities.controller.ts:62 |
-| GET | /api/app/v1/activities/:activityId/positions | Mobile - Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=visibility:app-activity-catalog; engine=authz-scoped | code | src/modules/activities/controllers/app-activities.controller.ts:94; src/modules/activities/controllers/app-activities.controller.ts:114 |
+| GET | /api/app/v1/activities | Mobile - Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=visibility:app-activity-catalog; engine=authz-scoped | code | src/modules/activities/controllers/app-activities.controller.ts:50; src/modules/activities/controllers/app-activities.controller.ts:65 |
+| GET | /api/app/v1/activities/:activityId/positions | Mobile - Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=visibility:app-activity-catalog; engine=authz-scoped | code | src/modules/activities/controllers/app-activities.controller.ts:97; src/modules/activities/controllers/app-activities.controller.ts:117 |
 | GET | /api/app/v1/activities/:activityId/sessions/:sessionId/my-punch-state | Mobile - My Activity Punches | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-activity-punches.controller.ts:122; src/modules/attendances/controllers/app-activity-punches.controller.ts:143 |
-| GET | /api/app/v1/activities/:id | Mobile - Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=visibility:app-activity-catalog; engine=authz-scoped | code | src/modules/activities/controllers/app-activities.controller.ts:121; src/modules/activities/controllers/app-activities.controller.ts:144 |
-| GET | /api/app/v1/activities/available | Mobile - Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=visibility:app-activity-catalog; engine=authz-scoped | code | src/modules/activities/controllers/app-activities.controller.ts:69; src/modules/activities/controllers/app-activities.controller.ts:86 |
+| GET | /api/app/v1/activities/:id | Mobile - Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=visibility:app-activity-catalog; engine=authz-scoped | code | src/modules/activities/controllers/app-activities.controller.ts:147; src/modules/activities/controllers/app-activities.controller.ts:170 |
+| GET | /api/app/v1/activities/:id/registration-insurance | Mobile - Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=visibility:app-activity-catalog; engine=authz-scoped | code | src/modules/activities/controllers/app-activities.controller.ts:124; src/modules/activities/controllers/app-activities.controller.ts:142 |
+| GET | /api/app/v1/activities/available | Mobile - Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=visibility:app-activity-catalog; engine=authz-scoped | code | src/modules/activities/controllers/app-activities.controller.ts:72; src/modules/activities/controllers/app-activities.controller.ts:89 |
 | GET | /api/app/v1/contents | Mobile - Content | auth | LOGIN_SCOPED; admission=app-member; codes=content.read.record; require=all; scopes=visibility:content-visibility; engine=authz-scoped | code | src/modules/content/content-app.controller.ts:36; src/modules/content/content-app.controller.ts:50 |
 | GET | /api/app/v1/contents/:id | Mobile - Content | auth | LOGIN_SCOPED; admission=app-member; codes=content.read.record; require=all; scopes=visibility:content-visibility; engine=authz-scoped | code | src/modules/content/content-app.controller.ts:53; src/modules/content/content-app.controller.ts:70 |
 | GET | /api/app/v1/me | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:144; src/modules/users/controllers/app-me.controller.ts:156 |

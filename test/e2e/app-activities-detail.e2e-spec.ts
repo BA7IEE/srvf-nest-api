@@ -262,6 +262,30 @@ describe('App GET /api/app/v1/activities/:id (P2-4b)', () => {
       }
     });
 
+    it('limits insurance preflight to the signed-in member and visible published activity', async () => {
+      const { authHeader } = await setupLinkedUser({
+        username: 'p24_ins_member',
+        memberNo: 'P24-INS-MEMBER',
+      });
+      const published = await createActivity('published', 'insurance-preview');
+      const draft = await createActivity('draft', 'insurance-hidden');
+      const probe = (id: string) =>
+        request(httpServer(app))
+          .get('/api/app/v1/activities/' + id + '/registration-insurance')
+          .set('Authorization', authHeader);
+      const allowed = await probe(published.id).expect(200);
+      expect(allowed.body.data).toEqual({ required: false, eligible: true });
+      await prisma.activity.update({
+        where: { id: published.id },
+        data: { requiresInsurance: true },
+      });
+      expect((await probe(published.id).expect(200)).body.data).toEqual({
+        required: true,
+        eligible: false,
+      });
+      await probe(draft.id).expect(404);
+    });
+
     it('returns a safe failed qualification projection without creating or changing display snapshots', async () => {
       const { authHeader } = await setupLinkedUser({
         username: 'p24b_qualification_display',
