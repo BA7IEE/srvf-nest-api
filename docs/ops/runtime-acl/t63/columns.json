@@ -1,0 +1,278 @@
+{
+  "t63_api": {
+    "Activity": {
+      "SELECT": ["activityTypeCode", "allocationModeCode", "archiveOperationKey", "archiveReasonCode", "archiveRequestHash", "archiveWaitingDays", "archivedAt", "archivedByUserId", "archivedFromStatusCode", "attendanceDeclaredCompleteAt", "attendanceDeclaredCompleteByUserId", "cancelOperationKey", "cancelReason", "cancelRequestHash", "cancelledAt", "cancelledBy", "capacity", "content", "contributionPolicySelectionRevision", "coverAttachmentId", "coverImageKey", "createFromTemplateOperationKey", "createFromTemplateRequestHash", "createdAt", "currentClosureRevision", "currentContributionPolicySelectionRevisionId", "currentEvidenceRevision", "currentPopulationRevision", "currentTimePolicySelectionRevisionId", "defaultCheckInRadiusMeters", "defaultLocationRequired", "deletedAt", "description", "endAt", "galleryAttachmentIds", "galleryImageKeys", "genderRequirementCode", "id", "initiatorMemberId", "isPublicRegistration", "location", "locationLatitude", "locationLongitude", "metricRequirementCode", "metricSelectionRevision", "organizationId", "publishedAt", "publishedBy", "registrationDeadline", "registrationModeCode", "registrationNotes", "registrationSchema", "requiresInsurance", "selectedMetricSetDefinitionHash", "selectedMetricSetVersionId", "selectedTemplateVersionId", "startAt", "startReminderSentAt", "statusCode", "terminateOperationKey", "terminateRequestHash", "terminatedAt", "terminatedByUserId", "terminationReason", "timePolicySelectionRevision", "title", "unarchiveOperationKey", "unarchiveRequestHash", "unarchivedAt", "unarchivedByUserId", "updatedAt", "visibilityCode", "workflowRevision"],
+      "UPDATE": ["currentClosureRevision", "updatedAt"]
+    },
+    "ActivityBatchJob": {
+      "SELECT": ["activityId", "attempts", "availableAt", "completedAt", "createdAt", "createdByUserId", "failed", "id", "jobTypeCode", "lastErrorCode", "leaseExpiresAt", "leaseGeneration", "leaseOwner", "operationKey", "payload", "payloadVersion", "postingBatchId", "requestHash", "sessionId", "settlementVersionId", "skipped", "startedAt", "statusCode", "succeeded", "total", "updatedAt"],
+      "INSERT": ["activityId", "attempts", "availableAt", "createdAt", "createdByUserId", "failed", "id", "jobTypeCode", "leaseGeneration", "operationKey", "payload", "payloadVersion", "requestHash", "skipped", "startedAt", "statusCode", "succeeded", "total", "updatedAt"],
+      "UPDATE": ["completedAt", "failed", "lastErrorCode", "statusCode", "succeeded", "updatedAt"]
+    },
+    "ActivityBatchJobItem": {
+      "SELECT": ["attempts", "createdAt", "id", "itemKey", "jobId", "lastErrorCode", "payloadHash", "resourceId", "resourceType", "resultReference", "safeMessage", "statusCode", "updatedAt"],
+      "INSERT": ["attempts", "createdAt", "id", "itemKey", "jobId", "payloadHash", "resourceId", "resourceType", "statusCode", "updatedAt"],
+      "UPDATE": ["attempts", "lastErrorCode", "resultReference", "safeMessage", "statusCode", "updatedAt"]
+    },
+    "ActivityCapacityBucket": {
+      "SELECT": ["activityId", "id", "occupied"]
+    },
+    "ActivityEvidenceState": {
+      "SELECT": ["activityId", "evidenceRevision", "id", "populationRevision"]
+    },
+    "ActivityInvitation": {
+      "SELECT": ["activityId", "statusCode"]
+    },
+    "ActivityParticipationIdentity": {
+      "SELECT": ["activityId", "currentPositionId", "currentRevision", "currentStatusCode", "id", "memberId", "populationIncluded", "registrationId", "sessionId"]
+    },
+    "ActivityRegistration": {
+      "SELECT": ["activityId", "deletedAt", "id", "statusCode"]
+    },
+    "ActivitySession": {
+      "SELECT": ["activityId", "checkOutCloseAt", "deletedAt", "earlyLeaveThresholdMinutes", "endAt", "id", "lateGraceMinutes", "startAt", "statusCode", "terminationCheckOutDeadline"]
+    },
+    "ActivitySettlementClosureRevision": {
+      "SELECT": ["activityId", "checksHash", "checksJson", "closedAt", "contributionPoints", "evidenceRevision", "evidenceSealId", "id", "personCount", "populationRevision", "postingBatchId", "resultCountsJson", "revision", "serviceHours", "sessionParticipationCount", "settlementVersionId", "statusCode", "workflowRevision"],
+      "INSERT": ["activityId", "checksHash", "checksJson", "closedAt", "closedByUserId", "contributionPoints", "createdAt", "evidenceRevision", "evidenceSealId", "id", "personCount", "populationRevision", "postingBatchId", "resultCountsJson", "revision", "serviceHours", "sessionParticipationCount", "settlementVersionId", "statusCode", "updatedAt", "workflowRevision"]
+    },
+    "ActivityTimeCutoverReceipt": {
+      "SELECT": ["actorUserId", "contentHash", "createdAt", "cutoverAt", "deployedMainSha", "evidenceBundleHash", "formatVersion", "id", "operationKey", "requestHash"]
+    },
+    "AttendanceCorrectionRequest": {
+      "SELECT": ["activityId", "statusCode"]
+    },
+    "AttendancePunchEvent": {
+      "SELECT": ["activityId", "eventTypeCode", "id", "occurredAt", "participationIdentityId", "supersedesEventId"]
+    },
+    "AttendanceSettlementRun": {
+      "SELECT": ["activityId", "createdAt", "currentClosureRevision", "currentDraftVersion", "currentPostedVersion", "currentSubmittedVersion", "id", "statusCode", "updatedAt", "version"],
+      "INSERT": ["activityId", "createdAt", "id", "statusCode", "updatedAt", "version"],
+      "UPDATE": ["currentClosureRevision", "currentDraftVersion", "currentSubmittedVersion", "statusCode", "updatedAt", "version"]
+    },
+    "AttendanceSettlementVersion": {
+      "SELECT": ["contentHash", "contributionRegimeCode", "createdAt", "createdByUserId", "evidenceRevision", "evidenceSealId", "id", "operationKey", "personCount", "populationRevision", "priorVersionId", "requestHash", "returnFromStage", "returnReason", "serviceSegmentCount", "sessionParticipationCount", "settlementRunId", "statusCode", "submittedAt", "updatedAt", "version", "workflowRevision"],
+      "INSERT": ["contentHash", "contributionRegimeCode", "createdAt", "createdByUserId", "evidenceRevision", "evidenceSealId", "id", "operationKey", "personCount", "populationRevision", "priorVersionId", "requestHash", "serviceSegmentCount", "sessionParticipationCount", "settlementRunId", "statusCode", "submittedAt", "updatedAt", "version", "workflowRevision"],
+      "UPDATE": ["operationKey", "requestHash", "returnFromStage", "returnReason", "statusCode", "updatedAt"]
+    },
+    "CapacityReservation": {
+      "SELECT": ["bucketId", "status"]
+    },
+    "ContributionRule": {
+      "SELECT": ["activityTypeCode", "attendanceRoleCode", "deletedAt", "durationThreshold", "id", "pointsAbove", "pointsBelow", "status"]
+    },
+    "CorrectionApplication": {
+      "SELECT": ["id", "newPostingBatchId"]
+    },
+    "CorrectionPendingTimeAllocation": {
+      "SELECT": ["applicationId", "targetSegmentRevisionId"]
+    },
+    "EvidenceSeal": {
+      "SELECT": ["activityId", "evidenceRevision", "id", "populationRevision", "sealRevision", "sealedAt", "statusCode", "workflowRevision"],
+      "INSERT": ["activityId", "allWindowsClosedAt", "contentHash", "createdAt", "evidenceRevision", "id", "manualReviewPendingCount", "openSegmentCount", "populationCountBySession", "populationCountDistinct", "populationRevision", "sealRevision", "sealedAt", "sealedByUserId", "statusCode", "updatedAt", "workflowRevision"],
+      "UPDATE": ["statusCode", "updatedAt"]
+    },
+    "LedgerPostingBatch": {
+      "SELECT": ["batchRevision", "id", "settlementRunId", "settlementVersionId", "statusCode"],
+      "INSERT": ["batchRevision", "createdAt", "failureCount", "id", "preparedByUserId", "preparedCount", "requestHash", "requestKey", "settlementRunId", "settlementVersionId", "statusCode", "totalCount", "updatedAt", "version"]
+    },
+    "Member": {
+      "SELECT": ["createdAt", "deletedAt", "gradeCode", "id", "memberNo", "memberOriginCode", "memberSinceDate", "nickname", "realName", "status", "updatedAt"]
+    },
+    "MemberContributionDayState": {
+      "SELECT": ["committedCreditedPoints", "ledgerDate", "memberId"]
+    },
+    "OfflinePunchReviewItem": {
+      "SELECT": ["activityId", "id", "statusCode"]
+    },
+    "Organization": {
+      "SELECT": ["deletedAt", "id", "status"]
+    },
+    "ParticipantServiceSegmentRevision": {
+      "SELECT": ["checkInAt", "checkOutAt", "earlyLeaveFlag", "exceptionFlagsJson", "id", "lateFlag", "participationIdentityId", "resultCode", "revision", "segmentKey", "serviceHours", "sourceCheckInEventId", "sourceCloseEventId", "statusCode"],
+      "INSERT": ["baseRevisionId", "checkInAt", "checkOutAt", "createdAt", "earlyLeaveFlag", "exceptionFlagsJson", "id", "lateFlag", "participationIdentityId", "resultCode", "revision", "segmentKey", "serviceHours", "sourceCheckInEventId", "sourceCloseEventId", "statusCode", "updatedAt"],
+      "UPDATE": ["statusCode", "updatedAt"]
+    },
+    "ParticipantSettlementResultRevision": {
+      "SELECT": ["adjustmentReason", "calculatedContributionPoints", "calculatedServiceHours", "correctionRequestId", "earlyLeaveFlag", "exceptionFlagsJson", "id", "lateFlag", "participationIdentityId", "recognizedContributionPoints", "recognizedServiceHours", "resultCode", "revision", "settlementVersionId", "statusCode"],
+      "INSERT": ["adjustmentReason", "baseResultRevisionId", "calculatedContributionPoints", "calculatedServiceHours", "correctionRequestId", "createdAt", "earlyLeaveFlag", "exceptionFlagsJson", "id", "lateFlag", "participationIdentityId", "recognizedContributionPoints", "recognizedServiceHours", "resultCode", "revision", "settlementVersionId", "statusCode", "updatedAt"]
+    },
+    "ParticipationLedgerEntry": {
+      "SELECT": ["activityId", "cappedOutPointsDelta", "creditedPointsDelta", "entryKey", "entryTypeCode", "ledgerDate", "memberId", "participationIdentityId", "postingBatchId", "recognizedPointsDelta", "resultRevisionId", "serviceHoursDelta", "sessionId"]
+    },
+    "ParticipationTimeCorrectionManifest": {
+      "SELECT": ["activityId", "baseContentHash", "baseSettlementVersionId", "contentHash", "correctionRequestId", "createdAt", "expectedEntryCount", "expectedRootCount", "formatVersion", "id", "postingBatchId", "predecessorManifestId", "replacementSecondsTotal", "requestHash", "reversalSecondsTotal", "rootManifestId", "settlementRunId", "settlementVersionId", "sourceProofHash", "sourceProofId"]
+    },
+    "SettlementReviewAction": {
+      "SELECT": ["actedAt", "actionCode", "actorUserId", "id", "operationKey", "requestHash", "settlementVersionId", "stageCode"],
+      "INSERT": ["actedAt", "actionCode", "actorUserId", "createdAt", "id", "note", "operationKey", "requestHash", "settlementVersionId", "stageCode"]
+    },
+    "User": {
+      "SELECT": ["avatarAttachmentId", "avatarKey", "createdAt", "deletedAt", "email", "id", "lastLoginAt", "memberId", "nickname", "openid", "passwordHash", "phone", "phoneVerifiedAt", "role", "status", "updatedAt", "username", "wecomIdentityVersion"],
+      "UPDATE": ["lastLoginAt", "updatedAt"]
+    },
+    "activity_publish_reviews": {
+      "SELECT": ["activityId", "id", "status"]
+    },
+    "activity_responsibility_assignments": {
+      "SELECT": ["activityId", "id", "memberId", "responsibilityType", "startedAt", "status"]
+    },
+    "audit_logs": {
+      "SELECT": ["actorCredentialId", "actorRoleSnap", "actorServicePrincipalId", "actorUserId", "context", "createdAt", "event", "id", "onBehalfOfRoleSnap", "onBehalfOfUserId", "resourceId", "resourceType", "shadowProofRequired", "success"],
+      "INSERT": ["actorRoleSnap", "actorUserId", "context", "createdAt", "event", "id", "resourceId", "resourceType", "shadowProofRequired", "success"]
+    },
+    "member_organization_memberships": {
+      "SELECT": ["deletedAt", "endedAt", "id", "memberId", "membershipType", "organizationId", "startedAt", "status"]
+    },
+    "notification_outbox_intents": {
+      "SELECT": ["aggregateId", "aggregateType", "attempts", "availableAt", "completedAt", "createdAt", "deadAt", "destinationRef", "destinationType", "eventKey", "eventType", "id", "lastErrorClass", "lastErrorCode", "leaseExpiresAt", "leaseOwner", "lockedAt", "payload", "payloadVersion", "preparedAt", "preparedTemplateId", "sentAt", "status", "updatedAt"],
+      "INSERT": ["aggregateId", "aggregateType", "attempts", "availableAt", "createdAt", "destinationRef", "destinationType", "eventKey", "eventType", "id", "payload", "payloadVersion", "status", "updatedAt"]
+    },
+    "organization_closure": {
+      "SELECT": ["ancestorId", "depth", "descendantId"]
+    },
+    "organization_position_assignments": {
+      "SELECT": ["deletedAt", "endedAt", "id", "memberId", "organizationId", "positionId", "startedAt", "status"]
+    },
+    "organization_supervision_assignments": {
+      "SELECT": ["deletedAt", "endedAt", "id", "organizationId", "scopeMode", "startedAt", "status", "supervisorMemberId"]
+    },
+    "permissions": {
+      "SELECT": ["code", "id"]
+    },
+    "refresh_tokens": {
+      "SELECT": ["createdAt", "expiresAt", "familyId", "id", "ipFirstSeen", "replacedById", "revokedAt", "revokedReason", "rotatedAt", "tokenHash", "uaFirstSeen", "userId"],
+      "INSERT": ["createdAt", "expiresAt", "familyId", "id", "ipFirstSeen", "tokenHash", "uaFirstSeen", "userId"]
+    },
+    "role_bindings": {
+      "SELECT": ["deletedAt", "endedAt", "id", "principalId", "principalType", "roleId", "scopeActivityId", "scopeOrgId", "scopeResourceId", "scopeResourceType", "scopeType", "startedAt", "status"]
+    },
+    "role_permissions": {
+      "SELECT": ["id", "permissionId", "roleId"]
+    },
+    "roles": {
+      "SELECT": ["code", "deletedAt", "id"]
+    },
+    "throttler_buckets": {
+      "SELECT": ["blockedUntil", "createdAt", "hitExpiresAt", "id", "key", "retentionAt", "throttlerName", "updatedAt", "windowExpiresAt"],
+      "INSERT": ["createdAt", "hitExpiresAt", "id", "key", "retentionAt", "throttlerName", "updatedAt", "windowExpiresAt"],
+      "UPDATE": ["blockedUntil", "hitExpiresAt", "retentionAt", "updatedAt", "windowExpiresAt"]
+    }
+  },
+  "t63_worker": {
+    "Activity": {
+      "SELECT": ["deletedAt", "id", "startAt", "statusCode", "title"],
+      "UPDATE": ["updatedAt"]
+    },
+    "ActivityBatchJob": {
+      "SELECT": ["activityId", "attempts", "availableAt", "completedAt", "createdAt", "createdByUserId", "failed", "id", "jobTypeCode", "lastErrorCode", "leaseExpiresAt", "leaseGeneration", "leaseOwner", "operationKey", "payload", "payloadVersion", "postingBatchId", "requestHash", "sessionId", "settlementVersionId", "skipped", "startedAt", "statusCode", "succeeded", "total", "updatedAt"],
+      "INSERT": ["activityId", "attempts", "availableAt", "createdAt", "failed", "id", "jobTypeCode", "leaseGeneration", "operationKey", "payload", "payloadVersion", "postingBatchId", "requestHash", "settlementVersionId", "skipped", "statusCode", "succeeded", "total", "updatedAt"],
+      "UPDATE": ["attempts", "availableAt", "completedAt", "failed", "lastErrorCode", "leaseExpiresAt", "leaseGeneration", "leaseOwner", "payload", "skipped", "startedAt", "statusCode", "succeeded", "updatedAt"]
+    },
+    "ActivityBatchJobItem": {
+      "SELECT": ["attempts", "createdAt", "id", "itemKey", "jobId", "lastErrorCode", "payloadHash", "resourceId", "resourceType", "resultReference", "safeMessage", "statusCode", "updatedAt"],
+      "INSERT": ["attempts", "createdAt", "id", "itemKey", "jobId", "resourceId", "resourceType", "statusCode", "updatedAt"],
+      "UPDATE": ["attempts", "lastErrorCode", "payloadHash", "safeMessage", "statusCode", "updatedAt"]
+    },
+    "ActivityInvitation": {
+      "SELECT": ["activityId", "statusCode"]
+    },
+    "ActivityParticipationIdentity": {
+      "SELECT": ["activityId", "currentStatusCode", "id", "memberId", "sessionId"]
+    },
+    "ActivitySession": {
+      "SELECT": ["activityId", "deletedAt", "startAt", "statusCode"]
+    },
+    "ActivitySettlementContributionRevision": {
+      "SELECT": ["activityId", "baseSettlementVersionId", "correctionApplicationId", "correctionManifestId", "correctionPostingBatchId", "correctionSourceSetHash", "correctionTimeSourceProofId", "effectiveTimeSettlementVersionId", "id", "kindCode", "previousContributionRevisionId", "regimeCode", "rootTimeManifestId", "settlementRunId", "settlementVersionId", "sourceKindCode", "timeRevisionId"]
+    },
+    "ActivitySettlementTimeRevision": {
+      "SELECT": ["activityId", "bucketContentHash", "bucketCount", "createdAt", "createdByUserId", "draftContentHash", "evidenceRevision", "evidenceSealId", "id", "kindCode", "populationRevision", "previousTimeRevisionId", "revision", "settlementRunId", "settlementVersionId", "sourceCount", "sourceDraftTimeRevisionId", "sourceSetHash", "workflowRevision"]
+    },
+    "ActivityTimeCutoverReceipt": {
+      "SELECT": ["actorUserId", "contentHash", "createdAt", "cutoverAt", "deployedMainSha", "evidenceBundleHash", "formatVersion", "id", "operationKey", "requestHash"]
+    },
+    "AttendanceCorrectionRequest": {
+      "SELECT": ["activityId", "baseSettlementVersionId", "id", "requestedChangeJson", "settlementRunId"]
+    },
+    "AttendanceSettlementRun": {
+      "SELECT": ["activityId", "createdAt", "currentClosureRevision", "currentDraftVersion", "currentPostedVersion", "currentSubmittedVersion", "id", "statusCode", "updatedAt", "version"],
+      "UPDATE": ["currentPostedVersion", "statusCode", "updatedAt", "version"]
+    },
+    "AttendanceSettlementVersion": {
+      "SELECT": ["contributionRegimeCode", "id", "settlementRunId", "statusCode", "version"],
+      "UPDATE": ["updatedAt"]
+    },
+    "CorrectionApplication": {
+      "SELECT": ["correctionRequestId", "id", "newPostingBatchId", "newSettlementVersionId"]
+    },
+    "CorrectionPendingTimeAllocation": {
+      "SELECT": ["applicationId", "targetSegmentRevisionId"]
+    },
+    "LedgerPostingBatch": {
+      "SELECT": ["baselineJsonHash", "batchRevision", "committedAt", "committedByUserId", "createdAt", "failedAt", "failureCount", "id", "preparedAt", "preparedByUserId", "preparedCount", "requestHash", "requestKey", "settlementRunId", "settlementVersionId", "statusCode", "totalCount", "updatedAt", "version", "voidedAt"],
+      "UPDATE": ["baselineJsonHash", "committedAt", "committedByUserId", "preparedAt", "preparedCount", "statusCode", "updatedAt", "version"]
+    },
+    "MemberContributionDayState": {
+      "SELECT": ["committedCreditedPoints", "ledgerDate", "memberId", "version"],
+      "INSERT": ["committedCreditedPoints", "createdAt", "id", "ledgerDate", "memberId", "updatedAt", "version"],
+      "UPDATE": ["committedCreditedPoints", "latestBatchId", "updatedAt", "version"]
+    },
+    "ParticipantServiceSegmentRevision": {
+      "SELECT": ["checkInAt", "checkOutAt", "id", "participationIdentityId", "resultCode", "statusCode"],
+      "UPDATE": ["effectiveBatchId", "statusCode", "updatedAt"]
+    },
+    "ParticipantSettlementDay": {
+      "SELECT": ["cappedOutPoints", "creditedPoints", "ledgerDate", "recognizedPoints", "resultRevisionId", "sequenceStartAt", "serviceHours", "stableOrderKey"],
+      "INSERT": ["cappedOutPoints", "createdAt", "creditedPoints", "id", "ledgerDate", "memberId", "recognizedPoints", "resultRevisionId", "sequenceStartAt", "serviceHours", "stableOrderKey", "updatedAt"],
+      "UPDATE": ["cappedOutPoints", "creditedPoints", "recognizedPoints", "sequenceStartAt", "serviceHours", "stableOrderKey", "updatedAt"]
+    },
+    "ParticipantSettlementResultRevision": {
+      "SELECT": ["id", "participationIdentityId", "recognizedContributionPoints", "recognizedServiceHours", "settlementVersionId", "statusCode"],
+      "UPDATE": ["statusCode", "updatedAt"]
+    },
+    "ParticipationLedgerEntry": {
+      "SELECT": ["creditedPointsDelta", "entryTypeCode", "ledgerDate", "memberId", "postingBatchId", "resultRevisionId"],
+      "INSERT": ["activityId", "cappedOutPointsDelta", "createdAt", "creditedPointsDelta", "entryKey", "entryTypeCode", "id", "ledgerDate", "memberId", "operationKey", "participationIdentityId", "postingBatchId", "recognizedPointsDelta", "requestHash", "resultRevisionId", "serviceHoursDelta", "sessionId"]
+    },
+    "ParticipationTimeCorrectionCommitReceipt": {
+      "SELECT": ["contentHash", "manifestId", "postingBatchId"]
+    },
+    "ParticipationTimeCorrectionManifest": {
+      "SELECT": ["activityId", "baseContentHash", "baseSettlementVersionId", "contentHash", "correctionRequestId", "createdAt", "expectedEntryCount", "expectedRootCount", "formatVersion", "id", "postingBatchId", "predecessorManifestId", "replacementSecondsTotal", "requestHash", "reversalSecondsTotal", "rootManifestId", "settlementRunId", "settlementVersionId", "sourceProofHash", "sourceProofId"]
+    },
+    "ParticipationTimeLedgerManifest": {
+      "SELECT": ["activityId", "bucketContentHash", "contentHash", "createdAt", "expectedEntryCount", "formatVersion", "id", "postingBatchId", "recognizedSecondsTotal", "settlementRunId", "settlementVersionId", "sourceSetHash", "timeRevisionId"]
+    },
+    "SettlementReviewAction": {
+      "SELECT": ["actedAt", "actionCode", "actorUserId", "id", "settlementVersionId", "stageCode"]
+    },
+    "User": {
+      "SELECT": ["id", "memberId", "role", "status", "username"]
+    },
+    "activity_responsibility_assignments": {
+      "SELECT": ["activityId", "id", "memberId", "responsibilityType", "startedAt", "status"]
+    },
+    "attachments": {
+      "SELECT": ["checksum", "createdAt", "etag", "id", "key", "mime", "size"]
+    },
+    "audit_logs": {
+      "SELECT": ["actorCredentialId", "actorRoleSnap", "actorServicePrincipalId", "actorUserId", "context", "createdAt", "event", "id", "onBehalfOfRoleSnap", "onBehalfOfUserId", "resourceId", "resourceType", "shadowProofRequired", "success"],
+      "INSERT": ["actorRoleSnap", "actorUserId", "context", "createdAt", "event", "id", "resourceId", "resourceType", "shadowProofRequired", "success"]
+    },
+    "notification_outbox_intents": {
+      "SELECT": ["aggregateId", "aggregateType", "attempts", "availableAt", "completedAt", "createdAt", "deadAt", "destinationRef", "destinationType", "eventKey", "eventType", "id", "lastErrorClass", "lastErrorCode", "leaseExpiresAt", "leaseOwner", "lockedAt", "payload", "payloadVersion", "preparedAt", "preparedTemplateId", "sentAt", "status", "updatedAt"],
+      "INSERT": ["aggregateId", "aggregateType", "attempts", "availableAt", "createdAt", "destinationRef", "destinationType", "eventKey", "eventType", "id", "payload", "payloadVersion", "status", "updatedAt"]
+    },
+    "storage_object_operations": {
+      "SELECT": ["attempts", "availableAt", "createdAt", "id", "kind", "leaseExpiresAt", "status", "storageObjectId"],
+      "UPDATE": ["updatedAt"]
+    },
+    "storage_objects": {
+      "SELECT": ["id", "key"]
+    },
+    "team_join_applications": {
+      "SELECT": ["memberId"]
+    }
+  }
+}

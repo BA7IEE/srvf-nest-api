@@ -1,0 +1,444 @@
+{
+  "scope": "implementation self-test on newly migrated internal PG16; synthetic accounts",
+  "recipe_evidence": "PASS",
+  "isolated_business": "PASS",
+  "T62": {
+    "login": [
+      {
+        "path": "/api/auth/v1/h5/login",
+        "reqId": "cmwoyuw848950a4b36cf81e6769b1deeb",
+        "http": 500,
+        "code": 50000
+      },
+      {
+        "path": "/api/auth/v1/login",
+        "reqId": "cmwoyuw9710f92719f238a88987256f03",
+        "http": 500,
+        "code": 50000
+      }
+    ],
+    "loginDeniedObject": "throttler_buckets",
+    "worker": {
+      "deniedObject": "ActivityBatchJob",
+      "sqlstate": "42501",
+      "queue": {
+        "at": "2026-11-20T12:40:30.427015+00:00",
+        "job": "cmwoyu0an0003nv01da5c44y7",
+        "status": "pending",
+        "attempts": 0,
+        "generation": 0,
+        "owner": null,
+        "started": null,
+        "completed": null,
+        "jobs": 1,
+        "batches": 0,
+        "ledgerRows": 0
+      }
+    }
+  },
+  "T63": {
+    "target": {
+      "container": "srvf-t63-aa15fce83b-pg",
+      "systemIdentifier": "7710245127206436903",
+      "network": "srvf-t63-aa15fce83b-net",
+      "apiRevision": "65bad1ccb7e6a4bb7a3cda46b49512f092d04779",
+      "image": "sha256:ca892d7090c4dee48544567cfac1d0cd41862c7585f2cd149f3a8252bbcda26f"
+    },
+    "pairing": {
+      "ready": {
+        "http": 200,
+        "code": 0,
+        "db": "up",
+        "reqId": "cmwp0mjbu2a828d439bb6aafa236790b0"
+      },
+      "staticFiles": {
+        "admin-26261168": 310,
+        "h5-ae2e3b0a": 40
+      }
+    },
+    "columnsSHA256": "9edd8e7a9d95e7165b989c87c1ce35928b084ab2fe571e89b42f42f277ae9be5",
+    "objects_operationGroups_columnOperations": {
+      "t63_api": [
+        45,
+        68,
+        692
+      ],
+      "t63_worker": [
+        32,
+        50,
+        425
+      ]
+    },
+    "planProjections": 305,
+    "sqlProjectionsSHA256": "55a4a35f2843f2cbaf6945faca96ba4b225544a3a10a90fd73b9071bf1a8ed60",
+    "http": [
+      {
+        "step": "login-member",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp0mjww7e53d2e44663531766291181"
+      },
+      {
+        "step": "login-other",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp0mk9xeba9fe867b9aa0cabac454d2"
+      },
+      {
+        "step": "login-owner",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp0mkka324d4c932e3096de9d0182a8"
+      },
+      {
+        "step": "login-first",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp0mkuf790bd5a49ca51f785c10b4e6"
+      },
+      {
+        "step": "login-final",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp0ml4fda4a8c1904bb9afb1f9c4f22"
+      },
+      {
+        "step": "seal",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp0mlehf5b9bb44277818abbfcbedcd"
+      },
+      {
+        "step": "generate-denied",
+        "http": 403,
+        "code": 30100,
+        "reqId": "cmwp0mlg2324dcf591ff95870775f7ae6"
+      },
+      {
+        "step": "generate",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp0mlhbf994bc9bab31edca3c903658",
+        "replayed": false
+      },
+      {
+        "step": "submit",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp0mljh696ea934bfd036cbbda8bf46",
+        "replayed": false
+      },
+      {
+        "step": "first-review-denied",
+        "http": 403,
+        "code": 30100,
+        "reqId": "cmwp0mlkyca0fe39f4e4e233f1506990d"
+      },
+      {
+        "step": "first-review",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp0mllf312e687ff9da4c785afcf2cb",
+        "replayed": false
+      },
+      {
+        "step": "final-review",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp0mlnc05e4de078b15cc2f52ca2445",
+        "replayed": false
+      },
+      {
+        "step": "close",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp0motg3408a93ebc90c93b2a3d1fc1",
+        "closureRevisionId": "cmwp0mour001nnv01op2u9v1i",
+        "replayed": false,
+        "checksPassed": 8,
+        "checksTotal": 8
+      },
+      {
+        "step": "close-repeat",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp0movhade5b257b3dc9814cf863b83",
+        "closureRevisionId": "cmwp0mour001nnv01op2u9v1i",
+        "replayed": true,
+        "checksPassed": 8,
+        "checksTotal": 8
+      },
+      {
+        "step": "self-ledger",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp0mow67562c59ac3ffeadae5e1b674",
+        "rows": 2
+      },
+      {
+        "step": "other-self-ledger",
+        "http": 200,
+        "code": 0,
+        "reqId": "cmwp0mowof37984236fe1b8b04c5c2298",
+        "rows": 0
+      },
+      {
+        "step": "other-member-ledger-denied",
+        "http": 403,
+        "code": 30100,
+        "reqId": "cmwp0mox01e8e0ce1856024b2cd5fe041"
+      },
+      {
+        "step": "anonymous-denied",
+        "http": 401,
+        "code": 40100,
+        "reqId": "cmwp0moxgb5f73dfd656e1263db4b4810"
+      }
+    ],
+    "audit": {
+      "login-member": {
+        "reqId": "cmwp0mjww7e53d2e44663531766291181",
+        "actor": "cmwp0mesu000ir20198suovod",
+        "event": "auth.login",
+        "success": true
+      },
+      "login-other": {
+        "reqId": "cmwp0mk9xeba9fe867b9aa0cabac454d2",
+        "actor": "cmwp0mf0s000nr2017hxh7tn3",
+        "event": "auth.login",
+        "success": true
+      },
+      "seal": {
+        "reqId": "cmwp0mlehf5b9bb44277818abbfcbedcd",
+        "actor": "cmwp0me4n0003r201b5jzwiy2",
+        "event": "activity.publish",
+        "success": true
+      },
+      "generate": {
+        "reqId": "cmwp0mlhbf994bc9bab31edca3c903658",
+        "actor": "cmwp0me4n0003r201b5jzwiy2",
+        "event": "activity.publish",
+        "success": true
+      },
+      "submit": {
+        "reqId": "cmwp0mljh696ea934bfd036cbbda8bf46",
+        "actor": "cmwp0me4n0003r201b5jzwiy2",
+        "event": "activity.publish",
+        "success": true
+      },
+      "first-review": {
+        "reqId": "cmwp0mllf312e687ff9da4c785afcf2cb",
+        "actor": "cmwp0mecr0008r201vtmvluq9",
+        "event": "activity.publish",
+        "success": true
+      },
+      "final-review": {
+        "reqId": "cmwp0mlnc05e4de078b15cc2f52ca2445",
+        "actor": "cmwp0meks000dr201zr8ap9kc",
+        "event": "activity.publish",
+        "success": true
+      },
+      "close": {
+        "reqId": "cmwp0motg3408a93ebc90c93b2a3d1fc1",
+        "actor": "cmwp0me4n0003r201b5jzwiy2",
+        "event": "activity.publish",
+        "success": true
+      }
+    },
+    "database": {
+      "batches": 1,
+      "batchId": "cmwp0mloe001gnv0110qo4t93",
+      "committed": 1,
+      "closed": 1,
+      "closedRuns": 1,
+      "closedPointers": 1,
+      "ledger": 2,
+      "uniqueEntries": 2,
+      "memberRows": 2,
+      "otherRows": 0,
+      "inputSeconds": 2340,
+      "hours": 0.65,
+      "points": 1.5,
+      "ordinaryUsers": 5,
+      "ordinaryBindings": 0,
+      "jobs": [
+        {
+          "id": "cmwp0mo000001pc01p9akc301",
+          "status": "succeeded",
+          "failed": 0,
+          "attempts": 1,
+          "generation": 1
+        }
+      ]
+    },
+    "transitions": [
+      {
+        "relation": "ActivityBatchJob",
+        "op": "INSERT",
+        "role": "t63_worker",
+        "login": "t63_worker",
+        "pid": 212,
+        "xid": "1418",
+        "id": "cmwp0mo000001pc01p9akc301",
+        "from": null,
+        "to": "pending",
+        "type": "settlement_prepare",
+        "batch": "cmwp0mloe001gnv0110qo4t93",
+        "attempts": "0",
+        "generation": "0",
+        "leaseOwner": null,
+        "committedBy": null,
+        "actor": null,
+        "at": "2026-11-20 13:29:16.805 UTC"
+      },
+      {
+        "relation": "ActivityBatchJob",
+        "op": "UPDATE",
+        "role": "t63_worker",
+        "login": "t63_worker",
+        "pid": 212,
+        "xid": "1419",
+        "id": "cmwp0mo000001pc01p9akc301",
+        "from": "pending",
+        "to": "processing",
+        "type": "settlement_prepare",
+        "batch": "cmwp0mloe001gnv0110qo4t93",
+        "attempts": "1",
+        "generation": "1",
+        "leaseOwner": "activity-batch-worker:0d3c94fb-c7df-41d5-8882-b49b639cec84",
+        "committedBy": null,
+        "actor": null,
+        "at": "2026-11-20 13:29:16.839 UTC"
+      },
+      {
+        "relation": "ParticipationLedgerEntry",
+        "op": "INSERT",
+        "role": "t63_worker",
+        "login": "t63_worker",
+        "pid": 212,
+        "xid": "1420",
+        "id": "96dd6383-76db-425a-a610-6c4af1a543ce",
+        "from": null,
+        "to": null,
+        "type": null,
+        "batch": "cmwp0mloe001gnv0110qo4t93",
+        "attempts": null,
+        "generation": null,
+        "leaseOwner": null,
+        "committedBy": null,
+        "actor": null,
+        "at": "2026-11-20 13:29:16.865 UTC"
+      },
+      {
+        "relation": "ParticipationLedgerEntry",
+        "op": "INSERT",
+        "role": "t63_worker",
+        "login": "t63_worker",
+        "pid": 212,
+        "xid": "1420",
+        "id": "60e8c362-670f-4df0-9b8b-02d0cb95eead",
+        "from": null,
+        "to": null,
+        "type": null,
+        "batch": "cmwp0mloe001gnv0110qo4t93",
+        "attempts": null,
+        "generation": null,
+        "leaseOwner": null,
+        "committedBy": null,
+        "actor": null,
+        "at": "2026-11-20 13:29:16.866 UTC"
+      },
+      {
+        "relation": "ActivityBatchJob",
+        "op": "UPDATE",
+        "role": "t63_worker",
+        "login": "t63_worker",
+        "pid": 212,
+        "xid": "1421",
+        "id": "cmwp0mo000001pc01p9akc301",
+        "from": "processing",
+        "to": "succeeded",
+        "type": "settlement_prepare",
+        "batch": "cmwp0mloe001gnv0110qo4t93",
+        "attempts": "1",
+        "generation": "1",
+        "leaseOwner": "activity-batch-worker:0d3c94fb-c7df-41d5-8882-b49b639cec84",
+        "committedBy": null,
+        "actor": null,
+        "at": "2026-11-20 13:29:16.883 UTC"
+      },
+      {
+        "relation": "LedgerPostingBatch",
+        "op": "UPDATE",
+        "role": "t63_worker",
+        "login": "t63_worker",
+        "pid": 212,
+        "xid": "1423",
+        "id": "cmwp0mloe001gnv0110qo4t93",
+        "from": "ready",
+        "to": "committed",
+        "type": null,
+        "batch": null,
+        "attempts": null,
+        "generation": null,
+        "leaseOwner": null,
+        "committedBy": "cmwp0meks000dr201zr8ap9kc",
+        "actor": null,
+        "at": "2026-11-20 13:29:16.918 UTC"
+      },
+      {
+        "relation": "ActivitySettlementClosureRevision",
+        "op": "INSERT",
+        "role": "t63_api",
+        "login": "t63_api",
+        "pid": 192,
+        "xid": "1425",
+        "id": "cmwp0mour001nnv01op2u9v1i",
+        "from": null,
+        "to": "active",
+        "type": null,
+        "batch": "cmwp0mloe001gnv0110qo4t93",
+        "attempts": null,
+        "generation": null,
+        "leaseOwner": null,
+        "committedBy": null,
+        "actor": "cmwp0me4n0003r201b5jzwiy2",
+        "at": "2026-11-20 13:29:17.909 UTC"
+      }
+    ],
+    "actualPools": [
+      "t63_api|t63_lab|192.168.207.4|t63_api|191",
+      "t63_api|t63_lab|192.168.207.4|t63_api|192",
+      "t63_worker|t63_lab|192.168.207.5|t63_worker|211",
+      "t63_worker|t63_lab|192.168.207.5|t63_worker|212"
+    ],
+    "rollback": {
+      "t63_api": {
+        "db": "t63_lab",
+        "role": "t63_api",
+        "login": "t63_api",
+        "table": "throttler_buckets",
+        "sqlstate": "42501"
+      },
+      "t63_worker": {
+        "db": "t63_lab",
+        "role": "t63_worker",
+        "login": "t63_worker",
+        "table": "ActivityBatchJob",
+        "sqlstate": "42501"
+      }
+    },
+    "retired": {
+      "containersRemoved": 4,
+      "networkRemoved": true,
+      "publishedPorts": 0
+    },
+    "outOfScope": [
+      "lease expiry / parallel reclaim",
+      "shared DB",
+      "public / production",
+      "end-user browser or device"
+    ],
+    "evidenceIndexSHA256": "a6b70cb37a0b663e709a5b7f25b47db6ccf98e19f66ce68145b918b18e4e9d5a"
+  }
+}
