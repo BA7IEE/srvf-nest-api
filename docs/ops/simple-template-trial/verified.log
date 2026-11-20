@@ -1,0 +1,23 @@
+NOTICE:  role "r5_human_queue_login_20261030_q1" has already been granted membership in role "r5_boundary_caller_h7c6" by role "postgres"
+NOTICE:  role "r5_human_queue_login_20261030_q1" has already been granted membership in role "r5_boundary_caller_h7c6" by role "postgres"
+NOTICE:  role "r5_untrusted_caller_login_20261030_q1" has already been granted membership in role "r5_boundary_caller_h7c6" by role "postgres"
+NOTICE:  role "r5_untrusted_caller_login_20261030_q1" has already been granted membership in role "r5_boundary_caller_h7c6" by role "postgres"
+Loaded Prisma config from prisma.config.ts.
+
+Prisma config detected, skipping environment variable loading.
+V3 version/hash 1 0d2438eabcd7e6e872b054c401879dec0be6eb97368b04ceb4bb52951a73781d
+PASS ordinary member organization-scoped creation authorization
+PASS template initialized metric; actor and organization true
+initial review pending
+PASS injected publish audit failure leaves counts and workflow intact
+publish retry replayed
+create retry replayed
+PASS independent reviewer published
+cross-object 30100
+PASS published owner change review pending
+generated bindings [["activity-owner","ACTIVITY","MEMBER","ACTIVE"]]
+intents [["notification.targeted","activity_publish_review","member","pending"],["notification.system-broadcast","activity","visibility","pending"]]
+PASS isolated retirement; ended bindings, fenced dead unsent intents, retained audit rows 1 2 5
+PASS retired two organization bindings, two fixture accounts, one template; repeat delta zero. Published activity and pending proposal retained until isolated stack retirement.
+
+PASS exact DB permission withdrawal; synthetic audit exported before disposable volume retirement

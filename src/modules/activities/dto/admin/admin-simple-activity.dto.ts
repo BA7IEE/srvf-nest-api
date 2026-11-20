@@ -200,4 +200,14 @@ export class AdminSubmitSimpleActivityReviewDto {
   @IsBoolean()
   @Equals(true)
   confirmation!: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      '确认时 GET simple-draft 返回的 draftHash；提供时拒绝已变更的简单草稿。省略保留旧版提交最新草稿语义。仅接受现行简单模板配置白名单；资格规则或模板外专业配置须使用专业流程。保留模板默认值不代表用户已逐项阅读，非完整 proposal 确认令牌。',
+    pattern: '^[0-9a-f]{64}$',
+  })
+  @OmittableOnly()
+  @IsString()
+  @Matches(/^[0-9a-f]{64}$/)
+  expectedDraftHash?: string;
 }

@@ -3,11 +3,11 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:9b4e0d3670e7812cd693ab3cbd23bc51411bb1fb715211c7490a1651972dddd9
+// inputDigest: sha256:f5309fee1c1e55e84a4bda64dec69c611c12f75c721f12e0a171b906b3177079
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
-import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
-export type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, PageResultDto, UserLinkedMemberDto, UserResponseDto };
+import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, AdminMetricBooleanConfigurationDto, AdminMetricChoiceConfigurationDto, AdminMetricChoiceOptionDto, AdminMetricDecimalConfigurationDto, AdminMetricDefinitionV1Dto, AdminMetricIntegerConfigurationDto, AdminMetricSetDefinitionV1Dto, AdminMetricSetItemDto, AdminMetricTextConfigurationDto, ContentAttachmentDto, PageResultDto, ReviewMetricDefinitionDto, ReviewMetricSetDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
+export type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, AdminMetricBooleanConfigurationDto, AdminMetricChoiceConfigurationDto, AdminMetricChoiceOptionDto, AdminMetricDecimalConfigurationDto, AdminMetricDefinitionV1Dto, AdminMetricIntegerConfigurationDto, AdminMetricSetDefinitionV1Dto, AdminMetricSetItemDto, AdminMetricTextConfigurationDto, ContentAttachmentDto, PageResultDto, ReviewMetricDefinitionDto, ReviewMetricSetDto, UserLinkedMemberDto, UserResponseDto };
 
 export interface ActionStateBatchDto {
   "items": ActionStateItemDto[];
@@ -748,67 +748,6 @@ export interface AdminMemberAttendanceRecordDto {
   "updatedAt": string;
 }
 
-export interface AdminMetricBooleanConfigurationDto {
-  "kindCode": "boolean";
-  "unit": null | null;
-}
-
-export interface AdminMetricChoiceConfigurationDto {
-  "kindCode": "single_choice";
-  "unit": null | null;
-  "options": AdminMetricChoiceOptionDto[];
-}
-
-export interface AdminMetricChoiceOptionDto {
-  "code": string;
-  "label": string;
-}
-
-export interface AdminMetricDecimalConfigurationDto {
-  "kindCode": "non_negative_decimal";
-  "unit": string;
-  "scale": number;
-  "minimum": string;
-  "maximum": string;
-}
-
-export interface AdminMetricDefinitionV1Dto {
-  "schemaVersion": 1;
-  "code": string;
-  "version": number;
-  "name": string;
-  "configuration": AdminMetricIntegerConfigurationDto | AdminMetricDecimalConfigurationDto | AdminMetricBooleanConfigurationDto | AdminMetricTextConfigurationDto | AdminMetricChoiceConfigurationDto;
-}
-
-export interface AdminMetricIntegerConfigurationDto {
-  "kindCode": "non_negative_integer";
-  "unit": string;
-  "minimum": number;
-  "maximum": number;
-}
-
-export interface AdminMetricSetDefinitionV1Dto {
-  "schemaVersion": 1;
-  "code": string;
-  "version": number;
-  "name": string;
-  "items": AdminMetricSetItemDto[];
-}
-
-export interface AdminMetricSetItemDto {
-  "key": string;
-  "sortOrder": number;
-  "required": boolean;
-  "metricDefinitionId": string;
-  "definitionHash": string;
-}
-
-export interface AdminMetricTextConfigurationDto {
-  "kindCode": "short_text";
-  "unit": null | null;
-  "maxLength": number;
-}
-
 export interface AdminParticipationLedgerEntryDto {
   "entryKey": string;
   "postingBatchId": string;
@@ -1224,6 +1163,7 @@ export interface AdminSimpleTemplateVersionOptionDto {
 export interface AdminSubmitSimpleActivityReviewDto {
   "operationKey": string;
   "confirmation": boolean;
+  "expectedDraftHash"?: string;
 }
 
 export interface AdminTemplateActivityDefinitionDto {

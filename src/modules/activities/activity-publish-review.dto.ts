@@ -26,7 +26,12 @@ import { OmittableOnly } from '../../common/decorators/omittable-only.decorator'
 import { UpdateAppManagedActivityDto } from './dto/app/app-managed-activity.dto';
 import { ManagedRegistrationFormDefinitionInputDto } from './dto/app/app-registration-form.dto';
 import { AppActivityQualificationRuleInputDto } from './dto/app/app-activity-qualification-rules.dto';
-import { AppActivityMetricSelectionInputDto } from './dto/app/app-activity-metric-selection.dto';
+import { AdminMetricDefinitionV1Dto } from './dto/admin/activity-metric-definition.dto';
+import { AdminMetricSetDefinitionV1Dto } from './dto/admin/activity-metric-set.dto';
+import {
+  AppActivityMetricSetPointerDto,
+  AppActivityMetricSelectionInputDto,
+} from './dto/app/app-activity-metric-selection.dto';
 import {
   CreateAppManagedActivitySessionDto,
   CreateAppManagedActivitySessionPositionDto,
@@ -36,6 +41,17 @@ import {
 
 const parseQueryBoolean = ({ value }: { value: unknown }): unknown =>
   value === true || value === 'true' ? true : value === false || value === 'false' ? false : value;
+
+export class ReviewMetricDefinitionDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() definitionHash!: string;
+  @ApiProperty({ type: AdminMetricDefinitionV1Dto }) definition!: AdminMetricDefinitionV1Dto;
+}
+
+export class ReviewMetricSetDto extends AppActivityMetricSetPointerDto {
+  @ApiProperty({ type: AdminMetricSetDefinitionV1Dto }) definition!: AdminMetricSetDefinitionV1Dto;
+  @ApiProperty({ type: [ReviewMetricDefinitionDto] }) metrics!: ReviewMetricDefinitionDto[];
+}
 
 export class ActivityPublishReviewResponseDto {
   @ApiProperty()
@@ -94,6 +110,12 @@ export class ActivityPublishReviewResponseDto {
     description: '详情读面返回的服务端变更差异',
   })
   changeDiff?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    type: [ReviewMetricSetDto],
+    description: '详情中已核验的冻结指标版本与完整定义，仅包含基线或目标实际引用的版本',
+  })
+  frozenMetricSets?: ReviewMetricSetDto[];
 
   @ApiPropertyOptional({ description: '详情读面返回的当前受影响参与身份人数' })
   affectedMemberCount?: number;
