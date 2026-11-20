@@ -1,0 +1,1 @@
+{"disposable": true, "columns": ["entryKey", "activityId", "sessionId", "participationIdentityId", "resultRevisionId", "entryTypeCode", "recognizedPointsDelta", "cappedOutPointsDelta"], "action": "select", "exit": 0}
