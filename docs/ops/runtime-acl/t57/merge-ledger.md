@@ -21,3 +21,9 @@
 - Mobile main=`ae2e3b0a…` CI：https://github.com/BA7IEE/SRVFMobileWeb/actions/runs/44708773107
 - Admin main=`26261168…` CI：https://github.com/BA7IEE/srvf-admin-web/actions/runs/44708940910
 新 main 绿 ≠ 重跑全业务 ≠ production PASS。
+
+## 合入后 main CI（实核）
+- nest-api：https://github.com/BA7IEE/srvf-nest-api/actions/runs/44708578967 **success**
+- Mobile：https://github.com/BA7IEE/SRVFMobileWeb/actions/runs/44708773107 **success**
+- Admin：https://github.com/BA7IEE/srvf-admin-web/actions/runs/44708940910 **success**
+说明：新 main 绿 ≠ 重跑全业务隔离验收 ≠ production PASS。
