@@ -149,4 +149,6 @@ docker port <api 容器>                                 # 只应有 127.0.0.1:3
 docs/ops/runtime-acl/t49/check-ledger.sh "$app_database" "$app_runtime_role"
 ```
 
-查询读取分录 13 列及批次的 id、statusCode。退出 0 表示该角色具备该读面的列权限；回执另列已有的表级读权。缺列或目标不符时退出非零，部署方据回执复核角色契约。共享角色的额外授权、应用判权、已入账业务数据和设备验收各自留证。[隔离逐列见证与回退边界](https://github.com/BA7IEE/srvf-nest-api/tree/669fe55c9473a30a7a67d94f9ed0a7ba2d07372b/docs/ops/runtime-acl/t49)
+预检在只读事务中检查目标角色对数据库的 CONNECT、public 的 USAGE、分录 13 列及批次 id、statusCode 的有效 SELECT。它同时排除所有者、超级用户和 BYPASSRLS。若由运维账号代查，`observer_is_runtime=false`；实际 API 的连接身份仍须独立核对。同名数据库可能位于不同集群。退出 0 只能证明本读面的 ACL，缺权时退出非零并保留逐列回执。
+
+T49 的共享候选快照缺分录 13 列，批次两列已有读权；隔离角色已具备其中七列，故只差六列。部署前重新采样。共享角色获得列权后，同角色下的进程均可读取这些列，应用仍须校验本人身份。维护者如批准实施，只授当次基线实际缺失的 SELECT。按已提交的增量逐列撤回，保留原有授权、业务行和审计。B130 独立处理。[逐列见证、回退和共享影响](https://github.com/BA7IEE/srvf-nest-api/tree/669fe55c9473a30a7a67d94f9ed0a7ba2d07372b/docs/ops/runtime-acl/t49)

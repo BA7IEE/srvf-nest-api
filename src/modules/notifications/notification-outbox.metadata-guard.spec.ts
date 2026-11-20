@@ -4,6 +4,8 @@ import {
   NOTIFICATION_CHANNEL_IN_APP,
   NOTIFICATION_DIRECTED_VISIBILITY,
   NOTIFICATION_TYPE_ACTIVITY_PUBLISHED,
+  OUTBOX_ADMIN_PAYLOAD_VERSION,
+  OUTBOX_EVENT_ADMIN_SMS,
   OUTBOX_EVENT_SYSTEM_BROADCAST,
   OUTBOX_EVENT_TARGETED_NOTIFICATION,
   OUTBOX_EVENT_WECHAT_DELIVERY,
@@ -136,6 +138,36 @@ function wechatDeliveryPhoneShapedCuidInput() {
 const SENSITIVE_MATERIAL = /contains forbidden sensitive material/;
 
 describe('assertSafeMetadata —— envelope 元数据闸', () => {
+  describe('admin SMS 确认代次', () => {
+    const generation = 'aaaaaaaa-bbbb-4ccc-8ddd-a13800001111';
+    const input = {
+      eventKey: `admin-sms:${PLAIN_CUID}:${generation}:${FALSE_POSITIVE_CUID}`,
+      eventType: OUTBOX_EVENT_ADMIN_SMS,
+      payloadVersion: OUTBOX_ADMIN_PAYLOAD_VERSION,
+      payload: { notificationId: PLAIN_CUID, memberId: FALSE_POSITIVE_CUID, publishGeneration: 1 },
+      aggregateType: 'notification',
+      aggregateId: PLAIN_CUID,
+      destinationType: 'member',
+      destinationRef: FALSE_POSITIVE_CUID,
+    };
+
+    it('合法代次在预留和投递时均可读取，事件键原样保存', () => {
+      expect(normalizeNotificationOutboxInput(input).eventKey).toBe(input.eventKey);
+      expect(() => assertStoredNotificationOutboxIntentSafe(input)).not.toThrow();
+    });
+
+    it('错误版本 UUID、其他事件和目标字段仍须检查', () => {
+      for (const invalid of [
+        { ...input, eventKey: input.eventKey.replace('-4ccc-', '-3ccc-') },
+        { ...input, eventType: OUTBOX_EVENT_TARGETED_NOTIFICATION },
+        { ...input, destinationRef: generation },
+      ]) {
+        expect(() => normalizeNotificationOutboxInput(invalid)).toThrow(SENSITIVE_MATERIAL);
+        expect(() => assertStoredNotificationOutboxIntentSafe(invalid)).toThrow(SENSITIVE_MATERIAL);
+      }
+    });
+  });
+
   describe('不透明 id 里的偶然子串必须放行', () => {
     it('cuid 结尾恰好是 token 的定向通知,producer 写入路径放行', () => {
       expect(() => normalizeNotificationOutboxInput(targetedInput())).not.toThrow();

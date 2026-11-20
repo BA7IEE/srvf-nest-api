@@ -708,8 +708,18 @@ function isAdminSmsEventKey(eventKey: string, payload: AdminSmsOutboxPayload): b
 }
 
 function assertSafeMetadata(input: NotificationOutboxSafetyInput): void {
+  // admin SMS 的第三段是服务端生成的 UUIDv4。只在完整事件键与两端身份匹配时，
+  // 将该代次排除出自由文本扫描。实际存储和后续 payload 一致性检查仍使用原键。
+  const eventKeyForScan =
+    input.eventType === OUTBOX_EVENT_ADMIN_SMS &&
+    isAdminSmsEventKey(input.eventKey, {
+      notificationId: input.aggregateId,
+      memberId: input.destinationRef,
+    })
+      ? `admin-sms:${input.aggregateId}:${input.destinationRef}`
+      : input.eventKey;
   for (const [field, value] of [
-    ['eventKey', input.eventKey],
+    ['eventKey', eventKeyForScan],
     ['aggregateType', input.aggregateType],
     ['aggregateId', input.aggregateId],
     ['destinationType', input.destinationType],
