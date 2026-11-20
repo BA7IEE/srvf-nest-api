@@ -8006,6 +8006,10 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         ],
         "type": "string",
       },
+      "publicRegistrationOpen": {
+        "description": "当前活动允许公开报名；提交时仍重新校验本人资格与名额",
+        "type": "boolean",
+      },
       "qualification": {
         "$ref": "#/components/schemas/AppActivityQualificationDto",
       },
@@ -8074,6 +8078,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "requiresInsurance",
       "passCount",
       "createdAt",
+      "publicRegistrationOpen",
       "myInvitations",
       "qualification",
       "sessions",

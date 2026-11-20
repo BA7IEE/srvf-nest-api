@@ -92,6 +92,7 @@ const appActivityDetailSelect = {
   genderRequirementCode: true,
   requiresInsurance: true,
   registrationModeCode: true,
+  isPublicRegistration: true,
   // 同上:详情面封面也走 coverImageKey 现签。
   coverImageKey: true,
   createdAt: true,
@@ -542,6 +543,7 @@ export class AppActivitiesService {
       coverImageUrl,
       createdAt: row.createdAt,
       registrationMode: row.registrationModeCode,
+      publicRegistrationOpen: this.activityParticipationPolicy.canRegisterSelf(row, now).allowed,
       formVersion: registrationForm?.version ?? null,
       registrationForm,
       qualification: qualification.activity,

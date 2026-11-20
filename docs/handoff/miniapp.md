@@ -579,4 +579,4 @@ AC-013/020/025沿原决定上线后按诉求立项，AC-017仍搁置，四项保
 
 ### 队员报名与签到预检
 
-已发布且对本人可见的活动支持 `GET /api/app/v1/activities/{id}/registration-insurance`。只返回 `required` 和 `eligible` 两个布尔值。报名写入仍在其事务内重新核验保险。客户端遇无法确认的结果应暂停提交。活动详情场次的 `locationRequired` 决定是否申请设备定位。此项仅公开布尔值，签到核验坐标仍由服务端持有。
+已发布且对本人可见的活动支持 `GET /api/app/v1/activities/{id}/registration-insurance`。只返回 `required` 和 `eligible` 两个布尔值。活动详情的 publicRegistrationOpen 由公开报名策略计算。模板创建的活动可能没有 registrationMode，客户端须读取该判定。报名写入仍在其事务内重新核验保险、报名窗口和名额。客户端遇无法确认的结果应暂停提交。活动详情场次的 `locationRequired` 决定是否申请设备定位。此项仅公开布尔值，签到核验坐标仍由服务端持有。

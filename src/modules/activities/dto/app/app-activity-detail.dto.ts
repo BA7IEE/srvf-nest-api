@@ -206,6 +206,9 @@ export class AppActivityDetailDto {
   })
   registrationMode!: string | null;
 
+  @ApiProperty({ description: '当前活动允许公开报名；提交时仍重新校验本人资格与名额' })
+  publicRegistrationOpen!: boolean;
+
   @ApiPropertyOptional({
     description: '当前 active 报名表版本；无自定义报名表时为 NULL',
     nullable: true,
