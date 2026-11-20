@@ -1,0 +1,10 @@
+{
+  "ParticipationLedgerEntry": {
+    "SELECT": [
+      "entryKey", "postingBatchId", "memberId", "activityId", "sessionId",
+      "participationIdentityId", "resultRevisionId", "ledgerDate", "entryTypeCode",
+      "serviceHoursDelta", "recognizedPointsDelta", "creditedPointsDelta", "cappedOutPointsDelta"
+    ]
+  },
+  "LedgerPostingBatch": {"SELECT": ["id", "statusCode"]}
+}

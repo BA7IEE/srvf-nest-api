@@ -1,0 +1,146 @@
+{
+  "role": "srvf_dp_acceptance_runtime",
+  "rows": [
+    {
+      "table": "LedgerPostingBatch",
+      "column": "id",
+      "select": true,
+      "owner_access": false,
+      "table_select": true,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "LedgerPostingBatch",
+      "column": "statusCode",
+      "select": true,
+      "owner_access": false,
+      "table_select": true,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "activityId",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "cappedOutPointsDelta",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "creditedPointsDelta",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "entryKey",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "entryTypeCode",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "ledgerDate",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "memberId",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "participationIdentityId",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "postingBatchId",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "recognizedPointsDelta",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "resultRevisionId",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "serviceHoursDelta",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    },
+    {
+      "table": "ParticipationLedgerEntry",
+      "column": "sessionId",
+      "select": false,
+      "owner_access": false,
+      "table_select": false,
+      "direct_column_select": false,
+      "superuser_or_bypassrls": false
+    }
+  ],
+  "database": "srvf_staging",
+  "column_count": 15,
+  "captured_utc": "2026-11-20T04:31:39.746288+00:00",
+  "exit": 3,
+  "mode": "read-only",
+  "runtime_new_grants": 0
+}
