@@ -204,6 +204,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/auth/v1/login'],
   ['post', '/api/auth/v1/refresh'],
   ['post', '/api/auth/v1/logout'],
+  ['post', '/api/auth/v1/h5/login'],
+  ['post', '/api/auth/v1/h5/refresh'],
+  ['post', '/api/auth/v1/h5/logout'],
   ['post', '/api/auth/v1/logout-all'],
   // Identity session P0 PR1(2026-07-17):5 分钟 action-bound step-up proof;
   // 四端点复用既有 AuthController 与 throttler，App 身份换绑消费 proof。
@@ -1229,7 +1232,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 672; // ActivityOS V1 adds six explicit Admin simple-activity routes.
+const EXPECTED_ROUTE_COUNT = 675; // Three same-origin HTTPS H5 session routes added.
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
