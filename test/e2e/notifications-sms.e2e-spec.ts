@@ -1,3 +1,5 @@
+import crypto from 'node:crypto';
+
 import type { INestApplication } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import request from 'supertest';
@@ -411,16 +413,21 @@ describe('统一通知模块 S5 短信兜底渠道 e2e', () => {
       await createMemberInOrg(org, '13912350001');
       const id = await createDeptNotification(org);
 
-      // flake 取证锚(2026-08-01 PR #875 CI attempt-1 唯一一次红):首发返回了 data:null
-      // 的错误包,而裸 `body.data` 断言把 code/message 全部丢弃,红一次只能盲重跑定性。
-      // 先钉「此刻通道事实就绪」,再以整包口径断言 —— 复发时失败输出自带 BizCode 与
-      // message(非生产环境 50000 还透传底层 exception.message),一次红即可定因。
       expect(await prisma.smsSettings.findFirst()).toMatchObject({
         enabled: true,
         templateIdNotification: 'tpl-notif-1',
       });
 
-      const first = await sendSms(adminAuth, id, { confirmed: true });
+      // 固定第一次确认的 generation，复现合法 UUID 尾段被误认成手机号的情况。
+      const generation = 'aaaaaaaa-bbbb-4ccc-8ddd-a13800001111';
+      const uuid = jest.spyOn(crypto, 'randomUUID').mockReturnValue(generation);
+      let first: request.Response;
+      try {
+        first = await sendSms(adminAuth, id, { confirmed: true });
+      } finally {
+        uuid.mockRestore();
+      }
+      if (first.status !== 200) console.info(smsFirstResponseEvidence(first, 're-trigger'));
       expect({ status: first.status, body: first.body }).toMatchObject({
         status: 200,
         body: {
@@ -445,6 +452,7 @@ describe('统一通知模块 S5 短信兜底渠道 e2e', () => {
         select: { eventKey: true, status: true },
       });
       expect(generations).toHaveLength(2);
+      expect(generations.some(({ eventKey }) => eventKey.split(':')[2] === generation)).toBe(true);
       expect(new Set(generations.map(({ eventKey }) => eventKey))).toHaveProperty('size', 2);
       expect(generations.every(({ status }) => status === 'succeeded')).toBe(true);
     });

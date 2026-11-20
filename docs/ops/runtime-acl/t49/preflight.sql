@@ -9,6 +9,8 @@ WITH requested AS (
   SELECT r.rel, r.col, c.oid AS relid, a.attnum,
          has_column_privilege(role.oid, c.oid, a.attnum, 'SELECT') AS effective,
          has_table_privilege(role.oid, c.oid, 'SELECT') AS full_table,
+         has_schema_privilege(role.oid, c.relnamespace, 'USAGE') AS schema_usage,
+         has_database_privilege(role.oid, current_database(), 'CONNECT') AS database_connect,
          pg_has_role(role.oid, c.relowner, 'USAGE') AS owns_or_inherits_owner,
          role.rolsuper OR role.rolbypassrls AS privileged_role,
          EXISTS (SELECT FROM aclexplode(a.attacl) g
@@ -19,8 +21,11 @@ WITH requested AS (
   JOIN pg_attribute a ON a.attrelid=c.oid AND a.attname=r.col AND a.attnum>0 AND NOT a.attisdropped
 ), result AS (
   SELECT current_database()=:'expected_database' AND count(*)=15
-         AND count(DISTINCT (relid,attnum))=15 AND bool_and(effective AND NOT owns_or_inherits_owner AND NOT privileged_role) AS ready,
+         AND count(DISTINCT (relid,attnum))=15 AND bool_and(effective AND schema_usage AND database_connect
+           AND NOT owns_or_inherits_owner AND NOT privileged_role) AS ready,
          jsonb_build_object('database',current_database(),'role',:'runtime_role','column_count',count(*),
+           'observer_is_runtime',current_user=:'runtime_role',
+           'schema_usage',bool_and(schema_usage),'database_connect',bool_and(database_connect),
            'rows',coalesce(jsonb_agg(jsonb_build_object('table',rel,'column',col,'select',effective,
              'table_select',full_table,'direct_column_select',direct_column,'owner_access',owns_or_inherits_owner,
              'superuser_or_bypassrls',privileged_role) ORDER BY rel,col),'[]'::jsonb)) AS receipt

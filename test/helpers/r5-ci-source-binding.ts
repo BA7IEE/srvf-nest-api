@@ -111,6 +111,8 @@ export function r5CiSourceBinding(identity: R5CiInstanceIdentity, checkout = pro
     throw new Error('R5_CI_MIGRATION_SOURCE_CHANGED');
   }
   const additions = milestoneFunctions(checkout);
+  // Both catalogs include these functions. The verified successor migrations change
+  // only their bodies; preserve each frozen owner, ACL, invoker mode and search path.
   const link = (input: unknown): Catalog => {
     const catalog = JSON.parse(JSON.stringify(input)) as Record<string, unknown>;
     if (catalog.database !== 'CI_INSTANCE_DATABASE_NAME' || catalog.databaseOid !== 0)
@@ -118,6 +120,23 @@ export function r5CiSourceBinding(identity: R5CiInstanceIdentity, checkout = pro
     catalog.database = identity.database;
     catalog.databaseOid = identity.databaseOid;
     const functions = catalog.functions as Record<string, unknown>[];
+    for (const [signature, previous, replacement] of [
+      [
+        'public.ctsp_lifecycle_guard()',
+        '1d93e52023e7f662cd3e57822c6643b3e9792939cccdfe21b27094d75103f93f',
+        '3b329daf383862cd8e35d2a0f01590b49ccaad1665b705f43ff6ea6c10362478',
+      ],
+      [
+        'public.ctsp_assert_complete(text,boolean)',
+        '1d53ee7296e3ef0e6437e5e9c9ee3042f970454cdb508983bb726e2215fa845a',
+        'db4bc4455f294c9a2d94dda3a76191a861b339be536f608a7471f86b2b01d81e',
+      ],
+    ]) {
+      const matches = functions.filter((row) => row.signature === signature);
+      if (matches.length !== 1 || matches[0].bodyHash !== previous)
+        throw new Error('R5_CI_SETTLEMENT_GUARD_SOURCE_SHAPE');
+      matches[0].bodyHash = replacement;
+    }
     const insertion = functions.findIndex(
       (row) => row.signature === 'public.tp_identity_guard_fn()',
     );

@@ -596,6 +596,13 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "directPublish": {
         "type": "boolean",
       },
+      "frozenMetricSets": {
+        "description": "详情中已核验的冻结指标版本与完整定义，仅包含基线或目标实际引用的版本",
+        "items": {
+          "$ref": "#/components/schemas/ReviewMetricSetDto",
+        },
+        "type": "array",
+      },
       "id": {
         "type": "string",
       },
@@ -6154,6 +6161,11 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "example": true,
         "type": "boolean",
       },
+      "expectedDraftHash": {
+        "description": "确认时 GET simple-draft 返回的 draftHash；提供时拒绝已变更的简单草稿。省略保留旧版提交最新草稿语义。仅接受现行简单模板配置白名单；资格规则或模板外专业配置须使用专业流程。保留模板默认值不代表用户已逐项阅读，非完整 proposal 确认令牌。",
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
       "operationKey": {
         "description": "提交审核幂等键",
         "maxLength": 128,
@@ -7994,6 +8006,10 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         ],
         "type": "string",
       },
+      "publicRegistrationOpen": {
+        "description": "当前活动允许公开报名；提交时仍重新校验本人资格与名额",
+        "type": "boolean",
+      },
       "qualification": {
         "$ref": "#/components/schemas/AppActivityQualificationDto",
       },
@@ -8062,6 +8078,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "requiresInsurance",
       "passCount",
       "createdAt",
+      "publicRegistrationOpen",
       "myInvitations",
       "qualification",
       "sessions",
@@ -8124,6 +8141,10 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "id": {
         "type": "string",
       },
+      "locationRequired": {
+        "description": "本场次签到签退是否需要队员主动提供定位",
+        "type": "boolean",
+      },
       "locationText": {
         "type": "string",
       },
@@ -8151,6 +8172,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "startAt",
       "endAt",
       "locationText",
+      "locationRequired",
       "positions",
       "qualification",
     ],
@@ -17511,6 +17533,23 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "visibilityCode",
       "exportable",
       "sortOrder",
+    ],
+    "type": "object",
+  },
+  "AppRegistrationInsuranceEligibilityDto": {
+    "properties": {
+      "eligible": {
+        "description": "当前队员是否满足此活动的保险条件，提交时重新核验",
+        "type": "boolean",
+      },
+      "required": {
+        "description": "活动是否要求保险",
+        "type": "boolean",
+      },
+    },
+    "required": [
+      "required",
+      "eligible",
     ],
     "type": "object",
   },
@@ -27779,6 +27818,31 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "H5SessionResponseDto": {
+    "properties": {
+      "accessToken": {
+        "description": "Short-lived JWT access token for Authorization: Bearer",
+        "type": "string",
+      },
+      "expiresIn": {
+        "description": "Access token lifetime as configured",
+        "example": "15m",
+        "type": "string",
+      },
+      "tokenType": {
+        "enum": [
+          "Bearer",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "accessToken",
+      "tokenType",
+      "expiresIn",
+    ],
+    "type": "object",
+  },
   "HealthResponseDto": {
     "properties": {
       "db": {
@@ -34242,6 +34306,78 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     "required": [
       "decision",
       "expectedVersion",
+    ],
+    "type": "object",
+  },
+  "ReviewMetricDefinitionDto": {
+    "properties": {
+      "definition": {
+        "$ref": "#/components/schemas/AdminMetricDefinitionV1Dto",
+      },
+      "definitionHash": {
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "definitionHash",
+      "definition",
+    ],
+    "type": "object",
+  },
+  "ReviewMetricSetDto": {
+    "properties": {
+      "code": {
+        "description": "指标集稳定编码",
+        "maxLength": 64,
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "type": "string",
+      },
+      "definition": {
+        "$ref": "#/components/schemas/AdminMetricSetDefinitionV1Dto",
+      },
+      "definitionHash": {
+        "description": "精确版本内容 hash",
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "id": {
+        "description": "精确指标集版本 ID",
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "metrics": {
+        "items": {
+          "$ref": "#/components/schemas/ReviewMetricDefinitionDto",
+        },
+        "type": "array",
+      },
+      "schemaVersion": {
+        "description": "指标集定义 schema 版本",
+        "enum": [
+          1,
+        ],
+        "type": "number",
+      },
+      "version": {
+        "description": "显式版本号",
+        "maximum": 2147483647,
+        "minimum": 1,
+        "type": "number",
+      },
+    },
+    "required": [
+      "id",
+      "code",
+      "version",
+      "schemaVersion",
+      "definitionHash",
+      "definition",
+      "metrics",
     ],
     "type": "object",
   },
@@ -51316,11 +51452,13 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "20030: 活动当前状态不允许此操作; 20032: 活动已有待处理的发布审核; 20143: 相同操作标识已用于不同的发布审核内容,请更换操作标识; 17031: 组织节点状态非活跃,不能挂队员",
+                    "description": "20030: 活动当前状态不允许此操作; 20032: 活动已有待处理的发布审核; 20143: 相同操作标识已用于不同的发布审核内容,请更换操作标识; 20255: 活动草稿已变化，请重新读取后再保存; 20256: 活动包含简单界面未展示的专业配置，请使用专业流程确认后提审; 17031: 组织节点状态非活跃,不能挂队员",
                     "enum": [
                       20030,
                       20032,
                       20143,
+                      20255,
+                      20256,
                       17031,
                     ],
                     "example": 20030,
@@ -51345,7 +51483,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "活动当前状态不允许此操作(code=20030) / 活动已有待处理的发布审核(code=20032) / 相同操作标识已用于不同的发布审核内容,请更换操作标识(code=20143) / 组织节点状态非活跃,不能挂队员(code=17031)",
+          "description": "活动当前状态不允许此操作(code=20030) / 活动已有待处理的发布审核(code=20032) / 相同操作标识已用于不同的发布审核内容,请更换操作标识(code=20143) / 活动草稿已变化，请重新读取后再保存(code=20255) / 活动包含简单界面未展示的专业配置，请使用专业流程确认后提审(code=20256) / 组织节点状态非活跃,不能挂队员(code=17031)",
         },
       },
       "security": [
@@ -112188,6 +112326,201 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
+  "/api/app/v1/activities/{id}/registration-insurance": {
+    "get": {
+      "operationId": "AppActivitiesController_registrationInsurance",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppRegistrationInsuranceEligibilityDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "查询本人针对可见已发布活动的报名保险资格 [auth]",
+      "tags": [
+        "Mobile - Activities",
+      ],
+    },
+  },
   "/api/app/v1/contents": {
     "get": {
       "operationId": "ContentAppController_list",
@@ -156788,6 +157121,446 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "Service Token 换 Delegated Token(Bearer 认证；subject 只能由 Grant 决定) [auth]",
       "tags": [
         "auth/delegated-token",
+      ],
+    },
+  },
+  "/api/auth/v1/h5/login": {
+    "post": {
+      "description": "JSON 只返回 access；Set-Cookie 下发 HttpOnly、Secure 的续登凭证。",
+      "operationId": "AuthController_loginH5",
+      "parameters": [
+        {
+          "description": "Browser origin; same HTTPS origin only",
+          "in": "header",
+          "name": "Origin",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/LoginDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/H5SessionResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "10004: 账号或密码错误",
+                    "enum": [
+                      10004,
+                    ],
+                    "example": 10004,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "账号或密码错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "账号或密码错误(code=10004)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "429": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "42900: 请求过于频繁，请稍后再试",
+                    "enum": [
+                      42900,
+                    ],
+                    "example": 42900,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求过于频繁，请稍后再试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求过于频繁，请稍后再试(code=42900)",
+        },
+      },
+      "summary": "H5 同源 HTTPS 密码登录 [public]",
+      "tags": [
+        "Auth",
+      ],
+    },
+  },
+  "/api/auth/v1/h5/logout": {
+    "post": {
+      "description": "无请求体；只读续登 Cookie。幂等撤销该 family 并清 Cookie，不吊销已签发的 access。",
+      "operationId": "AuthController_logoutH5",
+      "parameters": [
+        {
+          "description": "Browser origin; same HTTPS origin only",
+          "in": "header",
+          "name": "Origin",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+      },
+      "summary": "H5 同源 HTTPS 退出 [public]",
+      "tags": [
+        "Auth",
+      ],
+    },
+  },
+  "/api/auth/v1/h5/refresh": {
+    "post": {
+      "description": "无请求体；只读续登 Cookie。成功轮换 Cookie，不延长绝对有效期；10007 清 Cookie。",
+      "operationId": "AuthController_refreshH5",
+      "parameters": [
+        {
+          "description": "Browser origin; same HTTPS origin only",
+          "in": "header",
+          "name": "Origin",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/H5SessionResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "10007: refresh token 无效或已过期",
+                    "enum": [
+                      10007,
+                    ],
+                    "example": 10007,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "refresh token 无效或已过期",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "refresh token 无效或已过期(code=10007)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "429": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "42900: 请求过于频繁，请稍后再试",
+                    "enum": [
+                      42900,
+                    ],
+                    "example": 42900,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求过于频繁，请稍后再试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求过于频繁，请稍后再试(code=42900)",
+        },
+      },
+      "summary": "H5 同源 HTTPS 续登 [public]",
+      "tags": [
+        "Auth",
       ],
     },
   },

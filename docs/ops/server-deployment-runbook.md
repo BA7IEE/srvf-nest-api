@@ -140,3 +140,15 @@ docker port <api 容器>                                 # 只应有 127.0.0.1:3
 真实 `APP_CORS_ORIGIN` · 切 `APP_ENV=production` · 前后端**同源**部署(2026-08-03 拍板的拓扑)。
 
 **第二阶段必须基于届时的仓库实况重新制定,不得机械沿用本文。**
+
+### 启用 H5 本人参与账本时
+
+确认应用连接的集群、数据库和当前 PostgreSQL 角色后，在同目标使用正常 psql 连接执行只读预检，并保存逐列回执。
+
+```sh
+docs/ops/runtime-acl/t49/check-ledger.sh "$app_database" "$app_runtime_role"
+```
+
+预检在只读事务中检查目标角色对数据库的 CONNECT、public 的 USAGE、分录 13 列及批次 id、statusCode 的有效 SELECT。它同时排除所有者、超级用户和 BYPASSRLS。若由运维账号代查，`observer_is_runtime=false`；实际 API 的连接身份仍须独立核对。同名数据库可能位于不同集群。退出 0 只能证明本读面的 ACL，缺权时退出非零并保留逐列回执。
+
+T49 的共享候选快照缺分录 13 列，批次两列已有读权；隔离角色已具备其中七列，故只差六列。部署前重新采样。共享角色获得列权后，同角色下的进程均可读取这些列，应用仍须校验本人身份。维护者如批准实施，只授当次基线实际缺失的 SELECT。按已提交的增量逐列撤回，保留原有授权、业务行和审计。B130 独立处理。[逐列见证、回退和共享影响](https://github.com/BA7IEE/srvf-nest-api/tree/669fe55c9473a30a7a67d94f9ed0a7ba2d07372b/docs/ops/runtime-acl/t49)
