@@ -64,7 +64,7 @@ describe('disposable CI source binding, no database or authentication', () => {
     ).toThrow();
   });
 
-  it.each([0, 155, 156])(
+  it.each([0, 155, 156, 157])(
     'rejects migration source drift at index %s before building a binding',
     (index) => {
       const scratch = mkdtempSync(join(tmpdir(), 'r5-ci-source-'));
@@ -91,7 +91,7 @@ describe('disposable CI source binding, no database or authentication', () => {
     },
   );
 
-  it('retains the frozen catalog except the three additions and the reviewed trigger body', () => {
+  it('retains the frozen catalog except the three additions and the two reviewed function bodies', () => {
     const frozen = JSON.parse(
       readFileSync(join(process.cwd(), 'test/fixtures/r5-ci-source-catalog.json'), 'utf8'),
     ) as { catalogs: { base: { functions: Record<string, unknown>[] } } };
@@ -102,11 +102,19 @@ describe('disposable CI source binding, no database or authentication', () => {
       'public.team_join_notice_protocol_immutable()',
     ]);
     expect(built.base.functions.filter((row) => !added.has(String(row.signature)))).toEqual(
-      frozen.catalogs.base.functions.map((row) =>
-        row.signature === 'public.ctsp_lifecycle_guard()'
-          ? { ...row, bodyHash: '3b329daf383862cd8e35d2a0f01590b49ccaad1665b705f43ff6ea6c10362478' }
-          : row,
-      ),
+      frozen.catalogs.base.functions.map((row) => {
+        if (row.signature === 'public.ctsp_lifecycle_guard()')
+          return {
+            ...row,
+            bodyHash: '3b329daf383862cd8e35d2a0f01590b49ccaad1665b705f43ff6ea6c10362478',
+          };
+        if (row.signature === 'public.ctsp_assert_complete(text,boolean)')
+          return {
+            ...row,
+            bodyHash: 'db4bc4455f294c9a2d94dda3a76191a861b339be536f608a7471f86b2b01d81e',
+          };
+        return row;
+      }),
     );
     expect(r5CiMigrationSources()).toEqual(currentMigrationInventory().migrations);
     expect(built.base.functions.filter((row) => added.has(String(row.signature)))).toHaveLength(3);

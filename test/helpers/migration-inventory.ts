@@ -32,6 +32,10 @@ const SETTLEMENT_GUARD_MIGRATION = Object.freeze({
 const successors: readonly MigrationSource[] = Object.freeze([
   MILESTONE_MIGRATION,
   SETTLEMENT_GUARD_MIGRATION,
+  {
+    name: '20261120073100_settlement_correction_proof_lookup',
+    sha256: 'c5ba4ff229d717f52ed46d9d2c30585976f08a1196a955f10032629bc2517bd7',
+  },
 ]);
 
 // This large fixture is runtime data, not a giant inferred TypeScript literal.
