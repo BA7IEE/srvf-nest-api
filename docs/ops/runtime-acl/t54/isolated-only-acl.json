@@ -1,0 +1,79 @@
+{
+  "scope": "disposable non-owner DB only; isolated assembly relative to T53; shared DB not changed",
+  "worker": {
+    "ActivityBatchJob": {
+      "INSERT": [
+        "postingBatchId",
+        "settlementVersionId"
+      ]
+    },
+    "ParticipationTimeLedgerManifest": {
+      "SELECT": [
+        "id",
+        "postingBatchId",
+        "activityId",
+        "settlementRunId",
+        "settlementVersionId",
+        "timeRevisionId",
+        "bucketContentHash",
+        "sourceSetHash",
+        "contentHash",
+        "expectedEntryCount",
+        "recognizedSecondsTotal",
+        "formatVersion",
+        "createdAt"
+      ]
+    }
+  },
+  "ordinary_closure": {
+    "ActivitySettlementClosureRevision": {
+      "SELECT": [
+        "checksHash",
+        "checksJson",
+        "contributionPoints",
+        "evidenceRevision",
+        "evidenceSealId",
+        "personCount",
+        "populationRevision",
+        "resultCountsJson",
+        "serviceHours",
+        "sessionParticipationCount",
+        "workflowRevision"
+      ],
+      "INSERT": [
+        "activityId",
+        "checksHash",
+        "checksJson",
+        "closedAt",
+        "closedByUserId",
+        "contributionPoints",
+        "createdAt",
+        "evidenceRevision",
+        "evidenceSealId",
+        "id",
+        "personCount",
+        "populationRevision",
+        "postingBatchId",
+        "resultCountsJson",
+        "revision",
+        "serviceHours",
+        "sessionParticipationCount",
+        "settlementVersionId",
+        "statusCode",
+        "updatedAt",
+        "workflowRevision"
+      ]
+    },
+    "Activity": {
+      "UPDATE": [
+        "currentClosureRevision"
+      ]
+    },
+    "AttendanceSettlementRun": {
+      "UPDATE": [
+        "currentClosureRevision"
+      ]
+    }
+  },
+  "shared_grants": 0
+}

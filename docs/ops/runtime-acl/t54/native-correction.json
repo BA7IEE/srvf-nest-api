@@ -1,0 +1,33 @@
+{
+  "head": "65d1d6ea4caaa815faac0e79ead8846b6cc3ade9",
+  "job": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44696120601/job/136153355319",
+  "artifact_id": 14611117220,
+  "artifact_digest": "sha256:725d0885b8e7eeaf754d41284d81e5bb426666b5cabe6214174859955fa55bcb",
+  "result": "PASS_REAL_AUTHENTICATION_AND_ALL_FOUR_REGRESSION_FILES",
+  "cleanup": "PASS",
+  "qualification": {
+    "status": "PASS_REAL_AUTHENTICATED_COMPONENTS",
+    "untrustedProviderRejected": true,
+    "ordinaryBoundary": "PASS_ACTUAL_U_SESSION_WITH_C_STARTUP",
+    "sourceCatalogSha256": "0803562087b7e668c1fd2ae2fc137497de84f9bfa8ea5b9b577f02fc75b9d19e"
+  },
+  "suites": [
+    {
+      "file": "activity-os-r4-d7-time-correction.e2e-spec.ts",
+      "exitCode": 0
+    },
+    {
+      "file": "activity-os-r5-e4-contribution-settlement-correction.e2e-spec.ts",
+      "exitCode": 0
+    },
+    {
+      "file": "activity-os-r5-adv010-contribution-progress.e2e-spec.ts",
+      "exitCode": 0
+    },
+    {
+      "file": "activity-os-r5-native-admission.e2e-spec.ts",
+      "exitCode": 0
+    }
+  ],
+  "trusted_case": "D7 Human V3 submit / return / resubmit / review / prepare / commit 200 and immutable replay, asserted applied and committed"
+}

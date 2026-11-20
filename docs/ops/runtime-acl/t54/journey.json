@@ -1,0 +1,406 @@
+{
+  "scope": "server; internal network; new T54 activity across both migrations",
+  "artifact_pair": {
+    "backend": "65d1d6ea4caaa815faac0e79ead8846b6cc3ade9",
+    "application_dist": "unchanged from T53 fa77c19a; only Prisma SQL shipped to isolated DB",
+    "mobile": "529ee3a3c441eaaf992049cbbe6ee32f1414fa63",
+    "admin": "104e524c0b76826a79b1d48fad37fb07dcdfb8e8"
+  },
+  "input": "39-minute historical attendance fixture, corresponding to actual published activity; real attendance capture not run",
+  "initial_http": [
+    {
+      "step": "seal",
+      "actor": "lab",
+      "http": 200,
+      "code": 0,
+      "request_sha256": "d96fa156f723dd2da8d27c5ec87541d8a0ec5c8b426fcdf340944170f1a82125"
+    },
+    {
+      "step": "ordinary_generate_denied",
+      "actor": "t53-other",
+      "http": 403,
+      "code": 30100,
+      "request_sha256": "0a5d0ecd539086465622525a7edf26df3521efdbad9b0fe90e398e33b00277d0"
+    },
+    {
+      "step": "generate",
+      "actor": "lab",
+      "http": 200,
+      "code": 0,
+      "request_sha256": "ae21d0b94b83b13e2cca98fdaa8b1e6a168f76e1575383e91b12eba754224783"
+    },
+    {
+      "step": "submit",
+      "actor": "lab",
+      "http": 200,
+      "code": 0,
+      "request_sha256": "24eac834484347550595a581c5bae12f8f691224fc8bea9d1e711d5583de1f34"
+    },
+    {
+      "step": "ordinary_review_denied",
+      "actor": "t53-other",
+      "http": 403,
+      "code": 30100,
+      "request_sha256": "d300cf109f0c81816068222de81e8d403b03349b4ef27d5663ae1585e75cfe8f"
+    },
+    {
+      "step": "first_approve",
+      "actor": "t53-first",
+      "http": 200,
+      "code": 0,
+      "request_sha256": "f76fd1a6d32ec458540a7198b44247324f6a52db09ff483da5a558b3ac4aaab0"
+    },
+    {
+      "step": "final_approve",
+      "actor": "t53-final",
+      "http": 500,
+      "code": 50000,
+      "request_sha256": "d7bda20258931a3817f7df850f6647fc1f5eaccfc641857120fd229e4a130de3"
+    }
+  ],
+  "first_migration_only": {
+    "http": 500,
+    "code": 50000,
+    "sqlstate": "42501",
+    "object": "CorrectionTimeSourceProof",
+    "narrow_role_commit_exit": 3,
+    "step": "final_approve",
+    "actor": "t53-final",
+    "request_sha256": "0f605a9381730d0191e3a2692af66045914182aacad7316a9ee64d62595dd945"
+  },
+  "final_http": [
+    {
+      "step": "final_approve",
+      "actor": "t53-final",
+      "http": 200,
+      "code": 0,
+      "request_sha256": "cd22d1cfbe6d0be9644e9781fe11766c0c60a192f56ebc7c09e41f579df2a0e4"
+    },
+    {
+      "step": "close",
+      "actor": "lab",
+      "http": 200,
+      "code": 0,
+      "request_sha256": "55ef90b674ae3ff992470b0f111c4be29b743baada2b0db506e5bbe574578cd9"
+    }
+  ],
+  "activities": [
+    {
+      "point": "before",
+      "run": "pending_final_review",
+      "batch": null,
+      "batch_count": 0,
+      "entries": 0,
+      "own_entries": 0,
+      "hours": null,
+      "points": null,
+      "closure_count": 0,
+      "reviewers": [
+        "t53-first"
+      ],
+      "jobs": [
+        [
+          "bulk_proxy",
+          "succeeded",
+          1,
+          0
+        ]
+      ],
+      "activity_sha256": "e88b1c50f382a5a86ab541940b5f51a30a93fd7d6eca69022b38798019293c9d"
+    },
+    {
+      "point": "migrated",
+      "run": "pending_final_review",
+      "batch": null,
+      "batch_count": 0,
+      "entries": 0,
+      "own_entries": 0,
+      "hours": null,
+      "points": null,
+      "closure_count": 0,
+      "reviewers": [
+        "t53-first"
+      ],
+      "jobs": [
+        [
+          "bulk_proxy",
+          "succeeded",
+          1,
+          0
+        ]
+      ],
+      "activity_sha256": "e88b1c50f382a5a86ab541940b5f51a30a93fd7d6eca69022b38798019293c9d"
+    },
+    {
+      "point": "approved",
+      "run": "posting",
+      "batch": "preparing",
+      "batch_count": 1,
+      "entries": 0,
+      "own_entries": 0,
+      "hours": null,
+      "points": null,
+      "closure_count": 0,
+      "reviewers": [
+        "t53-final",
+        "t53-first"
+      ],
+      "jobs": [
+        [
+          "bulk_proxy",
+          "succeeded",
+          1,
+          0
+        ]
+      ],
+      "activity_sha256": "e88b1c50f382a5a86ab541940b5f51a30a93fd7d6eca69022b38798019293c9d"
+    },
+    {
+      "point": "worker",
+      "run": "posted",
+      "batch": "committed",
+      "batch_count": 1,
+      "entries": 2,
+      "own_entries": 2,
+      "hours": 0.67,
+      "points": 1.5,
+      "closure_count": 0,
+      "reviewers": [
+        "t53-final",
+        "t53-first"
+      ],
+      "jobs": [
+        [
+          "bulk_proxy",
+          "succeeded",
+          1,
+          0
+        ],
+        [
+          "settlement_prepare",
+          "succeeded",
+          1,
+          0
+        ]
+      ],
+      "activity_sha256": "e88b1c50f382a5a86ab541940b5f51a30a93fd7d6eca69022b38798019293c9d"
+    },
+    {
+      "point": "closed",
+      "run": "closed",
+      "batch": "committed",
+      "batch_count": 1,
+      "entries": 2,
+      "own_entries": 2,
+      "hours": 0.67,
+      "points": 1.5,
+      "closure_count": 1,
+      "reviewers": [
+        "t53-final",
+        "t53-first"
+      ],
+      "jobs": [
+        [
+          "bulk_proxy",
+          "succeeded",
+          1,
+          0
+        ],
+        [
+          "settlement_prepare",
+          "succeeded",
+          1,
+          0
+        ]
+      ],
+      "activity_sha256": "e88b1c50f382a5a86ab541940b5f51a30a93fd7d6eca69022b38798019293c9d"
+    },
+    {
+      "point": "page",
+      "run": "closed",
+      "batch": "committed",
+      "batch_count": 1,
+      "entries": 2,
+      "own_entries": 2,
+      "hours": 0.67,
+      "points": 1.5,
+      "closure_count": 1,
+      "reviewers": [
+        "t53-final",
+        "t53-first"
+      ],
+      "jobs": [
+        [
+          "bulk_proxy",
+          "succeeded",
+          1,
+          0
+        ],
+        [
+          "settlement_prepare",
+          "succeeded",
+          1,
+          0
+        ]
+      ],
+      "activity_sha256": "e88b1c50f382a5a86ab541940b5f51a30a93fd7d6eca69022b38798019293c9d"
+    },
+    {
+      "point": "withdrawn",
+      "run": "closed",
+      "batch": "committed",
+      "batch_count": 1,
+      "entries": 2,
+      "own_entries": 2,
+      "hours": 0.67,
+      "points": 1.5,
+      "closure_count": 1,
+      "reviewers": [
+        "t53-final",
+        "t53-first"
+      ],
+      "jobs": [
+        [
+          "bulk_proxy",
+          "succeeded",
+          1,
+          0
+        ],
+        [
+          "settlement_prepare",
+          "succeeded",
+          1,
+          0
+        ]
+      ],
+      "activity_sha256": "e88b1c50f382a5a86ab541940b5f51a30a93fd7d6eca69022b38798019293c9d"
+    }
+  ],
+  "http_audit": {
+    "seal": {
+      "actor": "lab",
+      "matching_actor_and_request": 1,
+      "events": [
+        "activity.publish"
+      ],
+      "request_sha256": "d96fa156f723dd2da8d27c5ec87541d8a0ec5c8b426fcdf340944170f1a82125"
+    },
+    "generate": {
+      "actor": "lab",
+      "matching_actor_and_request": 1,
+      "events": [
+        "activity.publish"
+      ],
+      "request_sha256": "ae21d0b94b83b13e2cca98fdaa8b1e6a168f76e1575383e91b12eba754224783"
+    },
+    "submit": {
+      "actor": "lab",
+      "matching_actor_and_request": 1,
+      "events": [
+        "activity.publish"
+      ],
+      "request_sha256": "24eac834484347550595a581c5bae12f8f691224fc8bea9d1e711d5583de1f34"
+    },
+    "first_approve": {
+      "actor": "t53-first",
+      "matching_actor_and_request": 1,
+      "events": [
+        "activity.publish"
+      ],
+      "request_sha256": "f76fd1a6d32ec458540a7198b44247324f6a52db09ff483da5a558b3ac4aaab0"
+    },
+    "final_approve": {
+      "actor": "t53-final",
+      "matching_actor_and_request": 1,
+      "events": [
+        "activity.publish"
+      ],
+      "request_sha256": "cd22d1cfbe6d0be9644e9781fe11766c0c60a192f56ebc7c09e41f579df2a0e4"
+    },
+    "close": {
+      "actor": "lab",
+      "matching_actor_and_request": 1,
+      "events": [
+        "activity.publish"
+      ],
+      "request_sha256": "55ef90b674ae3ff992470b0f111c4be29b743baada2b0db506e5bbe574578cd9"
+    }
+  },
+  "worker": [
+    {
+      "worker": "NotificationOutboxWorkerModule/ActivityBatchWorker",
+      "role": "t54_settlement_worker",
+      "claimed": true,
+      "items": 1,
+      "failed": 0,
+      "committed": true,
+      "attempted": true,
+      "commitError": null
+    }
+  ],
+  "h5": [
+    {
+      "step": "anonymous_ledger",
+      "http": 401,
+      "code": 40100,
+      "request_sha256": "9521086aa4c4b0960ab1e3ed28888894ad4656c661d49fef6f184c08032e0a83"
+    },
+    {
+      "step": "H5_ledger",
+      "actor": "t53-member",
+      "phase": "page",
+      "http": 200,
+      "code": 0,
+      "summaryHTTP": 200,
+      "summaryCode": 0,
+      "rows": 2,
+      "request_sha256": "e705f7753f458135632a8f47478cb039f3f290f55ce724793f4bbadef90e62ac"
+    },
+    {
+      "step": "H5_DOM",
+      "actor": "t53-member",
+      "ok": true
+    },
+    {
+      "step": "H5_ledger",
+      "actor": "t53-other",
+      "phase": "page",
+      "http": 200,
+      "code": 0,
+      "summaryHTTP": 200,
+      "summaryCode": 0,
+      "rows": 0,
+      "request_sha256": "1c5328ffaa260ed7d4db1263300c4dfea827f7bcb4473c9a202780a029b85dec"
+    },
+    {
+      "step": "H5_DOM",
+      "actor": "t53-other",
+      "ok": true
+    },
+    {
+      "step": "anonymous_ledger",
+      "http": 401,
+      "code": 40100,
+      "request_sha256": "ad1f1fbbd8fcce27a0a82f49c738be0a053e6d49ab1e2e8dcf6f0476afe09131"
+    },
+    {
+      "step": "H5_ledger",
+      "actor": "t53-member",
+      "phase": "revoked",
+      "http": 500,
+      "code": 50000,
+      "summaryHTTP": 200,
+      "summaryCode": 0,
+      "request_sha256": "0cdf937aa784477dd5419aaec8ae08f0d42f7b99ba45474f36d94b7f68eb0d5b"
+    }
+  ],
+  "new_account_entitlements": 0,
+  "member_role_bindings": 0,
+  "isolated_only_assembly": {
+    "worker": "separate non-owner PG login inheriting the isolated runtime; manifest read and enqueue columns",
+    "api": "ordinary checkout of closure receipt, insert and pointer columns in disposable PG",
+    "temporary_schema_role": "ephemeral NOLOGIN for trigger regression only"
+  },
+  "shared_grants": 0,
+  "public": "NOT_RUN"
+}

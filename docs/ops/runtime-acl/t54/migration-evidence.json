@@ -1,0 +1,52 @@
+{
+  "source": [
+    {
+      "name": "20261120073000_settlement_deferred_correction_guard",
+      "sha256": "38867d6ba7ebf72a2ca652c064bdbe8ffc674fba8c3b56d292d806cba1183d82"
+    },
+    {
+      "name": "20261120073100_settlement_correction_proof_lookup",
+      "sha256": "c5ba4ff229d717f52ed46d9d2c30585976f08a1196a955f10032629bc2517bd7"
+    }
+  ],
+  "empty_replay_count": 158,
+  "original_count": 156,
+  "old_guard_narrow_exit": 3,
+  "first_patch_narrow_exit": 3,
+  "final_narrow_commit_exit": 0,
+  "before_correction_helper": false,
+  "after_correction_helper": false,
+  "proof_table_read_by_api": false,
+  "function_security": "invoker preserved",
+  "ddl_rollback": {
+    "failed_ddl_exit": 3,
+    "atomic_rollback": true,
+    "rollback_reproduced_restricted_call": true,
+    "reapplied_commit_exit": 0,
+    "modified_data": 0,
+    "old_function_hashes": {
+      "ctsp_assert_complete": "1d53ee7296e3ef0e6437e5e9c9ee3042f970454cdb508983bb726e2215fa845a",
+      "ctsp_lifecycle_guard": "1d93e52023e7f662cd3e57822c6643b3e9792939cccdfe21b27094d75103f93f"
+    },
+    "final_function_hashes": {
+      "ctsp_assert_complete": "db4bc4455f294c9a2d94dda3a76191a861b339be536f608a7471f86b2b01d81e",
+      "ctsp_lifecycle_guard": "3b329daf383862cd8e35d2a0f01590b49ccaad1665b705f43ff6ea6c10362478"
+    },
+    "identity_acl_invoker_preserved": true
+  },
+  "restricted_correction_negative": {
+    "role": "srvf_dp_acceptance_runtime",
+    "readonly": true,
+    "private_correction_denied": "42501"
+  },
+  "cleanup": {
+    "containers_removed": 3,
+    "internal_network_removed": true,
+    "published_ports": 0,
+    "private_directory_absent": true,
+    "tmpfs_databases_retired": true,
+    "outbox_pending_retired": 7,
+    "external_delivery": 0,
+    "postcheck_exit": 0
+  }
+}

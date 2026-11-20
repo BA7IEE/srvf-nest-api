@@ -1,0 +1,65 @@
+{
+  "head": "65d1d6ea4caaa815faac0e79ead8846b6cc3ade9",
+  "run": 44696120601,
+  "attempt": 1,
+  "checks_failed": [
+    {
+      "conclusion": "FAILURE",
+      "detailsUrl": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44696120601/job/136153355396",
+      "name": "Contract + E2E (3)",
+      "status": "COMPLETED"
+    },
+    {
+      "conclusion": "FAILURE",
+      "detailsUrl": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44696120601/job/136161176469",
+      "name": "Lint / Typecheck / E2E",
+      "status": "COMPLETED"
+    }
+  ],
+  "spec": "activity-os-r4-d6-time-ledger.e2e-spec.ts",
+  "case": "measures classified worker and ledger at 2000 identities",
+  "operation": "prepare, before submit and before LedgerPostingBatch is created in this case",
+  "http": 500,
+  "code": 50000,
+  "prisma": "P2028",
+  "transaction_timeout_ms": 60000,
+  "transaction_elapsed_ms": 66183,
+  "suite_result": {
+    "passed": 90,
+    "failed": 1
+  },
+  "tests": {
+    "passed": 1334,
+    "failed": 1,
+    "skipped": 1
+  },
+  "assertions_changed": false,
+  "runtime_root_cause": "Duration exceeded the transaction deadline; underlying source of duration unknown.",
+  "observed_counters": [
+    {
+      "job_id": "136129325133",
+      "sample": "T53 baseline",
+      "prepare_wall_ms": 8908,
+      "engine_request_union_ms": 6941,
+      "process_event_loop_utilization": 0.2488,
+      "engine_calls": 222
+    },
+    {
+      "job_id": "136153355396",
+      "sample": "T54 attempt 1",
+      "prepare_wall_ms": 66296,
+      "engine_request_union_ms": 63914,
+      "process_event_loop_utilization": 0.0459,
+      "engine_calls": 197
+    },
+    {
+      "job_id": "136161756937",
+      "sample": "T54 failed jobs rerun",
+      "prepare_wall_ms": 9820,
+      "engine_request_union_ms": 7848,
+      "process_event_loop_utilization": 0.227,
+      "engine_calls": 222
+    }
+  ],
+  "counter_limit": "Engine request elapsed time includes waiting and transport. No unique attribution to PG execution, host load or a particular query."
+}
