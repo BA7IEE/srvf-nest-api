@@ -1,0 +1,14 @@
+{
+  "exit": 0,
+  "summary": [
+    "PASS test/e2e/notifications-sms.e2e-spec.ts (6.599 s)",
+    "Test Suites: 1 passed, 1 total",
+    "Tests:       13 skipped, 1 passed, 14 total",
+    "Time:        6.656 s, estimated 7 s"
+  ],
+  "scope": "one previously failed case, native harness on srvf with new isolated PG and DevStubSmsProvider",
+  "http_500": false,
+  "biz_50000": false,
+  "invariant_evidence": null,
+  "types": []
+}
