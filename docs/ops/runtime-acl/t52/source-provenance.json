@@ -1,0 +1,16 @@
+{
+  "preview_source_tree": "e6b67c20aa799192b13e8c8eff17957eff5fc073",
+  "sha256_by_input": {
+    "prisma/schema.prisma": "1b70791c8f5d02ebf554d3949f3977862e01387699885b5e20f35be4ecd67611",
+    "test/e2e/activity-batch2-9b-ledger-read.e2e-spec.ts": "b6faa02bf4f31b0e4bfa39073d03a8730dc66c2ce849a2352ecbfbb645bc05f1",
+    "test/helpers/member-identity.fixture.ts": "78d3e83fd4d3368503c15e9e17e04647b262d1ffa610d15ebdb4a724ee85f1a3",
+    "test/fixtures/r5-ci-sealed-roles.sql": "b55b88296bcd045c84da36009493c324f5d8909c70202303fcc600c1a998f990",
+    "src/modules/activities/ledger-query.service.ts": "041fa250d4bba9800f6784751d320399dbc1d78168076d59f599b1a38c0791a2",
+    "dist/modules/activities/ledger-query.service.js": "2a0a82b45ccfd466b4ffcac831ad3e9fef7f388887fdf2c8e2bc828bc0721929",
+    "docs/ops/runtime-acl/t49/ledger-contract.json": "dbd6c2f92154edd1f28be2190c8f2d8dfc38d3c09e39309645ab9691dbb59edd",
+    "docs/ops/runtime-acl/t49/preflight.sql": "0890eed2dfe4ffbe89fcbd22994528c4fb30a04ef65bef268cd7dffd787f5c03",
+    "docs/ops/runtime-acl/t49/check-ledger.sh": "f0fbced4f08af8bdcb5d55eac753cda66bd1e366cc8af66f793b96df3466cfc4"
+  },
+  "generated_fixture_sha256": "df0fc99fb22974dd79098850a9551be26b7dc57f62f8f8492fbb8c22362cf583",
+  "previous_t51_review_sha256": "83c135bc8e6a810e7ce36e31144a614f33d28f9268b6b75e8090af2cf4c2add9"
+}

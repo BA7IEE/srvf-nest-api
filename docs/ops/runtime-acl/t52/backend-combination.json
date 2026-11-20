@@ -1,0 +1,65 @@
+{
+  "parents": [
+    "dd62ce308f9142e8b3be04e9c4d52f548c0ebb17",
+    "4c8cba0af25abe4587533c513489729a5f219fbe"
+  ],
+  "merge_base": "2b3eee0a954ea65abaef3edb35fd391eaa1567e9",
+  "command": "git merge-tree --write-tree <1445> <1446>",
+  "merge_tree_exit": 1,
+  "conflicts": [
+    "docs/ai-harness/ROUTE_AUTHZ.md"
+  ],
+  "preview_resolved_git_tree": "e6b67c20aa799192b13e8c8eff17957eff5fc073",
+  "generated_blob": "df0d0b63c83d368d363923d1f1093e03b29066a1",
+  "generated_sha256": "c7cc7f2f5d0bd5ecd03f9b504a5a466a6ccc7177ed25e8500fd27d464c817541",
+  "authorization_rows": 676,
+  "compared_to_1445": [
+    "A\tchangelog.d/admin-sms-confirmation-uuid.fixed.md",
+    "M\tdocs/ai-harness/ROUTE_AUTHZ.md",
+    "A\tdocs/ops/runtime-acl/t49/check-ledger.sh",
+    "A\tdocs/ops/runtime-acl/t49/ledger-contract.json",
+    "A\tdocs/ops/runtime-acl/t49/preflight.sql",
+    "M\tdocs/ops/server-deployment-runbook.md",
+    "M\tsrc/modules/notifications/notification-outbox.metadata-guard.spec.ts",
+    "M\tsrc/modules/notifications/notification-outbox.types.ts",
+    "M\ttest/e2e/notifications-sms.e2e-spec.ts",
+    "M\ttest/helpers/sms-first-response-evidence.spec.ts",
+    "M\ttest/helpers/sms-first-response-evidence.ts"
+  ],
+  "manifest_diff": [
+    "-| inputDigest | sha256:de8cd016617499cdec2642ac31a5991256d364d28af2324594ec7d9e86e67b38 |",
+    "+| inputDigest | sha256:e7a12079c02980ab653aaecfd935956b82ccebbf38137a033aa1c995a64716c9 |",
+    "-  \"inputDigest\": \"sha256:de8cd016617499cdec2642ac31a5991256d364d28af2324594ec7d9e86e67b38\",",
+    "+  \"inputDigest\": \"sha256:e7a12079c02980ab653aaecfd935956b82ccebbf38137a033aa1c995a64716c9\","
+  ],
+  "commands": [
+    {
+      "cmd": "pnpm install --offline --frozen-lockfile",
+      "exit": 0
+    },
+    {
+      "cmd": "pnpm prisma:generate",
+      "exit": 0
+    },
+    {
+      "cmd": "pnpm exec tsx scripts/generate-authz-manifest.ts --write",
+      "exit": 0
+    },
+    {
+      "cmd": "pnpm docs:authz:check",
+      "exit": 0
+    },
+    {
+      "cmd": "pnpm build",
+      "exit": 0
+    },
+    {
+      "cmd": "pnpm test --runInBand --runTestsByPath src/modules/notifications/notification-outbox.metadata-guard.spec.ts",
+      "exit": 0
+    }
+  ],
+  "tests_passed": 50,
+  "compiled_reader_sha256": "2a0a82b45ccfd466b4ffcac831ad3e9fef7f388887fdf2c8e2bc828bc0721929",
+  "ci_on_combination": "NOT_RUN",
+  "github_combination_commit": null
+}
