@@ -43,7 +43,7 @@ SELECT "public"."Activity"."id", "public"."Activity"."title", "public"."Activity
       FROM "ActivityTemplate"
       WHERE "id" = $1
       FOR UPDATE
-    
+
 SELECT "public"."ActivityTemplate"."id", "public"."ActivityTemplate"."familyId", "public"."ActivityTemplate"."activityTypeCode", "public"."ActivityTemplate"."statusCode", "public"."ActivityTemplate"."schemaVersion", "public"."ActivityTemplate"."definitionJson", "public"."ActivityTemplate"."definitionHash", "public"."ActivityTemplate"."effectiveFrom", "public"."ActivityTemplate"."effectiveTo" FROM "public"."ActivityTemplate" WHERE ("public"."ActivityTemplate"."id" = $1 AND 1=1) LIMIT $2 OFFSET $3
 SELECT "public"."User"."id", "public"."User"."username", "public"."User"."role"::text, "public"."User"."status"::text, "public"."User"."memberId" FROM "public"."User" WHERE ("public"."User"."id" = $1 AND "public"."User"."status" = CAST($2::text AS "public"."UserStatus") AND "public"."User"."deletedAt" IS NULL) LIMIT $3 OFFSET $4
 SELECT "public"."Member"."id", "public"."Member"."memberNo", "public"."Member"."realName", "public"."Member"."nickname", "public"."Member"."memberSinceDate", "public"."Member"."memberOriginCode", "public"."Member"."gradeCode", "public"."Member"."status"::text, "public"."Member"."createdAt", "public"."Member"."updatedAt", "public"."Member"."deletedAt" FROM "public"."Member" WHERE ("public"."Member"."id" = $1 AND 1=1) LIMIT $2 OFFSET $3

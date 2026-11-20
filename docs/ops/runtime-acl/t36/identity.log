@@ -2,8 +2,8 @@ VM-0-17-ubuntu
 candidate sha256:1eb4e3ca321b141bca0c9c032e919f8665179f843dc623349fcd765ee6c89ffb running
 candidate_revision 108feebb84b85c7e4955c5af8bbfc016702e4529
 internal=true
-web /srvf-t36-aCjuBCxk-web sha256:bfdfe2455c0d6ec8a056dde0b9e9f2f7ca19bd9ab568931ccbf0f9b64f010f22 {} /trial-nginx.conf rw=false /trial-web rw=false 
-web_source /var/tmp/srvf-t36.aCjuBCxk/gateway.conf => /trial-nginx.conf /opt/1panel/www/sites/dp.srvf.team/releases/b7f3dac00a860e32c0cbc220f29da0755bce024b/webroot => /trial-web 
+web /srvf-t36-aCjuBCxk-web sha256:bfdfe2455c0d6ec8a056dde0b9e9f2f7ca19bd9ab568931ccbf0f9b64f010f22 {} /trial-nginx.conf rw=false /trial-web rw=false
+web_source /var/tmp/srvf-t36.aCjuBCxk/gateway.conf => /trial-nginx.conf /opt/1panel/www/sites/dp.srvf.team/releases/b7f3dac00a860e32c0cbc220f29da0755bce024b/webroot => /trial-web
 28cd1e9ad7eb6c5ae7dc28d3c364b8f61671729c503ee8bfa228b3c5dc8b86fd  /trial-web/static/js/index-B9y9s-Nz.js
 api sha256:761afa14c526f18c466de26a50ded7a73ed204e26a1a3620d48b7b5751e54912 {}
 srvf_dp_acceptance_runtime|7|t|t

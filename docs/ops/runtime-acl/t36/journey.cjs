@@ -67,7 +67,7 @@ async function apiSession(user){
   await approve.waitFor();
   if(!await approve.isEnabled()){
     const issues=await second.locator('.el-alert').allTextContents();
-    console.log('approval blocked',issues.map(t=>t.replace(/\s+/g,' ').slice(0,220))); 
+    console.log('approval blocked',issues.map(t=>t.replace(/\s+/g,' ').slice(0,220)));
   }
   await approve.click();
   await second.locator('label.el-checkbox').filter({hasText:'我已核对'}).click();

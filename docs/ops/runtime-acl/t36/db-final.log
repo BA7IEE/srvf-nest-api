@@ -1,36 +1,36 @@
 Null display is "(null)".
- applied_migrations 
+ applied_migrations
 --------------------
                 156
 (1 row)
 
-            id             | metricRequirementCode | statusCode | workflowRevision | metricSelectionRevision | initiated_by_lab | pointer_matches | set_version | set_status 
+            id             | metricRequirementCode | statusCode | workflowRevision | metricSelectionRevision | initiated_by_lab | pointer_matches | set_version | set_status
 ---------------------------+-----------------------+------------+------------------+-------------------------+------------------+-----------------+-------------+------------
  cmwnn2kav0005nz019fml70du | not_required          | published  |                1 |                       1 | t                | (null)          |      (null) | (null)
  cmwnn3o3f001pnz01xjnt7fnz | required              | draft      |                0 |                       1 | t                | t               |           1 | active
 (2 rows)
 
- metricRequirementCode |            id             | requestVersion | requestType |  status  | submitter | reviewer 
+ metricRequirementCode |            id             | requestVersion | requestType |  status  | submitter | reviewer
 -----------------------+---------------------------+----------------+-------------+----------+-----------+----------
  not_required          | cmwnn2liq000lnz01mhqxzqk6 |              1 | initial     | approved | lab       | reviewer
  not_required          | cmwnn2nma001hnz01ictsugiy |              2 | change      | pending  | lab       | (null)
  required              | cmwnn6r76002cnz01jg1o5qto |              1 | initial     | pending  | lab       | (null)
 (3 rows)
 
- role | username 
+ role | username
 ------+----------
  USER | lab
  USER | reviewer
 (2 rows)
 
-           code            |  scopeType   | principalType | status | count 
+           code            |  scopeType   | principalType | status | count
 ---------------------------+--------------+---------------+--------+-------
  activity-owner            | ACTIVITY     | MEMBER        | ACTIVE |     1
  activity-publish-reviewer | ORGANIZATION | USER          | ACTIVE |     1
  lab-scope-create          | ORGANIZATION | USER          | ACTIVE |     1
 (3 rows)
 
-      event       | actorRoleSnap | username | success |            request_id             
+      event       | actorRoleSnap | username | success |            request_id
 ------------------+---------------+----------+---------+-----------------------------------
  activity.publish | USER          | lab      | t       | cmwnn2k7oc3db79999b4c10bd98ef6c1c
  activity.publish | USER          | lab      | t       | cmwnn2lg965b8d0076006cd77d06a0e47
@@ -40,4 +40,3 @@ Null display is "(null)".
  activity.publish | USER          | lab      | t       | cmwnn3nzkcc6703f06d644d0cc6a784cb
  activity.publish | USER          | lab      | t       | cmwnn6r40c94fbcf7861f61026300adad
 (7 rows)
-

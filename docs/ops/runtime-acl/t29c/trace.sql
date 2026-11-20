@@ -44,7 +44,7 @@ SELECT "public"."Activity"."id", "public"."Activity"."title", "public"."Activity
       FROM "ActivityTemplate"
       WHERE "id" = $1
       FOR UPDATE
-    
+
 SELECT "public"."ActivityTemplate"."id", "public"."ActivityTemplate"."familyId", "public"."ActivityTemplate"."activityTypeCode", "public"."ActivityTemplate"."statusCode", "public"."ActivityTemplate"."schemaVersion", "public"."ActivityTemplate"."definitionJson", "public"."ActivityTemplate"."definitionHash", "public"."ActivityTemplate"."effectiveFrom", "public"."ActivityTemplate"."effectiveTo" FROM "public"."ActivityTemplate" WHERE ("public"."ActivityTemplate"."id" = $1 AND 1=1) LIMIT $2 OFFSET $3
 SELECT "public"."User"."id", "public"."User"."username", "public"."User"."role"::text, "public"."User"."status"::text, "public"."User"."memberId" FROM "public"."User" WHERE ("public"."User"."id" = $1 AND "public"."User"."status" = CAST($2::text AS "public"."UserStatus") AND "public"."User"."deletedAt" IS NULL) LIMIT $3 OFFSET $4
 SELECT "public"."Member"."id", "public"."Member"."memberNo", "public"."Member"."realName", "public"."Member"."nickname", "public"."Member"."memberSinceDate", "public"."Member"."memberOriginCode", "public"."Member"."gradeCode", "public"."Member"."status"::text, "public"."Member"."createdAt", "public"."Member"."updatedAt", "public"."Member"."deletedAt" FROM "public"."Member" WHERE ("public"."Member"."id" = $1 AND 1=1) LIMIT $2 OFFSET $3
@@ -111,7 +111,7 @@ BEGIN
     SELECT id FROM "Activity"
     WHERE id = $1 AND "deletedAt" IS NULL
     FOR UPDATE
-  
+
 SELECT "public"."Activity"."id", "public"."Activity"."statusCode", "public"."Activity"."workflowRevision", "public"."Activity"."allocationModeCode", "public"."Activity"."initiatorMemberId", "public"."Activity"."startAt", "public"."Activity"."endAt", "public"."Activity"."registrationDeadline", "public"."Activity"."isPublicRegistration" FROM "public"."Activity" WHERE ("public"."Activity"."id" = $1 AND 1=1) LIMIT $2 OFFSET $3
 SELECT "public"."ActivityEmergencyInitiation"."id" FROM "public"."ActivityEmergencyInitiation" WHERE ("public"."ActivityEmergencyInitiation"."activityId" = $1 AND 1=1) LIMIT $2 OFFSET $3
 SELECT "public"."ActivityAllocationBatch"."id", "public"."ActivityAllocationBatch"."modeCode", "public"."ActivityAllocationBatch"."statusCode" FROM "public"."ActivityAllocationBatch" WHERE "public"."ActivityAllocationBatch"."activityId" = $1 OFFSET $2
@@ -153,10 +153,10 @@ BEGIN
     SELECT id FROM "Activity"
     WHERE id = $1 AND "deletedAt" IS NULL
     FOR UPDATE
-  
+
 
       SELECT id FROM activity_publish_reviews WHERE id = $1 FOR UPDATE
-    
+
 SELECT "public"."ActivityEmergencyInitiation"."id" FROM "public"."ActivityEmergencyInitiation" WHERE ("public"."ActivityEmergencyInitiation"."activityId" = $1 AND 1=1) LIMIT $2 OFFSET $3
 SELECT "public"."activity_publish_reviews"."id", "public"."activity_publish_reviews"."activityId", "public"."activity_publish_reviews"."requestType", "public"."activity_publish_reviews"."requestVersion", "public"."activity_publish_reviews"."baseRevision", "public"."activity_publish_reviews"."status", "public"."activity_publish_reviews"."snapshot", "public"."activity_publish_reviews"."directPublish", "public"."activity_publish_reviews"."audienceTagCodes", "public"."activity_publish_reviews"."audienceOrganizationIds", "public"."activity_publish_reviews"."submittedByUserId", "public"."activity_publish_reviews"."submittedAt", "public"."activity_publish_reviews"."reviewedByUserId", "public"."activity_publish_reviews"."reviewedAt", "public"."activity_publish_reviews"."reviewNote", "public"."activity_publish_reviews"."operationKey", "public"."activity_publish_reviews"."requestHash", "public"."activity_publish_reviews"."reviewOperationKey", "public"."activity_publish_reviews"."reviewRequestHash", "public"."activity_publish_reviews"."createdAt", "public"."activity_publish_reviews"."updatedAt" FROM "public"."activity_publish_reviews" WHERE ("public"."activity_publish_reviews"."id" = $1 AND 1=1) LIMIT $2 OFFSET $3
 SELECT "public"."Activity"."id", "public"."Activity"."statusCode", "public"."Activity"."workflowRevision", "public"."Activity"."organizationId", "public"."Activity"."startAt", "public"."Activity"."endAt", "public"."Activity"."registrationDeadline", "public"."Activity"."initiatorMemberId", "public"."Activity"."allocationModeCode" FROM "public"."Activity" WHERE ("public"."Activity"."id" = $1 AND 1=1) LIMIT $2 OFFSET $3
@@ -211,7 +211,7 @@ SELECT "public"."ActivitySessionPosition"."id", "public"."ActivitySessionPositio
          OR ("scopeTypeCode", "scopeId") IN (VALUES ($2, $3),($4, $5),($6, $7))
       ORDER BY "scopeTypeCode", "scopeId", "id"
       FOR UPDATE
-    
+
 INSERT INTO "public"."ActivityCapacityBucket" ("id","createdAt","updatedAt","activityId","scopeTypeCode","scopeId","capacity","occupied","version") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING "public"."ActivityCapacityBucket"."id", "public"."ActivityCapacityBucket"."createdAt", "public"."ActivityCapacityBucket"."updatedAt", "public"."ActivityCapacityBucket"."activityId", "public"."ActivityCapacityBucket"."scopeTypeCode", "public"."ActivityCapacityBucket"."scopeId", "public"."ActivityCapacityBucket"."capacity", "public"."ActivityCapacityBucket"."occupied", "public"."ActivityCapacityBucket"."version"
 INSERT INTO "public"."ActivityCapacityBucket" ("id","createdAt","updatedAt","activityId","scopeTypeCode","scopeId","capacity","occupied","version") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING "public"."ActivityCapacityBucket"."id", "public"."ActivityCapacityBucket"."createdAt", "public"."ActivityCapacityBucket"."updatedAt", "public"."ActivityCapacityBucket"."activityId", "public"."ActivityCapacityBucket"."scopeTypeCode", "public"."ActivityCapacityBucket"."scopeId", "public"."ActivityCapacityBucket"."capacity", "public"."ActivityCapacityBucket"."occupied", "public"."ActivityCapacityBucket"."version"
 INSERT INTO "public"."ActivityCapacityBucket" ("id","createdAt","updatedAt","activityId","scopeTypeCode","scopeId","capacity","occupied","version") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING "public"."ActivityCapacityBucket"."id", "public"."ActivityCapacityBucket"."createdAt", "public"."ActivityCapacityBucket"."updatedAt", "public"."ActivityCapacityBucket"."activityId", "public"."ActivityCapacityBucket"."scopeTypeCode", "public"."ActivityCapacityBucket"."scopeId", "public"."ActivityCapacityBucket"."capacity", "public"."ActivityCapacityBucket"."occupied", "public"."ActivityCapacityBucket"."version"
@@ -221,7 +221,7 @@ UPDATE "public"."Activity" SET "statusCode" = $1, "publishedBy" = $2, "published
       WHERE id IN ($1) AND "deletedAt" IS NULL
       ORDER BY id
       FOR UPDATE
-    
+
 SELECT "public"."Member"."id", "public"."Member"."gradeCode" FROM "public"."Member" WHERE ("public"."Member"."id" = $1 AND "public"."Member"."deletedAt" IS NULL AND "public"."Member"."status" = CAST($2::text AS "public"."MemberStatus")) LIMIT $3 OFFSET $4
 SELECT "public"."User"."id", "public"."User"."memberId" FROM "public"."User" WHERE (("public"."User"."deletedAt" IS NULL AND "public"."User"."status" = CAST($1::text AS "public"."UserStatus")) AND "public"."User"."memberId" IN ($2)) ORDER BY "public"."User"."id" ASC LIMIT $3 OFFSET $4
 INSERT INTO "public"."activity_responsibility_assignments" ("id","activityId","memberId","responsibilityType","canManageRegistrations","canManageAttendance","status","startedAt","assignedByUserId","source","createdAt","updatedAt") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING "public"."activity_responsibility_assignments"."id"
@@ -249,7 +249,7 @@ BEGIN
     SELECT id FROM "Activity"
     WHERE id = $1 AND "deletedAt" IS NULL
     FOR UPDATE
-  
+
 SELECT "public"."Activity"."id", "public"."Activity"."statusCode", "public"."Activity"."workflowRevision", "public"."Activity"."allocationModeCode", "public"."Activity"."timePolicySelectionRevision", "public"."Activity"."currentTimePolicySelectionRevisionId", "public"."Activity"."contributionPolicySelectionRevision", "public"."Activity"."currentContributionPolicySelectionRevisionId" FROM "public"."Activity" WHERE ("public"."Activity"."id" = $1 AND 1=1) LIMIT $2 OFFSET $3
 SELECT "public"."ActivityAllocationBatch"."id", "public"."ActivityAllocationBatch"."modeCode", "public"."ActivityAllocationBatch"."statusCode" FROM "public"."ActivityAllocationBatch" WHERE "public"."ActivityAllocationBatch"."activityId" = $1 OFFSET $2
 SELECT "public"."activity_responsibility_assignments"."id" FROM "public"."activity_responsibility_assignments" WHERE ("public"."activity_responsibility_assignments"."activityId" = $1 AND "public"."activity_responsibility_assignments"."memberId" = $2 AND "public"."activity_responsibility_assignments"."responsibilityType" = $3 AND "public"."activity_responsibility_assignments"."status" = $4) LIMIT $5 OFFSET $6
@@ -260,7 +260,7 @@ BEGIN
     SELECT id FROM "Activity"
     WHERE id = $1 AND "deletedAt" IS NULL
     FOR UPDATE
-  
+
 SELECT "public"."Activity"."id", "public"."Activity"."statusCode", "public"."Activity"."workflowRevision", "public"."Activity"."allocationModeCode", "public"."Activity"."timePolicySelectionRevision", "public"."Activity"."currentTimePolicySelectionRevisionId", "public"."Activity"."contributionPolicySelectionRevision", "public"."Activity"."currentContributionPolicySelectionRevisionId" FROM "public"."Activity" WHERE ("public"."Activity"."id" = $1 AND 1=1) LIMIT $2 OFFSET $3
 SELECT "public"."ActivityAllocationBatch"."id", "public"."ActivityAllocationBatch"."modeCode", "public"."ActivityAllocationBatch"."statusCode" FROM "public"."ActivityAllocationBatch" WHERE "public"."ActivityAllocationBatch"."activityId" = $1 OFFSET $2
 SELECT "public"."activity_responsibility_assignments"."id" FROM "public"."activity_responsibility_assignments" WHERE ("public"."activity_responsibility_assignments"."activityId" = $1 AND "public"."activity_responsibility_assignments"."memberId" = $2 AND "public"."activity_responsibility_assignments"."responsibilityType" = $3 AND "public"."activity_responsibility_assignments"."status" = $4) LIMIT $5 OFFSET $6
@@ -307,7 +307,7 @@ SELECT "public"."Activity"."id", "public"."Activity"."title", "public"."Activity
       FROM "ActivityTemplate"
       WHERE "id" = $1
       FOR UPDATE
-    
+
 SELECT "public"."ActivityTemplate"."id", "public"."ActivityTemplate"."familyId", "public"."ActivityTemplate"."activityTypeCode", "public"."ActivityTemplate"."statusCode", "public"."ActivityTemplate"."schemaVersion", "public"."ActivityTemplate"."definitionJson", "public"."ActivityTemplate"."definitionHash", "public"."ActivityTemplate"."effectiveFrom", "public"."ActivityTemplate"."effectiveTo" FROM "public"."ActivityTemplate" WHERE ("public"."ActivityTemplate"."id" = $1 AND 1=1) LIMIT $2 OFFSET $3
 SELECT "public"."User"."id", "public"."User"."username", "public"."User"."role"::text, "public"."User"."status"::text, "public"."User"."memberId" FROM "public"."User" WHERE ("public"."User"."id" = $1 AND "public"."User"."status" = CAST($2::text AS "public"."UserStatus") AND "public"."User"."deletedAt" IS NULL) LIMIT $3 OFFSET $4
 SELECT "public"."Member"."id", "public"."Member"."memberNo", "public"."Member"."realName", "public"."Member"."nickname", "public"."Member"."memberSinceDate", "public"."Member"."memberOriginCode", "public"."Member"."gradeCode", "public"."Member"."status"::text, "public"."Member"."createdAt", "public"."Member"."updatedAt", "public"."Member"."deletedAt" FROM "public"."Member" WHERE ("public"."Member"."id" = $1 AND 1=1) LIMIT $2 OFFSET $3
