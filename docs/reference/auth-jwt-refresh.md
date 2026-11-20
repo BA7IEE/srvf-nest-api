@@ -149,6 +149,14 @@
 **不做清单**(沿评审稿 v1 D-9):
 - ❌ `tokenVersion` 字段 / access token blacklist / JWT revoke list / refresh_tokens 查询接口 / 已登录设备列表 UI / 单设备管理 / device fingerprint
 - ❌ Redis / Queue / Cron(refresh token 撤销靠 DB 主键索引 sub-ms 查询)
-- ❌ 完整 OAuth 2.0 / OIDC / refresh token tree / httpOnly cookie 传 refresh token(多端 Web + 小程序 + APP 统一 body 传)
+- ❌ 完整 OAuth 2.0 / OIDC / refresh token tree；既有客户端仍统一走 JSON，不接受 Cookie 替代请求体。
 - ❌ 改 `LoginDto` / `JwtPayload` / `JwtStrategy` 查库字段(沿 v2-api-contract §6.5 + 本节铁律)
 - ❌ refresh token 失败码细分 / OAuth 第三方登录(微信小程序登录已于 2026-06-12 解锁为第三个独立认证端点,见 §8「登录」;其余第三方登录仍不做)
+
+**P0-E 同源 HTTPS H5 传输例外（维护者明确批准）**：仅
+`POST /api/auth/v1/h5/{login,refresh,logout}` 使用持久 `HttpOnly`、`Secure`、
+`SameSite=Strict`、host-only Cookie 传递续登凭证；H5 的 JSON 不返回续登凭证。
+不修改既有 JSON 端点和 DTO，不开启跨域凭证，不增加会话表。密码校验、签发、
+rotation、family 绝对到期/撤销、失败码、审计及 access 语义沿用既有实现；
+H5 登录和续登分别与 JSON 对应入口共享 IP 限流桶，退出不限流。
+部署约束及清理行为见 [H5 对接说明](../handoff/h5-session.md)。

@@ -16,7 +16,10 @@ import { BizCode } from '../../../common/exceptions/biz-code.constant';
 import { BizException } from '../../../common/exceptions/biz.exception';
 import { AppIdentityResolver } from '../../users/app-identity.resolver';
 import { AppActivitiesService } from '../app-activities.service';
-import { AppActivityDetailDto } from '../dto/app/app-activity-detail.dto';
+import {
+  AppActivityDetailDto,
+  AppRegistrationInsuranceEligibilityDto,
+} from '../dto/app/app-activity-detail.dto';
 import { AppAvailableActivityListItemDto } from '../dto/app/app-available-activity-list-item.dto';
 import {
   AppActivityDirectoryListItemDto,
@@ -116,6 +119,29 @@ export class AppActivitiesController {
       throw new BizException(BizCode.FORBIDDEN);
     }
     return this.appActivities.listPositionsForMember(params.activityId, access.member.id);
+  }
+
+  @Get(':id/registration-insurance')
+  @LoginScoped('app-activity-catalog', {
+    admission: 'app-member',
+    require: 'all',
+    engine: 'authz-scoped',
+  })
+  @ApiOperation({ summary: '查询本人针对可见已发布活动的报名保险资格 [auth]' })
+  @ApiWrappedOkResponse(AppRegistrationInsuranceEligibilityDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+  )
+  async registrationInsurance(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Param() params: IdParamDto,
+  ): Promise<AppRegistrationInsuranceEligibilityDto> {
+    const access = await this.appIdentity.resolve(currentUser);
+    if (!access.canUseApp || access.member === null) throw new BizException(BizCode.FORBIDDEN);
+    return this.appActivities.registrationInsuranceForMember(params.id, access.member.id);
   }
 
   @Get(':id')

@@ -27,6 +27,7 @@ describe('SMS first response evidence fixed whitelist', () => {
 
   it.each([
     ['P2034 write conflict', 'TX_CONFLICT'],
+    ['eventKey contains forbidden sensitive material', 'EVENT_KEY_SENSITIVE'],
     ['admin SMS active slot disappeared for aggregate=private', 'RESERVATION_INVARIANT'],
     ['unknown sensitive SQL values', 'UNCLASSIFIED'],
     ['', 'NONE'],

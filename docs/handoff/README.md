@@ -39,6 +39,7 @@
 |---|---|---|
 | [`admin-web.md`](admin-web.md) | `srvf-admin-web`(PC 管理后台,Vue3 + pure-admin,私有仓) | 轴模型 + 任务→端点图 + 踩坑(§3;**登录/令牌接线 §3.1 为全端通用节**)+ 缺口台账 + IA 建议 |
 | [`miniapp.md`](miniapp.md) | 小程序前端(仓未建,占位)+ **招新 H5(`srvf-h5`,消费其中 `open/v1` 招新链)** | App surface(`/api/app/v1/*`)模型 + 能力图 + H5 无账号链 + 缺口台账 |
+| [`h5-session.md`](h5-session.md) | 需要登录的同源 HTTPS H5 | 登录、启动时续登、退出及代理/Cookie 接线；不影响 `open/v1` 无账号链 |
 | `openapi.json` | 离线/版本审查用 | 从 live 导出的**便利快照**(非真相;真相是 live `/api/docs-json`) |
 | [`contract-version-registry.md`](contract-version-registry.md) | 维护者 + 各前端仓 | 合同 §16.1 ⑤「五端同一 contract version」的**回执落点**:各端填自己编译所用版本,`cutover:check` 5b 据此点名谁没回执 / 谁对不上 |
 
