@@ -1,0 +1,4 @@
+{"punch_events" : 0, "service_segments" : 0}
+{"relation" : "ActivitySettlementClosureRevision", "runtime_selectable_columns" : 0, "total_columns" : 23}
+{"relation" : "ActivityTimeCutoverReceipt", "runtime_selectable_columns" : 0, "total_columns" : 10}
+{"relation" : "ParticipationLedgerEntry", "runtime_selectable_columns" : 0, "total_columns" : 18}

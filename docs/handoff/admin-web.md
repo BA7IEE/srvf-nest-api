@@ -599,7 +599,7 @@ D4 八个新增入口全部在 Human App managed activity 面，详见 [小程�
 
 ### 3.1 登录与令牌接线(全端通用;2026-07-17 自 srvf-admin-web 对接 guide 归一)
 
-> 权威细则 = [`reference/auth-jwt-refresh.md`](../reference/auth-jwt-refresh.md)(P0-E 冻结,动它先过决策锁);本节只保留前端必须知道的行为语义。小程序/H5 令牌语义与此完全一致(见 [`miniapp.md §1.1`](miniapp.md));纯前端侧改哪些文件(`src/api/user.ts` 等)留在姊妹仓文档,不在本层。
+> 权威细则 = [`reference/auth-jwt-refresh.md`](../reference/auth-jwt-refresh.md)(P0-E 冻结,动它先过决策锁);本节描述既有 JSON 入口，小程序继续沿用(见 [`miniapp.md §1.1`](miniapp.md))。新增同源 HTTPS H5 入口仅传输方式不同，见 [H5 会话](h5-session.md)；后台无需迁移。
 
 1. **信封与失败语义**:成功 `{code:0,message:'ok',data}`;业务失败 = **HTTP 4xx** + `{code,message}`(无 data)——axios 会 reject,业务体在 `err.response.data.{code,message}`,不是 resolved 的 `{code:!0}`。拦截器的「401 自动刷新」**必须排除** `auth/v1/login` 与 `auth/v1/refresh` 自身(这两处的 401 是凭证失败,去刷新会死循环)。
 2. **错误码 → 前端行为**:`10004`(401,登录失败;不存在/密码错/禁用/软删四场景防枚举同响应)→ 提示 message、**不**触发刷新;`40100`(401,未登录/access 失效)→ 触发 refresh → 重放,refresh 也失败才登出;`10007`(401,refresh 无效;4 子原因刻意不细分)→ 清 token 跳登录;`30100`(403,判权失败)→ 403 页;`42900`(429 限流,**无** `Retry-After` / `X-RateLimit-*` 头)→ 提示稍后再试。

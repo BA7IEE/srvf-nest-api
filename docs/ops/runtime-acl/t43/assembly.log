@@ -1,0 +1,7 @@
+check OK; 32 column privileges, 3 relations
+rehearse OK; 32 column privileges, 3 relations
+apply OK; 32 column privileges, 3 relations
+apply OK; 32 column privileges, 3 relations
+withdraw OK; 32 column privileges, 3 relations
+withdraw OK; 32 column privileges, 3 relations
+check OK; 32 column privileges, 3 relations

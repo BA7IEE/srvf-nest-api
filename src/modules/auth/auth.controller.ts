@@ -1,5 +1,6 @@
 import { Body, Controller, HttpCode, HttpStatus, Post, Req, Res } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import {
   ApiBizErrorResponse,
@@ -22,6 +23,7 @@ import { RefreshThrottle } from '../../common/decorators/refresh-throttle.decora
 import { SmsSendThrottle } from '../../common/decorators/sms-send-throttle.decorator';
 import { SmsVerifyThrottle } from '../../common/decorators/sms-verify-throttle.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import { BizException } from '../../common/exceptions/biz.exception';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { AuthService } from './auth.service';
 import {
@@ -56,6 +58,14 @@ import { LoginWechatService } from './login-wechat.service';
 import { LoginWecomService } from './login-wecom.service';
 import { PasswordResetService } from './password-reset.service';
 import { IdentityStepUpService } from './identity-step-up.service';
+import {
+  clearH5RefreshCookie,
+  H5SessionResponseDto,
+  h5ThrottleKey,
+  readH5RefreshCookie,
+  requireSameOriginH5,
+  sendH5Session,
+} from './h5-session';
 import {
   clearWecomBrowserNonceCookie,
   readWecomBrowserNonce,
@@ -139,6 +149,95 @@ export class AuthController {
   @ApiBizErrorResponse(BizCode.BAD_REQUEST)
   logout(@Body() dto: LogoutDto, @Req() req: Request): Promise<null> {
     return this.authService.logout(dto, this.buildAuditMeta(req));
+  }
+
+  @Public()
+  @LoginThrottle()
+  @Throttle({ default: { generateKey: h5ThrottleKey('login') } })
+  @Post('h5/login')
+  @HttpCode(HttpStatus.OK)
+  @ApiHeader({
+    name: 'Origin',
+    required: true,
+    description: 'Browser origin; same HTTPS origin only',
+  })
+  @ApiOperation({
+    summary: 'H5 同源 HTTPS 密码登录 [public]',
+    description: 'JSON 只返回 access；Set-Cookie 下发 HttpOnly、Secure 的续登凭证。',
+  })
+  @ApiWrappedOkResponse(H5SessionResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.FORBIDDEN,
+    BizCode.LOGIN_FAILED,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  async loginH5(
+    @Body() dto: LoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<H5SessionResponseDto> {
+    requireSameOriginH5(req, res);
+    return sendH5Session(res, await this.authService.login(dto, this.buildAuditMeta(req)));
+  }
+
+  @Public()
+  @RefreshThrottle()
+  @Throttle({ refresh: { generateKey: h5ThrottleKey('refresh') } })
+  @Post('h5/refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiHeader({
+    name: 'Origin',
+    required: true,
+    description: 'Browser origin; same HTTPS origin only',
+  })
+  @ApiOperation({
+    summary: 'H5 同源 HTTPS 续登 [public]',
+    description: '无请求体；只读续登 Cookie。成功轮换 Cookie，不延长绝对有效期；10007 清 Cookie。',
+  })
+  @ApiWrappedOkResponse(H5SessionResponseDto)
+  @ApiBizErrorResponse(BizCode.FORBIDDEN, BizCode.REFRESH_TOKEN_INVALID, BizCode.TOO_MANY_REQUESTS)
+  async refreshH5(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<H5SessionResponseDto> {
+    requireSameOriginH5(req, res);
+    try {
+      const refreshToken = readH5RefreshCookie(req);
+      if (!refreshToken) throw new BizException(BizCode.REFRESH_TOKEN_INVALID);
+      return sendH5Session(
+        res,
+        await this.authService.refresh({ refreshToken }, this.buildAuditMeta(req)),
+      );
+    } catch (error) {
+      if (error instanceof BizException && error.biz === BizCode.REFRESH_TOKEN_INVALID) {
+        clearH5RefreshCookie(res);
+      }
+      throw error;
+    }
+  }
+
+  @Public()
+  @Post('h5/logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiHeader({
+    name: 'Origin',
+    required: true,
+    description: 'Browser origin; same HTTPS origin only',
+  })
+  @ApiOperation({
+    summary: 'H5 同源 HTTPS 退出 [public]',
+    description:
+      '无请求体；只读续登 Cookie。幂等撤销该 family 并清 Cookie，不吊销已签发的 access。',
+  })
+  @ApiWrappedNullResponse()
+  @ApiBizErrorResponse(BizCode.FORBIDDEN)
+  async logoutH5(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<null> {
+    requireSameOriginH5(req, res);
+    const refreshToken = readH5RefreshCookie(req);
+    if (refreshToken) await this.authService.logout({ refreshToken }, this.buildAuditMeta(req));
+    clearH5RefreshCookie(res);
+    return null;
   }
 
   // P0-E PR-3:POST /api/auth/v1/logout-all(沿评审稿 §4.4)。

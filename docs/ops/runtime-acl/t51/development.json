@@ -1,0 +1,38 @@
+{
+  "source": "1309b644a46d52c0260e87d682eed8f9901d3ed5",
+  "pnpm_install_frozen_offline_exit": 0,
+  "prisma_generate_exit": 0,
+  "first_parallel_attempt": {
+    "lint_exit": 1,
+    "reason": "WINDOW_EXCEEDED",
+    "typecheck_exit": 134,
+    "typecheck_cause": "V8 heap limit"
+  },
+  "serial_with_native_node_options_mb": 6144,
+  "serial_exit": {
+    "lint": 0,
+    "typecheck": 0
+  },
+  "unit_notification_suites": 2,
+  "unit_notification_tests_passed": 109,
+  "safe_evidence_tests_passed": 11,
+  "red_unit": {
+    "case": "valid admin SMS generation UUID",
+    "exit": 1,
+    "classification": "EVENT_KEY_SENSITIVE"
+  },
+  "native_failing_shard_before": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44675804949/job/136087273661",
+  "review_commit": "4c8cba0af25abe4587533c513489729a5f219fbe",
+  "source_and_tests_commit": "1309b644a46d52c0260e87d682eed8f9901d3ed5",
+  "followup": "only 2 generated inputDigest lines in ROUTE_AUTHZ; 672 identical declarations",
+  "docs_authz_check_exit": 0,
+  "native_shard5": {
+    "job": 136110436475,
+    "suite": "test/e2e/notifications-sms.e2e-spec.ts",
+    "result": "PASS",
+    "counts": [
+      "Test Suites: 90 passed, 90 total",
+      "Tests:       1327 passed, 1327 total"
+    ]
+  }
+}

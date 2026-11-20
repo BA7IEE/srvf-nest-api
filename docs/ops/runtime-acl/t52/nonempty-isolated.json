@@ -1,0 +1,44 @@
+{
+  "records": [
+    {
+      "preflight_exit": 3,
+      "missing": 13,
+      "runtime_observed": true
+    },
+    {
+      "preflight_exit": 0,
+      "missing": 0,
+      "runtime_observed": true
+    },
+    {
+      "runtime": "t52_ledger_reader",
+      "owner": false,
+      "own_committed": 2,
+      "second_member_committed": 2,
+      "ready_hidden": true,
+      "other_activity_hidden": true,
+      "pagination": true,
+      "assertion_exit": 0
+    },
+    {
+      "preflight_exit": 3,
+      "missing": 13,
+      "runtime_observed": true
+    },
+    {
+      "after_revoke": "42501",
+      "assertion_exit": 0
+    },
+    {
+      "synthetic_entries_after_revoke": 6,
+      "assertion_exit": 0
+    },
+    {
+      "private_pg_and_socket_removed": true
+    }
+  ],
+  "exit": 0,
+  "network": "none",
+  "private_tmpfs": true,
+  "trial_directory_removed": true
+}

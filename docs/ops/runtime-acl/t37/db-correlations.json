@@ -1,0 +1,136 @@
+{
+  "required-final": [
+    {
+      "actor": "lab",
+      "path": "/api/admin/v1/activities/from-template",
+      "status": 201,
+      "code": 0,
+      "reqId": "cmwnoizzx13e216abe94a0335ac4a7d1a",
+      "matching_business_audit": true
+    },
+    {
+      "actor": "lab",
+      "path": "/api/admin/v1/activities/cmwnoj03w0053mq01hh8ovv86/publish-reviews",
+      "status": 409,
+      "code": 20255,
+      "reqId": "cmwnoj0bt29f5e4db8beb1cf6bb6edca4",
+      "matching_business_audit": false
+    },
+    {
+      "actor": "lab",
+      "path": "/api/admin/v1/activities/cmwnoj03w0053mq01hh8ovv86/publish-reviews",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwnoj192e19fe0c4285de93a629e42d7",
+      "matching_business_audit": true
+    },
+    {
+      "actor": "reviewer",
+      "path": "/api/admin/v1/activity-publish-reviews/cmwnoj1cy005jmq010c662jgs/approve",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwnoj448b5fad13f3a9ce1b669d588f0",
+      "matching_business_audit": true
+    },
+    {
+      "actor": "lab",
+      "path": "/api/app/v1/my/managed-activities/cmwnoj03w0053mq01hh8ovv86/change-reviews",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwnoj4h9e96b39145ec6d0b6926cb4e4",
+      "matching_business_audit": true
+    },
+    {
+      "actor": "reviewer",
+      "path": "/api/admin/v1/activity-publish-reviews/cmwnoj4ji006amq01hmoiy4p1/approve",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwnoj67dc8c6c29b984f8fbdb53f0cf5",
+      "matching_business_audit": true
+    },
+    {
+      "actor": "reviewer",
+      "path": "/api/app/v1/my/managed-activities/cmwnoj03w0053mq01hh8ovv86/change-reviews",
+      "status": 404,
+      "code": 20001,
+      "reqId": "cmwnoj6gi78527a46d07b289cc295c4e0",
+      "matching_business_audit": false
+    }
+  ],
+  "not-required-final": [
+    {
+      "actor": "lab",
+      "path": "/api/admin/v1/activities/from-template",
+      "status": 201,
+      "code": 0,
+      "reqId": "cmwnokxm996b768f2f3ec49577f3ba8cb",
+      "matching_business_audit": true
+    },
+    {
+      "actor": "lab",
+      "path": "/api/admin/v1/activities/cmwnokxpm006smq01y0wxj7ql/publish-reviews",
+      "status": 409,
+      "code": 20255,
+      "reqId": "cmwnokxxg5060d9ae3fd34bee665b46aa",
+      "matching_business_audit": false
+    },
+    {
+      "actor": "lab",
+      "path": "/api/admin/v1/activities/cmwnokxpm006smq01y0wxj7ql/publish-reviews",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwnokyui44033a183e3aff6a2f30817f",
+      "matching_business_audit": true
+    },
+    {
+      "actor": "reviewer",
+      "path": "/api/admin/v1/activity-publish-reviews/cmwnokywu0078mq019an37619/approve",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwnol0jid6b5dcf53e7422e0051b915c",
+      "matching_business_audit": true
+    },
+    {
+      "actor": "lab",
+      "path": "/api/app/v1/my/managed-activities/cmwnokxpm006smq01y0wxj7ql/change-reviews",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwnol10h1c780af5d7c92ffbacb388ad",
+      "matching_business_audit": true
+    },
+    {
+      "actor": "reviewer",
+      "path": "/api/admin/v1/activity-publish-reviews/cmwnol11s007zmq01qgm0pyew/approve",
+      "status": 200,
+      "code": 0,
+      "reqId": "cmwnol2d5dde38201504f6057115a1439",
+      "matching_business_audit": true
+    },
+    {
+      "actor": "reviewer",
+      "path": "/api/app/v1/my/managed-activities/cmwnokxpm006smq01y0wxj7ql/change-reviews",
+      "status": 404,
+      "code": 20001,
+      "reqId": "cmwnol2kr94ff8110344ff0bf0c08d2de",
+      "matching_business_audit": false
+    }
+  ],
+  "unconfigured-final": [
+    {
+      "actor": "lab",
+      "path": "/api/admin/v1/activities/cmwnoaq1z001lmq01zbw3x20q/publish-reviews",
+      "status": 409,
+      "code": 20255,
+      "reqId": "cmwnomiv04e15e232de79b58c6f51acc7",
+      "matching_business_audit": false
+    },
+    {
+      "actor": "lab",
+      "path": "/api/admin/v1/activities/cmwnoaq1z001lmq01zbw3x20q/publish-reviews",
+      "status": 400,
+      "code": 20174,
+      "reqId": "cmwnomjhg0307d7c4f27ecd59e295815a",
+      "matching_business_audit": false
+    }
+  ]
+}

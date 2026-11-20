@@ -1,0 +1,11 @@
+命令或操作	exit	结论
+git fetch 正式仓 main / git merge-base / git diff --check	0	正式 base 等于既有基线；范围内两个提交
+git push 首次使用带冒号的 zsh 变量展开	1	本地 refspec 拼接错误，发送前被 git 拒绝
+git push 以 HEAD 指向完整远端分支 ref	0	正式业务仓独立分支建立
+gh pr create --draft --base main / gh pr view 172	0	业务仓 #172
+gh run watch 44561763088 --exit-status	0	前端业务仓原生 verify SUCCESS
+gh pr checks 172 --required / gh pr checks 1444 --required	0	前端 1/1、后端 4/4 必需检查全绿
+gh api compare / git commits / pull merge preview	0	正式仓两提交与原源码树完全一致
+正式仓回归驱动 git blob + T39 patch / node --check / cmp	0	T39 扩展驱动与已验收字节一致
+ssh srvf sh -s < T38/verify-pair.sh	0	现行与试验配对、回退检查通过
+git status 前后 cmp	0	用户主工作树及未跟踪目录状态一致

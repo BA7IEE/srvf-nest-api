@@ -45,6 +45,7 @@ const APP_DETAIL_KEYS = [
   'location',
   'myInvitations',
   'passCount',
+  'publicRegistrationOpen',
   'phase',
   'registrationDeadline',
   'registrationMode',
@@ -260,6 +261,48 @@ describe('App GET /api/app/v1/activities/:id (P2-4b)', () => {
       for (const forbiddenKey of FORBIDDEN_KEYS_ON_DETAIL) {
         expect(data).not.toHaveProperty(forbiddenKey);
       }
+    });
+
+    it('limits insurance preflight to the signed-in member and visible published activity', async () => {
+      const { authHeader } = await setupLinkedUser({
+        username: 'p24_ins_member',
+        memberNo: 'P24-INS-MEMBER',
+      });
+      const published = await createActivity('published', 'insurance-preview');
+      const draft = await createActivity('draft', 'insurance-hidden');
+      const probe = (id: string) =>
+        request(httpServer(app))
+          .get('/api/app/v1/activities/' + id + '/registration-insurance')
+          .set('Authorization', authHeader);
+      await prisma.activity.update({
+        where: { id: published.id },
+        data: {
+          isPublicRegistration: true,
+          registrationModeCode: null,
+          endAt: new Date(Date.now() + 86400000),
+        },
+      });
+      const detail = () => get('/api/app/v1/activities/' + published.id, authHeader);
+      expect((await detail()).body.data).toMatchObject({
+        registrationMode: null,
+        publicRegistrationOpen: true,
+      });
+      await prisma.activity.update({
+        where: { id: published.id },
+        data: { isPublicRegistration: false },
+      });
+      expect((await detail()).body.data.publicRegistrationOpen).toBe(false);
+      const allowed = await probe(published.id).expect(200);
+      expect(allowed.body.data).toEqual({ required: false, eligible: true });
+      await prisma.activity.update({
+        where: { id: published.id },
+        data: { requiresInsurance: true },
+      });
+      expect((await probe(published.id).expect(200)).body.data).toEqual({
+        required: true,
+        eligible: false,
+      });
+      await probe(draft.id).expect(404);
     });
 
     it('returns a safe failed qualification projection without creating or changing display snapshots', async () => {

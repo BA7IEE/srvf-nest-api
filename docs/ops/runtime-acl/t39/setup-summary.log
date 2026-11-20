@@ -1,0 +1,5 @@
+V3 version/hash 1 0d2438eabcd7e6e872b054c401879dec0be6eb97368b04ceb4bb52951a73781d
+two ordinary subjects, two organization bindings; activity bindings zero
+/srvf-t39-diCOK268-api sha256:826cd1241eef6e31d3925d4af80b2d1b6830c687d2cc37b67c1123fb9a433f75 {}
+/srvf-t39-diCOK268-web sha256:bfdfe2455c0d6ec8a056dde0b9e9f2f7ca19bd9ab568931ccbf0f9b64f010f22 {}
+static_root=/var/tmp/srvf-t38.AtEsQ0kX/final-web rw=false

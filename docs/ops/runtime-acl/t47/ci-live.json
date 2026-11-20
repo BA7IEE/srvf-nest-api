@@ -1,0 +1,102 @@
+{
+  "BA7IEE/srvf-nest-api": [
+    {
+      "name": "changeset",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061517817"
+    },
+    {
+      "name": "Red-zone trusted scan",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667827144/job/136061403551"
+    },
+    {
+      "name": "Red-zone trusted approval",
+      "status": "WAITING",
+      "conclusion": "",
+      "detailsUrl": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667827144/job/136061481394"
+    },
+    {
+      "name": "Diff guards",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061518062"
+    },
+    {
+      "name": "Fast checks",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580693"
+    },
+    {
+      "name": "Contract + E2E (1)",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580686"
+    },
+    {
+      "name": "Contract + E2E (2)",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580717"
+    },
+    {
+      "name": "Contract + E2E (3)",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580653"
+    },
+    {
+      "name": "Contract + E2E (4)",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580721"
+    },
+    {
+      "name": "Contract + E2E (5)",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580718"
+    },
+    {
+      "name": "Authenticated Human V3",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580685"
+    },
+    {
+      "name": "Golden journeys",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580643"
+    },
+    {
+      "name": "Docker image build",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136061580639"
+    },
+    {
+      "name": "Lint / Typecheck / E2E",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/BA7IEE/srvf-nest-api/actions/runs/44667832786/job/136069009512"
+    }
+  ],
+  "BA7IEE/SRVFMobileWeb": [
+    {
+      "name": "check",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/BA7IEE/SRVFMobileWeb/actions/runs/44667834661/job/136061383971"
+    },
+    {
+      "name": "check",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/BA7IEE/SRVFMobileWeb/actions/runs/44667827714/job/136061362132"
+    }
+  ]
+}

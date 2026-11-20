@@ -25,6 +25,7 @@ import {
   registrationFormPublicDefinition,
 } from './registration-form-definition';
 import { isFormalMemberGradeCode } from '../members/member-grade';
+import { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import { ActivityImageSigningService } from './activity-image-signing.service';
 
 // Phase 2 P2-4a/P2-4b App /api/app/v1/activities/* service。
@@ -91,6 +92,7 @@ const appActivityDetailSelect = {
   genderRequirementCode: true,
   requiresInsurance: true,
   registrationModeCode: true,
+  isPublicRegistration: true,
   // 同上:详情面封面也走 coverImageKey 现签。
   coverImageKey: true,
   createdAt: true,
@@ -108,6 +110,7 @@ const appActivityDetailSelect = {
       startAt: true,
       endAt: true,
       locationText: true,
+      locationRequired: true,
       capacity: true,
       positions: {
         where: { deletedAt: null },
@@ -196,6 +199,7 @@ export class AppActivitiesService {
     private readonly images: ActivityImageSigningService,
     private readonly activityParticipationPolicy: ActivityParticipationPolicy,
     private readonly qualificationEvaluator: ActivityQualificationEvaluatorService,
+    private readonly insurance: InsuranceRequirementService,
   ) {}
 
   // 入参 memberId 在 v0.1 实际**未参与 where 过滤**(沿评审稿 §6.5 + §8.3):published
@@ -340,6 +344,25 @@ export class AppActivitiesService {
       });
 
       return this.toDetailDto(row, passCount, invitations, now, qualification);
+    });
+  }
+
+  async registrationInsuranceForMember(id: string, memberId: string) {
+    const formalMember = await this.isFormalMember(memberId);
+    return this.prisma.$transaction(async (tx) => {
+      const activity = await tx.activity.findFirst({
+        where: notDeletedWhere({
+          id,
+          statusCode: 'published',
+          ...this.memberVisibilityWhere(memberId, new Date(), formalMember),
+        }),
+        select: { requiresInsurance: true, startAt: true, endAt: true },
+      });
+      if (!activity) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+      const eligible =
+        !activity.requiresInsurance ||
+        (await this.insurance.isMemberInsuredForActivity(memberId, activity, tx));
+      return { required: activity.requiresInsurance, eligible };
     });
   }
 
@@ -520,6 +543,7 @@ export class AppActivitiesService {
       coverImageUrl,
       createdAt: row.createdAt,
       registrationMode: row.registrationModeCode,
+      publicRegistrationOpen: this.activityParticipationPolicy.canRegisterSelf(row, now).allowed,
       formVersion: registrationForm?.version ?? null,
       registrationForm,
       qualification: qualification.activity,
@@ -544,6 +568,7 @@ export class AppActivitiesService {
         startAt: session.startAt,
         endAt: session.endAt,
         locationText: session.locationText,
+        locationRequired: session.locationRequired,
         capacity: session.capacity,
         qualification: this.sessionQualification(qualification, session.id),
         positions: session.positions.map((position) => ({

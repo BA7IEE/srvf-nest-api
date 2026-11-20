@@ -1,0 +1,16 @@
+{"step":"independent-families","path":"/api/auth/v1/h5/refresh","method":"POST","http":401,"code":10007}
+{"step":"independent-families","path":"/api/auth/v1/h5/logout","method":"POST","http":200,"code":0}
+{"step":"independent-families","path":"/api/auth/v1/h5/login","method":"POST","http":200,"code":0}
+{"step":"independent-families","path":"/api/app/v1/me","method":"GET","http":200,"code":0}
+{"step":"independent-families","path":"/api/app/v1/me/capabilities","method":"GET","http":200,"code":0}
+{"step":"independent-families","path":"/api/app/v1/activities","method":"GET","http":200,"code":0}
+{"step":"independent-families","path":"/api/auth/v1/h5/refresh","method":"POST","http":401,"code":10007}
+{"step":"independent-families","path":"/api/auth/v1/h5/logout","method":"POST","http":200,"code":0}
+{"step":"independent-families","path":"/api/auth/v1/h5/login","method":"POST","http":200,"code":0}
+{"step":"independent-families","path":"/api/app/v1/me","method":"GET","http":200,"code":0}
+{"step":"independent-families","path":"/api/app/v1/me/capabilities","method":"GET","http":200,"code":0}
+{"step":"change-password","path":"/api/app/v1/activities","method":"GET","http":200,"code":0}
+{"step":"other-family-refresh-rejected","path":"/api/app/v1/me/password","method":"PUT","http":200,"code":0}
+{"step":"other-family-refresh-rejected","path":"/api/auth/v1/h5/logout","method":"POST","http":200,"code":0}
+{"step":"other-family-refresh-rejected","path":"/api/auth/v1/h5/refresh","method":"POST","http":401,"code":10007}
+{"step":"changed-password-revoked-independent-family","exit":0}

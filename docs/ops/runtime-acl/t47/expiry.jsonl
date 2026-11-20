@@ -1,0 +1,23 @@
+{"step":"login-page","path":"/api/auth/v1/h5/refresh","method":"POST","http":401,"code":10007}
+{"step":"ordinary-login","path":"/api/auth/v1/h5/logout","method":"POST","http":200,"code":0}
+{"step":"ordinary-login","path":"/api/auth/v1/h5/login","method":"POST","http":200,"code":0}
+{"step":"ordinary-login","path":"/api/app/v1/me","method":"GET","http":200,"code":0}
+{"step":"ordinary-login","path":"/api/app/v1/me/capabilities","method":"GET","http":200,"code":0}
+{"step":"access-expiry","path":"/api/app/v1/activities","method":"GET","http":200,"code":0}
+{"step":"access-expiry","path":"/api/auth/v1/h5/refresh","method":"POST","http":200,"code":0}
+{"step":"access-expiry","path":"/api/app/v1/me","method":"GET","http":200,"code":0}
+{"step":"reload","path":"/api/auth/v1/h5/refresh","method":"POST","http":200,"code":0}
+{"step":"reload","path":"/api/app/v1/me","method":"GET","http":200,"code":0}
+{"step":"reload","path":"/api/app/v1/me/capabilities","method":"GET","http":200,"code":0}
+{"step":"reload","path":"/api/app/v1/activities","method":"GET","http":200,"code":0}
+{"step":"two-tabs-restore","path":"/api/auth/v1/h5/refresh","method":"POST","http":200,"code":0}
+{"step":"two-tabs-restore","path":"/api/app/v1/me","method":"GET","http":200,"code":0}
+{"step":"two-tabs-restore","path":"/api/app/v1/me/capabilities","method":"GET","http":200,"code":0}
+{"step":"two-tabs-restore","path":"/api/auth/v1/h5/refresh","method":"POST","http":200,"code":0}
+{"step":"two-tabs-restore","path":"/api/app/v1/activities","method":"GET","http":200,"code":0}
+{"step":"two-tabs-restore","path":"/api/app/v1/me","method":"GET","http":200,"code":0}
+{"step":"two-tabs-restore","path":"/api/app/v1/me/capabilities","method":"GET","http":200,"code":0}
+{"step":"two-tabs-restore","path":"/api/app/v1/activities","method":"GET","http":200,"code":0}
+{"step":"logout","path":"/api/app/v1/my/registrations","method":"GET","http":200,"code":0}
+{"step":"logout","path":"/api/auth/v1/h5/logout","method":"POST","http":200,"code":0}
+{"step":"end","tls":"verified","crossTabLogout":true,"realBrowser":"Chromium Linux","exit":0}

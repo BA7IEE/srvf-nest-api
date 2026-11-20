@@ -1,0 +1,1 @@
+select x.code,count(distinct p.id),count(distinct rp."roleId") from (values ('activity.update.record'),('activity.publish.record'),('activity.settlement-final-review.record')) x(code) left join permissions p on p.code=x.code left join role_permissions rp on rp."permissionId"=p.id group by x.code order by x.code;

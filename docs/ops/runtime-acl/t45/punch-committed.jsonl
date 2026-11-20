@@ -1,0 +1,5 @@
+{"events" : 1, "self_check_in" : 1, "participants" : 1}
+{"segments" : 1, "open_matching_event" : 1}
+{"audit_event" : "activity.publish", "operation" : "attendance-punch.create", "reqId" : "cmwnu41p4f49014edc35e1ca6173caa74", "success" : true, "event_link" : true, "actor_link" : true}
+{"cutover_receipts" : 0, "posted_ledger_for_fixture" : 0, "closure_for_fixture" : 0, "pending_corrections" : 0, "evidence_revision" : 1}
+{"nonowner" : true, "r5_caller_member" : false, "r5_writer_member" : false, "r5_pending_has_write" : false, "guard_invoker" : true}

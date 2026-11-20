@@ -1,0 +1,3 @@
+{"step":"summary","actor":"t45-user-b","status":200,"code":0,"reqId":"cmwnu4xcaef5889789ac998ce568dcf3a","projection":{"totalServiceHours":"0","activityCount":0,"recordCount":0,"contributionPoints":"0","ledgerTotals":{"committedServiceHours":"0","committedContributionPoints":"0","inFlightServiceHours":"0","inFlightContributionPoints":"0"}}}
+{"step":"workbench","actor":"lab","status":200,"code":0,"reqId":"cmwnu4xgib0e873f6cecbe5d6de162797","projection":{"sameActivity":true,"emptyRun":true,"emptyClosure":true,"gaps":["draft_missing","evidence_seal_missing","settlement_run_missing"]}}
+{"step":"workbench_denied","actor":"t45-user-b","status":403,"code":30100,"reqId":"cmwnu4xhgf98137514e26b855ed1c39ad","projection":{}}

@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:9e54fe31d7d8a802f8edf0bcdf8c78dfedcdd3c71bbc0c1ee9985f5f366c33e7
+// inputDigest: sha256:5d29b230eba40b2e2b8e8c60831f50f1b7649675464b83d9555381291e03d900
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -17,6 +17,15 @@ import type {
   ActivityCheckInLocationDto,
   ActivityPublishReviewResponseDto,
   ActivityTemplateResolutionResponseDto,
+  AdminMetricBooleanConfigurationDto,
+  AdminMetricChoiceConfigurationDto,
+  AdminMetricChoiceOptionDto,
+  AdminMetricDecimalConfigurationDto,
+  AdminMetricDefinitionV1Dto,
+  AdminMetricIntegerConfigurationDto,
+  AdminMetricSetDefinitionV1Dto,
+  AdminMetricSetItemDto,
+  AdminMetricTextConfigurationDto,
   AppActivityAllocationBatchDto,
   AppActivityAllocationCandidateDto,
   AppActivityAllocationCommandReceiptDto,
@@ -233,6 +242,7 @@ import type {
   AppRegistrationFormChoiceDto,
   AppRegistrationFormDto,
   AppRegistrationFormFieldDto,
+  AppRegistrationInsuranceEligibilityDto,
   AppRegistrationUploadAttachmentDto,
   AppRegistrationUploadSessionCreatedDto,
   AppReviewActivityTimeCorrectionDto,
@@ -363,6 +373,8 @@ import type {
   RegistrationFormChoiceInputDto,
   RejectAppManagedRegistrationDto,
   ResubmitAppManagedAttendanceSheetDto,
+  ReviewMetricDefinitionDto,
+  ReviewMetricSetDto,
   RevokeAppManagedActivityInvitationDto,
   RevokeAppManagedAttendanceQrDto,
   SendMyPhoneCodeDto,
@@ -433,6 +445,10 @@ export function createAppClient(fetcher: Fetcher) {
     /** App 视角活动详情(仅 published；invitation 仅本人受邀；draft / cancelled / terminated / completed / 软删 / 不存在统一 → 404) [auth] */
     AppActivitiesControllerFindOne(id: string): Promise<ApiEnvelope<AppActivityDetailDto>> {
       return fetcher<AppActivityDetailDto>({ method: "GET", path: `/api/app/v1/activities/${id}` });
+    },
+    /** 查询本人针对可见已发布活动的报名保险资格 [auth] */
+    AppActivitiesControllerRegistrationInsurance(id: string): Promise<ApiEnvelope<AppRegistrationInsuranceEligibilityDto>> {
+      return fetcher<AppRegistrationInsuranceEligibilityDto>({ method: "GET", path: `/api/app/v1/activities/${id}/registration-insurance` });
     },
     /** 会员内容列表(准入 canUseApp;按 5 档可见性过滤;keyword/tags/contentTypeCode;无 body) [auth] */
     ContentAppControllerList(query?: { "page"?: number; "pageSize"?: number; "contentTypeCode"?: string; "keyword"?: string; "tags"?: string[] }): Promise<ApiEnvelope<PageResultDto & { "items": ContentReadListItemDto[] }>> {

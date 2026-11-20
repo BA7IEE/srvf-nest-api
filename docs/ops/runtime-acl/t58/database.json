@@ -1,0 +1,279 @@
+{
+  "utc": "2026-11-20T10:27:15.489999+00:00",
+  "queries": {
+    "identity": {
+      "exit": 0,
+      "rows": [
+        {
+          "db": "srvf_staging",
+          "server_version": "16.16",
+          "readonly": "on",
+          "collector": "postgres",
+          "migrations_ok": 156,
+          "pending": 0,
+          "last_applied": "2026-11-18T18:45:50.897289+00:00",
+          "t54_applied": 0,
+          "migrations_owner": "postgres"
+        }
+      ],
+      "error_class": null
+    },
+    "runtime_sessions": {
+      "exit": 0,
+      "rows": [
+        {
+          "role": "srvf_dp_acceptance_runtime",
+          "origin": "routed-api-container",
+          "connections": 2,
+          "earliest_connection": "2026-11-20T01:00:00.034661+00:00",
+          "latest_connection": "2026-11-20T03:33:27.308068+00:00"
+        }
+      ],
+      "error_class": null
+    },
+    "role": {
+      "exit": 0,
+      "rows": [
+        {
+          "role": "srvf_dp_acceptance_runtime",
+          "login": true,
+          "super": false,
+          "bypassrls": false,
+          "db_connect": true,
+          "schema_usage": true,
+          "schema_create": false,
+          "is_member_of_boundary_caller": false,
+          "can_defer_correction": false
+        }
+      ],
+      "error_class": null
+    },
+    "functions": {
+      "exit": 0,
+      "rows": [
+        {
+          "function": "ctsp_assert_complete",
+          "security_definer": false,
+          "body_sha256": "1d53ee7296e3ef0e6437e5e9c9ee3042f970454cdb508983bb726e2215fa845a",
+          "owner": "postgres",
+          "api_execute": true
+        },
+        {
+          "function": "ctsp_lifecycle_guard",
+          "security_definer": false,
+          "body_sha256": "1d93e52023e7f662cd3e57822c6643b3e9792939cccdfe21b27094d75103f93f",
+          "owner": "postgres",
+          "api_execute": true
+        },
+        {
+          "function": "r5_correction_phase_deferred_registered",
+          "security_definer": false,
+          "body_sha256": "cc43bbbc7068eebb8c3fbdee42f788cdcebe916b82679af761662d19daa67e0c",
+          "owner": "r5_boundary_owner_h7c6",
+          "api_execute": false
+        }
+      ],
+      "error_class": null
+    },
+    "ledger_rls": {
+      "exit": 0,
+      "rows": [
+        {
+          "rls": false,
+          "force": false,
+          "policies": 0,
+          "role_owns": false
+        }
+      ],
+      "error_class": null
+    },
+    "queues": {
+      "exit": 0,
+      "rows": [
+        {
+          "queue": "notification",
+          "rows": 1,
+          "last_complete": "2026-11-19T05:13:10.558+00:00",
+          "pending": 0,
+          "processing": 0,
+          "live_lease": 0
+        },
+        {
+          "queue": "activity",
+          "rows": 1,
+          "last_complete": "2026-11-19T05:13:58.251",
+          "pending": 0,
+          "processing": 0,
+          "live_lease": 0
+        }
+      ],
+      "error_class": null
+    },
+    "acl": {
+      "exit": 0,
+      "rows": [
+        {
+          "table": "Activity",
+          "perm": "UPDATE",
+          "allow": [],
+          "missing": [
+            "currentClosureRevision"
+          ]
+        },
+        {
+          "table": "ActivityBatchJob",
+          "perm": "INSERT",
+          "allow": [],
+          "missing": [
+            "postingBatchId",
+            "settlementVersionId"
+          ]
+        },
+        {
+          "table": "ActivitySettlementClosureRevision",
+          "perm": "INSERT",
+          "allow": [],
+          "missing": [
+            "activityId",
+            "checksHash",
+            "checksJson",
+            "closedAt",
+            "closedByUserId",
+            "contributionPoints",
+            "createdAt",
+            "evidenceRevision",
+            "evidenceSealId",
+            "id",
+            "personCount",
+            "populationRevision",
+            "postingBatchId",
+            "resultCountsJson",
+            "revision",
+            "serviceHours",
+            "sessionParticipationCount",
+            "settlementVersionId",
+            "statusCode",
+            "updatedAt",
+            "workflowRevision"
+          ]
+        },
+        {
+          "table": "ActivitySettlementClosureRevision",
+          "perm": "SELECT",
+          "allow": [],
+          "missing": [
+            "checksHash",
+            "checksJson",
+            "contributionPoints",
+            "evidenceRevision",
+            "evidenceSealId",
+            "personCount",
+            "populationRevision",
+            "resultCountsJson",
+            "serviceHours",
+            "sessionParticipationCount",
+            "workflowRevision"
+          ]
+        },
+        {
+          "table": "AttendanceSettlementRun",
+          "perm": "UPDATE",
+          "allow": [],
+          "missing": [
+            "currentClosureRevision"
+          ]
+        },
+        {
+          "table": "LedgerPostingBatch",
+          "perm": "SELECT",
+          "allow": [
+            "id",
+            "statusCode"
+          ],
+          "missing": []
+        },
+        {
+          "table": "ParticipationLedgerEntry",
+          "perm": "SELECT",
+          "allow": [],
+          "missing": [
+            "activityId",
+            "cappedOutPointsDelta",
+            "creditedPointsDelta",
+            "entryKey",
+            "entryTypeCode",
+            "ledgerDate",
+            "memberId",
+            "participationIdentityId",
+            "postingBatchId",
+            "recognizedPointsDelta",
+            "resultRevisionId",
+            "serviceHoursDelta",
+            "sessionId"
+          ]
+        },
+        {
+          "table": "ParticipationTimeLedgerManifest",
+          "perm": "SELECT",
+          "allow": [],
+          "missing": [
+            "activityId",
+            "bucketContentHash",
+            "contentHash",
+            "createdAt",
+            "expectedEntryCount",
+            "formatVersion",
+            "id",
+            "postingBatchId",
+            "recognizedSecondsTotal",
+            "settlementRunId",
+            "settlementVersionId",
+            "sourceSetHash",
+            "timeRevisionId"
+          ]
+        }
+      ],
+      "error_class": null
+    }
+  },
+  "correction_lookup": {
+    "exit": 0,
+    "rows": [
+      {
+        "role": "srvf_dp_acceptance_runtime",
+        "lookup_id": true,
+        "lookup_batch": true,
+        "proof_select_all": false,
+        "proof_any_select": false,
+        "historical_isolated_worker_role_present": false
+      }
+    ]
+  },
+  "migration_comparison": {
+    "site_count": 156,
+    "revisions": {
+      "108feebb84b85c7e4955c5af8bbfc016702e4529": {
+        "source_count": 156,
+        "matched": 156,
+        "missing": [],
+        "unexpected": [],
+        "mismatch": []
+      },
+      "65bad1ccb7e6a4bb7a3cda46b49512f092d04779": {
+        "source_count": 158,
+        "matched": 156,
+        "missing": [
+          "20261120073000_settlement_deferred_correction_guard",
+          "20261120073100_settlement_correction_proof_lookup"
+        ],
+        "unexpected": [],
+        "mismatch": []
+      }
+    },
+    "backup": {
+      "present": true,
+      "sha256": "81208564b560f838f80c86616f6635a8549aba0f9fc7924929ce7bc9e2d5c93e"
+    }
+  },
+  "shared_grants_issued": 0
+}

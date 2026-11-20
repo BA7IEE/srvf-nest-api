@@ -1,0 +1,4 @@
+BEGIN READ ONLY;
+SELECT json_build_object('punch_events',(SELECT count(*) FROM "AttendancePunchEvent" WHERE "activityId"=:'target'),'service_segments',(SELECT count(*) FROM "ParticipantServiceSegmentRevision" s JOIN "ActivityParticipationIdentity" i ON i.id=s."participationIdentityId" WHERE i."activityId"=:'target'));
+SELECT json_build_object('relation',c.relname,'runtime_selectable_columns',count(*) FILTER(WHERE has_column_privilege('srvf_dp_acceptance_runtime',c.oid,a.attnum,'SELECT')),'total_columns',count(*)) FROM pg_class c JOIN pg_attribute a ON a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped WHERE c.oid IN ('public."ActivityTimeCutoverReceipt"'::regclass,'public."ParticipationLedgerEntry"'::regclass,'public."ActivitySettlementClosureRevision"'::regclass) GROUP BY c.relname ORDER BY c.relname;
+ROLLBACK;

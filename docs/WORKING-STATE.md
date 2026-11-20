@@ -2,6 +2,7 @@
 
 当前任务身份以所在工作树的 `git status`、分支/HEAD 和 GitHub PR 为准；
 生产状态见 [current-state](current-state.md)。
+交接内容、并行任务的互斥范围和独审责任见[任务协作与交接](process.md#任务协作与交接)。
 
 `scripts/dev-guard.py` 保留为可选来源审计工具，不要求按 preflight/checkpoint/handoff
 或固定时间间隔运行。其 build/release 来源证明不替代测试、维护者授权或生产验收。

@@ -1,0 +1,2 @@
+PASS DB aggregate, 3 buckets, 6 reservations, 4 reviews, 12 HTTP to audit correlations
+PASS five required kinds across all four frozen reviews and four rendered review decisions; persisted windows agree; failed enrollment left no header, revision, identity or occupancy

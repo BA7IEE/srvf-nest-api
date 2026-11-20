@@ -1,7 +1,14 @@
-type SmsWindow = 'idempotent' | 'daily-limit' | 'interval';
-type MessageHint = 'NONE' | 'TX_EXPIRED' | 'TX_CONFLICT' | 'RESERVATION_INVARIANT' | 'UNCLASSIFIED';
+type SmsWindow = 'idempotent' | 'daily-limit' | 'interval' | 're-trigger';
+type MessageHint =
+  | 'NONE'
+  | 'TX_EXPIRED'
+  | 'TX_CONFLICT'
+  | 'RESERVATION_INVARIANT'
+  | 'EVENT_KEY_SENSITIVE'
+  | 'UNCLASSIFIED';
 
 const messageHints: readonly [MessageHint, RegExp][] = [
+  ['EVENT_KEY_SENSITIVE', /eventKey contains forbidden sensitive material/u],
   ['TX_EXPIRED', /\bP2028\b|expired transaction|transaction.*(?:already closed|timeout)/iu],
   ['TX_CONFLICT', /\bP2034\b|write conflict|deadlock|could not serialize/iu],
   ['RESERVATION_INVARIANT', /pending reservation|active slot disappeared|active slot churned/iu],

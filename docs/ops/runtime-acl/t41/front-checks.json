@@ -1,0 +1,12 @@
+{
+  "sha": "104e524c0b76826a79b1d48fad37fb07dcdfb8e8",
+  "pr": "https://github.com/BA7IEE/srvf-admin-web/pull/172",
+  "checks": [
+    {
+      "name": "verify",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/BA7IEE/srvf-admin-web/actions/runs/44565714648/job/135706747311"
+    }
+  ]
+}

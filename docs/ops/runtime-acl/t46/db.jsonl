@@ -1,0 +1,11 @@
+{"registrations" : 3, "distinct_ordinary_members" : 3, "roles_all_user" : true, "published_activities" : 1}
+{"families" : 7, "constant_deadline" : true, "max_family_days" : 7, "families_with_rotation" : 3}
+{"revoke_reason" : "family-revoked", "rows" : 1}
+{"revoke_reason" : "logout", "rows" : 3}
+{"revoke_reason" : "rotated", "rows" : 5}
+{"revoke_reason" : "self-password-change", "rows" : 3}
+{"audit_event" : "auth.login", "count" : 7}
+{"audit_event" : "auth.logout", "count" : 3}
+{"audit_event" : "password.change.self", "count" : 1}
+{"audit_event" : "registration.create", "count" : 3}
+{"pending_outbox" : 0}

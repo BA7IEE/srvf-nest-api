@@ -1,0 +1,8 @@
+{"member_reg" : 1, "all_pass" : true}
+{"member_event" : 1, "self_qr" : true}
+{"segments" : 1, "matching_open" : true}
+{"reqId" : "cmwofny7i152d96eaa6da211745484013", "event" : "registration.review", "actor_link" : true, "success" : true}
+{"reqId" : "cmwofny7i152d96eaa6da211745484013", "event" : "registration.create", "actor_link" : true, "success" : true}
+{"reqId" : "cmwofnzad874d08ee89a5f6c822ccc7df", "event" : "activity.publish", "actor_link" : true, "success" : true}
+{"fresh_family_count" : 1, "all_90_days" : true, "preserved_on_rotation" : true, "rotations" : 2}
+{"direct_role_bindings" : 0}

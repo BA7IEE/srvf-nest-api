@@ -1,0 +1,1 @@
+[{"path": "/", "exit": 0, "result": "200 0"}, {"path": "/api/system/v1/health/ready", "exit": 0, "result": "200 0"}]

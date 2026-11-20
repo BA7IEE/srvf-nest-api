@@ -25,6 +25,7 @@ describe('offline acceptance bootstrap', () => {
     `;
     const password = randomBytes(32).toString('hex');
     const username = 'accept_' + randomBytes(6).toString('hex');
+    const entryDigest = createHash('sha256').update(readFileSync('prisma/seed.ts')).digest('hex');
     const invoke = (pin: string, name: string) =>
       spawnSync(
         process.execPath,
@@ -34,9 +35,7 @@ describe('offline acceptance bootstrap', () => {
             ...process.env,
             APP_ENV: 'test',
             ACCEPTANCE_SOURCE_COMMIT: 'a'.repeat(40),
-            ACCEPTANCE_ENTRY_SHA256: createHash('sha256')
-              .update(readFileSync('prisma/seed.ts'))
-              .digest('hex'),
+            ACCEPTANCE_ENTRY_SHA256: entryDigest,
             SUPER_ADMIN_USERNAME: name,
             SUPER_ADMIN_PASSWORD: password,
             ACCEPTANCE_DATABASE_FINGERPRINT: pin,
@@ -53,8 +52,14 @@ describe('offline acceptance bootstrap', () => {
         prisma.rolePermission.count(),
         prisma.roleBinding.count(),
       ]);
+    const occupied = await prisma.user.create({
+      data: { username: username + '_old', passwordHash: 'unused', deletedAt: new Date() },
+    });
     const [users, audits, ...rbac] = await snapshot();
     expect(invoke('0'.repeat(64), username)).toBe(1);
+    expect(await snapshot()).toEqual([users, audits, ...rbac]);
+    expect(invoke(fingerprint, occupied.username)).toBe(1);
+    expect(await prisma.user.findUnique({ where: { id: occupied.id } })).toEqual(occupied);
     expect(await snapshot()).toEqual([users, audits, ...rbac]);
     expect(invoke(fingerprint, username)).toBe(0);
     const user = await prisma.user.findUniqueOrThrow({
@@ -71,8 +76,11 @@ describe('offline acceptance bootstrap', () => {
       where: { event: 'seed.acceptance-account.create', resourceId: user.id },
       select: { context: true },
     });
-    expect(receipt.context).toMatchObject({
-      extra: { operatorDeclaredCommit: 'a'.repeat(40) },
+    expect(receipt.context).toEqual({
+      requestId: username,
+      ip: null,
+      ua: null,
+      extra: { source: 'acceptance-seed', operatorDeclaredCommit: 'a'.repeat(40), entryDigest },
     });
     expect(invoke(fingerprint, username + '_b')).toBe(1);
     expect(await snapshot()).toEqual([users + 1, audits + 1, ...rbac]);

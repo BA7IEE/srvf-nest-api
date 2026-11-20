@@ -1,0 +1,12 @@
+{"step": "/api/auth/v1/h5/refresh", "status": 401, "code": 10007, "reqId": "cmwofnwsp0da420303ea2cabab66702b9"}
+{"step": "reload and rotate", "http": 200, "reqId": "cmwofnxd8178fb4a88a0a3757164572f5"}
+{"step": "own insurance true", "status": 200, "code": 0, "reqId": "cmwofnxit114bec6a4b50dd75cc8bbcd2"}
+{"step": "registered", "status": 201, "code": 0, "reqId": "cmwofny7i152d96eaa6da211745484013"}
+{"step": "own insurance true", "status": 200, "code": 0, "reqId": "cmwofnybsb480b42fd98b38b08caeaf4a"}
+{"step": "issuer login", "status": 200, "code": 0, "reqId": "cmwofnyj8ac5dccba6474dabce59a8bcc"}
+{"step": "issue actual session QR", "status": 201, "code": 0, "reqId": "cmwofnyn19ed13ff01a70050fe669faa8"}
+{"step": "render", "status": 201, "code": 0, "reqId": "cmwofnynx5d55f5002a855ba32fb21597"}
+{"step": "H5 self QR", "status": 201, "code": 0, "reqId": "cmwofnzad874d08ee89a5f6c822ccc7df"}
+{"step": "present readback", "status": 200, "code": 0, "reqId": "cmwofnzcsea42b1f55572149c16389f2c"}
+{"exit": 0, "zeroWebStorage": true, "independentOriginTLS": true, "crossTabLogout": true, "imagePicker": true}
+{"step": "retire QR", "status": 200, "code": 0, "reqId": "cmwofo2o24a940192f69b0931942c266c"}

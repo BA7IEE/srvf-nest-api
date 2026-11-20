@@ -1,0 +1,12 @@
+{"step":"login","as":"lab","status":200,"code":0,"reqId":"cmwnt9g23139af3b37223fd8c1e119c86"}
+{"step":"login","as":"t44-user-b","status":200,"code":0,"reqId":"cmwnt9g5g25ffea266fddecb910e21638"}
+{"step":"detail","as":"t44-user-b","status":200,"code":0,"reqId":"cmwnt9g9107a81e8a4d650490d4683daa"}
+{"step":"issue","as":"lab","status":201,"code":0,"reqId":"cmwnt9g9t1839b923419169f69c49c50d"}
+{"step":"render","as":"lab","status":201,"code":0,"reqId":"cmwnt9gaaf09a9683f29d856b2f42d4d8","protected_no_store":true}
+{"step":"real_clock","seconds_until_window":164,"valid_until":"2026-11-19T17:38:00.000Z"}
+{"step":"self_check-in","as":"t44-user-b","status":503,"code":20153,"reqId":"cmwntcz1597bf4488aee914b71c409ade"}
+{"step":"my_state","as":"t44-user-b","status":200,"code":0,"reqId":"cmwntcz1o9f45709dff523e32d000b21e"}
+{"step":"state_after","isPresent":false}
+AssertionError expected actual punch
+
+503 !== 201

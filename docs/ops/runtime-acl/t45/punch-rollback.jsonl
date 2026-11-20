@@ -1,0 +1,4 @@
+{"events" : 0, "self_check_in" : 0, "participants" : 0}
+{"segments" : 0, "open_matching_event" : 0}
+{"cutover_receipts" : 0, "posted_ledger_for_fixture" : 0, "closure_for_fixture" : 0, "pending_corrections" : 0, "evidence_revision" : 0}
+{"nonowner" : true, "r5_caller_member" : false, "r5_writer_member" : false, "r5_pending_has_write" : false, "guard_invoker" : true}

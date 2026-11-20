@@ -1,0 +1,27 @@
+{"step":"login-page","path":"/api/auth/v1/h5/refresh","method":"POST","http":401,"code":10007,"reqId":"cmwodokey77e225914a3c2bfe48a96a47"}
+{"step":"ordinary-login","path":"/api/auth/v1/h5/logout","method":"POST","http":200,"code":0,"reqId":"cmwodokkxb5d5e025e22527916d8e4a71"}
+{"step":"ordinary-login","path":"/api/auth/v1/h5/login","method":"POST","http":200,"code":0,"reqId":"cmwodokl4e76313b44d3c3911bef20046"}
+{"step":"ordinary-login","path":"/api/app/v1/me","method":"GET","http":200,"code":0,"reqId":"cmwodokofa260b564d687768471a6aa9f"}
+{"step":"ordinary-login","path":"/api/app/v1/me/capabilities","method":"GET","http":200,"code":0,"reqId":"cmwodokp7f6ae9853fff68fa17730a5a6"}
+{"step":"directory","path":"/api/app/v1/activities","method":"GET","http":200,"code":0,"reqId":"cmwodokrn07dcefdce1cfea7c4f33c1c5"}
+{"step":"activity-detail","path":"/api/app/v1/my/registrations","method":"GET","http":200,"code":0,"reqId":"cmwodokv85cd0de33fe38f7e03e75cfe0"}
+{"step":"activity-detail","path":"/api/app/v1/activities/:id","method":"GET","http":200,"code":0,"reqId":"cmwodokvic30b120503b94e8ea17fe7a1"}
+{"step":"activity-detail","path":"/api/app/v1/activities/:id","method":"GET","http":200,"code":0,"reqId":"cmwodokv4619193a82f3d92660f64716d"}
+{"step":"signup","path":"/api/app/v1/my/registrations","method":"GET","http":200,"code":0,"reqId":"cmwodol129f88b1470b55e5bd6d0645f7"}
+{"step":"signup","path":"/api/app/v1/activities/:id","method":"GET","http":200,"code":0,"reqId":"cmwodol0ua452f3facc001f17954982a9"}
+{"step":"signup","path":"/api/app/v1/activities/:id","method":"GET","http":200,"code":0,"reqId":"cmwodol10853ee599e682c407395dfe2b"}
+{"step":"signup","path":"/api/app/v1/activities/:id","method":"GET","http":200,"code":0,"reqId":"cmwodol0xe7c356e5e1413311d57d5e49"}
+{"step":"own-readback","path":"/api/app/v1/activities/:id/registrations","method":"POST","http":201,"code":0,"reqId":"cmwodolijb58c0f2f65061b4982995f11"}
+{"step":"own-readback","path":"/api/app/v1/my/registrations","method":"GET","http":200,"code":0,"reqId":"cmwodolki906e76c82149c590b5c069c7"}
+{"step":"punch-state","path":"/api/app/v1/my/registrations","method":"GET","http":200,"code":0,"reqId":"cmwodollqa2f36d8c8af617a584c3e3b5"}
+{"step":"punch-state","path":"/api/app/v1/activities/:id","method":"GET","http":200,"code":0,"reqId":"cmwodolmk0888ff09d480bfcadacaed0a"}
+{"step":"punch-state","path":"/api/app/v1/activities/:id/sessions/:id/my-punch-state","method":"GET","http":200,"code":0,"reqId":"cmwodolnef02245c67f1b0c8865ac8a5a"}
+{"step":"summary","path":"/api/app/v1/my/participation-summary","method":"GET","http":200,"code":0,"reqId":"cmwodolpp61fe5d194c80f497fd34198e"}
+{"step":"summary","path":"/api/app/v1/my/participation-ledger","method":"GET","http":200,"code":0,"reqId":"cmwodolqob41e3a8ba3786580b171cc7b"}
+{"step":"enrollment-and-summary-complete","exit":0}
+{"step":"summary","path":"/api/auth/v1/h5/refresh","method":"POST","http":200,"code":0,"reqId":"cmwodolz1a9feca41bca591c82aa245a4"}
+{"step":"summary","path":"/api/app/v1/me","method":"GET","http":200,"code":0,"reqId":"cmwodolzy1cc967a79017c74c663a58fa"}
+{"step":"summary","path":"/api/app/v1/me/capabilities","method":"GET","http":200,"code":0,"reqId":"cmwodom0c2619cec11d690970203870b8"}
+{"step":"summary","path":"/api/app/v1/activities","method":"GET","http":200,"code":0,"reqId":"cmwodom1yd96f9e5ac55fca0467f54669"}
+{"step":"logout","path":"/api/auth/v1/h5/logout","method":"POST","http":200,"code":0,"reqId":"cmwodom8b47af5c058d830dcab5557683"}
+{"step":"end","tls":"verified","crossTabLogout":true,"realBrowser":"Chromium Linux","exit":0}

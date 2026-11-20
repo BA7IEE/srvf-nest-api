@@ -1,0 +1,16 @@
+{"kind" : "registration", "actor" : "t44-user-a", "header" : "cmwnt6726001ror0102ebhv7v", "status" : "cancelled", "header_version" : 2, "identity_version" : 3, "identity_status" : "cancelled", "included" : false, "pointer_set" : false, "saved_revisions" : 2, "participation_versions" : 3, "active_reservations" : 0, "role" : "USER", "direct_bindings" : 0}
+{"kind" : "registration", "actor" : "t44-user-b", "header" : "cmwnt6784002for01o607ieb8", "status" : "pass", "header_version" : 1, "identity_version" : 2, "identity_status" : "pass", "included" : true, "pointer_set" : true, "saved_revisions" : 1, "participation_versions" : 2, "active_reservations" : 3, "role" : "USER", "direct_bindings" : 0}
+{"kind" : "bucket", "scope" : "activity_person", "used" : 1, "version" : 3}
+{"kind" : "bucket", "scope" : "position_participation", "used" : 1, "version" : 3}
+{"kind" : "bucket", "scope" : "session_participation", "used" : 1, "version" : 3}
+{"kind" : "audit", "event" : "registration.review", "reqId" : "cmwnt670n4416c8f9ec4190fa177c29c0", "actor" : "t44-user-a", "resource" : "cmwnt6726001ror0102ebhv7v", "success" : true}
+{"kind" : "audit", "event" : "registration.create", "reqId" : "cmwnt670n4416c8f9ec4190fa177c29c0", "actor" : "t44-user-a", "resource" : "cmwnt6726001ror0102ebhv7v", "success" : true}
+{"kind" : "audit", "event" : "registration.review", "reqId" : "cmwnt677gb06362ec0830b15193455fa3", "actor" : "t44-user-b", "resource" : "cmwnt6784002for01o607ieb8", "success" : true}
+{"kind" : "audit", "event" : "registration.create", "reqId" : "cmwnt677gb06362ec0830b15193455fa3", "actor" : "t44-user-b", "resource" : "cmwnt6784002for01o607ieb8", "success" : true}
+{"kind" : "audit", "event" : "registration.review", "reqId" : "cmwnt9mks0ae1fb988d5a39b186b55878", "actor" : "t44-user-a", "resource" : "cmwnt6726001ror0102ebhv7v", "success" : true}
+{"kind" : "outbox", "id" : "cmwnt4d00001eor01f9cukr8k", "type" : "notification.targeted", "aggregate" : "activity_publish_review", "key_hash" : "75f7c12adbd9fc20130b496df89ad48f", "state" : "succeeded", "attempts" : 1, "completed" : true}
+{"kind" : "outbox", "id" : "cmwnt4d04001for01hgabnsyg", "type" : "notification.system-broadcast", "aggregate" : "activity", "key_hash" : "88ce57deb5f21596452498d5494e3bac", "state" : "succeeded", "attempts" : 1, "completed" : true}
+{"kind" : "outbox", "id" : "cmwnt67460027or01n333vmqf", "type" : "notification.targeted", "aggregate" : "activity_registration", "key_hash" : "be721446bf20983c5af7d746172eae0c", "state" : "succeeded", "attempts" : 1, "completed" : true}
+{"kind" : "outbox", "id" : "cmwnt6792002vor0192p9e1j2", "type" : "notification.targeted", "aggregate" : "activity_registration", "key_hash" : "f8b82123bad491602204860f3a267695", "state" : "succeeded", "attempts" : 1, "completed" : true}
+{"kind" : "outbox", "id" : "cmwnt9mn20044or01hz9w1dw3", "type" : "notification.targeted", "aggregate" : "activity_registration", "key_hash" : "3aafd11bf7eabc30d9b91e9a990983b0", "state" : "succeeded", "attempts" : 1, "completed" : true}
+{"kind" : "population", "revision" : 3, "evidence_revision" : 0, "version" : 3}

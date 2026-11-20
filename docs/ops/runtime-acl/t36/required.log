@@ -1,0 +1,17 @@
+{"actor":"lab","path":"/api/auth/v1/login","status":200,"code":0,"reqId":"cmwnn3l2x973869e5ec0ea478afb1eabb"}
+{"actor":"lab","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnn3l6jf1aec5e85d78a16fcf9a4653"}
+{"actor":"lab","path":"/api/system/v1/authz/me/effective-permissions","status":200,"code":0,"reqId":"cmwnn3l6m40a5022454ae4e17e009a271"}
+{"actor":"lab","path":"/api/system/v1/dict-types","status":403,"code":30100,"reqId":"cmwnn3ler8bb330c4c4d4dea4cb324080"}
+{"actor":"lab","path":"/api/admin/v1/meta/dashboard-summary","status":200,"code":0,"reqId":"cmwnn3levfdf58bf6dabbcc0d12ed0a6b"}
+{"actor":"lab","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnn3llt934d68b9eb9a1d75b331bd91"}
+{"actor":"lab","path":"/api/system/v1/dict-types","status":403,"code":30100,"reqId":"cmwnn3llp00424f712f5473356949ab3f"}
+{"actor":"lab","path":"/api/admin/v1/activities","status":200,"code":0,"reqId":"cmwnn3llw20ec9589bcd10bdc8cc7cad4"}
+{"actor":"lab","path":"/api/admin/v1/authz/action-state/batch","status":403,"code":30100,"reqId":"cmwnn3lnh063f332a625dc054031b960f"}
+{"actor":"lab","path":"/api/admin/v1/activities/organization-options","status":200,"code":0,"reqId":"cmwnn3mfcfcc191a752c5bb68b877f7ac"}
+{"actor":"lab","path":"/api/admin/v1/activities/template-version-options","status":200,"code":0,"reqId":"cmwnn3n3xa5d5c70337c9530ca7fba99b"}
+{"actor":"lab","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnn3nz264b99e91d69a7b930a0e1976"}
+{"actor":"lab","path":"/api/admin/v1/activities/from-template","status":201,"code":0,"reqId":"cmwnn3nzkcc6703f06d644d0cc6a784cb"}
+{"actor":"lab","path":"/api/admin/v1/me","status":200,"code":0,"reqId":"cmwnn3o4o03ef77f383aa2e906299c1c5"}
+AssertionError Expected values to be strictly equal:
+
+42900 !== 0

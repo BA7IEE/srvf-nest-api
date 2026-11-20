@@ -1,0 +1,14 @@
+{"step":"login","as":"lab","status":200,"code":0,"reqId":"cmwnu0l15eb62da7f110c622216c94bf2"}
+{"step":"login","as":"t45-user-b","status":200,"code":0,"reqId":"cmwnu0l6l6c4fea7f3f7be8be5cac9d7d"}
+{"step":"detail","as":"t45-user-b","status":200,"code":0,"reqId":"cmwnu0la13a97262041aac69013108247"}
+{"step":"issue","as":"lab","status":201,"code":0,"reqId":"cmwnu0lbzc8b92db9b9027d061c2a03c5"}
+{"step":"render","as":"lab","status":201,"code":0,"reqId":"cmwnu0ld9b3ca1d334d21f81321a4a82f","protected_no_store":true}
+{"step":"real_clock","seconds_until_window":-22,"valid_until":"2026-11-19T17:56:00.000Z"}
+{"step":"self_check-in","as":"t45-user-b","status":500,"code":50000,"reqId":"cmwnu0lsw9050cbaa04e5fe946ebf72cf"}
+{"step":"await_reviewed_trial_acl"}
+{"step":"self_check-in","as":"t45-user-b","status":500,"code":50000,"reqId":"cmwnu1j64bbba0d58a4fcfc933c9fba9b"}
+{"step":"self_check-in","as":"t45-user-b","status":201,"code":0,"reqId":"cmwnu41p4f49014edc35e1ca6173caa74"}
+{"step":"event","type":"check_in","segment":"open"}
+{"step":"my_state","as":"t45-user-b","status":200,"code":0,"reqId":"cmwnu41qhfd89cfdda39909adf7e5163c"}
+{"step":"state_after","isPresent":true}
+{"step":"revoke","as":"lab","status":200,"code":0,"reqId":"cmwnu41r025f7d4551402d51914f710d6"}

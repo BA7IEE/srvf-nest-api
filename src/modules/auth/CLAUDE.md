@@ -10,7 +10,9 @@
   每请求验证 ACTIVE且未软删。不在 Guard 重查、不加 role/tokenVersion、缓存或其他 passport strategy。
 - 密码登录：不存在用户名、错密码、禁用、软删统一10004与相同响应体/状态；
   每条路径一次 bcrypt.compare，未命中使用模块级固定 TIMING_DUMMY_HASH。
-- refresh 仅存 sha256(raw).hex，明文仅登录/刷新响应一次。
+- refresh 仅存 sha256(raw).hex，明文仅登录/刷新响应一次。除既有 JSON 传输外，
+  只允许 `/api/auth/v1/h5/{login,refresh,logout}` 在同源 HTTPS 下用 HttpOnly、Secure
+  Cookie 传续登凭证；H5 JSON 不返该凭证，不改原 DTO 或开放跨域。
   rotation always、family绝对有效期不延长；判定顺序 rotatedAt→revokedAt→user inactive，
   复用触发 family revoke 和 replayDetected/familyRevoked audit。
   失败统一10007，不存在 token 不写 audit；正常并发 refresh 锁等待输家不误判 replay。

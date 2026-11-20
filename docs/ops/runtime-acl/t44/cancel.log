@@ -1,0 +1,17 @@
+{"label":"login","actor":"t44-user-a","method":"POST","path":"/api/auth/v1/login","status":200,"code":0,"reqId":"cmwnt9m70b04fd9daf41ad4f3b67d4673"}
+{"label":"login","actor":"t44-user-b","method":"POST","path":"/api/auth/v1/login","status":200,"code":0,"reqId":"cmwnt9mbx025b07c7e4e96200ac43f278"}
+{"label":"activity","actor":"t44-user-a","method":"GET","path":"/api/app/v1/activities/cmwnt49rl000kor01likbvf58","status":200,"code":0,"reqId":"cmwnt9mf1c9eb552135881bd9d2b40714"}
+{"label":"own_list","actor":"t44-user-a","method":"GET","path":"/api/app/v1/my/registrations","status":200,"code":0,"reqId":"cmwnt9mgi187132ddeb3ef6aafdb49d4e"}
+{"label":"own_detail","actor":"t44-user-a","method":"GET","path":"/api/app/v1/my/registrations/cmwnt6726001ror0102ebhv7v","status":200,"code":0,"reqId":"cmwnt9mgxafa9c84fafc27d94b0cf3aa1"}
+{"label":"activity","actor":"t44-user-b","method":"GET","path":"/api/app/v1/activities/cmwnt49rl000kor01likbvf58","status":200,"code":0,"reqId":"cmwnt9mhb6e8a8a1335d316d56a417292"}
+{"label":"own_list","actor":"t44-user-b","method":"GET","path":"/api/app/v1/my/registrations","status":200,"code":0,"reqId":"cmwnt9mi88351467f1c1486ec84219e31"}
+{"label":"own_detail","actor":"t44-user-b","method":"GET","path":"/api/app/v1/my/registrations/cmwnt6784002for01o607ieb8","status":200,"code":0,"reqId":"cmwnt9mis5200555b309706c217eedaa5"}
+{"label":"cross_read","actor":"t44-user-a","method":"GET","path":"/api/app/v1/my/registrations/cmwnt6784002for01o607ieb8","status":404,"code":21001,"reqId":"cmwnt9mj9dba41c7e572c0ca1e028b675"}
+{"label":"cross_cancel","actor":"t44-user-a","method":"PATCH","path":"/api/app/v1/my/registrations/cmwnt6784002for01o607ieb8/cancel","status":404,"code":21001,"reqId":"cmwnt9mjp7ea36c3a957e8e8603f5820a"}
+{"label":"cross_read","actor":"t44-user-b","method":"GET","path":"/api/app/v1/my/registrations/cmwnt6726001ror0102ebhv7v","status":404,"code":21001,"reqId":"cmwnt9mk36e4ed196b33fcd8eac29b7a6"}
+{"label":"cross_cancel","actor":"t44-user-b","method":"PATCH","path":"/api/app/v1/my/registrations/cmwnt6726001ror0102ebhv7v/cancel","status":404,"code":21001,"reqId":"cmwnt9mke67639da3be1c9cefce911d10"}
+{"label":"self_cancel","actor":"t44-user-a","method":"PATCH","path":"/api/app/v1/my/registrations/cmwnt6726001ror0102ebhv7v/cancel","status":200,"code":0,"reqId":"cmwnt9mks0ae1fb988d5a39b186b55878"}
+{"label":"cancel_readback","actor":"t44-user-a","method":"GET","path":"/api/app/v1/my/registrations/cmwnt6726001ror0102ebhv7v","status":200,"code":0,"reqId":"cmwnt9mn90890b45e87258250afde4951"}
+{"label":"repeat_cancel","actor":"t44-user-a","method":"PATCH","path":"/api/app/v1/my/registrations/cmwnt6726001ror0102ebhv7v/cancel","status":409,"code":21030,"reqId":"cmwnt9mnkf61d23d6ac93cfaaa56a22f1"}
+{"label":"peer_unchanged","actor":"t44-user-b","method":"GET","path":"/api/app/v1/my/registrations/cmwnt6784002for01o607ieb8","status":200,"code":0,"reqId":"cmwnt9mnxadacc35f024073cf2bd05547"}
+PASS mode=cancel two ordinary subjects

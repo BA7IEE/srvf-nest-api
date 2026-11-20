@@ -1,0 +1,1 @@
+{"cluster" : "7709931013666021418", "database" : "srvf_staging", "role" : "srvf_dp_acceptance_runtime", "role_superuser" : false, "role_bypass_rls" : false, "table_owner" : "postgres", "owning_role_member" : false, "migrations" : 156}

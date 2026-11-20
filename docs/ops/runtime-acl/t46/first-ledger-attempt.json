@@ -1,0 +1,15 @@
+[
+  {
+    "step": "summary",
+    "path": "/api/app/v1/my/participation-ledger",
+    "method": "GET",
+    "http": 500,
+    "code": 50000
+  },
+  {
+    "step": "summary",
+    "error": "TimeoutError",
+    "reason": "Timeout 30000ms",
+    "exit": 1
+  }
+]
