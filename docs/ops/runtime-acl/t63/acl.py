@@ -22,7 +22,7 @@ def ident(value):
     return '"' + value + '"'
 
 
-def sql_for(contract, mode):
+def sql_for(contract, mode, *, browser_delta=False):
     if set(contract) != set(ROLES):
         raise ValueError("Unexpected role set")
     rows, grants, revokes = [], [], []
@@ -37,12 +37,17 @@ def sql_for(contract, mode):
                 revokes.append(f"REVOKE {clause} FROM {ident(role)};")
                 rows.extend(f"('{role}','{table}','{op}','{c}')" for c in columns)
     cmd = {"setup": grants, "rollback": revokes, "preflight": []}[mode]
-    return (
+    baseline = (
         (HERE / "guard.sql").read_text()
         + "\nINSERT INTO desired VALUES\n"
         + ",\n".join(rows)
         + ";\n"
         + (HERE / "inspect.sql").read_text()
+    )
+    if browser_delta:
+        return baseline + "\n" + (HERE.parent / "t67" / "browser-delta.sql").read_text()
+    return (
+        baseline
         + "\nSELECT pg_temp.validate_acl(:'mode',false);\n"
         + "\n".join(cmd)
         + "\nSELECT pg_temp.validate_acl(:'mode',true);\nCOMMIT;\n"
@@ -52,6 +57,10 @@ def sql_for(contract, mode):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("setup", "preflight", "rollback"))
+    parser.add_argument(
+        "--browser-delta", action="store_true",
+        help="Manage only the browser columns on top of the exact T63 baseline",
+    )
     parser.add_argument("--container", required=True)
     parser.add_argument("--cluster-id", required=True)
     args = parser.parse_args()
@@ -78,7 +87,7 @@ def main():
     ):
         parser.error("Expected the labelled internal-only T63 lab with disposable PGDATA")
     contract = json.loads((HERE / "columns.json").read_text())
-    sql = sql_for(contract, args.mode)
+    sql = sql_for(contract, args.mode, browser_delta=args.browser_delta)
     subprocess.run(
         [
             "docker",

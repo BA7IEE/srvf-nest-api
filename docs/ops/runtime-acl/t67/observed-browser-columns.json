@@ -1,0 +1,171 @@
+{
+  "Activity": {
+    "SELECT": ["deletedAt", "id", "initiatorMemberId"]
+  },
+  "Member": {
+    "SELECT": [
+      "createdAt",
+      "deletedAt",
+      "gradeCode",
+      "id",
+      "memberNo",
+      "memberOriginCode",
+      "memberSinceDate",
+      "nickname",
+      "realName",
+      "status",
+      "updatedAt"
+    ]
+  },
+  "User": {
+    "SELECT": [
+      "avatarAttachmentId",
+      "avatarKey",
+      "createdAt",
+      "deletedAt",
+      "email",
+      "id",
+      "lastLoginAt",
+      "memberId",
+      "nickname",
+      "openid",
+      "passwordHash",
+      "phone",
+      "phoneVerifiedAt",
+      "role",
+      "status",
+      "updatedAt",
+      "username",
+      "wecomIdentityVersion"
+    ],
+    "UPDATE": ["lastLoginAt", "updatedAt"]
+  },
+  "activity_responsibility_assignments": {
+    "SELECT": ["canManageAttendance", "canManageRegistrations", "id", "memberId", "status"]
+  },
+  "audit_logs": {
+    "INSERT": [
+      "actorRoleSnap",
+      "actorUserId",
+      "context",
+      "createdAt",
+      "event",
+      "id",
+      "resourceId",
+      "resourceType",
+      "shadowProofRequired",
+      "success"
+    ],
+    "SELECT": [
+      "actorCredentialId",
+      "actorRoleSnap",
+      "actorServicePrincipalId",
+      "actorUserId",
+      "context",
+      "createdAt",
+      "event",
+      "id",
+      "onBehalfOfRoleSnap",
+      "onBehalfOfUserId",
+      "resourceId",
+      "resourceType",
+      "shadowProofRequired",
+      "success"
+    ]
+  },
+  "organization_position_assignments": {
+    "SELECT": [
+      "deletedAt",
+      "endedAt",
+      "id",
+      "memberId",
+      "organizationId",
+      "positionId",
+      "startedAt",
+      "status"
+    ]
+  },
+  "organization_supervision_assignments": {
+    "SELECT": [
+      "deletedAt",
+      "endedAt",
+      "id",
+      "organizationId",
+      "scopeMode",
+      "startedAt",
+      "status",
+      "supervisorMemberId"
+    ]
+  },
+  "refresh_tokens": {
+    "INSERT": [
+      "createdAt",
+      "expiresAt",
+      "familyId",
+      "id",
+      "ipFirstSeen",
+      "tokenHash",
+      "uaFirstSeen",
+      "userId"
+    ],
+    "SELECT": [
+      "createdAt",
+      "expiresAt",
+      "familyId",
+      "id",
+      "ipFirstSeen",
+      "replacedById",
+      "revokedAt",
+      "revokedReason",
+      "rotatedAt",
+      "tokenHash",
+      "uaFirstSeen",
+      "userId"
+    ],
+    "UPDATE": ["replacedById", "revokedAt", "revokedReason", "rotatedAt"]
+  },
+  "role_bindings": {
+    "SELECT": [
+      "deletedAt",
+      "endedAt",
+      "id",
+      "principalId",
+      "principalType",
+      "roleId",
+      "scopeActivityId",
+      "scopeOrgId",
+      "scopeResourceId",
+      "scopeResourceType",
+      "scopeType",
+      "startedAt",
+      "status"
+    ]
+  },
+  "roles": {
+    "SELECT": ["deletedAt", "id"]
+  },
+  "throttler_buckets": {
+    "INSERT": [
+      "createdAt",
+      "hitExpiresAt",
+      "id",
+      "key",
+      "retentionAt",
+      "throttlerName",
+      "updatedAt",
+      "windowExpiresAt"
+    ],
+    "SELECT": [
+      "blockedUntil",
+      "createdAt",
+      "hitExpiresAt",
+      "id",
+      "key",
+      "retentionAt",
+      "throttlerName",
+      "updatedAt",
+      "windowExpiresAt"
+    ],
+    "UPDATE": ["blockedUntil", "hitExpiresAt", "retentionAt", "updatedAt", "windowExpiresAt"]
+  }
+}
