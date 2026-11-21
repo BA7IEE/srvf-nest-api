@@ -6,6 +6,7 @@ import {
 } from './test-db';
 import { deriveTestDbName } from './worktree-db';
 import { r5CiTestDatabaseUrl } from './r5-ci-instance-scope';
+import { assertFixtureTruncateTriggers } from '../helpers/test-table-policy';
 
 const TRUNCATE_TRIGGERS = [
   { table: 'TeamJoinContributionMilestone', trigger: 'team_join_milestone_no_truncate' },
@@ -50,11 +51,15 @@ const TRUNCATE_TRIGGERS = [
 export function timeLedgerFixtureTriggerSql(expectedDatabase = deriveTestDbName()) {
   assertTestDatabaseUrl(r5CiTestDatabaseUrl());
   assertDroppableTestDbName(expectedDatabase);
+  assertFixtureTruncateTriggers(TRUNCATE_TRIGGERS);
   const dbLiteral = "'" + expectedDatabase.replaceAll("'", "''") + "'";
   // Names come exclusively from the fixed allowlist, never caller input.
   const triggerSqlValues = TRUNCATE_TRIGGERS.map(
     ({ table, trigger }) => `('${table}','${trigger}')`,
   ).join(', ');
+  const restorePredicate = TRUNCATE_TRIGGERS.map(
+    ({ table, trigger }) => `(item->>'table'='${table}' AND item->>'trigger'='${trigger}')`,
+  ).join(' OR ');
   return {
     before: `DO $d6_fixture$
       DECLARE item record; states jsonb := '[]'::jsonb;
@@ -132,39 +137,7 @@ export function timeLedgerFixtureTriggerSql(expectedDatabase = deriveTestDbName(
         END IF;
         FOR item IN SELECT value FROM jsonb_array_elements(current_setting('srvf.d6_fixture_trigger_states')::jsonb)
         LOOP
-          IF NOT ((item->>'table'='TeamJoinContributionMilestone' AND item->>'trigger'='team_join_milestone_no_truncate') OR
-                  (item->>'table'='ContributionShadowObservationWindow' AND item->>'trigger'='csow_no_truncate') OR
-                  (item->>'table'='ParticipantContributionEvaluation' AND item->>'trigger'='e4_evaluation_no_truncate') OR
-                  (item->>'table'='ActivitySettlementContributionRevision' AND item->>'trigger'='e4_revision_no_truncate') OR
-                  (item->>'table'='ContributionShadowWindowRegistrationReceipt' AND item->>'trigger'='cswr_no_truncate') OR
-                  (item->>'table'='ContributionShadowDispositionApprovalReceipt' AND item->>'trigger'='csda_no_truncate') OR
-                  (item->>'table'='ContributionShadowMappingApproval' AND item->>'trigger'='csma_no_truncate') OR
-                  (item->>'table'='ContributionShadowMappingApplication' AND item->>'trigger'='csmap_no_truncate') OR
-                  (item->>'table'='ContributionShadowMappingRegistrationReceipt' AND item->>'trigger'='csmrr_no_truncate') OR
-                  (item->>'table'='ContributionShadowLegacySourceAnchor' AND item->>'trigger'='cslsa_no_truncate') OR
-                  (item->>'table'='ContributionShadowAttemptReceipt' AND item->>'trigger'='csar_no_truncate') OR
-                  (item->>'table'='ContributionShadowComparisonReceipt' AND item->>'trigger'='cscr_no_truncate') OR
-                  (item->>'table'='ContributionShadowTerminalReceipt' AND item->>'trigger'='cstr_no_truncate') OR
-                  (item->>'table'='ContributionShadowDispositionReceipt' AND item->>'trigger'='csdr_no_truncate') OR
-                  (item->>'table'='ContributionRuleConversionReceipt' AND item->>'trigger'='crcr_no_truncate') OR
-                  (item->>'table'='ActivityContributionPolicySelectionCommandReceipt' AND item->>'trigger'='acps_receipt_no_truncate') OR
-                  (item->>'table'='ActivityContributionPolicySelectionItem' AND item->>'trigger'='acps_item_no_truncate') OR
-                  (item->>'table'='ActivityContributionPolicySelectionRevision' AND item->>'trigger'='acps_revision_no_truncate') OR
-                  (item->>'table'='ContributionPolicyCommandReceipt' AND item->>'trigger'='cpr_no_truncate') OR
-                  (item->>'table'='ContributionPolicyVersion' AND item->>'trigger'='cpv_no_truncate') OR
-                  (item->>'table'='ContributionPolicy' AND item->>'trigger'='cp_no_truncate') OR
-                  (item->>'table'='ParticipationTimeCutoverBinding' AND item->>'trigger'='ptcb_no_truncate') OR
-                  (item->>'table'='ActivityTimeCutoverReceipt' AND item->>'trigger'='atcr_no_truncate') OR
-                  (item->>'table'='CorrectionPendingTimeAllocation' AND item->>'trigger'='cpta_no_truncate') OR
-                  (item->>'table'='CorrectionPendingTimeAllocationEvidence' AND item->>'trigger'='cptae_no_truncate') OR
-                  (item->>'table'='CorrectionTimeAllocationBinding' AND item->>'trigger'='ctab_no_truncate') OR
-                  (item->>'table'='CorrectionTimeSourceProof' AND item->>'trigger'='ctsp_no_truncate') OR
-                  (item->>'table'='CorrectionWritePhase' AND item->>'trigger'='r5_phase_no_truncate') OR
-                  (item->>'table'='ParticipationTimeLedgerEntry' AND item->>'trigger'='ptle_no_truncate') OR
-                  (item->>'table'='ParticipationTimeCorrectionCommitReceipt' AND item->>'trigger'='ptcr_no_truncate') OR
-                  (item->>'table'='ParticipationTimeCorrectionEntry' AND item->>'trigger'='ptce_no_truncate') OR
-                  (item->>'table'='ParticipationTimeCorrectionManifest' AND item->>'trigger'='ptcm_no_truncate') OR
-                  (item->>'table'='ParticipationTimeLedgerManifest' AND item->>'trigger'='ptlm_no_truncate')) THEN
+          IF NOT (${restorePredicate}) THEN
             RAISE EXCEPTION 'Unexpected fixture trigger';
           END IF;
           clause := CASE item->>'enabled' WHEN 'O' THEN 'ENABLE' WHEN 'D' THEN 'DISABLE' WHEN 'R' THEN 'ENABLE REPLICA' WHEN 'A' THEN 'ENABLE ALWAYS' ELSE NULL END;
@@ -186,6 +159,7 @@ export async function withTimeLedgerFixtureCleanup<T>(
   cleanup: (tx: Prisma.TransactionClient) => Promise<T>,
 ): Promise<T> {
   assertTestDatabaseUrl(r5CiTestDatabaseUrl());
+  assertFixtureTruncateTriggers(TRUNCATE_TRIGGERS);
   await assertConnectedTestDatabase(tx);
   const changed: { table: string; trigger: string; enabled: string }[] = [];
   for (const { table, trigger } of TRUNCATE_TRIGGERS) {

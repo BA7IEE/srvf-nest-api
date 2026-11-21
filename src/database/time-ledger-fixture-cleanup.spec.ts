@@ -1,5 +1,7 @@
 /* eslint-disable no-restricted-syntax -- Test-only environment injection exercises the existing fixture database guards; no application configuration is changed. */
 import type { Prisma } from '@prisma/client';
+import type { INestApplication } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { fstatSync, readSync } from 'node:fs';
 import {
   timeLedgerFixtureTriggerSql,
@@ -8,6 +10,9 @@ import {
 import { deriveTestDbName } from '../../test/setup/worktree-db';
 import { registerR5CiStdin } from '../../test/setup/r5-ci-instance-scope';
 import { R5_CI_DATABASE, R5_CI_ROLES } from '../../test/helpers/r5-ci-source-binding';
+import { CURRENT_TEST_TABLE_POLICIES } from '../../test/helpers/test-table-policy';
+import { resetDb } from '../../test/setup/reset-db';
+import { PrismaService } from './prisma.service';
 
 jest.mock('node:fs', () => ({
   ...jest.requireActual<typeof import('node:fs')>('node:fs'),
@@ -158,6 +163,84 @@ describe('phase trigger in controlled test fixture cleanup (no database)', () =>
     expect(after).toContain("WHEN 'R' THEN 'ENABLE REPLICA' WHEN 'A' THEN 'ENABLE ALWAYS'");
     expect(after).toContain('Fixture trigger restoration failed');
     expect(() => timeLedgerFixtureTriggerSql('business')).toThrow();
+  });
+
+  it('preserves the independently captured 33-pair cleanup and recovery scope', () => {
+    const { before, after } = timeLedgerFixtureTriggerSql();
+    const pairs = [...before.matchAll(/\('([A-Za-z0-9_]+)','([A-Za-z0-9_]+)'\)/gu)]
+      .map(([, table, trigger]) => ({ table, trigger }))
+      .sort((a, b) => (a.table < b.table ? -1 : a.table > b.table ? 1 : 0));
+    const recovery = [
+      ...after.matchAll(
+        /\(item->>'table'='([A-Za-z0-9_]+)' AND item->>'trigger'='([A-Za-z0-9_]+)'\)/gu,
+      ),
+    ]
+      .map(([, table, trigger]) => ({ table, trigger }))
+      .sort((a, b) => (a.table < b.table ? -1 : a.table > b.table ? 1 : 0));
+    expect(pairs).toHaveLength(33);
+    expect(recovery).toEqual(pairs);
+    // Captured from #1435 before the descriptor refactor, not computed from new policy data.
+    expect(createHash('sha256').update(JSON.stringify(pairs)).digest('hex')).toBe(
+      '564395710e0c84256a0e3161aeca7d08f000f846b6cfce27577908391b0fc32a',
+    );
+  });
+
+  it('preserves all four TRUNCATE statements, their order and the CASCADE roots', async () => {
+    const { before } = timeLedgerFixtureTriggerSql();
+    const pairs = [...before.matchAll(/\('([A-Za-z0-9_]+)','([A-Za-z0-9_]+)'\)/gu)];
+    const client = {
+      $queryRawUnsafe: jest.fn((sql: string) =>
+        Promise.resolve(
+          sql.includes('current_database()')
+            ? [{ db: deriveTestDbName(), srv: null }]
+            : [{ revisions: 0n, items: 0n, receipts: 0n }],
+        ),
+      ),
+      $queryRaw: jest.fn((sql: TemplateStringsArray, ...values: unknown[]) => {
+        if (values.length === 2) {
+          expect(
+            pairs.some(
+              ([, table, trigger]) =>
+                (values[0] === table && values[1] === trigger) ||
+                (values[0] === trigger && values[1] === table),
+            ),
+          ).toBe(true);
+          return Promise.resolve([{ enabled: 'O' }]);
+        }
+        const source = sql.join('');
+        const existing = source.includes('ContributionShadowObservationWindow')
+          ? 6n
+          : source.includes('ContributionShadowMappingApproval')
+            ? 3n
+            : 2n;
+        return Promise.resolve([{ existing }]);
+      }),
+      $executeRawUnsafe: jest.fn().mockResolvedValue(0),
+      $transaction: jest.fn(),
+    };
+    client.$transaction.mockImplementation(
+      (work: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
+        work(client as unknown as Prisma.TransactionClient),
+    );
+    const app = {
+      get: (token: unknown) => {
+        expect(token).toBe(PrismaService);
+        return client;
+      },
+    } as unknown as INestApplication;
+    await resetDb(app);
+    const statements = (client.$executeRawUnsafe.mock.calls as [string][])
+      .map(([sql]) => sql)
+      .filter((sql) => sql.startsWith('TRUNCATE'));
+    expect(statements).toHaveLength(4);
+    expect(createHash('sha256').update(statements.join('\n')).digest('hex')).toBe(
+      'd61cdc41366461120d3ef95c6ef24a4ac824cf0dd532cf337c30e18ad8565010',
+    );
+    for (const { table, cleanup } of CURRENT_TEST_TABLE_POLICIES) {
+      expect(statements.some((sql) => sql.includes(`"${cleanup.cascadeFrom}"`))).toBe(true);
+      expect(statements.some((sql) => sql.includes(`"${table}"`))).toBe(false);
+    }
+    expect(client.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 60_000 });
   });
 
   it('uses registered stdin intent and rejects mismatched live identity without a DATABASE_URL', async () => {
