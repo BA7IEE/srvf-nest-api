@@ -1,0 +1,24 @@
+{
+  "recorded_at": "2026-11-13T04:26:31+08:00",
+  "scope": "target API container only",
+  "window_utc": [
+    "2026-11-12T20:24:00Z",
+    "2026-11-12T20:26:00Z"
+  ],
+  "exit_code": 0,
+  "create_request_id": "cmwdzym8n5bdee79bbc4f82a89788b71b",
+  "precheck_request_id": "cmwdzxoz2f3cf250844cc690c83ab3379",
+  "detail_request_id": "cmwdzyys3d1c83a61b24d07733bd2aaa8",
+  "matching_lines": {
+    "create": 2,
+    "precheck": 1,
+    "detail": 1
+  },
+  "create_post_route_201": true,
+  "route": "/api/admin/v1/activities",
+  "limits": [
+    "Bounded target-container logs only.",
+    "Deployment Git SHA UNKNOWN.",
+    "No publish or notification is asserted by this artifact."
+  ]
+}

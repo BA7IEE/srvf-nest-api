@@ -1,0 +1,94 @@
+{
+  "recorded_at": "2026-11-13T04:01:42.290708+08:00",
+  "classification": "LOCAL",
+  "baseline_commit": "6375148a61445972e792ce37cb401fd8e5162538",
+  "candidate_commit_reported": "1fe9ae3afa340237c63603f700c18a89c8fe6857",
+  "standalone_candidate_patch_sha256": "f6562e6bda02b583178980c8b50fb1f9b33e173fbe9c57589ee4d797ca54865b",
+  "additional_review_patch": "member-create-inflight-guard.patch",
+  "additional_review_patch_sha256": "a4d54fb4566095f823550cd5045b1d515dc6c523abdfd970957f412ba9c0e4b7",
+  "working_test_sha256": "14d449dd21a974a4e156784c259681769c810d755f5b06f15d71822c1956ec89",
+  "extra_patch_paths": [
+    "src/views/srvf/members-domain/members/utils/hook.ts",
+    "tests/member_create_contract.behavior.test.mjs"
+  ],
+  "candidate_source_paths_unchanged": 12,
+  "candidate_source_paths_total": 13,
+  "expected_changed_candidate_path": "src/views/srvf/members-domain/members/utils/hook.ts",
+  "pre_fix_reentry_tests": {
+    "count": 2,
+    "failures": 2,
+    "request_in_flight_post_count": 2,
+    "validation_in_flight_validation_count": 2
+  },
+  "post_fix_checks": {
+    "behavior": {
+      "exit": 0,
+      "seconds": 1.4,
+      "command": [
+        "node",
+        "--test",
+        "tests/member_create_contract.behavior.test.mjs"
+      ],
+      "passes": 6,
+      "failures": 0,
+      "loopback_release_checks": 6
+    },
+    "eslint": {
+      "exit": 0,
+      "seconds": 1.2,
+      "command": [
+        "pnpm",
+        "exec",
+        "eslint",
+        "--max-warnings",
+        "0",
+        "src/views/srvf/members-domain/members/utils/hook.ts",
+        "tests/member_create_contract.behavior.test.mjs"
+      ]
+    },
+    "prettier": {
+      "exit": 0,
+      "seconds": 0.3,
+      "command": [
+        "pnpm",
+        "exec",
+        "prettier",
+        "--check",
+        "src/views/srvf/members-domain/members/utils/hook.ts",
+        "tests/member_create_contract.behavior.test.mjs"
+      ]
+    },
+    "typecheck": {
+      "exit": 0,
+      "seconds": 8.9,
+      "command": [
+        "pnpm",
+        "exec",
+        "vue-tsc",
+        "--noEmit",
+        "--skipLibCheck"
+      ]
+    },
+    "diff_check": {
+      "exit": 0,
+      "seconds": 0.0,
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ]
+    },
+    "staged_diff_check": {
+      "exit": 0,
+      "seconds": 0.0,
+      "command": [
+        "git",
+        "diff",
+        "--cached",
+        "--check"
+      ]
+    }
+  },
+  "patch_verification": "Candidate hook reconstructed from the standalone patch and verified against its Git postimage; additional patch independently applied in a temporary directory and both resulting files matched working-copy bytes.",
+  "limitations": "LOCAL synthetic loopback and mocked form validator only; browser click path, real service, persisted state, merged code, and deployment were not verified."
+}

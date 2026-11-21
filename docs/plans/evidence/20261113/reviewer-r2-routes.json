@@ -1,0 +1,70 @@
+{
+  "recorded_at": "2026-11-13T05:24:09+08:00",
+  "scope": "target API container only",
+  "prior_write_window_utc": [
+    "2026-11-12T21:10:00Z",
+    "2026-11-12T21:18:00Z"
+  ],
+  "final_bind_window_utc": [
+    "2026-11-12T21:19:00Z",
+    "2026-11-12T21:20:00Z"
+  ],
+  "exit_codes": [
+    0,
+    0
+  ],
+  "results": [
+    {
+      "case": "member_create",
+      "request_id": "cmwe1lmg0588827ed59b5dc9723fef5c8",
+      "method": "POST",
+      "route": "/api/admin/v1/members",
+      "route_matches": true,
+      "server_status": 201,
+      "matching_lines": 2
+    },
+    {
+      "case": "membership_create",
+      "request_id": "cmwe1t2vk9eeb6843a505f43e42551f68",
+      "method": "POST",
+      "route": "/api/admin/v1/members/{id}/memberships",
+      "route_matches": true,
+      "server_status": 201,
+      "matching_lines": 2
+    },
+    {
+      "case": "user_create",
+      "request_id": "cmwe1tptp691b67a850f3c85641e83224",
+      "method": "POST",
+      "route": "/api/admin/v1/users",
+      "route_matches": true,
+      "server_status": 201,
+      "matching_lines": 2
+    },
+    {
+      "case": "account_bind",
+      "request_id": "cmwe1wn4kb8e0ad6e3f3e03d29a50dcdb",
+      "method": "POST",
+      "route": "/api/admin/v1/members/{id}/account/bind",
+      "route_matches": true,
+      "server_status": 200,
+      "matching_lines": 2
+    },
+    {
+      "case": "member_after_bind",
+      "request_id": "cmwe1wrdmac65febb5829e015e86f5c40",
+      "server_status": 200,
+      "matching_lines": 2
+    },
+    {
+      "case": "user_after_bind",
+      "request_id": "cmwe1wvrobf880311bd3768010bf587e6",
+      "server_status": 200,
+      "matching_lines": 2
+    }
+  ],
+  "limits": [
+    "Response assertions are recorded separately.",
+    "Deployment Git SHA UNKNOWN."
+  ]
+}

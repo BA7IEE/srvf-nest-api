@@ -1,0 +1,587 @@
+diff --git a/src/views/srvf/members-domain/members/utils/hook.ts b/src/views/srvf/members-domain/members/utils/hook.ts
+--- a/src/views/srvf/members-domain/members/utils/hook.ts
++++ b/src/views/srvf/members-domain/members/utils/hook.ts
+@@ -194,29 +194,46 @@
+         originOptions: dict.options("join_source")
+       },
+       contentRenderer: () => h(MemberForm, { ref: formRef }),
+-      beforeSure: (done, { options, closeLoading }) => {
+-        const formComp = formRef.value;
++      beforeSure: async (done, { options, closeLoading }) => {
+         const curData = options.props.formInline as MemberFormModel;
+-        formComp.getRef().validate(async (valid: boolean) => {
+-          if (!valid) {
+-            closeLoading();
++        if (curData.isSaving) return;
++        curData.isSaving = true;
++        let closed = false;
++        try {
++          let valid: boolean;
++          try {
++            valid = await formRef.value.getRef().validate();
++          } catch (error) {
++            // Invalid fields are already shown by the form. Unexpected
++            // validation exceptions still need a visible recovery message.
++            if (error instanceof Error)
++              message("表单校验异常，请重试。", { type: "error" });
+             return;
+           }
+-          curData.isSaving = true;
++          if (!valid) return;
+           const saved = await saveMemberForm(curData, row, {
+             create: createMember,
+             update: updateMember
+           });
+-          curData.isSaving = false;
+           if (saved.ok === false) {
+             message(saved.message, { type: "error" });
+-            closeLoading();
+             return;
+           }
+           message(`${title}成功`, { type: "success" });
+           done();
++          closed = true;
+           onSearch();
+-        });
++        } catch {
++          message(
++            isEdit
++              ? "保存结果未确认，请重新读取队员后再重试。"
++              : "保存结果未确认，请先按编号查询后再重试。",
++            { type: "error" }
++          );
++        } finally {
++          curData.isSaving = false;
++          if (!closed) closeLoading();
++        }
+       }
+     });
+   }
+diff --git a/tests/member_create_contract.behavior.test.mjs b/tests/member_create_contract.behavior.test.mjs
+new file mode 100644
+--- /dev/null
++++ b/tests/member_create_contract.behavior.test.mjs
+@@ -0,0 +1,523 @@
++/**
++ * Exercise the real members dialog submission and real member API wrapper.
++ * Vite evaluates the actual modules in middleware-only SSR mode; a synthetic
++ * loopback server receives the Axios-serialized bytes. No browser, deployed
++ * API, shared database, credentials, or external network is used.
++ *
++ * The Element Plus form validator is stubbed as successful: this test covers
++ * submit orchestration and payload, not rendered fields or validation UX.
++ * Run: node --test tests/member_create_contract.behavior.test.mjs
++ */
++import assert from "node:assert/strict";
++import { createServer as createHttpServer } from "node:http";
++import { EventEmitter, once } from "node:events";
++import { test } from "node:test";
++import { fileURLToPath } from "node:url";
++import path from "node:path";
++import { createServer as createViteServer } from "vite";
++import vue from "@vitejs/plugin-vue";
++
++const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
++const stateKey = "__srvfMemberContractFixture";
++const stubPrefix = "\0srvf-member-contract:";
++
++const stubs = {
++  "vue-router": `export const useRouter = () => ({ push() {} });`,
++  "@pureadmin/utils": `export const deviceDetection = () => false;`,
++  "element-plus": `export const ElMessageBox = { confirm: async () => {} };`,
++  "@/api/srvf-error": `export const bizErrorMessage = (_error, fallback) => fallback;`,
++  "@/utils/message": `export const message = value => globalThis.${stateKey}.messages.push(value);`,
++  "@/utils/auth": `export const hasPerms = () => true;`,
++  "@/components/ReDialog": `export const addDialog = options => globalThis.${stateKey}.dialogs.push(options);`,
++  "@/components/ReCol": `export default { name: "FixtureColumn" };`,
++  "@/store/modules/multiTags": `export const useMultiTagsStoreHook = () => ({ handleTags() {} });`,
++  "@/store/modules/srvfDict": `export const useSrvfDictStoreHook = () => ({ ensureTypes() {}, async ensureType() {}, options: () => [], label: (_kind, value) => value });`,
++  "@/srvf-kit": `
++    import { ref, reactive } from "vue";
++    export const useSrvfList = () => ({
++      dataList: ref([]), loading: ref(false), pagination: reactive({}),
++      onSearch() {}, onFilterChange() {}, handleSizeChange() {}, handleCurrentChange() {}
++    });
++  `,
++  "@/utils/http": `
++    import axios from "axios";
++    export const http = {
++      async request(method, path, options = {}) {
++        const origin = globalThis.${stateKey}.origin;
++        const url = new URL(path, origin);
++        if (url.origin !== origin || url.hostname !== "127.0.0.1") {
++          throw new Error("fixture rejected non-loopback HTTP");
++        }
++        const response = await axios.request({
++          method, url: url.href, params: options.params, data: options.data,
++          timeout: 3000, proxy: false
++        });
++        return response.data;
++      }
++    };
++  `
++};
++
++function fixturePlugin() {
++  return {
++    name: "srvf-member-contract-fixture",
++    enforce: "pre",
++    resolveId(id) {
++      const sourceRoot = `${path.join(root, "src")}${path.sep}`;
++      const key = id.startsWith(sourceRoot)
++        ? `@/${id.slice(sourceRoot.length).replaceAll(path.sep, "/").replace(/\.ts$/, "")}`
++        : id;
++      return Object.hasOwn(stubs, key) ? stubPrefix + key : null;
++    },
++    load(id) {
++      return id.startsWith(stubPrefix)
++        ? stubs[id.slice(stubPrefix.length)]
++        : null;
++    }
++  };
++}
++
++async function startFixture() {
++  const requests = [];
++  const arrivals = new EventEmitter();
++  const pendingResponses = [];
++  let responsesHeld = false;
++  let nextPostStatus = 201;
++  const server = createHttpServer(async (request, response) => {
++    const requestUrl = new URL(request.url, "http://127.0.0.1");
++    if (
++      request.method === "GET" &&
++      requestUrl.pathname === "/api/system/v1/dict-types"
++    ) {
++      response.writeHead(200, { "content-type": "application/json" });
++      response.end(
++        JSON.stringify({
++          code: 0,
++          message: "ok",
++          data: { items: [], total: 0, page: 1, pageSize: 100 }
++        })
++      );
++      return;
++    }
++    if (
++      request.method === "POST" &&
++      requestUrl.pathname === "/api/admin/v1/members"
++    ) {
++      const chunks = [];
++      for await (const chunk of request) chunks.push(chunk);
++      requests.push({
++        method: request.method,
++        path: requestUrl.pathname,
++        contentType: request.headers["content-type"],
++        body: JSON.parse(Buffer.concat(chunks).toString("utf8"))
++      });
++      arrivals.emit("post");
++      if (responsesHeld) {
++        await new Promise(resolve => pendingResponses.push(resolve));
++      }
++      const status = nextPostStatus;
++      nextPostStatus = 201;
++      response.writeHead(status, { "content-type": "application/json" });
++      if (status !== 201) {
++        response.end(
++          JSON.stringify({
++            code: 50000,
++            message: "synthetic error",
++            data: null
++          })
++        );
++        return;
++      }
++      response.end(
++        JSON.stringify({
++          code: 0,
++          message: "ok",
++          data: {
++            id: "fixture-member",
++            memberNo: requests.at(-1).body.memberNo
++          }
++        })
++      );
++      return;
++    }
++    response.writeHead(404, { "content-type": "application/json" });
++    response.end(
++      JSON.stringify({
++        code: 40400,
++        message: "unexpected fixture route",
++        data: null
++      })
++    );
++  });
++  server.listen(0, "127.0.0.1");
++  await once(server, "listening");
++  const port = server.address().port;
++  return {
++    server,
++    requests,
++    arrivals,
++    origin: `http://127.0.0.1:${port}`,
++    port,
++    holdResponses() {
++      responsesHeld = true;
++    },
++    releaseResponses() {
++      responsesHeld = false;
++      for (const release of pendingResponses.splice(0)) release();
++    },
++    respondNextPostWithStatus(status) {
++      nextPostStatus = status;
++    }
++  };
++}
++
++async function waitForRequests(fixture, count, timeoutMs) {
++  return await new Promise(resolve => {
++    const finish = found => {
++      clearTimeout(timer);
++      fixture.arrivals.off("post", check);
++      resolve(found);
++    };
++    const check = () => {
++      if (fixture.requests.length >= count) finish(true);
++    };
++    const timer = setTimeout(() => finish(false), timeoutMs);
++    fixture.arrivals.on("post", check);
++    check();
++  });
++}
++
++async function assertFixturePortReleased(fixture) {
++  const probe = createHttpServer();
++  try {
++    probe.listen(fixture.port, "127.0.0.1");
++    await once(probe, "listening");
++  } finally {
++    if (probe.listening) {
++      probe.close();
++      await once(probe, "close");
++    }
++  }
++  console.info("LOCAL fixture: loopback socket closed; rebind verified");
++}
++
++async function withHarness(run) {
++  const fixture = await startFixture();
++  globalThis[stateKey] = { dialogs: [], messages: [], origin: fixture.origin };
++  let vite;
++  try {
++    vite = await createViteServer({
++      root,
++      configFile: false,
++      plugins: [fixturePlugin(), vue()],
++      resolve: { alias: { "@": path.join(root, "src") } },
++      ssr: { noExternal: ["vue-router", "@pureadmin/utils", "element-plus"] },
++      optimizeDeps: { noDiscovery: true, include: [] },
++      server: { middlewareMode: true, hmr: false },
++      logLevel: "error"
++    });
++    await run({ vite, fixture });
++  } finally {
++    try {
++      if (vite) await vite.close();
++    } finally {
++      delete globalThis[stateKey];
++      fixture.server.close();
++      await once(fixture.server, "close");
++      await assertFixturePortReleased(fixture);
++    }
++  }
++}
++
++test("local fixture accepts contract-correct body through real member API wrapper", async () => {
++  await withHarness(async ({ vite, fixture }) => {
++    const { createMember } = await vite.ssrLoadModule(
++      "/src/api/srvf-member.ts"
++    );
++    const body = {
++      memberNo: "SRVF-QA-LOCAL-01",
++      realName: "合成队员",
++      memberSinceDate: "2026-01-01",
++      memberOriginCode: "manual"
++    };
++    await createMember(body);
++    assert.equal(fixture.requests.length, 1);
++    const request = fixture.requests[0];
++    assert.equal(request.method, "POST");
++    assert.equal(request.path, "/api/admin/v1/members");
++    assert.match(request.contentType, /^application\/json/);
++    assert.deepEqual(
++      Object.keys(request.body).sort(),
++      Object.keys(body).sort()
++    );
++    assert.ok(Object.keys(body).every(key => request.body[key] === body[key]));
++  });
++});
++
++test("member creation sends required current contract fields and no displayName", async () => {
++  await withHarness(async ({ vite, fixture }) => {
++    const { useMembers } = await vite.ssrLoadModule(
++      "/src/views/srvf/members-domain/members/utils/hook.ts"
++    );
++    const members = useMembers();
++    await members.openDialog("新建");
++    assert.equal(globalThis[stateKey].dialogs.length, 1);
++    const dialog = globalThis[stateKey].dialogs[0];
++    const vnode = dialog.contentRenderer();
++    assert.ok(
++      vnode.ref?.r && "value" in vnode.ref.r,
++      "dialog must connect the real component ref"
++    );
++    vnode.ref.r.value = {
++      getRef: () => ({
++        validate: callback => {
++          callback?.(true);
++          return Promise.resolve(true);
++        }
++      })
++    };
++
++    // Fill the dialog model. Only touch the legacy alias if that field is
++    // actually part of the model. This keeps the regression meaningful when
++    // a fixed model removes it completely.
++    const required = [
++      "memberNo",
++      "realName",
++      "memberSinceDate",
++      "memberOriginCode"
++    ];
++    const absentInitially = required.filter(
++      key => !Object.hasOwn(dialog.props.formInline, key)
++    );
++    Object.assign(dialog.props.formInline, {
++      memberNo: "SRVF-QA-LOCAL-01",
++      realName: "合成队员",
++      memberSinceDate: "2026-01-01",
++      memberOriginCode: "manual",
++      nickname: "",
++      gradeCode: ""
++    });
++    if (Object.hasOwn(dialog.props.formInline, "displayName")) {
++      dialog.props.formInline.displayName = "合成称呼";
++    }
++    await new Promise((resolve, reject) => {
++      const timer = setTimeout(
++        () => reject(new Error("dialog submission did not settle")),
++        5000
++      );
++      dialog.beforeSure(
++        () => {
++          clearTimeout(timer);
++          resolve();
++        },
++        {
++          options: dialog,
++          closeLoading: () => {
++            clearTimeout(timer);
++            reject(new Error("dialog submission failed"));
++          }
++        }
++      );
++    });
++    assert.equal(
++      fixture.requests.length,
++      1,
++      "one dialog submission must make one POST"
++    );
++    const request = fixture.requests[0];
++    assert.equal(request.method, "POST");
++    assert.equal(request.path, "/api/admin/v1/members");
++    assert.match(request.contentType, /^application\/json/);
++    assert.deepEqual(
++      Object.keys(request.body).sort(),
++      [...required].sort(),
++      "serialized create body must contain required fields and exclude displayName"
++    );
++    assert.deepEqual(
++      absentInitially,
++      [],
++      "dialog model must expose all required fields before input"
++    );
++    for (const key of required) {
++      assert.ok(
++        request.body[key] === dialog.props.formInline[key],
++        `${key} must preserve the entered value`
++      );
++    }
++  });
++});
++
++test("candidate callback reentry must not issue a second POST in flight", async () => {
++  await withHarness(async ({ vite, fixture }) => {
++    const { useMembers } = await vite.ssrLoadModule(
++      "/src/views/srvf/members-domain/members/utils/hook.ts"
++    );
++    await useMembers().openDialog("新建");
++    const dialog = globalThis[stateKey].dialogs[0];
++    const vnode = dialog.contentRenderer();
++    vnode.ref.r.value = {
++      getRef: () => ({
++        validate: callback => {
++          callback?.(true);
++          return Promise.resolve(true);
++        }
++      })
++    };
++    Object.assign(dialog.props.formInline, {
++      memberNo: "SRVF-QA-LOCAL-02",
++      realName: "合成队员",
++      memberSinceDate: "2026-01-01",
++      memberOriginCode: "manual"
++    });
++    const submit = () =>
++      new Promise((resolve, reject) => {
++        dialog.beforeSure(resolve, {
++          options: dialog,
++          closeLoading: () => reject(new Error("fixture submission failed"))
++        });
++      });
++
++    fixture.holdResponses();
++    let first;
++    let second;
++    let observed;
++    try {
++      first = submit();
++      assert.ok(await waitForRequests(fixture, 1, 2000));
++      second = submit();
++      await waitForRequests(fixture, 2, 400);
++      observed = fixture.requests.length;
++    } finally {
++      fixture.releaseResponses();
++    }
++    await first;
++    if (observed > 1) await second;
++    assert.equal(
++      observed,
++      1,
++      `direct callback reentry issued ${observed} POSTs`
++    );
++  });
++});
++
++test("callback reentry during pending validation starts only one validation and POST", async () => {
++  await withHarness(async ({ vite, fixture }) => {
++    const { useMembers } = await vite.ssrLoadModule(
++      "/src/views/srvf/members-domain/members/utils/hook.ts"
++    );
++    await useMembers().openDialog("新建");
++    const dialog = globalThis[stateKey].dialogs[0];
++    const vnode = dialog.contentRenderer();
++    const releaseValidation = [];
++    vnode.ref.r.value = {
++      getRef: () => ({
++        validate: callback =>
++          new Promise(resolve => {
++            releaseValidation.push(() => {
++              callback?.(true);
++              resolve(true);
++            });
++          })
++      })
++    };
++    Object.assign(dialog.props.formInline, {
++      memberNo: "SRVF-QA-LOCAL-03",
++      realName: "合成队员",
++      memberSinceDate: "2026-01-01",
++      memberOriginCode: "manual"
++    });
++    const submit = () =>
++      new Promise((resolve, reject) => {
++        dialog.beforeSure(resolve, {
++          options: dialog,
++          closeLoading: () => reject(new Error("fixture submission failed"))
++        });
++      });
++    const first = submit();
++    const second = submit();
++    const validationCount = releaseValidation.length;
++    for (const release of releaseValidation) release();
++    await first;
++    if (validationCount > 1) await second;
++    assert.equal(validationCount, 1, "must reject reentry before validation");
++    assert.equal(fixture.requests.length, 1, "must issue only one POST");
++  });
++});
++
++test("invalid and exceptional validation releases the lock before a valid retry", async () => {
++  await withHarness(async ({ vite, fixture }) => {
++    const { useMembers } = await vite.ssrLoadModule(
++      "/src/views/srvf/members-domain/members/utils/hook.ts"
++    );
++    await useMembers().openDialog("新建");
++    const dialog = globalThis[stateKey].dialogs[0];
++    const vnode = dialog.contentRenderer();
++    let mode = "false";
++    vnode.ref.r.value = {
++      getRef: () => ({
++        validate: async () => {
++          if (mode === "false") return false;
++          if (mode === "invalid") throw { realName: [] };
++          if (mode === "error") throw new Error("synthetic validation error");
++          return true;
++        }
++      })
++    };
++    Object.assign(dialog.props.formInline, {
++      memberNo: "SRVF-QA-LOCAL-04",
++      realName: "合成队员",
++      memberSinceDate: "2026-01-01",
++      memberOriginCode: "manual"
++    });
++    const submit = () =>
++      new Promise(resolve => {
++        dialog.beforeSure(() => resolve("done"), {
++          options: dialog,
++          closeLoading: () => resolve("released")
++        });
++      });
++    for (mode of ["false", "invalid", "error"]) {
++      assert.equal(await submit(), "released");
++      assert.equal(dialog.props.formInline.isSaving, false);
++      assert.equal(fixture.requests.length, 0);
++    }
++    assert.ok(globalThis[stateKey].messages.includes("表单校验异常，请重试。"));
++    mode = "valid";
++    assert.equal(await submit(), "done");
++    assert.equal(fixture.requests.length, 1);
++    assert.equal(dialog.props.formInline.isSaving, false);
++  });
++});
++
++test("server error releases the lock and asks for a readback without retry", async () => {
++  await withHarness(async ({ vite, fixture }) => {
++    const { useMembers } = await vite.ssrLoadModule(
++      "/src/views/srvf/members-domain/members/utils/hook.ts"
++    );
++    await useMembers().openDialog("新建");
++    const dialog = globalThis[stateKey].dialogs[0];
++    const vnode = dialog.contentRenderer();
++    vnode.ref.r.value = { getRef: () => ({ validate: async () => true }) };
++    Object.assign(dialog.props.formInline, {
++      memberNo: "SRVF-QA-LOCAL-05",
++      realName: "合成队员",
++      memberSinceDate: "2026-01-01",
++      memberOriginCode: "manual"
++    });
++    fixture.respondNextPostWithStatus(500);
++    const result = await new Promise(resolve => {
++      dialog.beforeSure(() => resolve("done"), {
++        options: dialog,
++        closeLoading: () => resolve("released")
++      });
++    });
++    assert.equal(result, "released");
++    assert.equal(fixture.requests.length, 1);
++    assert.equal(dialog.props.formInline.isSaving, false);
++    assert.ok(
++      globalThis[stateKey].messages.some(
++        value => value.includes("结果未确认") && value.includes("先按编号查询")
++      )
++    );
++  });
++});

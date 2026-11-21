@@ -1,0 +1,84 @@
+{
+  "classification": "DEPLOYED_HTTP",
+  "target": "https://dp.srvf.team",
+  "deployment_commit": "UNKNOWN",
+  "helper_sha256": "d73340b4e492d76122c81db8d285952391bdd521e5be49e458defff57388efd0",
+  "scope": "ordinary synthetic USER B and a published invitation-only synthetic activity in organization A; identifiers redacted",
+  "results": [
+    {
+      "time": "2026-11-13T06:31:37.180931+08:00",
+      "role": "B",
+      "method": "POST",
+      "path": "/api/auth/v1/login",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe4hbm5b1d159edfe4bf7083a551de6"
+    },
+    {
+      "time": "2026-11-13T06:31:41.606791+08:00",
+      "role": "B",
+      "method": "GET",
+      "path": "/api/app/v1/me",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe4hezxbb390fd568c20ebfa1f3167e",
+      "user_and_member_match": true,
+      "role_is_user": true,
+      "account_and_member_active": true,
+      "can_use_app": true
+    },
+    {
+      "time": "2026-11-13T06:31:46.098760+08:00",
+      "role": "B",
+      "method": "GET",
+      "path": "/api/admin/v1/activities/{id}",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe4higq68c9926691f0d3f8bc84a521",
+      "same_activity_and_organization": true,
+      "published": true,
+      "invitation_only": true,
+      "public_registration_closed": true
+    },
+    {
+      "time": "2026-11-13T06:31:50.718596+08:00",
+      "role": "B",
+      "method": "GET",
+      "path": "/api/app/v1/my/registrations?page=1&pageSize=100",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe4hm1m77fcbccec3428aca7b88d0d4",
+      "complete": true,
+      "target_matched": false
+    },
+    {
+      "time": "2026-11-13T06:31:50.843341+08:00",
+      "role": "B",
+      "method": "POST",
+      "path": "/api/app/v1/my/registrations",
+      "status": 409,
+      "code": 20120,
+      "request_id": "cmwe4hm4f72d08fcf9f9c23098ff1650a",
+      "single_attempt": true,
+      "response_message": "NOT_CAPTURED"
+    },
+    {
+      "time": "2026-11-13T06:31:50.951737+08:00",
+      "role": "B",
+      "method": "GET",
+      "path": "/api/app/v1/my/registrations?page=1&pageSize=100",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe4hm8gb717d41b92f9ee03ddba7f0d",
+      "complete": true,
+      "target_matched": false
+    }
+  ],
+  "limits": [
+    "Complete pagination is not an atomic database snapshot.",
+    "The response message was not retained; code interpretation is from local source.",
+    "No invitation or positive registration was created by this probe; notification outbox is not independently verified.",
+    "The empty local one-shot marker was retained; the helper stopped and its listener was released.",
+    "The independent B session was not logged out; server-side session state UNKNOWN."
+  ]
+}

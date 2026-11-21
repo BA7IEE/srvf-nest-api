@@ -4,6 +4,16 @@
 
 **阶段结论：完整业务与普通账号 UX 验收尚未完成，没有上线通过结论。** 本次是材料整合，不是新一轮 HTTP、数据库或 GUI 执行。以下保留各自记录日期，不把历史结果当当前部署结果。
 
+## 最新续测快照（2026-11-13 12:30，北京时间）
+
+- **上线 NO-GO**：部署提交 UNKNOWN；活动报名、审批、签到签退、考勤及结算入账尚无完整业务闭环，普通账号三个指定视口和附件完整流程仍未验收。
+- **DEPLOYED_HTTP**：合成组织 A/B 及 A、B、R1、R2 已准备；四项经确认的组织 A 角色绑定已创建并回读，到期时刻均为 11 月 15 日 06:00。R1/R2 的组织内考勤列表有有限读取样本，跨组织授权诊断按资源有允许和拒绝样本，均不等于考勤审批或完整隔离通过；详见 §9 后续证据。
+- **DEPLOYED_HTTP + GUI**：新公告草稿由管理员表单创建并回读，单次发布返回 503 / 13034，写后仍为草稿；根因 UNKNOWN。一次管理员代报名的目标请求是否到达 UNKNOWN，写后两次名册均为空，未盲目重试。具体请求和限制见 §9。
+- **LOCAL / DEPLOYED_HTTP NOT_RUN**：独立签到闸负例已完成本机 fixture，但准备启动前发现共享登录防重标记存在且来源 UNKNOWN；标记保留，拟用 R1 的两条签到请求均未发出。目标容器代码检查不代替 HTTP 结果；详见 §9。
+- **LOCAL/CI**：[前端 PR #170](https://github.com/BA7IEE/srvf-admin-web/pull/170) 为 draft，head `2ab02a346799bbed2cbe89b2e80e7fb516bc9aea` 的 `verify` 已通过；其[成员创建 gate](https://github.com/BA7IEE/srvf-admin-web/blob/2ab02a346799bbed2cbe89b2e80e7fb516bc9aea/src/views/srvf/members-domain/members/member-form-state.ts#L143-L160) 及[提交调用](https://github.com/BA7IEE/srvf-admin-web/blob/2ab02a346799bbed2cbe89b2e80e7fb516bc9aea/src/views/srvf/members-domain/members/utils/hook.ts#L181-L231)已包含异步校验前加锁、防重及失败释放，本轮独立补丁不应重复叠加。该候选未证明合并或部署，也未完成真实 GUI 回归。角色到期时间与诊断资源选项的另两项修复仅有隔离本地候选。
+- **CI，非线上验收**：本台账 PR #1414 的先前 head `c42f87f309ea10b089ebb268f1dfbf2a602967a2` 的 [Authenticated Human V3](https://github.com/BA7IEE/srvf-nest-api/actions/runs/43360559180/job/131672943570) 失败，受限日志及同一运行的 [artifact 14008216627](https://github.com/BA7IEE/srvf-nest-api/actions/runs/43360559180/artifacts/14008216627)（SHA-256 `191ee47e865d489cdc8db368ec6b0a32539ad8d7f2f3a065124e6555ed3d9af4`）确认：固定仓库 digest 拉取成功，随后以硬编码本地镜像 ID、`--pull=never` 建测试 PostgreSQL 容器时报 `create-pg_EXIT_125` / `no such image`；ID 未匹配的底层机制 UNKNOWN，尚未运行该作业的业务调用。草稿 [PR #1404](https://github.com/BA7IEE/srvf-nest-api/pull/1404) 改为从固定 digest 解析当前本地 ID，覆盖本次直接故障类别，其对应 CI 已通过，但尚未合并入 #1414，未证明移植后的结果。本条台账更新后的新提交须重新查看各自检查，不能沿用旧提交状态。
+- **历史异常**：17 个 500 原回执已逐项核验，同条件复测均 NOT_RUN；38 个 HTML 404 中 16 个有按原方法、路径及部分条件对齐的匿名有限样本，另 22 个未安全复测。历史公告创建 500 的原始请求仍缺证。
+
 ## 1. 统计口径和版本
 
 - `LOCAL/CI`、`DEPLOYED_HTTP`、`GUI` 分开；一次 HTTP 200、空列表、拒绝响应或单元测试通过均不等于完整业务验收。
@@ -86,3 +96,1123 @@
 ## 本次未做
 
 没有新跑业务 HTTP/GUI、压力测试、迁移或数据库操作；没有合并 PR、部署、修改权限、改变仓库可见性、删除历史仓库或发布凭据。本次只整合可公开测试结论，不能增加完整验收通过数。
+
+## 8. 2026-11-13 增量测试（进行中）
+
+本节独立记录本次实际执行；上文“本次未做”属于 11 月 12 日整合快照。测试目标为 `https://dp.srvf.team`，以下时间均为北京时间。隔离工作树基于仓库 main `6453ae5c374e224079d24e4fad818e9798ddf297`；**实际线上 API 与后台的精确部署提交均为 UNKNOWN**。OpenAPI 版本号、路由集合或静态文件哈希均不能单独证明提交身份。
+
+### 8.1 当前判断及阻塞
+
+- **上线结论：NO-GO。** 活动、报名、考勤、结算、公告、保险和附件的非空业务闭环与普通业务账号 UX 尚无本轮完整通过证据；历史安全及上线门禁不因本轮可访问而解除。
+- 线上 OpenAPI 为 673 个唯一的 HTTP 方法＋路径，与 11 月 12 日历史清单的 673 项集合相同。历史清单对完整验收记为 0 PASS、0 FAIL、1 BLOCKED、672 NOT_RUN；本节的单点匿名观察和 GUI 失败不改变该接口完整验收统计。
+- 源码 main 合同为 672 项；线上多出的唯一方法是 `GET /api/admin/v1/activity-publish-reviews/{id}/referenced-policies`。[PR #1405](https://github.com/BA7IEE/srvf-nest-api/pull/1405) 的候选合同集合与线上 673 项一致，但该 PR 当次检查仍为 draft/open。**集合一致不证明部署了该 PR。**
+- 历史测试凭据文件已不存在，尚未确认独立普通队员、管理员、一审和终审账号可供本轮使用。考勤审核和结算源码存在通知 intent；线上通知配置与接收范围尚未证实。账户或外发条件不清时，相关写操作记 BLOCKED，不用同一账号冒充多个角色。
+- 按本地源码基线 `fcf4e5d` 的角色和服务实现，一审、终审和提交主体存在分离要求；这是 **LOCAL** 观察，不能推断线上具体配置及执行结果。
+
+### 8.2 本轮逐请求观察
+
+以下仅为 **DEPLOYED_HTTP** 有限样本，不能把返回 200、404 或符合预期的 401 等同于整个业务通过。请求 ID 标为“客户端指定”时仅表示服务端回显，不能据此宣称生成方式。
+
+| 时间 | 方法及实际目标 | 角色 | 响应摘要 | 请求 ID |
+| --- | --- | --- | --- | --- |
+| 02:15:30 | `GET https://dp.srvf.team/api/docs-json` | 匿名 | 200；OpenAPI 3.0.0，文档版本 0.72.0，673 个方法＋路径 | `cmwdvbxdaaad4727973b154e1fb3868be` |
+| 02:18:01.108 | `GET https://dp.srvf.team/api/admin/v1/attendance-sheets?page=1&pageSize=2` | 匿名 | 401 / 40100；未登录或登录已失效，data 为 null | `cmwdvf6ohc0af398694a9dee036687b64` |
+| 02:18:01.199 | `GET https://dp.srvf.team/api/admin/v1/attendance-settlements?page=1&pageSize=2` | 匿名 | 401 / 40100；未登录或登录已失效，data 为 null | `cmwdvf6qb851ffbd217b01e30cc7d7dc8` |
+| 02:18:01.264 | `GET https://dp.srvf.team/api/admin/v1/organizations?page=1&pageSize=2` | 匿名 | 401 / 40100；未登录或登录已失效，data 为 null | `cmwdvf6sdfa027e7108d5c0691d3f26a3` |
+| 02:18:45.689 | `GET https://dp.srvf.team/api/open/v1/contents` | 匿名 | 200 / code 0；JSON 空列表 | `srvf-qa-content-20261113-content-list`（客户端指定并回显） |
+| 02:18:45.837 | `GET https://dp.srvf.team/api/open/v1/contents/srvf-qa-content-20261113-nonexistent` | 匿名 | 404 / 29001；JSON“内容不存在” | `srvf-qa-content-20261113-content-absent-detail`（客户端指定并回显） |
+| 02:21:54 | `GET https://dp.srvf.team/` | 匿名 | 200；入口 HTML SHA-256 `ae73cbd7964b002e705a9ce22c882fd2e5ec5a7f689ab510d21961b9ea3a1253` | 未提供 |
+| 02:23:42 | `GET https://dp.srvf.team/api/docs-json` | 匿名 | 200；OpenAPI SHA-256 `c79d0aa5014badbf69f19ed3b9ad550f22ddcee597fa7a4d773b1394167256fd` | `cmwdvmhwk4ce684c6f18da12c2c0bdc08` |
+| 02:25:04.313 | `POST https://dp.srvf.team/api/auth/v1/login` | 匿名，随机合成用户名及密码 | 401 / 10004；账号或密码错误；未独立证明该用户名不存在 | `cmwdvo94xf14f545eebdac34528b2f70b` |
+| 02:25:04.518 | `POST https://dp.srvf.team/api/auth/v1/login` | 匿名，空 JSON | 400 / 40000；用户名和密码必填及格式校验 | `cmwdvo9aoca40b0c42525b4b38f913882` |
+| 约 02:33 | `GET https://dp.srvf.team/api/admin/v1/activities/organization-options` | 测试超级管理员，未绑定成员 | 403 / 40300；无权限访问 | `cmwdvzhjt36ccc875da8b840233c9d746` |
+| 02:39:30.779 | `GET https://dp.srvf.team/api/admin/v1/members?page=1&pageSize=10&q=<合成编号>`（查询值脱敏） | 测试超级管理员 | 200 / code 0，模糊搜索 total 0 | `cmwdw6top26f020f91a95c9c70e25f150` |
+| 02:40:27.690 | `POST https://dp.srvf.team/api/admin/v1/members` | 测试超级管理员；后台表单、独立合成编号 | 400 / 40000；请求仅含 `memberNo`、`displayName`，响应提示 `displayName` 不应存在且缺少 `realName`、`memberSinceDate`、`memberOriginCode` | `cmwdw81k33eb1760b57b5ddf624fc0d95` |
+| 02:40:48.562 | `GET https://dp.srvf.team/api/admin/v1/members?page=1&pageSize=10&q=<合成编号>`（查询值脱敏） | 测试超级管理员 | 200 / code 0，模糊搜索 total 0；当前搜索范围内未见创建记录，不证明所有软删状态 | `cmwdw8hpeac892c46a0a6d8bacf05a031` |
+| 02:43:26.380 | `GET https://dp.srvf.team/static/js/members-CY-9N_sZ.js` | 匿名 | 200；10227 字节，SHA-256 `15e0b5b7d8ed9bc79a5f62a778f30f334d73bd9dca4c2751bf0da33e3e92152a` | 未提供 |
+| 02:54:45.622 | `GET https://dp.srvf.team/api/system/v1/health` | 匿名 | 200 / code 0；JSON，数据含 status | `srvf-qa-20261113-404-health`（客户端指定并回显） |
+| 02:54:45.722 | `GET https://dp.srvf.team/api/system/v1/health/live` | 匿名 | 200 / code 0；JSON，数据含 status | `srvf-qa-20261113-404-health-live`（客户端指定并回显） |
+| 02:54:45.800 | `GET https://dp.srvf.team/api/system/v1/health/ready` | 匿名 | 200 / code 0；JSON，数据含 status、db | `srvf-qa-20261113-404-health-ready`（客户端指定并回显） |
+| 02:54:45.884 | `GET https://dp.srvf.team/api/open/v1/recruitment/publicity` | 匿名 | 200 / code 0；JSON 空列表 | `srvf-qa-20261113-404-publicity`（客户端指定并回显） |
+| 02:54:46.003 | `GET https://dp.srvf.team/api/open/v1/recruitment/certificate-standards` | 匿名 | 200 / code 0；JSON 空列表 | `srvf-qa-20261113-404-certificate-standards`（客户端指定并回显） |
+| 02:54:46.096 | `GET https://dp.srvf.team/api/open/v1/contents?page=1&pageSize=1` | 匿名 | 200 / code 0；JSON 空列表 | `srvf-qa-20261113-404-contents-original-query`（客户端指定并回显） |
+| 02:54:46.187 | `GET https://dp.srvf.team/` | 匿名 | 200；HTML SHA-256 `ae73cbd7964b002e705a9ce22c882fd2e5ec5a7f689ab510d21961b9ea3a1253` | 未提供 |
+| 02:58:23.302 | `GET https://dp.srvf.team/api/admin/v1/members?page=1&pageSize=10&q=<合成编号>`（查询值脱敏） | 测试超级管理员 | 200 / code 0，total 0；GUI 显示“暂无数据” | `cmwdwv3fi338ce7e8de616f99b69c7376` |
+| 02:58:53.963 | `GET https://dp.srvf.team/api/admin/v1/members?page=1&pageSize=10` | 测试超级管理员 | 200 / code 0，total 5；清空关键词后页面恢复列表 | `cmwdwvr40cdfdedb9b82fdadd83e499e3` |
+| 约 03:00:49.891 | `GET https://dp.srvf.team/favicon.ico` | 同源对照标签 | 200；被测标签单独离线期间对照标签仍可连接 | 未提供 |
+| 03:00:50.122 | `GET https://dp.srvf.team/api/admin/v1/members?page=1&pageSize=10&q=<网络测试合成编号>`（查询值脱敏） | 测试超级管理员，被测标签单独离线 | `net::ERR_INTERNET_DISCONNECTED`；未得到 HTTP 状态 | 未提供 |
+| 03:00:59.974 | `GET https://dp.srvf.team/api/admin/v1/members?page=1&pageSize=10&q=<网络测试合成编号>`（查询值脱敏） | 测试超级管理员，恢复联网 | 200 / code 0，total 0 | `cmwdwygbn09e24ba5751fb2c6fc6271ce` |
+| 03:01:11.642 | `GET https://dp.srvf.team/api/admin/v1/members?page=1&pageSize=10` | 测试超级管理员 | 200 / code 0，total 5；清空关键词恢复列表 | `cmwdwypbk423660c31438a3ea31dbb05d` |
+| 03:03:21.578 | `GET https://dp.srvf.team/favicon.ico` | 收尾临时标签 | 200；浏览器联网复核 | 未提供 |
+
+02:18 的两条公开内容样本可证明当次返回 JSON；本轮详情使用另一合成对象，不能视为历史详情的同对象复测。空列表也不能证明公告创建或发布链通过。
+
+02:54 的六条历史匿名 GET 复核对齐了原方法、路径、查询和匿名角色，当前均返回 JSON 而非历史 HTML 404；请求头、数据状态及部署版本不能证明相同。这是六个有限样本，不关闭其余历史方法或业务验收。
+
+历史 HTML 404 的 76 条回执所捕获响应体均为 2147 字节，SHA-256 均与原包同期首页及本轮首页一致；其中 49 条明确记录未截断，另 27 条没有截断标记，只能确认已捕获部分一致。这是响应字节对照，不能单独证明反向代理根因。
+
+### 8.3 GUI、历史故障和证据缺口
+
+- **GUI FAIL**：02:16，使用现有测试 bootstrap 管理员会话，在组织架构页 `/#/srvf/base-data/organizations` 重新加载后打开测试组织的成员抽屉，合成成员名称仍出现 `undefined`。[脱敏截图](evidence/20261113/organization-member-undefined.jpg) SHA-256 为 `41fb1e4db2901b40293b67703bc89a131146c2ca1862f1369c7fe08f8d0a7cf9`。这是管理员 GUI 观察，不代表普通账号完成验收。
+- **GUI 部分观察**：测试超级管理员在 1366×768、1440×900、1920×1080 的浏览器模拟视口，以及约 110% 缩放下，均实际滚动到活动列表最后一条合成记录并点击“管理”进入详情；1440×900 下还用 Tab / Shift+Tab 在“管理”“编辑”间移动，观察到焦点框，并以 Enter 进入详情。末行裁剪证据：[1366](evidence/20261113/viewport-1366x768.jpg)、[1440 与焦点](evidence/20261113/viewport-1440x900.jpg)、[1920](evidence/20261113/viewport-1920x1080.jpg)、[110% 缩放](evidence/20261113/zoom-110-percent.jpg)；截图为合成数据局部，尺寸与操作取自当次记录，详情跳转的 HTTP 回执 **NOT_CAPTURED**。这是模拟视口和管理员样本，普通账号、长内容、多记录、空态及完整流程仍须分别验证。
+- **GUI 空态有限样本**：测试超级管理员在队员列表按合成编号搜索，看到[“暂无数据”](evidence/20261113/member-empty-state.jpg)；清空关键词后列表恢复，两个请求的时间与 ID 见 §8.2。此结论限于该页面和角色，活动列表及普通账号空态仍为 NOT_RUN。
+- **GUI 网络错误有限样本**：仅将一个测试标签离线后，队员列表显示[网络异常提示](evidence/20261113/member-network-error.jpg)，离线前的 5 条旧行仍保留；恢复联网可重新查询并返回列表。同源对照标签仍有 200，事件和请求 ID 见 §8.2；浏览器网络缓冲区存在截断，上述记录不代表完整网络历史。测试结束后已恢复视口、缩放和联网，保留原管理员会话。
+- **GUI BLOCKED**：同一未绑定成员的超级管理员打开“筹备单场次活动”，组织选择提示“无权限访问”，模板不可选；实际请求与 403 回执见 §8.2。源码基线 `fcf4e5d` 的该选择入口要求调用人满足 App 成员准入，超级管理员不豁免；该拒绝与源码预期一致，不据此判接口缺陷。当前会话不能完成该流程，也不为凑前提绑定真实成员。
+- **GUI 集成 FAIL**：后台“新建队员”表单一次提交的字段与线上接口合同不一致，实际返回 400；提交前后按合成编号模糊搜索均未见记录。确切请求时间、字段及三次请求 ID 见 §8.2；当次瞬时错误提示未截屏，保留网络回执，不为补截图重复写入。400 符合接口对该请求的校验，不单独判为后端接口 FAIL；该问题阻断通过当前后台准备队员，前端候选和用户并行适配情况待核对。
+- **定位与待修**：当前队员页面 JS 资源实际包含 `memberNo`、`displayName` 和可选 `gradeCode` 的创建组包；前端 main `6375148a61445972e792ce37cb401fd8e5162538` 的 [`src/api/srvf-member.ts`](https://github.com/BA7IEE/srvf-admin-web/blob/6375148a61445972e792ce37cb401fd8e5162538/src/api/srvf-member.ts) 与 `src/views/srvf/members-domain/members/` 表单/组包仍使用旧字段。静态资源哈希和源码观察不能证明线上精确 commit；已合并的 PR #169 不覆盖该表单。用户并行后台工作涉及的具体文件仍 UNKNOWN，未在另一个分支重叠修改。建议创建时显式采集并提交线上合同要求的真实姓名、入队日期和来源，分别处理昵称与等级，不臆造字段；编辑按合同白名单提交，再以独立读取、空值和 GUI 同条件复测验证。
+- [前端 PR #169](https://github.com/BA7IEE/srvf-admin-web/pull/169) 有对应候选；线上入口 HTML 与 11 月 12 日旧入口哈希一致，且与当时候选入口哈希 `531c5226e4e90446ebfc79f4f1e815599f9de1902c313f25ee011ff49c6ac840` 不同。该比较只覆盖入口文件，不证明全部资源、缓存或精确部署提交。
+- 历史 17 个 500 的原回执已从 11 月 11 日原始包中逐条核验，方法、路径形状、状态、时间、角色别名和请求 ID 均与原索引一致。38 个历史 HTML 404 方法的 76 条原回执也已核对；其请求 ID 均未提供。原始值和对象 ID 不复制入仓库；服务端堆栈、请求后的全部副作用及精确部署提交仍未证明，原故障同条件复测仍为 NOT_RUN。
+- 本轮通过现有登录会话取得 11 月 11 日原始证据包，SHA-256 `1005fda8ab38c976f5fa01fd16fd6c3898180b88253efec63f7450fe43dfc004`；包中疑似存在凭据和个人信息，保留在本机，不上传仓库。此前 11 月 12 日索引包缺少所指原回执，本轮已从另一原包补齐逐项核验，见 §8.5。
+- 报告中的“公告创建 500”暂未找到对应原始请求、角色、请求体、时间、请求 ID 或当时部署版本；对 11 月 11 日原包限定检索，内容创建、通知创建及公告导入入口均未命中 500，但不能据此断言其他材料或入口不存在该故障。保持 **BLOCKED / 缺证**，不以另一条公告请求成功关闭。
+- **LOCAL 副作用分析**：基线 `fcf4e5d` 的考勤审核与结算流程可产生定向站内通知；通知公告发布若选择微信或企业微信渠道可能异步外发，CMS 内容发布是另一条路径。线上通道配置和具体收件人仍为 UNKNOWN，因此未通过发布或审批触达真实用户。对历史 17 个请求 ID 在原包内查找服务端堆栈未命中；这不证明服务端不存在日志。
+- 1Panel API 所需的 `ONEPANEL_BASE_URL` 和 `ONEPANEL_API_KEY` 未配置；现有浏览器面板会话仍可读。网站 `/api` 反代上游与测试 API 容器的运行地址一致；该容器显示健康，image ID 为 `sha256:01ea21257673d5f148bb997d8c0b87979cb3e48167f3e715f67e46c3ecd15e98`，这不等于镜像 revision 或源码 commit。只读日志视图选择全部时间、最多 1000 行，当前可见范围约为 11 月 12 日 15:40:36–18:27:51 UTC，早于 11 月 11 日两条本人资料与保险故障请求；没有匹配到旧 ID，错误类型仍为 UNKNOWN。这不证明更早日志不存在。
+- 密码登录空 JSON 的 400 响应同时出现中文和英文校验信息；是否在后台页面造成不清晰反馈尚未进行 GUI 验证。
+- **CI，非线上验收**：[本台账草稿 PR #1414 的 Authenticated Human V3](https://github.com/BA7IEE/srvf-nest-api/actions/runs/43280735665/job/131401066280) 在测试 PostgreSQL 容器创建阶段失败，Docker 报固定本地 image ID 不存在。现有 [draft PR #1404](https://github.com/BA7IEE/srvf-nest-api/pull/1404) 已修改同一 helper，使用固定镜像引用解析当前环境的 image ID；其 head `ea4a35792e3d107cebb975235821a21de9070b34` 的[对应 CI 作业](https://github.com/BA7IEE/srvf-nest-api/actions/runs/42335075080/job/128290080942)通过，但该候选尚未合并，也不能替代本 PR 当前失败结果。未并行改写已有候选的文件；具体镜像存储机制仍待确认。
+- 草稿 PR #1414 的历史提交 `df10ddc385b590366a19a4a95b0679d1af90dd64` 对应上述运行中，五片 Contract + E2E、Fast checks 和 Golden journeys 通过；Authenticated Human V3 与总汇总失败。后续提交须看其自身检查，不能复用旧 SHA 的结果，也不能将 CI 样本等同于线上业务验收。
+
+### 8.4 接下来
+
+继续在既有权限内核实隔离账号、组织和通知边界；取得可辨认目标后按请求 ID 和时间只读核对历史错误；补普通账号与多审核人闭环、错误态和多视口操作。逐次写入后独立读回，结果不明先查询再决定是否重试。后台现有并行适配与未部署候选保持分离。
+
+### 8.5 当前接口清单与历史逐项索引
+
+本节接口清单来源：`GET https://dp.srvf.team/api/docs-json`，2026-11-13T02:27:05+08:00，HTTP 200，请求 ID `cmwdvqtx4ca4cbea94c3f52bb1f84b40e`；响应 SHA-256 `c79d0aa5014badbf69f19ed3b9ad550f22ddcee597fa7a4d773b1394167256fd`。按 HTTP 方法和路径严格去重，共 673 条，与 11 月 12 日 CSV 清单逐项集合相同。历史 CSV 的 SHA-256 为 `05a1e9fa1c2e7c1d73ebfcb9c3e90c5cfb87b8985375804c7091118b68137f13`；原文件位于本机历史工作目录 `srvf-api-https-dp-srvf-team/work/srvf-test-archive/2026-11-12/endpoints.csv`。CSV 行号可回查当时的角色、请求 ID 和证据文件；本节不复制用户名、凭据或原始业务响应。
+
+历史观察分类为：`有限2xx`＝被收录材料里至少有一次 2xx 且 code 0；`公开/登录`＝需核对匿名样本；`仅非2xx`＝所收录材料有观察但没有 2xx/code 0；`未见认证`＝所收录材料未见 bearer 观察。这些都不是验收通过。`上轮认证` 仅代表 11 月 12 日那轮是否有认证请求，不等于历史全部轮次。
+
+<details>
+<summary>展开：673 个方法和路径（含历史对照）</summary>
+
+| 方法 | 路径 | 上轮认证 | 历史观察分类 | 上轮完整验收 | 历史 CSV 行 |
+| --- | --- | --- | --- | --- | ---: |
+| `GET` | `/api/admin/v1/activities` | YES | 有限2xx | `NOT_RUN` | 245 |
+| `POST` | `/api/admin/v1/activities` | NO | 有限2xx | `NOT_RUN` | 246 |
+| `POST` | `/api/admin/v1/activities/from-template` | NO | 未见认证 | `NOT_RUN` | 241 |
+| `GET` | `/api/admin/v1/activities/options` | NO | 有限2xx | `NOT_RUN` | 247 |
+| `GET` | `/api/admin/v1/activities/organization-options` | NO | 仅非2xx | `NOT_RUN` | 239 |
+| `GET` | `/api/admin/v1/activities/template-version-options` | NO | 仅非2xx | `NOT_RUN` | 240 |
+| `GET` | `/api/admin/v1/activities/{activityId}/attendance-sheet-draft` | NO | 仅非2xx | `NOT_RUN` | 473 |
+| `GET` | `/api/admin/v1/activities/{activityId}/attendance-sheets` | NO | 仅非2xx | `NOT_RUN` | 458 |
+| `POST` | `/api/admin/v1/activities/{activityId}/attendance-sheets` | NO | 未见认证 | `NOT_RUN` | 457 |
+| `GET` | `/api/admin/v1/activities/{activityId}/check-ins` | NO | 仅非2xx | `NOT_RUN` | 472 |
+| `GET` | `/api/admin/v1/activities/{activityId}/feedback-summary` | NO | 仅非2xx | `NOT_RUN` | 451 |
+| `GET` | `/api/admin/v1/activities/{activityId}/feedbacks` | NO | 仅非2xx | `NOT_RUN` | 450 |
+| `GET` | `/api/admin/v1/activities/{activityId}/participation-ledger` | NO | 仅非2xx | `NOT_RUN` | 261 |
+| `GET` | `/api/admin/v1/activities/{activityId}/participation-summary` | NO | 仅非2xx | `NOT_RUN` | 263 |
+| `GET` | `/api/admin/v1/activities/{activityId}/positions` | NO | 有限2xx | `NOT_RUN` | 265 |
+| `POST` | `/api/admin/v1/activities/{activityId}/positions` | NO | 有限2xx | `NOT_RUN` | 264 |
+| `DELETE` | `/api/admin/v1/activities/{activityId}/positions/{activityPositionId}` | NO | 有限2xx | `NOT_RUN` | 268 |
+| `GET` | `/api/admin/v1/activities/{activityId}/positions/{activityPositionId}` | NO | 有限2xx | `NOT_RUN` | 266 |
+| `PATCH` | `/api/admin/v1/activities/{activityId}/positions/{activityPositionId}` | NO | 有限2xx | `NOT_RUN` | 267 |
+| `GET` | `/api/admin/v1/activities/{activityId}/reconciliation` | NO | 仅非2xx | `NOT_RUN` | 262 |
+| `GET` | `/api/admin/v1/activities/{activityId}/registrations` | NO | 仅非2xx | `NOT_RUN` | 531 |
+| `POST` | `/api/admin/v1/activities/{activityId}/registrations` | NO | 未见认证 | `NOT_RUN` | 532 |
+| `PATCH` | `/api/admin/v1/activities/{activityId}/registrations/bulk-approve` | NO | 未见认证 | `NOT_RUN` | 534 |
+| `PATCH` | `/api/admin/v1/activities/{activityId}/registrations/bulk-reject` | NO | 未见认证 | `NOT_RUN` | 535 |
+| `GET` | `/api/admin/v1/activities/{activityId}/registrations/export` | NO | 仅非2xx | `NOT_RUN` | 533 |
+| `PATCH` | `/api/admin/v1/activities/{activityId}/registrations/{id}/approve` | NO | 未见认证 | `NOT_RUN` | 536 |
+| `PATCH` | `/api/admin/v1/activities/{activityId}/registrations/{id}/cancel` | NO | 未见认证 | `NOT_RUN` | 538 |
+| `PATCH` | `/api/admin/v1/activities/{activityId}/registrations/{id}/reject` | NO | 未见认证 | `NOT_RUN` | 537 |
+| `POST` | `/api/admin/v1/activities/{activityId}/registrations/{id}/reopen` | NO | 未见认证 | `NOT_RUN` | 539 |
+| `GET` | `/api/admin/v1/activities/{activityId}/responsibilities` | NO | 仅非2xx | `NOT_RUN` | 274 |
+| `POST` | `/api/admin/v1/activities/{activityId}/responsibilities/assign-initiator` | NO | 未见认证 | `NOT_RUN` | 279 |
+| `POST` | `/api/admin/v1/activities/{activityId}/responsibilities/claim` | NO | 未见认证 | `NOT_RUN` | 278 |
+| `POST` | `/api/admin/v1/activities/{activityId}/responsibilities/collaborators` | NO | 未见认证 | `NOT_RUN` | 275 |
+| `DELETE` | `/api/admin/v1/activities/{activityId}/responsibilities/collaborators/{assignmentId}` | NO | 未见认证 | `NOT_RUN` | 276 |
+| `POST` | `/api/admin/v1/activities/{activityId}/responsibilities/transfer` | NO | 未见认证 | `NOT_RUN` | 277 |
+| `DELETE` | `/api/admin/v1/activities/{id}` | NO | 有限2xx | `NOT_RUN` | 250 |
+| `GET` | `/api/admin/v1/activities/{id}` | NO | 仅非2xx | `NOT_RUN` | 248 |
+| `PATCH` | `/api/admin/v1/activities/{id}` | NO | 未见认证 | `NOT_RUN` | 249 |
+| `PATCH` | `/api/admin/v1/activities/{id}/cancel` | NO | 未见认证 | `NOT_RUN` | 255 |
+| `POST` | `/api/admin/v1/activities/{id}/complete` | NO | 未见认证 | `NOT_RUN` | 256 |
+| `GET` | `/api/admin/v1/activities/{id}/contribution-policy-selection` | NO | 仅非2xx | `NOT_RUN` | 227 |
+| `PATCH` | `/api/admin/v1/activities/{id}/contribution-policy-selection` | NO | 未见认证 | `NOT_RUN` | 228 |
+| `PUT` | `/api/admin/v1/activities/{id}/cover` | NO | 未见认证 | `NOT_RUN` | 251 |
+| `PUT` | `/api/admin/v1/activities/{id}/gallery` | NO | 未见认证 | `NOT_RUN` | 252 |
+| `GET` | `/api/admin/v1/activities/{id}/metric-selection` | NO | 仅非2xx | `NOT_RUN` | 223 |
+| `PUT` | `/api/admin/v1/activities/{id}/metric-selection` | NO | 未见认证 | `NOT_RUN` | 224 |
+| `PATCH` | `/api/admin/v1/activities/{id}/publish` | NO | 未见认证 | `NOT_RUN` | 253 |
+| `POST` | `/api/admin/v1/activities/{id}/publish-reviews` | NO | 未见认证 | `NOT_RUN` | 244 |
+| `PATCH` | `/api/admin/v1/activities/{id}/publish-with-audience-tags` | NO | 未见认证 | `NOT_RUN` | 254 |
+| `GET` | `/api/admin/v1/activities/{id}/simple-draft` | NO | 仅非2xx | `NOT_RUN` | 242 |
+| `PUT` | `/api/admin/v1/activities/{id}/simple-draft` | NO | 未见认证 | `NOT_RUN` | 243 |
+| `GET` | `/api/admin/v1/activities/{id}/time-policy-selection` | NO | 仅非2xx | `NOT_RUN` | 225 |
+| `PATCH` | `/api/admin/v1/activities/{id}/time-policy-selection` | NO | 未见认证 | `NOT_RUN` | 226 |
+| `GET` | `/api/admin/v1/activity-metric-definitions` | NO | 仅非2xx | `NOT_RUN` | 280 |
+| `POST` | `/api/admin/v1/activity-metric-definitions` | NO | 未见认证 | `NOT_RUN` | 281 |
+| `GET` | `/api/admin/v1/activity-metric-definitions/{id}` | NO | 仅非2xx | `NOT_RUN` | 282 |
+| `POST` | `/api/admin/v1/activity-metric-definitions/{id}/activate` | NO | 未见认证 | `NOT_RUN` | 284 |
+| `PUT` | `/api/admin/v1/activity-metric-definitions/{id}/draft` | NO | 未见认证 | `NOT_RUN` | 283 |
+| `POST` | `/api/admin/v1/activity-metric-definitions/{id}/retire` | NO | 未见认证 | `NOT_RUN` | 285 |
+| `GET` | `/api/admin/v1/activity-metric-rule-bindings` | NO | 仅非2xx | `NOT_RUN` | 210 |
+| `POST` | `/api/admin/v1/activity-metric-rule-bindings` | NO | 未见认证 | `NOT_RUN` | 209 |
+| `GET` | `/api/admin/v1/activity-metric-sets` | NO | 仅非2xx | `NOT_RUN` | 302 |
+| `POST` | `/api/admin/v1/activity-metric-sets` | NO | 未见认证 | `NOT_RUN` | 303 |
+| `GET` | `/api/admin/v1/activity-metric-sets/{id}` | NO | 仅非2xx | `NOT_RUN` | 304 |
+| `POST` | `/api/admin/v1/activity-metric-sets/{id}/activate` | NO | 未见认证 | `NOT_RUN` | 306 |
+| `PUT` | `/api/admin/v1/activity-metric-sets/{id}/draft` | NO | 未见认证 | `NOT_RUN` | 305 |
+| `POST` | `/api/admin/v1/activity-metric-sets/{id}/retire` | NO | 未见认证 | `NOT_RUN` | 307 |
+| `GET` | `/api/admin/v1/activity-publish-reviews` | NO | 仅非2xx | `NOT_RUN` | 269 |
+| `GET` | `/api/admin/v1/activity-publish-reviews/{id}` | NO | 仅非2xx | `NOT_RUN` | 270 |
+| `POST` | `/api/admin/v1/activity-publish-reviews/{id}/approve` | NO | 未见认证 | `NOT_RUN` | 272 |
+| `GET` | `/api/admin/v1/activity-publish-reviews/{id}/referenced-policies` | NO | 仅非2xx | `NOT_RUN` | 271 |
+| `POST` | `/api/admin/v1/activity-publish-reviews/{id}/return` | NO | 未见认证 | `NOT_RUN` | 273 |
+| `GET` | `/api/admin/v1/activity-template-versions` | NO | 仅非2xx | `NOT_RUN` | 229 |
+| `POST` | `/api/admin/v1/activity-template-versions` | NO | 未见认证 | `NOT_RUN` | 230 |
+| `GET` | `/api/admin/v1/activity-template-versions/{id}` | NO | 仅非2xx | `NOT_RUN` | 231 |
+| `POST` | `/api/admin/v1/activity-template-versions/{id}/activate` | NO | 未见认证 | `NOT_RUN` | 233 |
+| `PUT` | `/api/admin/v1/activity-template-versions/{id}/draft` | NO | 未见认证 | `NOT_RUN` | 232 |
+| `POST` | `/api/admin/v1/activity-template-versions/{id}/retire` | NO | 未见认证 | `NOT_RUN` | 234 |
+| `GET` | `/api/admin/v1/activity-time-policies` | NO | 仅非2xx | `NOT_RUN` | 286 |
+| `POST` | `/api/admin/v1/activity-time-policies` | NO | 未见认证 | `NOT_RUN` | 287 |
+| `GET` | `/api/admin/v1/activity-time-policies/{id}` | NO | 仅非2xx | `NOT_RUN` | 288 |
+| `GET` | `/api/admin/v1/activity-time-policies/{id}/versions` | NO | 仅非2xx | `NOT_RUN` | 289 |
+| `POST` | `/api/admin/v1/activity-time-policies/{id}/versions` | NO | 未见认证 | `NOT_RUN` | 290 |
+| `GET` | `/api/admin/v1/activity-time-policies/{id}/versions/{versionId}` | NO | 仅非2xx | `NOT_RUN` | 291 |
+| `POST` | `/api/admin/v1/activity-time-policies/{id}/versions/{versionId}/activate` | NO | 未见认证 | `NOT_RUN` | 292 |
+| `POST` | `/api/admin/v1/activity-time-policies/{id}/versions/{versionId}/retire` | NO | 未见认证 | `NOT_RUN` | 293 |
+| `POST` | `/api/admin/v1/announcement-import/execute` | NO | 未见认证 | `NOT_RUN` | 586 |
+| `POST` | `/api/admin/v1/announcement-import/preview` | NO | 未见认证 | `NOT_RUN` | 585 |
+| `GET` | `/api/admin/v1/attachments` | NO | 有限2xx | `NOT_RUN` | 90 |
+| `POST` | `/api/admin/v1/attachments` | NO | 未见认证 | `NOT_RUN` | 89 |
+| `GET` | `/api/admin/v1/attachments/by-owner` | NO | 有限2xx | `NOT_RUN` | 93 |
+| `POST` | `/api/admin/v1/attachments/confirm-upload` | NO | 未见认证 | `NOT_RUN` | 92 |
+| `POST` | `/api/admin/v1/attachments/upload-url` | NO | 未见认证 | `NOT_RUN` | 91 |
+| `DELETE` | `/api/admin/v1/attachments/{id}` | NO | 未见认证 | `NOT_RUN` | 96 |
+| `GET` | `/api/admin/v1/attachments/{id}` | NO | 仅非2xx | `NOT_RUN` | 94 |
+| `PATCH` | `/api/admin/v1/attachments/{id}` | NO | 未见认证 | `NOT_RUN` | 95 |
+| `GET` | `/api/admin/v1/attendance-settlements` | YES | 仅非2xx | `NOT_RUN` | 354 |
+| `POST` | `/api/admin/v1/attendance-settlements/{id}/final-approve` | NO | 未见认证 | `NOT_RUN` | 359 |
+| `POST` | `/api/admin/v1/attendance-settlements/{id}/final-return` | NO | 未见认证 | `NOT_RUN` | 360 |
+| `POST` | `/api/admin/v1/attendance-settlements/{id}/first-approve` | NO | 未见认证 | `NOT_RUN` | 357 |
+| `POST` | `/api/admin/v1/attendance-settlements/{id}/first-return` | NO | 未见认证 | `NOT_RUN` | 358 |
+| `GET` | `/api/admin/v1/attendance-settlements/{id}/posting-batch` | NO | 仅非2xx | `NOT_RUN` | 356 |
+| `GET` | `/api/admin/v1/attendance-settlements/{settlementVersionId}/review-detail` | NO | 仅非2xx | `NOT_RUN` | 355 |
+| `GET` | `/api/admin/v1/attendance-sheets` | YES | 仅非2xx | `NOT_RUN` | 459 |
+| `DELETE` | `/api/admin/v1/attendance-sheets/{id}` | NO | 未见认证 | `NOT_RUN` | 463 |
+| `GET` | `/api/admin/v1/attendance-sheets/{id}` | NO | 仅非2xx | `NOT_RUN` | 461 |
+| `PATCH` | `/api/admin/v1/attendance-sheets/{id}` | NO | 未见认证 | `NOT_RUN` | 462 |
+| `PATCH` | `/api/admin/v1/attendance-sheets/{id}/approve` | NO | 未见认证 | `NOT_RUN` | 464 |
+| `PATCH` | `/api/admin/v1/attendance-sheets/{id}/final-approve` | NO | 未见认证 | `NOT_RUN` | 467 |
+| `PATCH` | `/api/admin/v1/attendance-sheets/{id}/final-reject` | NO | 未见认证 | `NOT_RUN` | 468 |
+| `POST` | `/api/admin/v1/attendance-sheets/{id}/final-return` | NO | 未见认证 | `NOT_RUN` | 469 |
+| `PATCH` | `/api/admin/v1/attendance-sheets/{id}/reject` | NO | 未见认证 | `NOT_RUN` | 465 |
+| `POST` | `/api/admin/v1/attendance-sheets/{id}/reopen` | NO | 未见认证 | `NOT_RUN` | 471 |
+| `POST` | `/api/admin/v1/attendance-sheets/{id}/resubmit` | NO | 未见认证 | `NOT_RUN` | 470 |
+| `POST` | `/api/admin/v1/attendance-sheets/{id}/return` | NO | 未见认证 | `NOT_RUN` | 466 |
+| `GET` | `/api/admin/v1/attendance-sheets/{id}/review-detail` | NO | 仅非2xx | `NOT_RUN` | 460 |
+| `POST` | `/api/admin/v1/authz/action-state/batch` | NO | 未见认证 | `NOT_RUN` | 87 |
+| `POST` | `/api/admin/v1/authz/explain` | NO | 未见认证 | `NOT_RUN` | 85 |
+| `POST` | `/api/admin/v1/authz/explain-batch` | NO | 未见认证 | `NOT_RUN` | 86 |
+| `DELETE` | `/api/admin/v1/certificate-recognition-policies/{id}` | NO | 未见认证 | `NOT_RUN` | 418 |
+| `GET` | `/api/admin/v1/certificate-recognition-policies/{id}` | NO | 仅非2xx | `NOT_RUN` | 416 |
+| `PATCH` | `/api/admin/v1/certificate-recognition-policies/{id}` | NO | 未见认证 | `NOT_RUN` | 417 |
+| `PATCH` | `/api/admin/v1/certificate-recognition-policies/{id}/status` | NO | 未见认证 | `NOT_RUN` | 419 |
+| `GET` | `/api/admin/v1/certificate-standards` | NO | 仅非2xx | `NOT_RUN` | 407 |
+| `POST` | `/api/admin/v1/certificate-standards` | NO | 未见认证 | `NOT_RUN` | 408 |
+| `GET` | `/api/admin/v1/certificate-standards/options` | NO | 仅非2xx | `NOT_RUN` | 409 |
+| `DELETE` | `/api/admin/v1/certificate-standards/{id}` | NO | 未见认证 | `NOT_RUN` | 412 |
+| `GET` | `/api/admin/v1/certificate-standards/{id}` | NO | 仅非2xx | `NOT_RUN` | 410 |
+| `PATCH` | `/api/admin/v1/certificate-standards/{id}` | NO | 未见认证 | `NOT_RUN` | 411 |
+| `PATCH` | `/api/admin/v1/certificate-standards/{id}/status` | NO | 未见认证 | `NOT_RUN` | 413 |
+| `GET` | `/api/admin/v1/certificate-standards/{standardId}/recognition-policies` | NO | 仅非2xx | `NOT_RUN` | 414 |
+| `POST` | `/api/admin/v1/certificate-standards/{standardId}/recognition-policies` | NO | 未见认证 | `NOT_RUN` | 415 |
+| `GET` | `/api/admin/v1/certificates` | NO | 仅非2xx | `NOT_RUN` | 420 |
+| `GET` | `/api/admin/v1/certificates/stats` | NO | 仅非2xx | `NOT_RUN` | 421 |
+| `GET` | `/api/admin/v1/contents` | NO | 仅非2xx | `NOT_RUN` | 660 |
+| `POST` | `/api/admin/v1/contents` | NO | 仅非2xx | `NOT_RUN` | 659 |
+| `DELETE` | `/api/admin/v1/contents/{id}` | NO | 未见认证 | `NOT_RUN` | 663 |
+| `GET` | `/api/admin/v1/contents/{id}` | NO | 仅非2xx | `NOT_RUN` | 661 |
+| `PATCH` | `/api/admin/v1/contents/{id}` | NO | 未见认证 | `NOT_RUN` | 662 |
+| `POST` | `/api/admin/v1/contents/{id}/archive` | NO | 未见认证 | `NOT_RUN` | 666 |
+| `POST` | `/api/admin/v1/contents/{id}/attachments/confirm` | NO | 未见认证 | `NOT_RUN` | 668 |
+| `POST` | `/api/admin/v1/contents/{id}/attachments/upload-url` | NO | 未见认证 | `NOT_RUN` | 667 |
+| `DELETE` | `/api/admin/v1/contents/{id}/attachments/{attachmentId}` | NO | 未见认证 | `NOT_RUN` | 669 |
+| `PUT` | `/api/admin/v1/contents/{id}/cover` | NO | 未见认证 | `NOT_RUN` | 670 |
+| `POST` | `/api/admin/v1/contents/{id}/publish` | NO | 未见认证 | `NOT_RUN` | 664 |
+| `POST` | `/api/admin/v1/contents/{id}/unpublish` | NO | 未见认证 | `NOT_RUN` | 665 |
+| `GET` | `/api/admin/v1/me` | YES | 有限2xx | `NOT_RUN` | 84 |
+| `GET` | `/api/admin/v1/member-insurances` | NO | 仅非2xx | `NOT_RUN` | 392 |
+| `GET` | `/api/admin/v1/members` | NO | 仅非2xx | `NOT_RUN` | 159 |
+| `POST` | `/api/admin/v1/members` | NO | 未见认证 | `NOT_RUN` | 160 |
+| `POST` | `/api/admin/v1/members/accounts/bulk-grant` | NO | 未见认证 | `NOT_RUN` | 162 |
+| `GET` | `/api/admin/v1/members/options` | NO | 仅非2xx | `NOT_RUN` | 161 |
+| `DELETE` | `/api/admin/v1/members/{id}` | NO | 未见认证 | `NOT_RUN` | 171 |
+| `GET` | `/api/admin/v1/members/{id}` | YES | 仅非2xx | `NOT_RUN` | 169 |
+| `PATCH` | `/api/admin/v1/members/{id}` | NO | 未见认证 | `NOT_RUN` | 170 |
+| `POST` | `/api/admin/v1/members/{id}/account` | NO | 未见认证 | `NOT_RUN` | 174 |
+| `POST` | `/api/admin/v1/members/{id}/account/bind` | NO | 未见认证 | `NOT_RUN` | 175 |
+| `POST` | `/api/admin/v1/members/{id}/account/reopen` | NO | 未见认证 | `NOT_RUN` | 177 |
+| `PATCH` | `/api/admin/v1/members/{id}/account/status` | NO | 未见认证 | `NOT_RUN` | 178 |
+| `POST` | `/api/admin/v1/members/{id}/account/unbind` | NO | 未见认证 | `NOT_RUN` | 176 |
+| `GET` | `/api/admin/v1/members/{id}/audience-tags` | NO | 仅非2xx | `NOT_RUN` | 167 |
+| `PUT` | `/api/admin/v1/members/{id}/audience-tags` | NO | 未见认证 | `NOT_RUN` | 168 |
+| `POST` | `/api/admin/v1/members/{id}/identity-corrections` | NO | 未见认证 | `NOT_RUN` | 173 |
+| `POST` | `/api/admin/v1/members/{id}/offboard` | NO | 未见认证 | `NOT_RUN` | 180 |
+| `GET` | `/api/admin/v1/members/{id}/offboard-impact` | NO | 仅非2xx | `NOT_RUN` | 179 |
+| `DELETE` | `/api/admin/v1/members/{id}/official-portrait` | NO | 未见认证 | `NOT_RUN` | 165 |
+| `GET` | `/api/admin/v1/members/{id}/official-portrait` | NO | 仅非2xx | `NOT_RUN` | 163 |
+| `POST` | `/api/admin/v1/members/{id}/official-portrait` | NO | 未见认证 | `NOT_RUN` | 164 |
+| `GET` | `/api/admin/v1/members/{id}/official-portraits` | NO | 仅非2xx | `NOT_RUN` | 166 |
+| `PATCH` | `/api/admin/v1/members/{id}/status` | NO | 未见认证 | `NOT_RUN` | 172 |
+| `GET` | `/api/admin/v1/members/{memberId}/attendance-records` | NO | 仅非2xx | `NOT_RUN` | 474 |
+| `GET` | `/api/admin/v1/members/{memberId}/certificates` | NO | 仅非2xx | `NOT_RUN` | 397 |
+| `POST` | `/api/admin/v1/members/{memberId}/certificates` | NO | 未见认证 | `NOT_RUN` | 398 |
+| `GET` | `/api/admin/v1/members/{memberId}/certificates/qualification-flag` | NO | 仅非2xx | `NOT_RUN` | 399 |
+| `DELETE` | `/api/admin/v1/members/{memberId}/certificates/{id}` | NO | 未见认证 | `NOT_RUN` | 402 |
+| `GET` | `/api/admin/v1/members/{memberId}/certificates/{id}` | NO | 仅非2xx | `NOT_RUN` | 400 |
+| `PATCH` | `/api/admin/v1/members/{memberId}/certificates/{id}` | NO | 未见认证 | `NOT_RUN` | 401 |
+| `GET` | `/api/admin/v1/members/{memberId}/certificates/{id}/evidence-urls` | NO | 仅非2xx | `NOT_RUN` | 405 |
+| `PATCH` | `/api/admin/v1/members/{memberId}/certificates/{id}/reject` | NO | 未见认证 | `NOT_RUN` | 404 |
+| `PATCH` | `/api/admin/v1/members/{memberId}/certificates/{id}/verify` | NO | 未见认证 | `NOT_RUN` | 403 |
+| `GET` | `/api/admin/v1/members/{memberId}/contribution-summary` | NO | 仅非2xx | `NOT_RUN` | 475 |
+| `DELETE` | `/api/admin/v1/members/{memberId}/department` | NO | 未见认证 | `NOT_RUN` | 516 |
+| `GET` | `/api/admin/v1/members/{memberId}/department` | NO | 仅非2xx | `NOT_RUN` | 514 |
+| `PUT` | `/api/admin/v1/members/{memberId}/department` | NO | 未见认证 | `NOT_RUN` | 515 |
+| `GET` | `/api/admin/v1/members/{memberId}/emergency-contacts` | NO | 仅非2xx | `NOT_RUN` | 527 |
+| `POST` | `/api/admin/v1/members/{memberId}/emergency-contacts` | NO | 未见认证 | `NOT_RUN` | 528 |
+| `DELETE` | `/api/admin/v1/members/{memberId}/emergency-contacts/{id}` | NO | 未见认证 | `NOT_RUN` | 530 |
+| `PATCH` | `/api/admin/v1/members/{memberId}/emergency-contacts/{id}` | NO | 未见认证 | `NOT_RUN` | 529 |
+| `GET` | `/api/admin/v1/members/{memberId}/insurances` | NO | 仅非2xx | `NOT_RUN` | 389 |
+| `GET` | `/api/admin/v1/members/{memberId}/insurances/overview` | YES | 仅非2xx | `NOT_RUN` | 390 |
+| `POST` | `/api/admin/v1/members/{memberId}/insurances/{insuranceId}/review` | NO | 未见认证 | `NOT_RUN` | 391 |
+| `GET` | `/api/admin/v1/members/{memberId}/memberships` | NO | 仅非2xx | `NOT_RUN` | 517 |
+| `POST` | `/api/admin/v1/members/{memberId}/memberships` | NO | 未见认证 | `NOT_RUN` | 518 |
+| `DELETE` | `/api/admin/v1/members/{memberId}/memberships/{id}` | NO | 未见认证 | `NOT_RUN` | 520 |
+| `PATCH` | `/api/admin/v1/members/{memberId}/memberships/{id}` | NO | 未见认证 | `NOT_RUN` | 519 |
+| `GET` | `/api/admin/v1/members/{memberId}/participation-ledger` | NO | 仅非2xx | `NOT_RUN` | 378 |
+| `GET` | `/api/admin/v1/members/{memberId}/participation-summary` | YES | 仅非2xx | `NOT_RUN` | 476 |
+| `GET` | `/api/admin/v1/members/{memberId}/participation-time-proof` | NO | 仅非2xx | `NOT_RUN` | 379 |
+| `GET` | `/api/admin/v1/members/{memberId}/position-assignments` | NO | 仅非2xx | `NOT_RUN` | 136 |
+| `GET` | `/api/admin/v1/members/{memberId}/profile` | NO | 仅非2xx | `NOT_RUN` | 422 |
+| `PATCH` | `/api/admin/v1/members/{memberId}/profile` | NO | 未见认证 | `NOT_RUN` | 424 |
+| `POST` | `/api/admin/v1/members/{memberId}/profile` | NO | 未见认证 | `NOT_RUN` | 423 |
+| `GET` | `/api/admin/v1/members/{memberId}/registrations` | NO | 仅非2xx | `NOT_RUN` | 541 |
+| `GET` | `/api/admin/v1/members/{memberId}/supervision-scope` | NO | 仅非2xx | `NOT_RUN` | 148 |
+| `GET` | `/api/admin/v1/memberships` | NO | 仅非2xx | `NOT_RUN` | 521 |
+| `GET` | `/api/admin/v1/memberships/conflicts` | NO | 仅非2xx | `NOT_RUN` | 522 |
+| `POST` | `/api/admin/v1/memberships/transfer` | NO | 未见认证 | `NOT_RUN` | 523 |
+| `GET` | `/api/admin/v1/memberships/{id}` | NO | 仅非2xx | `NOT_RUN` | 524 |
+| `GET` | `/api/admin/v1/meta/dashboard-summary` | YES | 有限2xx | `NOT_RUN` | 588 |
+| `GET` | `/api/admin/v1/meta/participation-overview` | NO | 仅非2xx | `NOT_RUN` | 589 |
+| `POST` | `/api/admin/v1/meta/resolve-labels` | NO | 仅非2xx | `NOT_RUN` | 587 |
+| `GET` | `/api/admin/v1/notification-wechat-templates` | NO | 仅非2xx | `NOT_RUN` | 441 |
+| `PUT` | `/api/admin/v1/notification-wechat-templates/{typeCode}` | NO | 未见认证 | `NOT_RUN` | 442 |
+| `GET` | `/api/admin/v1/notifications` | NO | 仅非2xx | `NOT_RUN` | 426 |
+| `POST` | `/api/admin/v1/notifications` | NO | 未见认证 | `NOT_RUN` | 425 |
+| `DELETE` | `/api/admin/v1/notifications/{id}` | NO | 未见认证 | `NOT_RUN` | 429 |
+| `GET` | `/api/admin/v1/notifications/{id}` | NO | 仅非2xx | `NOT_RUN` | 427 |
+| `PATCH` | `/api/admin/v1/notifications/{id}` | NO | 未见认证 | `NOT_RUN` | 428 |
+| `POST` | `/api/admin/v1/notifications/{id}/archive` | NO | 未见认证 | `NOT_RUN` | 432 |
+| `POST` | `/api/admin/v1/notifications/{id}/publish` | NO | 未见认证 | `NOT_RUN` | 430 |
+| `POST` | `/api/admin/v1/notifications/{id}/replay-wecom` | NO | 未见认证 | `NOT_RUN` | 434 |
+| `POST` | `/api/admin/v1/notifications/{id}/send-sms` | NO | 未见认证 | `NOT_RUN` | 433 |
+| `POST` | `/api/admin/v1/notifications/{id}/unpublish` | NO | 未见认证 | `NOT_RUN` | 431 |
+| `GET` | `/api/admin/v1/organizations` | NO | 仅非2xx | `NOT_RUN` | 113 |
+| `POST` | `/api/admin/v1/organizations` | NO | 未见认证 | `NOT_RUN` | 114 |
+| `GET` | `/api/admin/v1/organizations/options` | NO | 仅非2xx | `NOT_RUN` | 116 |
+| `GET` | `/api/admin/v1/organizations/tree` | NO | 仅非2xx | `NOT_RUN` | 115 |
+| `GET` | `/api/admin/v1/organizations/tree-options` | NO | 仅非2xx | `NOT_RUN` | 117 |
+| `GET` | `/api/admin/v1/organizations/tree-with-summary` | NO | 仅非2xx | `NOT_RUN` | 118 |
+| `DELETE` | `/api/admin/v1/organizations/{id}` | NO | 未见认证 | `NOT_RUN` | 121 |
+| `GET` | `/api/admin/v1/organizations/{id}` | NO | 仅非2xx | `NOT_RUN` | 119 |
+| `PATCH` | `/api/admin/v1/organizations/{id}` | NO | 未见认证 | `NOT_RUN` | 120 |
+| `POST` | `/api/admin/v1/organizations/{id}/move` | NO | 未见认证 | `NOT_RUN` | 123 |
+| `PATCH` | `/api/admin/v1/organizations/{id}/status` | NO | 未见认证 | `NOT_RUN` | 122 |
+| `GET` | `/api/admin/v1/organizations/{orgId}/members/options` | NO | 仅非2xx | `NOT_RUN` | 526 |
+| `GET` | `/api/admin/v1/organizations/{orgId}/memberships` | NO | 仅非2xx | `NOT_RUN` | 525 |
+| `GET` | `/api/admin/v1/organizations/{orgId}/position-assignments` | NO | 仅非2xx | `NOT_RUN` | 134 |
+| `POST` | `/api/admin/v1/organizations/{orgId}/position-assignments` | NO | 未见认证 | `NOT_RUN` | 135 |
+| `GET` | `/api/admin/v1/organizations/{orgId}/supervisors` | NO | 仅非2xx | `NOT_RUN` | 149 |
+| `GET` | `/api/admin/v1/position-assignments` | NO | 仅非2xx | `NOT_RUN` | 137 |
+| `POST` | `/api/admin/v1/position-assignments/preview` | NO | 未见认证 | `NOT_RUN` | 138 |
+| `GET` | `/api/admin/v1/position-assignments/{id}` | NO | 仅非2xx | `NOT_RUN` | 139 |
+| `GET` | `/api/admin/v1/position-assignments/{id}/history` | NO | 仅非2xx | `NOT_RUN` | 141 |
+| `POST` | `/api/admin/v1/position-assignments/{id}/revoke` | NO | 未见认证 | `NOT_RUN` | 140 |
+| `GET` | `/api/admin/v1/position-rules` | NO | 仅非2xx | `NOT_RUN` | 130 |
+| `POST` | `/api/admin/v1/position-rules` | NO | 未见认证 | `NOT_RUN` | 131 |
+| `DELETE` | `/api/admin/v1/position-rules/{id}` | NO | 未见认证 | `NOT_RUN` | 133 |
+| `PATCH` | `/api/admin/v1/position-rules/{id}` | NO | 未见认证 | `NOT_RUN` | 132 |
+| `GET` | `/api/admin/v1/positions` | NO | 仅非2xx | `NOT_RUN` | 124 |
+| `POST` | `/api/admin/v1/positions` | NO | 未见认证 | `NOT_RUN` | 125 |
+| `GET` | `/api/admin/v1/positions/options` | NO | 仅非2xx | `NOT_RUN` | 126 |
+| `DELETE` | `/api/admin/v1/positions/{id}` | NO | 未见认证 | `NOT_RUN` | 129 |
+| `GET` | `/api/admin/v1/positions/{id}` | NO | 仅非2xx | `NOT_RUN` | 127 |
+| `PATCH` | `/api/admin/v1/positions/{id}` | NO | 未见认证 | `NOT_RUN` | 128 |
+| `GET` | `/api/admin/v1/recruitment/applications` | NO | 仅非2xx | `NOT_RUN` | 632 |
+| `POST` | `/api/admin/v1/recruitment/applications/batch-mark-threshold` | NO | 未见认证 | `NOT_RUN` | 633 |
+| `POST` | `/api/admin/v1/recruitment/applications/export` | NO | 未见认证 | `NOT_RUN` | 634 |
+| `GET` | `/api/admin/v1/recruitment/applications/{applicationId}/certificate-claims` | NO | 仅非2xx | `NOT_RUN` | 642 |
+| `GET` | `/api/admin/v1/recruitment/applications/{id}` | NO | 仅非2xx | `NOT_RUN` | 635 |
+| `PATCH` | `/api/admin/v1/recruitment/applications/{id}` | NO | 未见认证 | `NOT_RUN` | 636 |
+| `POST` | `/api/admin/v1/recruitment/applications/{id}/evaluate` | NO | 未见认证 | `NOT_RUN` | 641 |
+| `GET` | `/api/admin/v1/recruitment/applications/{id}/id-card-image-url` | NO | 仅非2xx | `NOT_RUN` | 637 |
+| `POST` | `/api/admin/v1/recruitment/applications/{id}/promote-single` | NO | 未见认证 | `NOT_RUN` | 640 |
+| `POST` | `/api/admin/v1/recruitment/applications/{id}/resolve` | NO | 未见认证 | `NOT_RUN` | 638 |
+| `PATCH` | `/api/admin/v1/recruitment/applications/{id}/thresholds` | NO | 未见认证 | `NOT_RUN` | 639 |
+| `GET` | `/api/admin/v1/recruitment/certificate-claims/{id}` | NO | 仅非2xx | `NOT_RUN` | 643 |
+| `GET` | `/api/admin/v1/recruitment/certificate-claims/{id}/image-urls` | NO | 仅非2xx | `NOT_RUN` | 644 |
+| `POST` | `/api/admin/v1/recruitment/certificate-claims/{id}/review` | NO | 未见认证 | `NOT_RUN` | 645 |
+| `POST` | `/api/admin/v1/recruitment/certificate-claims/{id}/revoke-review` | NO | 未见认证 | `NOT_RUN` | 646 |
+| `GET` | `/api/admin/v1/recruitment/cycles` | NO | 仅非2xx | `NOT_RUN` | 625 |
+| `POST` | `/api/admin/v1/recruitment/cycles` | NO | 未见认证 | `NOT_RUN` | 624 |
+| `GET` | `/api/admin/v1/recruitment/cycles/{id}` | NO | 仅非2xx | `NOT_RUN` | 626 |
+| `PATCH` | `/api/admin/v1/recruitment/cycles/{id}` | NO | 未见认证 | `NOT_RUN` | 627 |
+| `POST` | `/api/admin/v1/recruitment/cycles/{id}/promote` | NO | 未见认证 | `NOT_RUN` | 631 |
+| `GET` | `/api/admin/v1/recruitment/cycles/{id}/promote-precheck` | NO | 仅非2xx | `NOT_RUN` | 630 |
+| `GET` | `/api/admin/v1/recruitment/cycles/{id}/publicity-list` | NO | 仅非2xx | `NOT_RUN` | 628 |
+| `GET` | `/api/admin/v1/recruitment/cycles/{id}/stats` | NO | 仅非2xx | `NOT_RUN` | 629 |
+| `GET` | `/api/admin/v1/registrations` | YES | 仅非2xx | `NOT_RUN` | 540 |
+| `GET` | `/api/admin/v1/role-bindings` | NO | 仅非2xx | `NOT_RUN` | 151 |
+| `POST` | `/api/admin/v1/role-bindings` | NO | 未见认证 | `NOT_RUN` | 152 |
+| `POST` | `/api/admin/v1/role-bindings/batch` | NO | 未见认证 | `NOT_RUN` | 158 |
+| `GET` | `/api/admin/v1/role-bindings/page` | NO | 仅非2xx | `NOT_RUN` | 153 |
+| `GET` | `/api/admin/v1/role-bindings/preview` | NO | 仅非2xx | `NOT_RUN` | 154 |
+| `DELETE` | `/api/admin/v1/role-bindings/{id}` | NO | 未见认证 | `NOT_RUN` | 157 |
+| `GET` | `/api/admin/v1/role-bindings/{id}` | NO | 仅非2xx | `NOT_RUN` | 155 |
+| `PATCH` | `/api/admin/v1/role-bindings/{id}` | NO | 未见认证 | `NOT_RUN` | 156 |
+| `GET` | `/api/admin/v1/supervision-assignments` | NO | 仅非2xx | `NOT_RUN` | 142 |
+| `POST` | `/api/admin/v1/supervision-assignments` | NO | 未见认证 | `NOT_RUN` | 143 |
+| `POST` | `/api/admin/v1/supervision-assignments/coverage-preview` | NO | 未见认证 | `NOT_RUN` | 145 |
+| `GET` | `/api/admin/v1/supervision-assignments/page` | NO | 仅非2xx | `NOT_RUN` | 144 |
+| `GET` | `/api/admin/v1/supervision-assignments/{id}` | NO | 仅非2xx | `NOT_RUN` | 146 |
+| `PATCH` | `/api/admin/v1/supervision-assignments/{id}` | NO | 未见认证 | `NOT_RUN` | 147 |
+| `POST` | `/api/admin/v1/supervision-assignments/{id}/revoke` | NO | 未见认证 | `NOT_RUN` | 150 |
+| `GET` | `/api/admin/v1/team-insurance-policies` | YES | 仅非2xx | `NOT_RUN` | 380 |
+| `POST` | `/api/admin/v1/team-insurance-policies` | NO | 未见认证 | `NOT_RUN` | 381 |
+| `DELETE` | `/api/admin/v1/team-insurance-policies/{id}` | NO | 未见认证 | `NOT_RUN` | 384 |
+| `GET` | `/api/admin/v1/team-insurance-policies/{id}` | NO | 仅非2xx | `NOT_RUN` | 382 |
+| `PATCH` | `/api/admin/v1/team-insurance-policies/{id}` | NO | 未见认证 | `NOT_RUN` | 383 |
+| `GET` | `/api/admin/v1/team-insurance-policies/{id}/members` | NO | 仅非2xx | `NOT_RUN` | 385 |
+| `POST` | `/api/admin/v1/team-insurance-policies/{id}/members` | NO | 未见认证 | `NOT_RUN` | 386 |
+| `POST` | `/api/admin/v1/team-insurance-policies/{id}/members/add-all-active` | NO | 未见认证 | `NOT_RUN` | 387 |
+| `DELETE` | `/api/admin/v1/team-insurance-policies/{id}/members/{memberId}` | NO | 未见认证 | `NOT_RUN` | 388 |
+| `GET` | `/api/admin/v1/team-join/applications` | NO | 仅非2xx | `NOT_RUN` | 651 |
+| `GET` | `/api/admin/v1/team-join/applications/{id}` | NO | 仅非2xx | `NOT_RUN` | 652 |
+| `POST` | `/api/admin/v1/team-join/applications/{id}/evaluate` | NO | 未见认证 | `NOT_RUN` | 654 |
+| `PATCH` | `/api/admin/v1/team-join/applications/{id}/gates` | NO | 未见认证 | `NOT_RUN` | 653 |
+| `POST` | `/api/admin/v1/team-join/applications/{id}/join` | NO | 未见认证 | `NOT_RUN` | 655 |
+| `GET` | `/api/admin/v1/team-join/cycles` | NO | 仅非2xx | `NOT_RUN` | 648 |
+| `POST` | `/api/admin/v1/team-join/cycles` | NO | 未见认证 | `NOT_RUN` | 647 |
+| `GET` | `/api/admin/v1/team-join/cycles/{id}` | NO | 仅非2xx | `NOT_RUN` | 649 |
+| `PATCH` | `/api/admin/v1/team-join/cycles/{id}` | NO | 未见认证 | `NOT_RUN` | 650 |
+| `GET` | `/api/admin/v1/users` | YES | 仅非2xx | `NOT_RUN` | 57 |
+| `POST` | `/api/admin/v1/users` | NO | 未见认证 | `NOT_RUN` | 58 |
+| `GET` | `/api/admin/v1/users/options` | NO | 仅非2xx | `NOT_RUN` | 59 |
+| `DELETE` | `/api/admin/v1/users/{id}` | NO | 未见认证 | `NOT_RUN` | 62 |
+| `GET` | `/api/admin/v1/users/{id}` | NO | 仅非2xx | `NOT_RUN` | 60 |
+| `PATCH` | `/api/admin/v1/users/{id}` | NO | 未见认证 | `NOT_RUN` | 61 |
+| `PUT` | `/api/admin/v1/users/{id}/password` | NO | 未见认证 | `NOT_RUN` | 63 |
+| `DELETE` | `/api/admin/v1/users/{id}/phone` | NO | 未见认证 | `NOT_RUN` | 66 |
+| `PATCH` | `/api/admin/v1/users/{id}/role` | NO | 未见认证 | `NOT_RUN` | 64 |
+| `PATCH` | `/api/admin/v1/users/{id}/status` | NO | 未见认证 | `NOT_RUN` | 65 |
+| `DELETE` | `/api/admin/v1/users/{id}/wechat` | NO | 未见认证 | `NOT_RUN` | 67 |
+| `DELETE` | `/api/admin/v1/users/{id}/wecom` | NO | 未见认证 | `NOT_RUN` | 68 |
+| `GET` | `/api/app/v1/activities` | YES | 有限2xx | `NOT_RUN` | 257 |
+| `GET` | `/api/app/v1/activities/available` | YES | 有限2xx | `NOT_RUN` | 258 |
+| `GET` | `/api/app/v1/activities/{activityId}/positions` | NO | 仅非2xx | `NOT_RUN` | 259 |
+| `POST` | `/api/app/v1/activities/{activityId}/registration-upload-sessions` | NO | 仅非2xx | `NOT_RUN` | 554 |
+| `POST` | `/api/app/v1/activities/{activityId}/registration-upload-sessions/{sessionId}/files` | NO | 未见认证 | `NOT_RUN` | 555 |
+| `POST` | `/api/app/v1/activities/{activityId}/registrations` | NO | 未见认证 | `NOT_RUN` | 556 |
+| `GET` | `/api/app/v1/activities/{activityId}/sessions/{sessionId}/my-punch-state` | NO | 仅非2xx | `NOT_RUN` | 492 |
+| `POST` | `/api/app/v1/activities/{activityId}/sessions/{sessionId}/punches/check-in` | NO | 未见认证 | `NOT_RUN` | 490 |
+| `POST` | `/api/app/v1/activities/{activityId}/sessions/{sessionId}/punches/check-out` | NO | 未见认证 | `NOT_RUN` | 491 |
+| `GET` | `/api/app/v1/activities/{id}` | YES | 仅非2xx | `NOT_RUN` | 260 |
+| `GET` | `/api/app/v1/contents` | NO | 有限2xx | `NOT_RUN` | 673 |
+| `GET` | `/api/app/v1/contents/{id}` | NO | 仅非2xx | `NOT_RUN` | 674 |
+| `GET` | `/api/app/v1/me` | YES | 有限2xx | `NOT_RUN` | 69 |
+| `GET` | `/api/app/v1/me/account` | YES | 有限2xx | `NOT_RUN` | 70 |
+| `DELETE` | `/api/app/v1/me/avatar` | NO | 仅非2xx | `NOT_RUN` | 76 |
+| `GET` | `/api/app/v1/me/avatar` | NO | 有限2xx | `NOT_RUN` | 74 |
+| `POST` | `/api/app/v1/me/avatar` | NO | 仅非2xx | `NOT_RUN` | 75 |
+| `GET` | `/api/app/v1/me/capabilities` | YES | 有限2xx | `NOT_RUN` | 71 |
+| `GET` | `/api/app/v1/me/insurances` | YES | 有限2xx | `NOT_RUN` | 393 |
+| `POST` | `/api/app/v1/me/insurances` | NO | 仅非2xx | `NOT_RUN` | 394 |
+| `DELETE` | `/api/app/v1/me/insurances/{id}` | NO | 仅非2xx | `NOT_RUN` | 396 |
+| `PATCH` | `/api/app/v1/me/insurances/{id}` | NO | 仅非2xx | `NOT_RUN` | 395 |
+| `PUT` | `/api/app/v1/me/password` | NO | 未见认证 | `NOT_RUN` | 77 |
+| `PUT` | `/api/app/v1/me/phone` | NO | 未见认证 | `NOT_RUN` | 79 |
+| `POST` | `/api/app/v1/me/phone/send-code` | NO | 未见认证 | `NOT_RUN` | 78 |
+| `GET` | `/api/app/v1/me/profile` | YES | 有限2xx | `NOT_RUN` | 72 |
+| `PATCH` | `/api/app/v1/me/profile` | NO | 仅非2xx | `NOT_RUN` | 73 |
+| `POST` | `/api/app/v1/me/team-join/applications` | NO | 未见认证 | `NOT_RUN` | 656 |
+| `GET` | `/api/app/v1/me/team-join/applications/current` | NO | 仅非2xx | `NOT_RUN` | 657 |
+| `PATCH` | `/api/app/v1/me/team-join/applications/{id}/targets` | NO | 未见认证 | `NOT_RUN` | 658 |
+| `GET` | `/api/app/v1/me/wechat` | YES | 有限2xx | `NOT_RUN` | 80 |
+| `PUT` | `/api/app/v1/me/wechat` | NO | 未见认证 | `NOT_RUN` | 81 |
+| `GET` | `/api/app/v1/me/wecom` | YES | 有限2xx | `NOT_RUN` | 82 |
+| `PUT` | `/api/app/v1/me/wecom` | NO | 未见认证 | `NOT_RUN` | 83 |
+| `GET` | `/api/app/v1/my/activities` | YES | 有限2xx | `NOT_RUN` | 545 |
+| `GET` | `/api/app/v1/my/activities/{activityId}/check-in` | NO | 仅非2xx | `NOT_RUN` | 478 |
+| `POST` | `/api/app/v1/my/activities/{activityId}/check-in` | NO | 未见认证 | `NOT_RUN` | 477 |
+| `POST` | `/api/app/v1/my/activities/{activityId}/check-out` | NO | 未见认证 | `NOT_RUN` | 479 |
+| `GET` | `/api/app/v1/my/activities/{activityId}/feedback` | NO | 仅非2xx | `NOT_RUN` | 449 |
+| `PUT` | `/api/app/v1/my/activities/{activityId}/feedback` | NO | 仅非2xx | `NOT_RUN` | 448 |
+| `GET` | `/api/app/v1/my/activity-batch-jobs` | YES | 有限2xx | `NOT_RUN` | 371 |
+| `GET` | `/api/app/v1/my/activity-batch-jobs/{jobId}` | NO | 仅非2xx | `NOT_RUN` | 372 |
+| `POST` | `/api/app/v1/my/activity-batch-jobs/{jobId}/cancel` | NO | 未见认证 | `NOT_RUN` | 375 |
+| `GET` | `/api/app/v1/my/activity-batch-jobs/{jobId}/items` | NO | 仅非2xx | `NOT_RUN` | 373 |
+| `POST` | `/api/app/v1/my/activity-batch-jobs/{jobId}/retry-failed` | NO | 未见认证 | `NOT_RUN` | 374 |
+| `POST` | `/api/app/v1/my/activity-invitations/{invitationId}/accept` | NO | 未见认证 | `NOT_RUN` | 562 |
+| `POST` | `/api/app/v1/my/activity-invitations/{invitationId}/decline` | NO | 未见认证 | `NOT_RUN` | 563 |
+| `POST` | `/api/app/v1/my/attendance-member-credential/render` | NO | 仅非2xx | `NOT_RUN` | 513 |
+| `GET` | `/api/app/v1/my/attendance-records` | YES | 有限2xx | `NOT_RUN` | 480 |
+| `GET` | `/api/app/v1/my/certificates` | YES | 有限2xx | `NOT_RUN` | 406 |
+| `GET` | `/api/app/v1/my/managed-activities` | YES | 有限2xx | `NOT_RUN` | 312 |
+| `POST` | `/api/app/v1/my/managed-activities` | NO | 未见认证 | `BLOCKED` | 313 |
+| `GET` | `/api/app/v1/my/managed-activities/contribution-policy-options` | NO | 仅非2xx | `NOT_RUN` | 220 |
+| `GET` | `/api/app/v1/my/managed-activities/control-plane/status` | YES | 有限2xx | `NOT_RUN` | 235 |
+| `POST` | `/api/app/v1/my/managed-activities/emergency` | NO | 未见认证 | `NOT_RUN` | 238 |
+| `POST` | `/api/app/v1/my/managed-activities/from-template` | NO | 未见认证 | `NOT_RUN` | 236 |
+| `GET` | `/api/app/v1/my/managed-activities/metric-set-options` | NO | 仅非2xx | `NOT_RUN` | 213 |
+| `GET` | `/api/app/v1/my/managed-activities/organization-options` | YES | 仅非2xx | `NOT_RUN` | 311 |
+| `POST` | `/api/app/v1/my/managed-activities/outcome-reports/query` | NO | 仅非2xx | `NOT_RUN` | 308 |
+| `POST` | `/api/app/v1/my/managed-activities/professional` | NO | 未见认证 | `NOT_RUN` | 237 |
+| `GET` | `/api/app/v1/my/managed-activities/template-version-options` | NO | 仅非2xx | `NOT_RUN` | 214 |
+| `GET` | `/api/app/v1/my/managed-activities/time-policy-options` | NO | 仅非2xx | `NOT_RUN` | 217 |
+| `DELETE` | `/api/app/v1/my/managed-activities/{activityId}` | NO | 仅非2xx | `NOT_RUN` | 345 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}` | NO | 仅非2xx | `NOT_RUN` | 343 |
+| `PATCH` | `/api/app/v1/my/managed-activities/{activityId}` | NO | 仅非2xx | `NOT_RUN` | 344 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/allocation-batches` | NO | 未见认证 | `NOT_RUN` | 565 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/allocation-batches/{batchId}` | NO | 仅非2xx | `NOT_RUN` | 568 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/allocation-batches/{batchId}/commit` | NO | 未见认证 | `NOT_RUN` | 566 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/allocation-batches/{batchId}/void` | NO | 未见认证 | `NOT_RUN` | 567 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/archive` | NO | 仅非2xx | `NOT_RUN` | 316 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/attendance-sheet-draft` | NO | 仅非2xx | `NOT_RUN` | 483 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/attendance-sheets` | NO | 仅非2xx | `NOT_RUN` | 484 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/attendance-sheets` | NO | 未见认证 | `NOT_RUN` | 485 |
+| `DELETE` | `/api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}` | NO | 未见认证 | `NOT_RUN` | 488 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}` | NO | 仅非2xx | `NOT_RUN` | 486 |
+| `PATCH` | `/api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}` | NO | 未见认证 | `NOT_RUN` | 487 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}/resubmit` | NO | 未见认证 | `NOT_RUN` | 489 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/cancel` | NO | 仅非2xx | `NOT_RUN` | 314 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/change-reviews` | NO | 未见认证 | `NOT_RUN` | 347 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/check-ins` | NO | 仅非2xx | `NOT_RUN` | 482 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/clone` | NO | 仅非2xx | `NOT_RUN` | 318 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/collaborator-options` | NO | 仅非2xx | `NOT_RUN` | 366 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/collaborators` | NO | 未见认证 | `NOT_RUN` | 367 |
+| `DELETE` | `/api/app/v1/my/managed-activities/{activityId}/collaborators/{assignmentId}` | NO | 未见认证 | `NOT_RUN` | 368 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/contribution-policy-selection` | NO | 仅非2xx | `NOT_RUN` | 221 |
+| `PATCH` | `/api/app/v1/my/managed-activities/{activityId}/contribution-policy-selection` | NO | 未见认证 | `NOT_RUN` | 222 |
+| `PUT` | `/api/app/v1/my/managed-activities/{activityId}/cover` | NO | 仅非2xx | `NOT_RUN` | 321 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/declare-attendance-complete` | NO | 未见认证 | `NOT_RUN` | 353 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/direct-publish` | NO | 未见认证 | `NOT_RUN` | 350 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/ending-workbench` | NO | 仅非2xx | `NOT_RUN` | 310 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/evidence-seals` | NO | 未见认证 | `NOT_RUN` | 325 |
+| `PUT` | `/api/app/v1/my/managed-activities/{activityId}/gallery` | NO | 仅非2xx | `NOT_RUN` | 322 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/invitations` | NO | 仅非2xx | `NOT_RUN` | 557 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/invitations` | NO | 未见认证 | `NOT_RUN` | 558 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/invitations/{invitationId}/revoke` | NO | 未见认证 | `NOT_RUN` | 559 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/metric-candidates` | NO | 未见认证 | `NOT_RUN` | 211 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/metric-candidates/{candidateId}` | NO | 仅非2xx | `NOT_RUN` | 212 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/metric-selection` | NO | 仅非2xx | `NOT_RUN` | 215 |
+| `PUT` | `/api/app/v1/my/managed-activities/{activityId}/metric-selection` | NO | 未见认证 | `NOT_RUN` | 216 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/onsite-participations` | NO | 未见认证 | `NOT_RUN` | 564 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/onsite/bulk-punch-jobs/{jobId}` | NO | 仅非2xx | `NOT_RUN` | 512 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/onsite/import-previews/{previewId}` | NO | 仅非2xx | `NOT_RUN` | 511 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/onsite/import-previews/{previewId}/execute` | NO | 未见认证 | `NOT_RUN` | 510 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/onsite/offline-packages/{packageId}/revoke` | NO | 未见认证 | `NOT_RUN` | 501 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/onsite/offline-packages/{packageId}/upload` | NO | 未见认证 | `NOT_RUN` | 502 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/onsite/offline-review-items` | NO | 仅非2xx | `NOT_RUN` | 503 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/onsite/offline-review-items/{reviewItemId}/approve` | NO | 未见认证 | `NOT_RUN` | 504 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/onsite/offline-review-items/{reviewItemId}/reject` | NO | 未见认证 | `NOT_RUN` | 505 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/onsite/punch-events/{eventId}/replace` | NO | 未见认证 | `NOT_RUN` | 499 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/onsite/punch-events/{eventId}/void` | NO | 未见认证 | `NOT_RUN` | 498 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/bulk-punch-jobs` | NO | 未见认证 | `NOT_RUN` | 508 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/early-departure-close` | NO | 未见认证 | `NOT_RUN` | 497 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/import-previews` | NO | 未见认证 | `NOT_RUN` | 509 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/offline-packages` | NO | 未见认证 | `NOT_RUN` | 500 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/proxy-punch` | NO | 未见认证 | `NOT_RUN` | 507 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/onsite/sessions/{sessionId}/staff-scan` | NO | 未见认证 | `NOT_RUN` | 506 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/outcome-confirmations` | NO | 未见认证 | `NOT_RUN` | 205 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/outcome-confirmed` | NO | 仅非2xx | `NOT_RUN` | 208 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/outcome-corrections` | NO | 未见认证 | `NOT_RUN` | 206 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/outcome-corrections/{outcomeRevisionId}/cancel` | NO | 未见认证 | `NOT_RUN` | 207 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/outcome-report` | NO | 仅非2xx | `NOT_RUN` | 309 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/outcomes` | NO | 仅非2xx | `NOT_RUN` | 203 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/outcomes` | NO | 未见认证 | `NOT_RUN` | 202 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/outcomes/{outcomeRevisionId}` | NO | 仅非2xx | `NOT_RUN` | 204 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/positions` | NO | 仅非2xx | `NOT_RUN` | 361 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/positions` | NO | 仅非2xx | `NOT_RUN` | 362 |
+| `DELETE` | `/api/app/v1/my/managed-activities/{activityId}/positions/{activityPositionId}` | NO | 仅非2xx | `NOT_RUN` | 364 |
+| `PATCH` | `/api/app/v1/my/managed-activities/{activityId}/positions/{activityPositionId}` | NO | 仅非2xx | `NOT_RUN` | 363 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/publish-reviews` | NO | 未见认证 | `NOT_RUN` | 346 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/qr-credentials/{credentialId}/render` | NO | 未见认证 | `NOT_RUN` | 496 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/qr-credentials/{credentialId}/revoke` | NO | 未见认证 | `NOT_RUN` | 495 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/qualification-rules` | NO | 仅非2xx | `NOT_RUN` | 323 |
+| `PUT` | `/api/app/v1/my/managed-activities/{activityId}/qualification-rules` | NO | 未见认证 | `NOT_RUN` | 324 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/registration-form` | NO | 仅非2xx | `NOT_RUN` | 319 |
+| `PUT` | `/api/app/v1/my/managed-activities/{activityId}/registration-form` | NO | 未见认证 | `NOT_RUN` | 320 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/registrations` | NO | 仅非2xx | `NOT_RUN` | 547 |
+| `PATCH` | `/api/app/v1/my/managed-activities/{activityId}/registrations/bulk-approve` | NO | 未见认证 | `NOT_RUN` | 548 |
+| `PATCH` | `/api/app/v1/my/managed-activities/{activityId}/registrations/bulk-reject` | NO | 未见认证 | `NOT_RUN` | 549 |
+| `PATCH` | `/api/app/v1/my/managed-activities/{activityId}/registrations/{registrationId}/approve` | NO | 未见认证 | `NOT_RUN` | 550 |
+| `PATCH` | `/api/app/v1/my/managed-activities/{activityId}/registrations/{registrationId}/cancel` | NO | 未见认证 | `NOT_RUN` | 552 |
+| `PATCH` | `/api/app/v1/my/managed-activities/{activityId}/registrations/{registrationId}/reject` | NO | 未见认证 | `NOT_RUN` | 551 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/registrations/{registrationId}/reopen` | NO | 未见认证 | `NOT_RUN` | 553 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/responsibilities` | NO | 仅非2xx | `NOT_RUN` | 365 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/reviews/withdraw` | NO | 未见认证 | `NOT_RUN` | 348 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/sessions` | NO | 仅非2xx | `NOT_RUN` | 326 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/sessions` | NO | 仅非2xx | `NOT_RUN` | 327 |
+| `DELETE` | `/api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}` | NO | 仅非2xx | `NOT_RUN` | 329 |
+| `PATCH` | `/api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}` | NO | 仅非2xx | `NOT_RUN` | 328 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}/positions` | NO | 仅非2xx | `NOT_RUN` | 330 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}/positions` | NO | 未见认证 | `NOT_RUN` | 331 |
+| `DELETE` | `/api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}/positions/{positionId}` | NO | 未见认证 | `NOT_RUN` | 333 |
+| `PATCH` | `/api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}/positions/{positionId}` | NO | 未见认证 | `NOT_RUN` | 332 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}/qr-credentials` | NO | 仅非2xx | `NOT_RUN` | 493 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}/qr-credentials/{action}/issue` | NO | 未见认证 | `NOT_RUN` | 494 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/settlement` | NO | 仅非2xx | `NOT_RUN` | 337 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/settlement/close` | NO | 未见认证 | `NOT_RUN` | 336 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/settlement/generate` | NO | 未见认证 | `NOT_RUN` | 334 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/settlement/items` | NO | 仅非2xx | `NOT_RUN` | 338 |
+| `PATCH` | `/api/app/v1/my/managed-activities/{activityId}/settlement/items/{identityId}` | NO | 未见认证 | `NOT_RUN` | 339 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/settlement/submit` | NO | 未见认证 | `NOT_RUN` | 335 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/settlement/versions/{versionId}` | NO | 仅非2xx | `NOT_RUN` | 340 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/settlement/versions/{versionId}/resubmit` | NO | 未见认证 | `NOT_RUN` | 341 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/submit-change-review` | NO | 未见认证 | `NOT_RUN` | 351 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/submit-publish-review` | NO | 未见认证 | `NOT_RUN` | 349 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/template-resolution` | NO | 仅非2xx | `NOT_RUN` | 342 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/terminate` | NO | 未见认证 | `NOT_RUN` | 315 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/time-corrections` | NO | 仅非2xx | `NOT_RUN` | 193 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/time-corrections` | NO | 未见认证 | `NOT_RUN` | 192 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}` | NO | 仅非2xx | `NOT_RUN` | 194 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/commit` | NO | 未见认证 | `NOT_RUN` | 198 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/commit-jobs` | NO | 未见认证 | `NOT_RUN` | 199 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/commit-jobs/{jobId}` | NO | 仅非2xx | `NOT_RUN` | 200 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/commit-jobs/{jobId}/retry` | NO | 未见认证 | `NOT_RUN` | 201 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/prepare` | NO | 未见认证 | `NOT_RUN` | 197 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/resubmit` | NO | 未见认证 | `NOT_RUN` | 196 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/review` | NO | 未见认证 | `NOT_RUN` | 195 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/time-policy-selection` | NO | 仅非2xx | `NOT_RUN` | 218 |
+| `PATCH` | `/api/app/v1/my/managed-activities/{activityId}/time-policy-selection` | NO | 未见认证 | `NOT_RUN` | 219 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/time-settlement` | NO | 仅非2xx | `NOT_RUN` | 181 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/time-settlement/allocations` | NO | 未见认证 | `NOT_RUN` | 189 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/time-settlement/allocations/{allocationRevisionId}` | NO | 仅非2xx | `NOT_RUN` | 183 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/time-settlement/prepare` | NO | 未见认证 | `NOT_RUN` | 190 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/buckets` | NO | 仅非2xx | `NOT_RUN` | 184 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/ledger` | NO | 仅非2xx | `NOT_RUN` | 185 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/shadow` | NO | 仅非2xx | `NOT_RUN` | 187 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/sources` | NO | 仅非2xx | `NOT_RUN` | 188 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/time-settlement/sources` | NO | 仅非2xx | `NOT_RUN` | 182 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/time-settlement/submit` | NO | 未见认证 | `NOT_RUN` | 191 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/time-settlement/versions/{settlementVersionId}/correction-ledger` | NO | 仅非2xx | `NOT_RUN` | 186 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/transfer-initiator` | NO | 未见认证 | `NOT_RUN` | 369 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/transfer-owner` | NO | 未见认证 | `NOT_RUN` | 370 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/unarchive` | NO | 仅非2xx | `NOT_RUN` | 317 |
+| `GET` | `/api/app/v1/my/managed-activities/{activityId}/visitors` | NO | 仅非2xx | `NOT_RUN` | 560 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/visitors` | NO | 未见认证 | `NOT_RUN` | 561 |
+| `POST` | `/api/app/v1/my/managed-activities/{activityId}/withdraw-publish-review` | NO | 未见认证 | `NOT_RUN` | 352 |
+| `GET` | `/api/app/v1/my/participation-ledger` | YES | 有限2xx | `NOT_RUN` | 376 |
+| `GET` | `/api/app/v1/my/participation-summary` | YES | 有限2xx | `NOT_RUN` | 481 |
+| `GET` | `/api/app/v1/my/participation-time-proof` | NO | 仅非2xx | `NOT_RUN` | 377 |
+| `GET` | `/api/app/v1/my/registrations` | YES | 有限2xx | `NOT_RUN` | 542 |
+| `POST` | `/api/app/v1/my/registrations` | NO | 仅非2xx | `NOT_RUN` | 543 |
+| `GET` | `/api/app/v1/my/registrations/{id}` | YES | 仅非2xx | `NOT_RUN` | 544 |
+| `PATCH` | `/api/app/v1/my/registrations/{id}/cancel` | NO | 仅非2xx | `NOT_RUN` | 546 |
+| `GET` | `/api/app/v1/notifications` | YES | 有限2xx | `NOT_RUN` | 435 |
+| `POST` | `/api/app/v1/notifications/subscriptions/ack` | NO | 未见认证 | `NOT_RUN` | 436 |
+| `GET` | `/api/app/v1/notifications/subscriptions/status` | NO | 有限2xx | `NOT_RUN` | 437 |
+| `GET` | `/api/app/v1/notifications/unread-count` | YES | 有限2xx | `NOT_RUN` | 438 |
+| `GET` | `/api/app/v1/notifications/{id}` | NO | 仅非2xx | `NOT_RUN` | 439 |
+| `POST` | `/api/app/v1/notifications/{id}/read` | NO | 仅非2xx | `NOT_RUN` | 440 |
+| `POST` | `/api/auth/v1/delegated-token` | NO | 公开/登录 | `NOT_RUN` | 578 |
+| `POST` | `/api/auth/v1/login` | NO | 有限2xx | `NOT_RUN` | 5 |
+| `POST` | `/api/auth/v1/login-sms` | NO | 公开/登录 | `NOT_RUN` | 16 |
+| `POST` | `/api/auth/v1/login-sms/send-code` | NO | 公开/登录 | `NOT_RUN` | 15 |
+| `POST` | `/api/auth/v1/login-wechat` | NO | 公开/登录 | `NOT_RUN` | 17 |
+| `POST` | `/api/auth/v1/login-wecom` | NO | 公开/登录 | `NOT_RUN` | 21 |
+| `POST` | `/api/auth/v1/login-wecom/authorize` | NO | 公开/登录 | `NOT_RUN` | 20 |
+| `POST` | `/api/auth/v1/logout` | NO | 有限2xx | `NOT_RUN` | 7 |
+| `POST` | `/api/auth/v1/logout-all` | NO | 仅非2xx | `NOT_RUN` | 8 |
+| `POST` | `/api/auth/v1/password-reset` | NO | 公开/登录 | `NOT_RUN` | 14 |
+| `POST` | `/api/auth/v1/password-reset/send-code` | NO | 公开/登录 | `NOT_RUN` | 13 |
+| `POST` | `/api/auth/v1/refresh` | NO | 有限2xx | `NOT_RUN` | 6 |
+| `POST` | `/api/auth/v1/service-token` | NO | 公开/登录 | `NOT_RUN` | 577 |
+| `POST` | `/api/auth/v1/step-up/password` | NO | 仅非2xx | `NOT_RUN` | 9 |
+| `POST` | `/api/auth/v1/step-up/sms` | NO | 仅非2xx | `NOT_RUN` | 11 |
+| `POST` | `/api/auth/v1/step-up/sms/send-code` | NO | 仅非2xx | `NOT_RUN` | 10 |
+| `POST` | `/api/auth/v1/step-up/wechat` | NO | 仅非2xx | `NOT_RUN` | 12 |
+| `POST` | `/api/auth/v1/wechat-bind` | NO | 公开/登录 | `NOT_RUN` | 19 |
+| `POST` | `/api/auth/v1/wechat-bind/send-code` | NO | 公开/登录 | `NOT_RUN` | 18 |
+| `POST` | `/api/auth/v1/wecom-bind` | NO | 公开/登录 | `NOT_RUN` | 23 |
+| `POST` | `/api/auth/v1/wecom-bind/authorize` | NO | 仅非2xx | `NOT_RUN` | 24 |
+| `POST` | `/api/auth/v1/wecom-bind/send-code` | NO | 公开/登录 | `NOT_RUN` | 22 |
+| `GET` | `/api/integration/v1/me` | NO | 公开/登录 | `NOT_RUN` | 583 |
+| `GET` | `/api/integration/v1/reference/activity-types` | NO | 公开/登录 | `NOT_RUN` | 584 |
+| `GET` | `/api/open/v1/contents` | NO | 公开/登录 | `NOT_RUN` | 671 |
+| `GET` | `/api/open/v1/contents/{id}` | NO | 公开/登录 | `NOT_RUN` | 672 |
+| `POST` | `/api/open/v1/recruitment/applications` | NO | 公开/登录 | `NOT_RUN` | 612 |
+| `POST` | `/api/open/v1/recruitment/applications/query` | NO | 公开/登录 | `NOT_RUN` | 614 |
+| `POST` | `/api/open/v1/recruitment/applications/query-by-phone` | NO | 公开/登录 | `NOT_RUN` | 617 |
+| `POST` | `/api/open/v1/recruitment/applications/rebind-phone` | NO | 公开/登录 | `NOT_RUN` | 623 |
+| `POST` | `/api/open/v1/recruitment/applications/rebind-wechat` | NO | 公开/登录 | `NOT_RUN` | 622 |
+| `POST` | `/api/open/v1/recruitment/applications/recognize` | NO | 公开/登录 | `NOT_RUN` | 613 |
+| `POST` | `/api/open/v1/recruitment/applications/withdraw` | NO | 公开/登录 | `NOT_RUN` | 621 |
+| `POST` | `/api/open/v1/recruitment/certificate-claims` | NO | 公开/登录 | `NOT_RUN` | 618 |
+| `POST` | `/api/open/v1/recruitment/certificate-claims/{id}/resubmit` | NO | 公开/登录 | `NOT_RUN` | 619 |
+| `POST` | `/api/open/v1/recruitment/certificate-claims/{id}/withdraw` | NO | 公开/登录 | `NOT_RUN` | 620 |
+| `GET` | `/api/open/v1/recruitment/certificate-standards` | NO | 公开/登录 | `NOT_RUN` | 611 |
+| `POST` | `/api/open/v1/recruitment/identity/send-code` | NO | 公开/登录 | `NOT_RUN` | 615 |
+| `POST` | `/api/open/v1/recruitment/identity/verify-code` | NO | 公开/登录 | `NOT_RUN` | 616 |
+| `GET` | `/api/open/v1/recruitment/publicity` | NO | 公开/登录 | `NOT_RUN` | 610 |
+| `GET` | `/api/system/v1/attachment-mime-configs` | NO | 仅非2xx | `NOT_RUN` | 596 |
+| `POST` | `/api/system/v1/attachment-mime-configs` | NO | 未见认证 | `NOT_RUN` | 597 |
+| `DELETE` | `/api/system/v1/attachment-mime-configs/{id}` | NO | 未见认证 | `NOT_RUN` | 600 |
+| `GET` | `/api/system/v1/attachment-mime-configs/{id}` | NO | 仅非2xx | `NOT_RUN` | 598 |
+| `PATCH` | `/api/system/v1/attachment-mime-configs/{id}` | NO | 未见认证 | `NOT_RUN` | 599 |
+| `PATCH` | `/api/system/v1/attachment-mime-configs/{id}/status` | NO | 未见认证 | `NOT_RUN` | 601 |
+| `GET` | `/api/system/v1/attachment-size-limit-configs` | NO | 仅非2xx | `NOT_RUN` | 602 |
+| `POST` | `/api/system/v1/attachment-size-limit-configs` | NO | 未见认证 | `NOT_RUN` | 603 |
+| `DELETE` | `/api/system/v1/attachment-size-limit-configs/{id}` | NO | 未见认证 | `NOT_RUN` | 606 |
+| `GET` | `/api/system/v1/attachment-size-limit-configs/{id}` | NO | 仅非2xx | `NOT_RUN` | 604 |
+| `PATCH` | `/api/system/v1/attachment-size-limit-configs/{id}` | NO | 未见认证 | `NOT_RUN` | 605 |
+| `GET` | `/api/system/v1/attachment-type-configs` | NO | 仅非2xx | `NOT_RUN` | 590 |
+| `POST` | `/api/system/v1/attachment-type-configs` | NO | 未见认证 | `NOT_RUN` | 591 |
+| `DELETE` | `/api/system/v1/attachment-type-configs/{id}` | NO | 未见认证 | `NOT_RUN` | 594 |
+| `GET` | `/api/system/v1/attachment-type-configs/{id}` | NO | 仅非2xx | `NOT_RUN` | 592 |
+| `PATCH` | `/api/system/v1/attachment-type-configs/{id}` | NO | 未见认证 | `NOT_RUN` | 593 |
+| `PATCH` | `/api/system/v1/attachment-type-configs/{id}/status` | NO | 未见认证 | `NOT_RUN` | 595 |
+| `GET` | `/api/system/v1/audit-logs` | NO | 仅非2xx | `NOT_RUN` | 25 |
+| `GET` | `/api/system/v1/audit-logs/{id}` | NO | 仅非2xx | `NOT_RUN` | 26 |
+| `GET` | `/api/system/v1/authz/me/effective-permissions` | YES | 有限2xx | `NOT_RUN` | 88 |
+| `GET` | `/api/system/v1/contribution-policies` | NO | 仅非2xx | `NOT_RUN` | 294 |
+| `POST` | `/api/system/v1/contribution-policies` | NO | 未见认证 | `NOT_RUN` | 295 |
+| `GET` | `/api/system/v1/contribution-policies/{id}` | NO | 仅非2xx | `NOT_RUN` | 296 |
+| `GET` | `/api/system/v1/contribution-policies/{id}/versions` | NO | 仅非2xx | `NOT_RUN` | 297 |
+| `POST` | `/api/system/v1/contribution-policies/{id}/versions` | NO | 未见认证 | `NOT_RUN` | 298 |
+| `GET` | `/api/system/v1/contribution-policies/{id}/versions/{versionId}` | NO | 仅非2xx | `NOT_RUN` | 299 |
+| `POST` | `/api/system/v1/contribution-policies/{id}/versions/{versionId}/activate` | NO | 未见认证 | `NOT_RUN` | 300 |
+| `POST` | `/api/system/v1/contribution-policies/{id}/versions/{versionId}/retire` | NO | 未见认证 | `NOT_RUN` | 301 |
+| `GET` | `/api/system/v1/contribution-rules` | NO | 仅非2xx | `NOT_RUN` | 443 |
+| `POST` | `/api/system/v1/contribution-rules` | NO | 未见认证 | `NOT_RUN` | 444 |
+| `DELETE` | `/api/system/v1/contribution-rules/{id}` | NO | 未见认证 | `NOT_RUN` | 447 |
+| `GET` | `/api/system/v1/contribution-rules/{id}` | NO | 仅非2xx | `NOT_RUN` | 445 |
+| `PATCH` | `/api/system/v1/contribution-rules/{id}` | NO | 未见认证 | `NOT_RUN` | 446 |
+| `GET` | `/api/system/v1/contribution-shadow/windows` | NO | 仅非2xx | `NOT_RUN` | 452 |
+| `GET` | `/api/system/v1/contribution-shadow/windows/{windowId}/attempts/{attemptId}/comparisons` | NO | 仅非2xx | `NOT_RUN` | 456 |
+| `GET` | `/api/system/v1/contribution-shadow/windows/{windowId}/candidates` | NO | 仅非2xx | `NOT_RUN` | 454 |
+| `GET` | `/api/system/v1/contribution-shadow/windows/{windowId}/candidates/{auditLogId}` | NO | 仅非2xx | `NOT_RUN` | 455 |
+| `GET` | `/api/system/v1/contribution-shadow/windows/{windowId}/summary` | NO | 仅非2xx | `NOT_RUN` | 453 |
+| `GET` | `/api/system/v1/delegation-grants` | NO | 仅非2xx | `NOT_RUN` | 580 |
+| `POST` | `/api/system/v1/delegation-grants` | NO | 未见认证 | `NOT_RUN` | 579 |
+| `GET` | `/api/system/v1/delegation-grants/{id}` | NO | 仅非2xx | `NOT_RUN` | 581 |
+| `POST` | `/api/system/v1/delegation-grants/{id}/revoke` | NO | 未见认证 | `NOT_RUN` | 582 |
+| `GET` | `/api/system/v1/dict-items` | NO | 有限2xx | `NOT_RUN` | 106 |
+| `POST` | `/api/system/v1/dict-items` | NO | 未见认证 | `NOT_RUN` | 107 |
+| `GET` | `/api/system/v1/dict-items/tree` | NO | 仅非2xx | `NOT_RUN` | 108 |
+| `DELETE` | `/api/system/v1/dict-items/{id}` | NO | 未见认证 | `NOT_RUN` | 111 |
+| `GET` | `/api/system/v1/dict-items/{id}` | NO | 仅非2xx | `NOT_RUN` | 109 |
+| `PATCH` | `/api/system/v1/dict-items/{id}` | NO | 未见认证 | `NOT_RUN` | 110 |
+| `PATCH` | `/api/system/v1/dict-items/{id}/status` | NO | 未见认证 | `NOT_RUN` | 112 |
+| `GET` | `/api/system/v1/dict-types` | YES | 有限2xx | `NOT_RUN` | 100 |
+| `POST` | `/api/system/v1/dict-types` | NO | 未见认证 | `NOT_RUN` | 101 |
+| `DELETE` | `/api/system/v1/dict-types/{id}` | NO | 未见认证 | `NOT_RUN` | 104 |
+| `GET` | `/api/system/v1/dict-types/{id}` | NO | 仅非2xx | `NOT_RUN` | 102 |
+| `PATCH` | `/api/system/v1/dict-types/{id}` | NO | 未见认证 | `NOT_RUN` | 103 |
+| `PATCH` | `/api/system/v1/dict-types/{id}/status` | NO | 未见认证 | `NOT_RUN` | 105 |
+| `GET` | `/api/system/v1/health` | NO | 有限2xx | `NOT_RUN` | 2 |
+| `GET` | `/api/system/v1/health/live` | NO | 公开/登录 | `NOT_RUN` | 3 |
+| `GET` | `/api/system/v1/health/ready` | NO | 公开/登录 | `NOT_RUN` | 4 |
+| `GET` | `/api/system/v1/permissions` | NO | 仅非2xx | `NOT_RUN` | 27 |
+| `POST` | `/api/system/v1/permissions` | NO | 未见认证 | `NOT_RUN` | 28 |
+| `GET` | `/api/system/v1/permissions/catalog` | NO | 仅非2xx | `NOT_RUN` | 29 |
+| `DELETE` | `/api/system/v1/permissions/{id}` | NO | 未见认证 | `NOT_RUN` | 31 |
+| `PATCH` | `/api/system/v1/permissions/{id}` | NO | 未见认证 | `NOT_RUN` | 30 |
+| `GET` | `/api/system/v1/rbac/me/permissions` | YES | 有限2xx | `NOT_RUN` | 44 |
+| `POST` | `/api/system/v1/rbac/reload` | NO | 未见认证 | `NOT_RUN` | 45 |
+| `GET` | `/api/system/v1/realname-settings` | NO | 仅非2xx | `NOT_RUN` | 607 |
+| `PATCH` | `/api/system/v1/realname-settings` | NO | 未见认证 | `NOT_RUN` | 608 |
+| `POST` | `/api/system/v1/realname-settings/reset-credentials` | NO | 未见认证 | `NOT_RUN` | 609 |
+| `GET` | `/api/system/v1/roles` | NO | 仅非2xx | `NOT_RUN` | 32 |
+| `POST` | `/api/system/v1/roles` | NO | 未见认证 | `NOT_RUN` | 33 |
+| `GET` | `/api/system/v1/roles/options` | NO | 仅非2xx | `NOT_RUN` | 34 |
+| `DELETE` | `/api/system/v1/roles/{id}` | NO | 未见认证 | `NOT_RUN` | 37 |
+| `GET` | `/api/system/v1/roles/{id}` | NO | 仅非2xx | `NOT_RUN` | 35 |
+| `PATCH` | `/api/system/v1/roles/{id}` | NO | 未见认证 | `NOT_RUN` | 36 |
+| `GET` | `/api/system/v1/roles/{id}/permissions` | NO | 仅非2xx | `NOT_RUN` | 38 |
+| `PUT` | `/api/system/v1/roles/{id}/permissions` | NO | 未见认证 | `NOT_RUN` | 39 |
+| `POST` | `/api/system/v1/roles/{id}/permissions/preview` | NO | 未见认证 | `NOT_RUN` | 40 |
+| `GET` | `/api/system/v1/service-principals` | NO | 仅非2xx | `NOT_RUN` | 570 |
+| `POST` | `/api/system/v1/service-principals` | NO | 未见认证 | `NOT_RUN` | 569 |
+| `GET` | `/api/system/v1/service-principals/{id}` | NO | 仅非2xx | `NOT_RUN` | 571 |
+| `PATCH` | `/api/system/v1/service-principals/{id}` | NO | 未见认证 | `NOT_RUN` | 572 |
+| `GET` | `/api/system/v1/service-principals/{id}/credentials` | NO | 仅非2xx | `NOT_RUN` | 575 |
+| `POST` | `/api/system/v1/service-principals/{id}/credentials` | NO | 未见认证 | `NOT_RUN` | 574 |
+| `POST` | `/api/system/v1/service-principals/{id}/credentials/{credentialId}/revoke` | NO | 未见认证 | `NOT_RUN` | 576 |
+| `PATCH` | `/api/system/v1/service-principals/{id}/status` | NO | 未见认证 | `NOT_RUN` | 573 |
+| `GET` | `/api/system/v1/sms-send-logs` | NO | 仅非2xx | `NOT_RUN` | 49 |
+| `GET` | `/api/system/v1/sms-settings` | NO | 仅非2xx | `NOT_RUN` | 46 |
+| `PATCH` | `/api/system/v1/sms-settings` | NO | 未见认证 | `NOT_RUN` | 47 |
+| `POST` | `/api/system/v1/sms-settings/reset-credentials` | NO | 未见认证 | `NOT_RUN` | 48 |
+| `GET` | `/api/system/v1/storage-settings` | NO | 仅非2xx | `NOT_RUN` | 97 |
+| `PATCH` | `/api/system/v1/storage-settings` | NO | 未见认证 | `NOT_RUN` | 98 |
+| `POST` | `/api/system/v1/storage-settings/reset-credentials` | NO | 未见认证 | `NOT_RUN` | 99 |
+| `GET` | `/api/system/v1/users/{userId}/roles` | NO | 仅非2xx | `NOT_RUN` | 41 |
+| `POST` | `/api/system/v1/users/{userId}/roles` | NO | 未见认证 | `NOT_RUN` | 42 |
+| `DELETE` | `/api/system/v1/users/{userId}/roles/{roleId}` | NO | 未见认证 | `NOT_RUN` | 43 |
+| `GET` | `/api/system/v1/wechat-settings` | NO | 仅非2xx | `NOT_RUN` | 50 |
+| `PATCH` | `/api/system/v1/wechat-settings` | NO | 未见认证 | `NOT_RUN` | 51 |
+| `POST` | `/api/system/v1/wechat-settings/reset-credentials` | NO | 未见认证 | `NOT_RUN` | 52 |
+| `GET` | `/api/system/v1/wecom-settings` | NO | 仅非2xx | `NOT_RUN` | 53 |
+| `PATCH` | `/api/system/v1/wecom-settings` | NO | 未见认证 | `NOT_RUN` | 54 |
+| `POST` | `/api/system/v1/wecom-settings/reset-credentials` | NO | 未见认证 | `NOT_RUN` | 55 |
+| `POST` | `/api/system/v1/wecom-settings/test-connection` | NO | 未见认证 | `NOT_RUN` | 56 |
+
+</details>
+
+历史索引来源是 `SRVF-API-inventory-20261112.zip` 的 `evidence/older-coverage-current.json`，ZIP SHA-256 `c0ad955da7608690ce254dff63d46beeeee44527b336966ccfd2941f8c05dcba`，该成员 SHA-256 `860dc0886fc3cc2b0ea46021e8c4848f6da6bd69cd3dc654abe43889af09e03b`。该索引包未包含所指原始回执；本轮另从 `SRVF-API-Test-Evidence-2026-11-11.zip` 核验下列 93 条原回执，原包 SHA-256 `1005fda8ab38c976f5fa01fd16fd6c3898180b88253efec63f7450fe43dfc004`。只记录字段名和证据定位，具体值与对象 ID 均脱敏；完整运行时请求头、服务端堆栈及历史与现网精确部署提交均为 UNKNOWN。
+
+<details>
+<summary>展开：17 个历史 500 的逐项原回执</summary>
+
+| 方法与路径 | 历史时间（+08） | 角色 | 响应 | 请求 ID | 已记录字段名 | 原包内回执 | 本轮同条件复测 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `PATCH /api/app/v1/me/profile` | 2026-11-11T18:27:12.215032+08:00 | member_a | 500 / 50000 | `qa-r3-fault-regression-member_a-0010` | `body: nickname` | `evidence/authenticated-r3-fault-regression.jsonl:11` | NOT_RUN；前置条件未满足 |
+| `GET /api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/commit-jobs/{jobId}` | 2026-11-11T18:26:47.626288+08:00 | member_a | 500 / 50000 | `qa-r3-fault-regression-member_a-0004` | 无已记录字段 | `evidence/authenticated-r3-fault-regression.jsonl:5` | NOT_RUN；前置条件未满足 |
+| `POST /api/app/v1/my/managed-activities/{activityId}/cancel` | 2026-11-11T18:32:52.599868+08:00 | member_b | 500 / 50000 | `qa-negative-mutation-member_b-0011` | `body: operationKey, reason, strongConfirmed` | `evidence/authenticated-negative-mutation.jsonl:14` | NOT_RUN；前置条件未满足 |
+| `POST /api/app/v1/my/managed-activities/{activityId}/archive` | 2026-11-11T18:33:01.970140+08:00 | member_b | 500 / 50000 | `qa-negative-mutation-member_b-0013` | `body: operationKey, reason` | `evidence/authenticated-negative-mutation.jsonl:18` | NOT_RUN；前置条件未满足 |
+| `POST /api/app/v1/my/managed-activities/{activityId}/unarchive` | 2026-11-11T18:33:06.069235+08:00 | member_b | 500 / 50000 | `qa-negative-mutation-member_b-0014` | `body: operationKey, reason` | `evidence/authenticated-negative-mutation.jsonl:20` | NOT_RUN；前置条件未满足 |
+| `POST /api/app/v1/my/managed-activities/{activityId}/clone` | 2026-11-11T18:32:56.716016+08:00 | member_b | 500 / 50000 | `qa-negative-mutation-member_b-0012` | `body: title` | `evidence/authenticated-negative-mutation.jsonl:16` | NOT_RUN；前置条件未满足 |
+| `POST /api/app/v1/my/managed-activities/{activityId}/sessions` | 2026-11-11T18:33:20.157739+08:00 | member_b | 500 / 50000 | `qa-negative-mutation-member_b-0017` | `body: capacity, checkInCloseAt, checkInOpenAt, checkOutCloseAt, checkOutOpenAt, code, earlyLeaveThresholdMinutes, endAt, lateGraceMinutes, locationRequired, locationText, name, sortOrder, startAt` | `evidence/authenticated-negative-mutation.jsonl:26` | NOT_RUN；前置条件未满足 |
+| `PATCH /api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}` | 2026-11-11T18:33:24.508200+08:00 | member_b | 500 / 50000 | `qa-negative-mutation-member_b-0018` | `body: name` | `evidence/authenticated-negative-mutation.jsonl:28` | NOT_RUN；前置条件未满足 |
+| `DELETE /api/app/v1/my/managed-activities/{activityId}/sessions/{sessionId}` | 2026-11-11T18:33:28.758897+08:00 | member_b | 500 / 50000 | `qa-negative-mutation-member_b-0019` | 无已记录字段 | `evidence/authenticated-negative-mutation.jsonl:30` | NOT_RUN；前置条件未满足 |
+| `GET /api/app/v1/my/managed-activities/{activityId}/template-resolution` | 2026-11-11T18:26:52.167313+08:00 | member_a | 500 / 50000 | `qa-r3-fault-regression-member_a-0005` | 无已记录字段 | `evidence/authenticated-r3-fault-regression.jsonl:6` | NOT_RUN；前置条件未满足 |
+| `POST /api/app/v1/me/insurances` | 2026-11-11T18:27:28.972548+08:00 | member_a | 500 / 50000 | `qa-r3-fault-regression-member_a-0014` | `body: coverageEnd, coverageStart, insurerName, policyNumber` | `evidence/authenticated-r3-fault-regression.jsonl:17` | NOT_RUN；前置条件未满足 |
+| `PATCH /api/app/v1/me/insurances/{id}` | 2026-11-11T18:34:11.099986+08:00 | member_b | 500 / 50000 | `qa-negative-mutation-member_b-0028` | `body: expectedVersion, insurerName` | `evidence/authenticated-negative-mutation.jsonl:48` | NOT_RUN；前置条件未满足 |
+| `DELETE /api/app/v1/me/insurances/{id}` | 2026-11-11T18:34:15.873132+08:00 | member_b | 500 / 50000 | `qa-negative-mutation-member_b-0029` | `query: expectedVersion` | `evidence/authenticated-negative-mutation.jsonl:50` | NOT_RUN；前置条件未满足 |
+| `GET /api/app/v1/my/managed-activities/{activityId}/onsite/offline-review-items` | 2026-11-11T18:26:56.261970+08:00 | member_a | 500 / 50000 | `qa-r3-fault-regression-member_a-0006` | `query: page, pageSize` | `evidence/authenticated-r3-fault-regression.jsonl:7` | NOT_RUN；前置条件未满足 |
+| `GET /api/app/v1/my/managed-activities/{activityId}/onsite/import-previews/{previewId}` | 2026-11-11T18:27:00.210246+08:00 | member_a | 500 / 50000 | `qa-r3-fault-regression-member_a-0007` | `query: page, pageSize` | `evidence/authenticated-r3-fault-regression.jsonl:8` | NOT_RUN；前置条件未满足 |
+| `GET /api/app/v1/my/managed-activities/{activityId}/onsite/bulk-punch-jobs/{jobId}` | 2026-11-11T18:27:04.065659+08:00 | member_a | 500 / 50000 | `qa-r3-fault-regression-member_a-0008` | 无已记录字段 | `evidence/authenticated-r3-fault-regression.jsonl:9` | NOT_RUN；前置条件未满足 |
+| `POST /api/app/v1/activities/{activityId}/registration-upload-sessions` | 2026-11-11T18:34:06.991384+08:00 | member_b | 500 / 50000 | `qa-negative-mutation-member_b-0027` | 无已记录字段 | `evidence/authenticated-negative-mutation.jsonl:46` | NOT_RUN；前置条件未满足 |
+
+</details>
+
+**中间样本，非同条件回归（DEPLOYED_HTTP）**：11 月 12 日普通 A 对另一组合成不存在对象访问上述四条读取方法，均返回 404/20001：`template-resolution` 请求 ID `aa8a4c99-ce6b-42ec-98e8-0680e68070ba`；`offline-review-items` 为 `ec32b787-2e43-48ab-9e7a-7a94a0ed96fd`；`import-previews` 为 `18a975ad-8409-47e1-a058-e445791f216e`；`bulk-punch-jobs` 为 `a00dbbe5-08ef-4fb5-91ce-9084dcae729f`。它们不能关闭原 500。
+
+<details>
+<summary>展开：38 个历史 HTML 404 的逐项原回执</summary>
+
+| 方法与路径 | 历史原回执：时间（+08）、角色、请求 ID、来源 | 已记录字段名 | 11 月 12 日或本轮有限样本 | 同条件回归状态 |
+| --- | --- | --- | --- | --- |
+| `GET /api/system/v1/health` | 2026-11-11T15:47:12.680994+08:00；anonymous；ID `未提供`；`evidence/identity-health.json:records[1]`<br>2026-11-11T18:26:40.971404+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:4` | 无已记录字段<br>无已记录字段 | 2026-11-12T14:51:34.548640+08:00 200/0 ID `cmwd6weo57e4219fcdd447c7699ba2f70`<br>2026-11-13T02:54:45.622126+08:00 200/0 ID `srvf-qa-20261113-404-health`（客户端指定并回显） | 匿名、方法、路径、查询已复测；其余条件 UNKNOWN |
+| `GET /api/system/v1/health/live` | 2026-11-11T15:47:16.982128+08:00；anonymous；ID `未提供`；`evidence/identity-health.json:records[2]`<br>2026-11-11T18:26:42.083413+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:3` | 无已记录字段<br>无已记录字段 | 2026-11-13T02:54:45.722135+08:00 200/0 ID `srvf-qa-20261113-404-health-live`（客户端指定并回显） | 匿名、方法、路径、查询已复测；其余条件 UNKNOWN |
+| `GET /api/system/v1/health/ready` | 2026-11-11T15:47:20.965086+08:00；anonymous；ID `未提供`；`evidence/identity-health.json:records[3]`<br>2026-11-11T18:26:45.642526+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:5` | 无已记录字段<br>无已记录字段 | 2026-11-12T14:51:34.641492+08:00 200/0 ID `cmwd6wer1a29b0383f019e2a40b229f9d`<br>2026-11-13T02:54:45.800060+08:00 200/0 ID `srvf-qa-20261113-404-health-ready`（客户端指定并回显） | 匿名、方法、路径、查询已复测；其余条件 UNKNOWN |
+| `POST /api/auth/v1/logout-all` | 2026-11-11T15:49:20.950216+08:00；anonymous；ID `未提供`；`evidence/no_auth.jsonl:line 1`<br>2026-11-11T18:30:07.633095+08:00；lifecycle；ID `未提供`；`evidence/authenticated-route-regression.jsonl:43` | `body: __srvf_audit_invalid_field`<br>无已记录字段 | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `POST /api/auth/v1/step-up/password` | 2026-11-11T15:49:22.050334+08:00；anonymous；ID `未提供`；`evidence/no_auth.jsonl:line 2`<br>2026-11-11T18:26:57.746312+08:00；lifecycle；ID `未提供`；`evidence/authenticated-route-regression.jsonl:10` | `body: __srvf_audit_invalid_field`<br>`body: action, password` | 2026-11-12T14:51:34.948723+08:00 401/40100 ID `cmwd6wezed64d061742bb82bef8d6f5e8` | NOT_RUN；原条件未全部复核 |
+| `POST /api/auth/v1/step-up/sms/send-code` | 2026-11-11T15:49:33.514514+08:00；anonymous；ID `未提供`；`evidence/no_auth.jsonl:line 3`<br>2026-11-11T18:27:01.910798+08:00；lifecycle；ID `未提供`；`evidence/authenticated-route-regression.jsonl:11` | `body: __srvf_audit_invalid_field`<br>`body: action` | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `POST /api/auth/v1/step-up/sms` | 2026-11-11T15:49:34.614923+08:00；anonymous；ID `未提供`；`evidence/no_auth.jsonl:line 4`<br>2026-11-11T18:27:05.897640+08:00；lifecycle；ID `未提供`；`evidence/authenticated-route-regression.jsonl:12` | `body: __srvf_audit_invalid_field`<br>`body: action, code` | 无本轮样本<br>2026-11-13T03:43:39.594+08:00 401/40100 ID `cmwdyhbd213b818ccb38a15b2a0b22a20`（匿名 phase1 无效请求体） | 匿名原无效请求体已复测；认证条件 UNKNOWN |
+| `POST /api/auth/v1/step-up/wechat` | 2026-11-11T15:49:39.244842+08:00；anonymous；ID `未提供`；`evidence/no_auth.jsonl:line 5`<br>2026-11-11T18:27:09.955651+08:00；lifecycle；ID `未提供`；`evidence/authenticated-route-regression.jsonl:13` | `body: __srvf_audit_invalid_field`<br>`body: action, code` | 无本轮样本<br>2026-11-13T03:43:39.695+08:00 401/40100 ID `cmwdyhbg21b2b3972e0e1188e53a1e778`（匿名 phase1 无效请求体） | 匿名原无效请求体已复测；认证条件 UNKNOWN |
+| `POST /api/auth/v1/password-reset/send-code` | 2026-11-11T15:49:16.959113+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[3] / PUB-004`<br>2026-11-11T18:27:13.964848+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:14` | 无已记录字段<br>`body: phone` | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `POST /api/auth/v1/password-reset` | 2026-11-11T15:49:21.774807+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[4] / PUB-005`<br>2026-11-11T18:27:18.018740+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:15` | 无已记录字段<br>`body: code, newPassword, phone` | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `POST /api/auth/v1/login-sms/send-code` | 2026-11-11T15:49:26.506701+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[5] / PUB-006`<br>2026-11-11T18:27:22.126262+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:16` | 无已记录字段<br>`body: phone` | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `POST /api/auth/v1/login-sms` | 2026-11-11T15:49:33.255148+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[6] / PUB-007`<br>2026-11-11T18:27:26.824479+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:17` | 无已记录字段<br>`body: code, phone` | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `POST /api/auth/v1/login-wechat` | 2026-11-11T15:49:37.934311+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[7] / PUB-008`<br>2026-11-11T18:27:31.423108+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:18` | 无已记录字段<br>`body: code` | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `POST /api/auth/v1/wechat-bind/send-code` | 2026-11-11T15:49:43.447029+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[8] / PUB-009`<br>2026-11-11T18:27:35.159418+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:19` | 无已记录字段<br>`body: phone` | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `POST /api/auth/v1/wechat-bind` | 2026-11-11T15:49:48.575207+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[9] / PUB-010`<br>2026-11-11T18:27:39.138068+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:20` | 无已记录字段<br>`body: code, phone, smsCode` | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `POST /api/auth/v1/login-wecom/authorize` | 2026-11-11T15:52:18.600099+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[37] / PUB-038`<br>2026-11-11T18:27:43.117196+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:21` | `body: returnPath`<br>`body: returnPath` | 无本轮样本<br>2026-11-13T03:38:24.850+08:00 400/40000 ID `cmwdyaki6a40d7585a2c2ab5b10d7d309`（匿名原无效请求体；未跟随跳转） | 匿名、方法、路径与无效请求体已复测；其余条件 UNKNOWN |
+| `POST /api/auth/v1/login-wecom` | 2026-11-11T15:49:53.703682+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[11] / PUB-012`<br>2026-11-11T18:27:47.239215+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:22` | 无已记录字段<br>`body: code, state` | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `POST /api/auth/v1/wecom-bind/send-code` | 2026-11-11T15:49:58.545823+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[12] / PUB-013`<br>2026-11-11T18:27:51.304141+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:23` | 无已记录字段<br>`body: bindingTicket, phone` | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `POST /api/auth/v1/wecom-bind` | 2026-11-11T15:50:03.351655+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[13] / PUB-014`<br>2026-11-11T18:27:55.525774+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:24` | 无已记录字段<br>`body: bindingTicket, phone, smsCode` | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `POST /api/auth/v1/wecom-bind/authorize` | 2026-11-11T15:49:40.345009+08:00；anonymous；ID `未提供`；`evidence/no_auth.jsonl:line 6`<br>2026-11-11T18:30:02.991687+08:00；lifecycle；ID `未提供`；`evidence/authenticated-route-regression.jsonl:42` | `body: __srvf_audit_invalid_field`<br>`body: returnPath` | 2026-11-13T04:10:15.229+08:00 服务端日志时间 401 ID `srvf-qa-resume-f577c180847c416cad177c7e2ded53c7`；本地接收脚本异常，响应体和头部未捕获 | 匿名原无效请求体有状态样本；其余条件及响应类型 UNKNOWN |
+| `POST /api/auth/v1/service-token` | 2026-11-11T16:02:11.241843+08:00；anonymous；ID `未提供`；`evidence/no_auth.jsonl:line 582`<br>2026-11-11T18:27:59.864667+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:25` | `body: __srvf_audit_invalid_field`<br>无已记录字段 | 2026-11-13T04:08:24.129+08:00 503/37030 ID `srvf-qa-resume-725f8f63ab0e42a0ae93ba0696bcbcdb`（客户端指定并回显；匿名原无效请求体） | 匿名原无效请求体已复测；请求头、版本和签发流程 UNKNOWN |
+| `POST /api/auth/v1/delegated-token` | 2026-11-11T16:02:12.341885+08:00；anonymous；ID `未提供`；`evidence/no_auth.jsonl:line 583`<br>2026-11-11T18:28:04.934272+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:26` | `body: __srvf_audit_invalid_field`<br>`body: delegationGrantId` | 2026-11-13T04:08:24.371+08:00 401/37011 ID `srvf-qa-resume-f7aee42e68e447fcadcceee2aac08cfe`（客户端指定并回显；匿名原无效请求体） | 匿名原无效请求体已复测；请求头、版本和签发流程 UNKNOWN |
+| `GET /api/open/v1/recruitment/publicity` | 2026-11-11T15:50:08.770148+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[14] / PUB-015`<br>2026-11-11T18:26:48.724294+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:6` | 无已记录字段<br>无已记录字段 | 2026-11-12T16:18:37.782848+08:00 200/0 ID `cmwda0cvufec4533d3df73f8084836e3b`<br>2026-11-13T02:54:45.883713+08:00 200/0 ID `srvf-qa-20261113-404-publicity`（客户端指定并回显） | 匿名、方法、路径、查询已复测；其余条件 UNKNOWN |
+| `GET /api/open/v1/recruitment/certificate-standards` | 2026-11-11T15:50:15.283017+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[15] / PUB-016`<br>2026-11-11T18:26:49.824616+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:8` | 无已记录字段<br>无已记录字段 | 2026-11-12T14:54:37.057935+08:00 200/0 ID `cmwd70bhn2069ba9d71684fd21b8e238f`<br>2026-11-13T02:54:46.002946+08:00 200/0 ID `srvf-qa-20261113-404-certificate-standards`（客户端指定并回显） | 匿名、方法、路径、查询已复测；其余条件 UNKNOWN |
+| `POST /api/open/v1/recruitment/applications` | 2026-11-11T15:50:21.531028+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[16] / PUB-017`<br>2026-11-11T18:28:09.285708+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:27` | 无已记录字段<br>`body: idCardImage, payload, signatureImage` | 2026-11-13T05:01:08.086+08:00 400/40000 ID `srvf-qa-resume-7b77648836e94a148f2ff523b8dabe91`（客户端指定并回显；匿名空 multipart） | 原匿名空请求有有限样本；其他条件和正常业务 UNKNOWN |
+| `POST /api/open/v1/recruitment/applications/recognize` | 2026-11-11T15:50:26.535828+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[17] / PUB-018`<br>2026-11-11T18:28:13.061461+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:28` | 无已记录字段<br>`body: documentTypeCode, idCardImage` | 2026-11-13T05:01:08.216+08:00 400/40000 ID `srvf-qa-resume-a2b408f307844a1481a911f01d6f7000`（客户端指定并回显；匿名空 multipart） | 原匿名空请求有有限样本；其他条件和 OCR UNKNOWN |
+| `POST /api/open/v1/recruitment/applications/query` | 2026-11-11T15:50:31.254341+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[18] / PUB-019`<br>2026-11-11T18:28:16.933479+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:29` | 无已记录字段<br>`body: wechatCode` | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `POST /api/open/v1/recruitment/identity/send-code` | 2026-11-11T15:50:37.254870+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[19] / PUB-020`<br>2026-11-11T18:28:22.032350+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:30` | 无已记录字段<br>`body: phone` | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `POST /api/open/v1/recruitment/identity/verify-code` | 2026-11-11T15:50:42.182679+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[20] / PUB-021`<br>2026-11-11T18:28:26.003598+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:31` | 无已记录字段<br>`body: code, phone` | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `POST /api/open/v1/recruitment/applications/query-by-phone` | 2026-11-11T15:50:48.246758+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[21] / PUB-022`<br>2026-11-11T18:28:29.826997+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:32` | 无已记录字段<br>`body: code, phone` | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `POST /api/open/v1/recruitment/certificate-claims` | 2026-11-11T15:50:53.199348+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[22] / PUB-023`<br>2026-11-11T18:28:33.463766+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:33` | 无已记录字段<br>`body: categoryHintCode, images` | 2026-11-13T05:02:18.085+08:00 400/40000 ID `srvf-qa-resume-3ac3e0e412534e7b8fe4a38ffb9c8dbc`（客户端指定并回显；匿名空 multipart） | 原匿名空请求有有限样本；其他条件及完整申报 UNKNOWN |
+| `POST /api/open/v1/recruitment/certificate-claims/{id}/resubmit` | 2026-11-11T15:50:58.063295+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[23] / PUB-024`<br>2026-11-11T18:28:37.017356+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:34` | 无已记录字段<br>`body: categoryHintCode, images, version` | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `POST /api/open/v1/recruitment/certificate-claims/{id}/withdraw` | 2026-11-11T15:51:03.317603+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[24] / PUB-025`<br>2026-11-11T18:28:41.450791+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:35` | 无已记录字段<br>`body: version` | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `POST /api/open/v1/recruitment/applications/withdraw` | 2026-11-11T15:51:08.519534+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[25] / PUB-026`<br>2026-11-11T18:28:45.350033+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:36` | 无已记录字段<br>`body: code, phone, wechatCode` | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `POST /api/open/v1/recruitment/applications/rebind-wechat` | 2026-11-11T15:51:13.905643+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[26] / PUB-027`<br>2026-11-11T18:28:49.046895+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:37` | 无已记录字段<br>`body: code, newWechatCode, phone` | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `POST /api/open/v1/recruitment/applications/rebind-phone` | 2026-11-11T15:51:18.602200+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[27] / PUB-028`<br>2026-11-11T18:28:53.134336+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:38` | 无已记录字段<br>`body: code, newPhone, newPhoneCode, phone` | 无本轮样本 | NOT_RUN；原条件未全部复核 |
+| `GET /api/open/v1/contents` | 2026-11-11T15:51:23.347508+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[28] / PUB-029`<br>2026-11-11T18:26:50.925797+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:7` | `query: pageSize`<br>`query: page, pageSize` | 2026-11-12T14:54:37.157216+08:00 200/0 ID `cmwd70bkja83aad1dea2074698c05457c`<br>2026-11-12T14:54:37.581221+08:00 400/40000 ID `cmwd70bn3388ddc83436365a656f9f39a`<br>2026-11-12T14:54:37.688778+08:00 400/40000 ID `cmwd70bzh807747f0bce6631d759a42bb`<br>2026-11-12T14:54:37.803746+08:00 200/0 ID `cmwd70c2da044c6c2c367bad2fd9fcc8d`<br>本轮 200/0 ID `srvf-qa-content-20261113-content-list`<br>2026-11-13T02:54:46.096125+08:00 200/0 ID `srvf-qa-20261113-404-contents-original-query`（客户端指定并回显） | 匿名、方法、路径、查询已复测；其余条件 UNKNOWN |
+| `GET /api/open/v1/contents/{id}` | 2026-11-11T15:51:28.374859+08:00；anonymous；ID `未提供`；`evidence/public-tests.json:records[29] / PUB-030`<br>2026-11-11T18:26:53.858768+08:00；anonymous；ID `未提供`；`evidence/authenticated-route-regression.jsonl:9` | 无已记录字段<br>无已记录字段 | 本轮 404/29001 ID `srvf-qa-content-20261113-content-absent-detail`<br>2026-11-13T03:15:32.701+08:00 404/29001 ID `srvf-qa-resume-20261113-history-html404-content-detail`（客户端指定并回显；同一历史合成对象） | 匿名、方法、历史对象路径与查询已复测；其余条件 UNKNOWN |
+
+</details>
+
+## 9. 2026-11-13 续测
+
+本节承接 §8 和草稿 PR #1414，不把旧样本重新计作新通过。测试地址为 `https://dp.srvf.team`；时间为北京时间，实际部署 SHA 仍为 UNKNOWN。
+
+| 时间 | 方法与实际目标 | 测试角色 | 本轮结果 | 请求 ID |
+| --- | --- | --- | --- | --- |
+| 03:14:17.513–03:14:18.938 | `GET https://dp.srvf.team/api/docs-json` | 匿名 | 200；版本 0.72.0、673 个方法与路径；SHA-256 `c79d0aa5014badbf69f19ed3b9ad550f22ddcee597fa7a4d773b1394167256fd`，与 §8 一致 | `cmwdxfjtlb96fe8bd576a63f451c597b8` |
+| 03:15:32.701 | `GET https://dp.srvf.team/api/open/v1/contents/<历史合成对象ID>`（对象 ID 脱敏） | 匿名 | 404 / 29001，JSON；方法、历史合成对象路径及无查询条件与原第 3 轮对齐，原头部、两次部署和数据状态仍未知 | `srvf-qa-resume-20261113-history-html404-content-detail`（客户端指定并回显） |
+| 约 03:20:14 | `GET https://dp.srvf.team/api/system/v1/dict-items/tree?typeId=<字典ID>`（ID 脱敏） | 现有测试管理员 | 200；队员级别字典中 `level-1` 显示正式队员 1 级且启用 | `cmwdxn7cybb38e64384f56eb85421905b` |
+| 约 03:20:22 | `GET https://dp.srvf.team/api/system/v1/dict-items/tree?typeId=<字典ID>`（ID 脱敏） | 现有测试管理员 | 200；入队来源字典中 `manual` 显示管理员录入且启用 | `cmwdxndb5a1eadabb8b14dcf362f5dfa8` |
+| 约 03:23:12 | `GET https://dp.srvf.team/api/admin/v1/members?memberNo=<合成编号>&page=1&pageSize=10`（编号脱敏） | 现有测试管理员 | 200 / code 0，total 0；当前查询范围未见匹配，不排除软删或永久占号 | `cmwdxr0yzea094ef490184429fad59452` |
+| 03:25:50.655 | `GET https://dp.srvf.team/api/admin/v1/members?memberNo=<同一合成编号>&page=1&pageSize=10`（编号脱敏） | 现有测试管理员 | 200 / code 0，total 0；工具异常后的独立回查，仍不能单独排除软删、永久占号或晚提交 | `cmwdxuerg597e4d8a2058ba01832bbe43` |
+| 03:35:32.784 | `GET https://dp.srvf.team/api/admin/v1/members?memberNo=<同一合成编号>&page=1&pageSize=10`（编号脱敏） | 现有测试管理员 | 200 / code 0，total 0；再次查重，仍不排除软删或永久占号 | `cmwdy6vyo9d7fde2a0becd44e0b791bc6` |
+| 03:36:39.025 | `POST https://dp.srvf.team/api/admin/v1/members` | 现有测试管理员；合成成员 A | 201 / code 0；单次将浏览器请求体适配为 `memberNo`、`realName`、`memberSinceDate`、`memberOriginCode`、`gradeCode`，不表示原表单修复 | `cmwdy8b72d6d26240723c4022a5e0624f` |
+| 03:37:30.751 | `GET https://dp.srvf.team/api/admin/v1/members?memberNo=<合成成员A编号>&page=1&pageSize=10`（编号脱敏） | 现有测试管理员 | 200 / code 0，total 1；与创建回执的成员 ID 和合成字段一致，状态 ACTIVE；列表未返回 version | `cmwdy9exof934315c251c82a237bf1e93` |
+| 03:38:24.850 | `POST https://dp.srvf.team/api/auth/v1/login-wecom/authorize` | 匿名；与历史第 3 轮相同的无效 `returnPath` 数组 | 400 / 40000，JSON；未返回 Location 或设置 Cookie，禁止自动跟随跳转 | `cmwdyaki6a40d7585a2c2ab5b10d7d309` |
+| 03:39:52.815 | `GET https://dp.srvf.team/api/admin/v1/members/<合成成员A-ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；合成字段与创建回执一致，ACTIVE，`hasAccount=false`，未返回 version | `cmwdycgeycb4390278d723763357249e0` |
+| 03:39:52.817 | `GET https://dp.srvf.team/api/admin/v1/members/<合成成员A-ID>/memberships`（ID 脱敏） | 现有测试管理员 | 200 / code 0；空数组，初始无组织归属 | `cmwdycgfl9027f41a3b68d9b7cacdab46` |
+| 03:40:59.525 | `GET https://dp.srvf.team/api/system/v1/dict-items/tree?typeId=<组织类型字典ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；`functional-dept` 有 1 项且 ACTIVE | `cmwdydvt86dfc0260eaca016b9a2f18fc` |
+| 03:43:19.405 | `GET https://dp.srvf.team/api/admin/v1/members?memberNo=<合成成员B编号>&page=1&pageSize=10`（编号脱敏） | 现有测试管理员 | 200 / code 0，total 0；精确查重 | `cmwdygvv07d8a0e01cffce3f8aff6ec2c` |
+| 03:43:39.594 | `POST https://dp.srvf.team/api/auth/v1/step-up/sms` | 匿名；历史 phase1 无效请求体 | 401 / 40100，JSON；无 Cookie 或 Location | `cmwdyhbd213b818ccb38a15b2a0b22a20` |
+| 03:43:39.695 | `POST https://dp.srvf.team/api/auth/v1/step-up/wechat` | 匿名；历史 phase1 无效请求体 | 401 / 40100，JSON；无 Cookie 或 Location | `cmwdyhbg21b2b3972e0e1188e53a1e778` |
+| 03:44:00.825 | `POST https://dp.srvf.team/api/admin/v1/members` | 现有测试管理员；合成成员 B | 201 / code 0；单次请求体适配，独立回读见后续请求 | `cmwdyhrp97a81e83320371f4778c61c0b` |
+| 03:44:30.716 | `GET https://dp.srvf.team/api/admin/v1/members?memberNo=<合成成员B编号>&page=1&pageSize=10`（编号脱敏） | 现有测试管理员 | 200 / code 0，total 1；ID 及合成字段与创建回执一致，ACTIVE，`hasAccount=false` | `cmwdyierjb89987ad47b71da20c5c43e9` |
+| 03:44:46.495 | `GET https://dp.srvf.team/api/admin/v1/members/<合成成员B-ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；字段一致，ACTIVE，`hasAccount=false`，无 version | `cmwdyiqz7a276700c09b9fb4e7cc8b825` |
+| 03:44:46.498 | `GET https://dp.srvf.team/api/admin/v1/members/<合成成员B-ID>/memberships`（ID 脱敏） | 现有测试管理员 | 200 / code 0；空数组，初始无组织归属 | `cmwdyiqzg3ec1900e34f8222e31903ea4` |
+| 03:45:47.246 | `GET https://dp.srvf.team/api/admin/v1/organizations?parentId=null&status=ACTIVE&page=1&pageSize=10` | 现有测试管理员 | 200 / code 0，total 1；返回节点 `parentId=null`、ACTIVE、类型 headquarters | `cmwdyk1tef48649d8e2a5a99cb3709b5b` |
+| 03:48:12.188 | `GET https://dp.srvf.team/api/admin/v1/organizations?codeContains=<合成组织A编号>&page=1&pageSize=100`（编号脱敏） | 现有测试管理员 | 200 / code 0，total 0；子串查询无匹配，不排除历史软删占用 | `cmwdyn5pm841974d53b75f185128bac58` |
+| 03:48:59.181 | `POST https://dp.srvf.team/api/admin/v1/organizations` | 现有测试管理员；合成组织 A | 201 / code 0；请求体字段为 `name`、`code`、`parentId`、`nodeTypeCode`，隔离浏览器适配写入；目标路由以容器有界日志和请求 ID 独立核实，不代表原组织表单通过 | `cmwdyo5ywee510c7c90e52df3222785bf` |
+| 03:49:33.247 | `GET https://dp.srvf.team/api/admin/v1/organizations/<合成组织A-ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；合成字段、父节点、functional-dept 及 ACTIVE 与创建回执一致，未返回 version | `cmwdyow71b4ea5c8f508a0856879ea184` |
+| 03:52:36.513 | `GET https://dp.srvf.team/api/admin/v1/organizations?codeContains=<合成组织B编号>&page=1&pageSize=100`（编号脱敏） | 现有测试管理员 | 200 / code 0，total 0；子串查询无匹配 | `cmwdystln4daeadf8178d8fc51ff3ec7c` |
+| 03:53:06.268 | `POST https://dp.srvf.team/api/admin/v1/organizations` | 现有测试管理员；合成组织 B | 201 / code 0；同源单次适配写入，目标路由以容器有界日志和请求 ID 独立核实 | `cmwdytgk3638205e7d7274fd1dbbe3c1d` |
+| 03:53:31.923 | `GET https://dp.srvf.team/api/admin/v1/organizations/<合成组织B-ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；合成字段、父节点、类型与 ACTIVE 一致；ID 不同于组织 A，未返回 version | `cmwdyu0cmd2f2e9ff157bcc556a40d649` |
+| 03:55:28.313 | `GET https://dp.srvf.team/api/admin/v1/members/<合成成员A-ID>/memberships`（ID 脱敏） | 现有测试管理员 | 200 / code 0；空数组 | `cmwdywi7fff38218344dd3b72e4f68739` |
+| 03:56:00.676 | `GET https://dp.srvf.team/api/admin/v1/organizations/<合成组织A-ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；组织 ACTIVE | `cmwdyx74mbb452f98b8bd69c7ea8a3ce2` |
+| 03:56:24.986 | `POST https://dp.srvf.team/api/admin/v1/members/<合成成员A-ID>/memberships`（ID 脱敏） | 现有测试管理员；成员 A、组织 A | 201 / code 0；单次适配请求体 `organizationId` 与 `membershipType=PRIMARY`；目标路由以有界容器日志核实 | `cmwdyxpvvb40eabf1a9d47e3c87a7c735` |
+| 03:56:38.797 | `GET https://dp.srvf.team/api/admin/v1/members/<合成成员A-ID>/memberships`（ID 脱敏） | 现有测试管理员 | 200 / code 0；count 1，成员、组织和归属 ID 一致，PRIMARY / ACTIVE | `cmwdyy0jnc9b662d06599636345b170d9` |
+| 03:56:59.562 | `GET https://dp.srvf.team/api/admin/v1/memberships/<合成归属A-ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；成员、组织及归属 ID 一致，PRIMARY / ACTIVE，startedAt 有效，endedAt=null | `cmwdyygk91743af8a1a64169e3a1309c5` |
+| 03:57:13.454 | `GET https://dp.srvf.team/api/admin/v1/members/<合成成员B-ID>/memberships`（ID 脱敏） | 现有测试管理员 | 200 / code 0；空数组 | `cmwdyyran03e0dbcc4a1e06fb167cfbd4` |
+| 03:58:45.392 | `GET https://dp.srvf.team/api/admin/v1/organizations/<合成组织B-ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；组织 ACTIVE | `cmwdz0q91d629e7f27886b8256a7c0f74` |
+| 03:59:10.329 | `POST https://dp.srvf.team/api/admin/v1/members/<合成成员B-ID>/memberships`（ID 脱敏） | 现有测试管理员；成员 B、组织 B | 201 / code 0；单次适配请求体 `organizationId` 与 `membershipType=PRIMARY`；目标路由以有界容器日志核实 | `cmwdz19gm92c2f600e1395d0809fb93e2` |
+| 03:59:24.930 | `GET https://dp.srvf.team/api/admin/v1/members/<合成成员B-ID>/memberships`（ID 脱敏） | 现有测试管理员 | 200 / code 0；count 1，成员、组织和归属 ID 一致，PRIMARY / ACTIVE | `cmwdz1ktc765d81a2e328771a59cfd95e` |
+| 03:59:50.309 | `GET https://dp.srvf.team/api/admin/v1/memberships/<合成归属B-ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；成员、组织及归属 ID 一致，PRIMARY / ACTIVE，startedAt 有效，endedAt=null | `cmwdz24b69b15e75ff5362ffd406f23c8` |
+| 04:08:24.129 | `POST https://dp.srvf.team/api/auth/v1/service-token` | 匿名；历史无效请求体 | 503 / 37030，JSON；Integration API 未启用，响应未见 token 字段 | `srvf-qa-resume-725f8f63ab0e42a0ae93ba0696bcbcdb`（客户端指定并回显） |
+| 04:08:24.371 | `POST https://dp.srvf.team/api/auth/v1/delegated-token` | 匿名；历史无效请求体 | 401 / 37011，JSON；认证拒绝，响应未见 token 字段 | `srvf-qa-resume-f7aee42e68e447fcadcceee2aac08cfe`（客户端指定并回显） |
+| 04:10:15.229（服务端日志时间） | `POST https://dp.srvf.team/api/auth/v1/wecom-bind/authorize` | 匿名；历史无效请求体 | 本地接收脚本异常；目标容器有界日志按请求 ID 恢复方法、实际路径及 HTTP 401。响应体、业务码、Content-Type、Cookie 和 Location 均 UNKNOWN，未重试；[脱敏恢复记录](evidence/20261113/history-wecom-bind-recovered.json) | `srvf-qa-resume-f577c180847c416cad177c7e2ded53c7`（客户端指定） |
+| 04:17:37.993 | `GET https://dp.srvf.team/api/admin/v1/users?page=1&pageSize=100&q=<合成用户名A>`（用户名脱敏） | 现有测试管理员 | 200 / code 0，total 0 | `cmwdzp0497de0586bf51bb001df1abdf9` |
+| 04:18:06.419 | `POST https://dp.srvf.team/api/admin/v1/users` | 现有测试管理员；合成账号 A | 201 / code 0；账号 ACTIVE / USER，实际服务端路由经有界日志核对 | `cmwdzpm25c26450e9a39986f4f74f4cff` |
+| 04:18:22.708 | `GET https://dp.srvf.team/api/admin/v1/users/<合成账号A-ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；USER / ACTIVE，未绑定成员，无邮箱和手机号 | `cmwdzpym5ac4ad33b09fa24c47d2eaec2` |
+| 04:18:29.284 | `GET https://dp.srvf.team/api/system/v1/users/<合成账号A-ID>/roles`（ID 脱敏） | 现有测试管理员 | 200 / code 0；空数组 | `cmwdzq3pvea7aad6b397eaad63b7cf972` |
+| 04:18:41.858 | `GET https://dp.srvf.team/api/admin/v1/role-bindings?principalType=USER&principalId=<合成账号A-ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；空数组 | `cmwdzqdfg400bbc4e365766143af9a046` |
+| 04:19:03.920 | `GET https://dp.srvf.team/api/admin/v1/members/<合成成员A-ID>`（ID 脱敏） | 现有测试管理员 | 200；绑定前 `hasAccount=false`，userId 为空 | `cmwdzquf1c4156fd11320afc7a123c922` |
+| 04:19:28.367 | `POST https://dp.srvf.team/api/admin/v1/members/<合成成员A-ID>/account/bind`（ID 脱敏） | 现有测试管理员；合成账号 A | 200 / code 0；实际服务端路由经有界日志核对 | `cmwdzrda6849eb7f08d913404585960bc` |
+| 04:19:41.416 | `GET https://dp.srvf.team/api/admin/v1/members/<合成成员A-ID>`（ID 脱敏） | 现有测试管理员 | 200；`hasAccount=true`，绑定账号 ACTIVE，USER ID 匹配 | `cmwdzrnch43c4a89083b86dbbfb68da11` |
+| 04:19:46.544 | `GET https://dp.srvf.team/api/admin/v1/users/<合成账号A-ID>`（ID 脱敏） | 现有测试管理员 | 200；memberId 匹配，USER / ACTIVE | `cmwdzrraxc64fcb277a3b3a65d745f0af` |
+| 04:19:59.291 | `GET https://dp.srvf.team/api/admin/v1/users?page=1&pageSize=100&q=<合成用户名B>`（用户名脱敏） | 现有测试管理员 | 200 / code 0，total 0 | `cmwdzs14w87488c0b542007c08691d121` |
+| 04:20:20.197 | `POST https://dp.srvf.team/api/admin/v1/users` | 现有测试管理员；合成账号 B | 201 / code 0；实际服务端路由经有界日志核对 | `cmwdzsha17a88d6c75d683b89c93c9eab` |
+| 04:20:33.339 | `GET https://dp.srvf.team/api/admin/v1/users/<合成账号B-ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；USER / ACTIVE，未绑定成员，无邮箱和手机号 | `cmwdzsrf340dee7a2ebc92610edb4834d` |
+| 04:20:38.914 | `GET https://dp.srvf.team/api/system/v1/users/<合成账号B-ID>/roles`（ID 脱敏） | 现有测试管理员 | 200 / code 0；空数组 | `cmwdzsvpi23914db7ed0e73893b0a51fc` |
+| 04:20:44.345 | `GET https://dp.srvf.team/api/admin/v1/role-bindings?principalType=USER&principalId=<合成账号B-ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；空数组 | `cmwdzszwf36fd748ee25c9be7faa82dce` |
+| 04:21:01.376 | `GET https://dp.srvf.team/api/admin/v1/members/<合成成员B-ID>`（ID 脱敏） | 现有测试管理员 | 200；绑定前 `hasAccount=false` | `cmwdztd1j8bbff5cb2ebed32d73c254f5` |
+| 04:21:25.470 | `POST https://dp.srvf.team/api/admin/v1/members/<合成成员B-ID>/account/bind`（ID 脱敏） | 现有测试管理员；合成账号 B | 200 / code 0；实际服务端路由经有界日志核对 | `cmwdztvnh64fc905228fdd953ed466f9b` |
+| 04:21:38.153 | `GET https://dp.srvf.team/api/admin/v1/members/<合成成员B-ID>`（ID 脱敏） | 现有测试管理员 | 200；`hasAccount=true`，绑定账号 ACTIVE，USER ID 匹配 | `cmwdzu5f1632e69115ead37475bf689d6` |
+| 04:21:43.242 | `GET https://dp.srvf.team/api/admin/v1/users/<合成账号B-ID>`（ID 脱敏） | 现有测试管理员 | 200；memberId 匹配，USER / ACTIVE | `cmwdzu9ea3664aeef6ec3e3f493d4ae15` |
+| 04:23:46.701 | `GET https://dp.srvf.team/api/system/v1/dict-items/tree?typeId=<活动类型字典ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；`team_training` 为 ACTIVE 叶节点，供合成活动草稿选择 | `cmwdzwwlj645776acd1356f8d7cb8a397` |
+| 04:24:23.465 | `GET https://dp.srvf.team/api/admin/v1/activities?page=1&pageSize=100&organizationId=<合成组织A-ID>&includeArchived=true&q=<合成标题>`（ID、标题脱敏） | 现有测试管理员 | 200 / code 0，total 0；限定组织的活动查重 | `cmwdzxoz2f3cf250844cc690c83ab3379` |
+| 04:25:06.582 | `POST https://dp.srvf.team/api/admin/v1/activities` | 现有测试管理员；合成组织 A 活动 | 201 / code 0；实际服务端路由经有界日志核对 | `cmwdzym8n5bdee79bbc4f82a89788b71b` |
+| 04:25:22.830 | `GET https://dp.srvf.team/api/admin/v1/activities/<合成草稿ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；标题、组织、类型、分配方式、合成地点和起止时间匹配，draft、invitation、invitation_only、公开报名关闭、`publishedAt=null`、`workflowRevision=0` | `cmwdzyys3d1c83a61b24d07733bd2aaa8` |
+| 04:28:24.060 | `GET https://dp.srvf.team/api/system/v1/dict-items/tree?typeId=<内容类型字典ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；`announcement` 为 ACTIVE 内容类型 | `cmwe02ulrf6b6f99e6428606a3252fff1` |
+| 04:29:00.000 | `GET https://dp.srvf.team/api/admin/v1/contents?page=1&pageSize=50&keyword=<合成标题>`（标题脱敏） | 现有测试管理员 | 200 / code 0，total 0；内容草稿查重 | `cmwe03mch955ac44b7bddc26348789424` |
+| 04:29:24.868 | `POST https://dp.srvf.team/api/admin/v1/contents` | 现有测试管理员；合成组织 A 内容草稿 | 201 / code 0；实际服务端路由经有界日志核对 | `cmwe045ltaa5df8238934a7418534e325` |
+| 04:29:39.371 | `GET https://dp.srvf.team/api/admin/v1/contents/<合成草稿ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；标题、合成正文、announcement、draft、department 及仅组织 A 可见一致，未置顶，`publishedAt=null`，附件数 0 | `cmwe04gqa8c4990c763b9c3461725789e` |
+| 04:33:48.402 | `GET https://dp.srvf.team/api/admin/v1/members/<合成成员A-ID>`（ID 脱敏） | 原测试管理员；账号 A 登录后的独立对照 | 200 / code 0；原管理员页面仍显示原会话标识 | `cmwe09t0v1d829099ac1f56dd76616de8` |
+| 04:40:53.710 | `GET https://dp.srvf.team/api/admin/v1/members/<合成成员B-ID>`（ID 脱敏） | 原测试管理员；账号 B 登录后的独立对照 | 200 / code 0；A 页面及管理员页面仍显示各自账号标识 | `cmwe0ix9bf03006dcf9a81a65333c3aa3` |
+| 04:42:10.071 | `GET https://dp.srvf.team/api/system/v1/storage-settings` | 现有测试管理员 | 200 / code 0；provider COS、enabled=false，MIME 模式 INHERIT，全局大小字段 null；其他配置未输出 | `cmwe0kk67bd7d93ba686904f3381c605e` |
+| 04:42:54.658 | `GET https://dp.srvf.team/api/system/v1/attachment-type-configs?page=1&pageSize=100&status=ACTIVE&ownerTable=content` | 现有测试管理员 | 200 / code 0，total 0；该过滤空结果不证明没有附件类型 | `cmwe0liib22e5c3255e95e6de28a6c618` |
+| 04:43:37.207 | `GET https://dp.srvf.team/api/system/v1/attachment-type-configs?page=1&pageSize=100&status=ACTIVE` | 现有测试管理员 | 200；content-file 默认 20 MiB，PDF/DOCX/XLSX；content-image 默认 10 MiB，JPEG/PNG/WebP | `cmwe0mfcl47a528ea103f40f6cba7cf81` |
+| 04:43:46.541 | `GET https://dp.srvf.team/api/system/v1/attachment-mime-configs?page=1&pageSize=100&status=ACTIVE&typeConfigId=<content-file类型ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0，total 0；无额外 ACTIVE MIME 条目 | `cmwe0mmjk49c524e9d8a94b54fc5ab189` |
+| 04:43:53.332 | `GET https://dp.srvf.team/api/system/v1/attachment-mime-configs?page=1&pageSize=100&status=ACTIVE&typeConfigId=<content-image类型ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0，total 0；无额外 ACTIVE MIME 条目 | `cmwe0mrsbce3585de03c166a49d4549fa` |
+| 04:45:59.852 | `GET https://dp.srvf.team/api/admin/v1/contents/<合成草稿ID>`（ID 脱敏） | 现有测试管理员 | 200；draft，附件数 0 | `cmwe0phfz7892eadc44f9a4782d148141` |
+| 04:46:04.467 | `GET https://dp.srvf.team/api/system/v1/storage-settings` | 现有测试管理员 | 200；COS 仍 disabled，其他配置未输出 | `cmwe0pkzc5ebdcb4f972c6eda2a51dc5d` |
+| 04:46:39.016 | `POST https://dp.srvf.team/api/admin/v1/contents/<合成草稿ID>/attachments/upload-url`（ID 脱敏） | 现有测试管理员；合成 PDF 文件名、允许 MIME、128 字节 | 503 / 13034；未上传文件，实际服务端路由经有界日志核对 | `cmwe0qbmke6eadbbda68012355fd25f64` |
+| 04:47:37.941 | `GET https://dp.srvf.team/api/admin/v1/contents/<合成草稿ID>`（ID 脱敏） | 现有测试管理员 | 浏览器合并缓存显示 200 / draft / 附件数 0；服务端日志为 304，独立无缓存回读待完成 | `cmwe0rl3d2c0a1eee60f5385724b985f8` |
+| 04:47:57.299 | `GET https://dp.srvf.team/api/admin/v1/contents?page=1&pageSize=50&keyword=<空值负例合成标题>`（标题脱敏） | 现有测试管理员 | 200 / code 0，total 0 | `cmwe0s010a20d6ed2252e15fe3bd3ba21` |
+| 04:48:19.038 | `POST https://dp.srvf.team/api/admin/v1/contents` | 现有测试管理员；合成标题，正文为空 | 400 / 40000；反馈指向 body 长度校验，实际服务端路由经有界日志核对 | `cmwe0sgu7e4881bdd178b6008f50e61cf` |
+| 04:48:47.115 | `GET https://dp.srvf.team/api/admin/v1/contents?page=1&pageSize=50&keyword=<空值负例合成标题>`（标题脱敏） | 现有测试管理员 | 浏览器合并缓存显示 200 / total 0；服务端日志为 304，独立无缓存回读待完成 | `cmwe0t2gyc470a623a6009dcea8286ff6` |
+| 04:52:36.171 | `GET https://dp.srvf.team/api/admin/v1/contents/<合成草稿ID>`（ID 脱敏） | 现有测试管理员；禁用测试标签缓存 | 200 / code 0，draft、附件数 0；服务端日志确认 200 | `cmwe0xz7c3f85b46bc7de09cef8013760` |
+| 04:52:41.896 | `GET https://dp.srvf.team/api/admin/v1/contents?page=1&pageSize=50&keyword=<空值负例合成标题>`（标题脱敏） | 现有测试管理员；禁用测试标签缓存 | 200 / code 0，total 0；服务端日志确认 200 | `cmwe0y3mm8ca010a09d96860c3cacff45` |
+| 05:01:08.086 | `POST https://dp.srvf.team/api/open/v1/recruitment/applications` | 匿名；历史空 multipart，无字段或文件 | 400 / 40000，JSON 请求参数错误；无 Set-Cookie 或 Location，未跟随跳转 | `srvf-qa-resume-7b77648836e94a148f2ff523b8dabe91`（客户端指定并回显） |
+| 05:01:08.216 | `POST https://dp.srvf.team/api/open/v1/recruitment/applications/recognize` | 匿名；历史空 multipart，无字段或文件 | 400 / 40000，JSON 请求参数错误；无 Set-Cookie 或 Location，未跟随跳转 | `srvf-qa-resume-a2b408f307844a1481a911f01d6f7000`（客户端指定并回显） |
+| 05:02:18.085 | `POST https://dp.srvf.team/api/open/v1/recruitment/certificate-claims` | 匿名；历史空 multipart，无字段或文件 | 400 / 40000，JSON 证书类别非法；无 Set-Cookie 或 Location，未跟随跳转 | `srvf-qa-resume-3ac3e0e412534e7b8fe4a38ffb9c8dbc`（客户端指定并回显） |
+| 05:03:33.432 | `GET https://dp.srvf.team/api/admin/v1/members?memberNo=<合成成员A编号>&page=1&pageSize=10`（编号脱敏） | 现有测试管理员；禁用测试标签缓存 | 200 / code 0，total 1；重复提交前 | `cmwe1c2en82a36606496e98d8a7869177` |
+| 05:03:56.088 | `POST https://dp.srvf.team/api/admin/v1/members` | 现有测试管理员；与成员 A 相同合成编号 | 409 / 15002，重复或占用反馈；实际服务端路由已核对 | `cmwe1cju1366a81c5a3f780619726cb70` |
+| 05:04:17.309 | `GET https://dp.srvf.team/api/admin/v1/members?memberNo=<合成成员A编号>&page=1&pageSize=10`（编号脱敏） | 现有测试管理员；禁用测试标签缓存 | 200 / total 1；服务端状态已核对 | `cmwe1d07dddff9c54c7bfcb43bed45711` |
+| 05:04:23.523 | `GET https://dp.srvf.team/api/admin/v1/members/<合成成员A-ID>`（ID 脱敏） | 现有测试管理员；禁用测试标签缓存 | 200；原 ID、合成字段、ACTIVE 和绑定账号一致；服务端状态已核对 | `cmwe1d5043bb236397f2a8c4ef1178592` |
+| 05:08:28.922 | `GET https://dp.srvf.team/api/admin/v1/members?memberNo=<合成审核人R1编号>&page=1&pageSize=10`（编号脱敏） | 现有测试管理员 | 200 / total 0；创建前查重 | `cmwe1ie9j943272ad85a7bb03d0d2bf27` |
+| 05:08:38.845 | `POST https://dp.srvf.team/api/admin/v1/members` | 现有测试管理员；合成审核人 R1 成员 | 201；实际服务端路由已核对 | `cmwe1ilx5be3c5a6f64f3c05880d776d2` |
+| 05:08:46.276 | `GET https://dp.srvf.team/api/admin/v1/members?memberNo=<合成审核人R1编号>&page=1&pageSize=10`（编号脱敏） | 现有测试管理员 | 200 / total 1；合同字段匹配、ACTIVE、无账号；服务端状态已核对 | `cmwe1irnj9dd4fd088e7c4a00d12e6ebe` |
+| 05:08:51.151 | `GET https://dp.srvf.team/api/admin/v1/members/<合成审核人R1成员ID>/memberships`（ID 脱敏） | 现有测试管理员 | 200 / code 0；写前为空数组 | `cmwe1ivf0c2957321a346c089f66f8482` |
+| 05:08:56.510 | `GET https://dp.srvf.team/api/admin/v1/organizations/<合成组织A-ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；ACTIVE | `cmwe1izkmc6987e2bfa85974410b892b8` |
+| 05:09:05.982 | `POST https://dp.srvf.team/api/admin/v1/members/<合成审核人R1成员ID>/memberships`（ID 脱敏） | 现有测试管理员；合成组织 A | 201；实际服务端路由已核对 | `cmwe1j6v42cc749732cc61ae02e0e1dd9` |
+| 05:09:12.132 | `GET https://dp.srvf.team/api/admin/v1/members/<合成审核人R1成员ID>/memberships`（ID 脱敏） | 现有测试管理员 | 200；一条组织 A 的 PRIMARY / ACTIVE 归属；服务端状态已核对 | `cmwe1jblsbbb0dc8bf43e0107d15f5865` |
+| 05:09:28.097 | `GET https://dp.srvf.team/api/admin/v1/users?page=1&pageSize=100&q=<合成审核人R1用户名>`（用户名脱敏） | 现有测试管理员 | 200 / total 0；创建前查重 | `cmwe1jnx58c213c701367098131a459e1` |
+| 05:09:36.040 | `POST https://dp.srvf.team/api/admin/v1/users` | 现有测试管理员；合成审核人 R1 | 201；实际服务端路由已核对 | `cmwe1ju1y22712d5a3dfaff435f0ecce4` |
+| 05:09:49.516 | `GET https://dp.srvf.team/api/admin/v1/users/<合成审核人R1用户ID>`（ID 脱敏） | 现有测试管理员 | 200；USER / ACTIVE，未绑定成员，无邮箱和手机号 | `cmwe1k4gpde81fa3fdcf1ad3d01ddc183` |
+| 05:09:58.027 | `GET https://dp.srvf.team/api/system/v1/users/<合成审核人R1用户ID>/roles`（ID 脱敏） | 现有测试管理员 | 200；空数组 | `cmwe1kb0pb675ded0bb374b7201759ca3` |
+| 05:10:04.714 | `GET https://dp.srvf.team/api/admin/v1/role-bindings?principalType=USER&principalId=<合成审核人R1用户ID>`（ID 脱敏） | 现有测试管理员 | 200；空数组 | `cmwe1kg6ba7fd7b431278abd71437033e` |
+| 05:10:10.595 | `GET https://dp.srvf.team/api/admin/v1/members/<合成审核人R1成员ID>`（ID 脱敏） | 现有测试管理员 | 200；绑定前 `hasAccount=false` | `cmwe1kkq41bdd84dd65065114af8b243c` |
+| 05:10:20.307 | `POST https://dp.srvf.team/api/admin/v1/members/<合成审核人R1成员ID>/account/bind`（ID 脱敏） | 现有测试管理员；合成审核人 R1 | 200；实际服务端路由已核对 | `cmwe1ks7n5acb49597a8a41ce8f229b79` |
+| 05:10:28.358 | `GET https://dp.srvf.team/api/admin/v1/members/<合成审核人R1成员ID>`（ID 脱敏） | 现有测试管理员 | 200；绑定账号 ACTIVE，成员与账号对应 | `cmwe1kyf126ead19ae6f2c30b8f7049d1` |
+| 05:10:33.711 | `GET https://dp.srvf.team/api/admin/v1/users/<合成审核人R1用户ID>`（ID 脱敏） | 现有测试管理员 | 200；memberId 匹配，USER / ACTIVE | `cmwe1l2jp846a4a563119ca9a75498727` |
+| 05:10:49.293 | `GET https://dp.srvf.team/api/admin/v1/members?memberNo=<合成审核人R2编号>&page=1&pageSize=10`（编号脱敏） | 现有测试管理员 | 200 / total 0；创建前查重 | `cmwe1leklc389ef881712f0400d56af27` |
+| 05:10:59.490 | `POST https://dp.srvf.team/api/admin/v1/members` | 现有测试管理员；合成审核人 R2 成员 | 201；服务端状态和实际路径已核对 | `cmwe1lmg0588827ed59b5dc9723fef5c8` |
+| 05:11:07.445 | `GET https://dp.srvf.team/api/admin/v1/members?memberNo=<合成审核人R2编号>&page=1&pageSize=10`（编号脱敏） | 现有测试管理员 | 200 / total 1；合同字段匹配、ACTIVE、无账号；服务端状态已核对 | `cmwe1lsktcec0cf93729fb6a5b8e927fb` |
+| 05:14:49.023 | `POST https://dp.srvf.team/api/auth/v1/login` | 普通合成账号 A；Mac 本机独立 HTTPS 进程 | 200 / code 0；令牌仅在进程内处理 | `cmwe1qjmk4baff11bea146878aaada1c2` |
+| 05:14:53.466 | `GET https://dp.srvf.team/api/app/v1/me` | 普通合成账号 A | 200 / code 0；memberId 匹配，USER、账号及成员 ACTIVE，`canUseApp=true` | `cmwe1qn0kdf145e19f5e763ecc3a057fc` |
+| 05:14:58.347 | `POST https://dp.srvf.team/api/auth/v1/login` | 普通合成账号 B；Mac 本机独立 HTTPS 进程 | 200 / code 0；令牌仅在进程内处理 | `cmwe1qqsv77bc8bb6dd53477fe93c3a57` |
+| 05:15:02.047 | `GET https://dp.srvf.team/api/app/v1/me` | 普通合成账号 B | 200 / code 0；memberId 匹配，USER、账号及成员 ACTIVE，`canUseApp=true` | `cmwe1qtmtbcec1bb5e903d638f75c2a15` |
+| 05:16:32.195 | `GET https://dp.srvf.team/api/admin/v1/members/<合成审核人R2成员ID>/memberships`（ID 脱敏） | 现有测试管理员 | 200；写前为空数组 | `cmwe1sr7f785bbe7e5ff2964e2479756f` |
+| 05:16:37.664 | `GET https://dp.srvf.team/api/admin/v1/organizations/<合成组织A-ID>`（ID 脱敏） | 现有测试管理员 | 200；ACTIVE | `cmwe1svdje1291bd55693f01963413664` |
+| 05:16:47.376 | `POST https://dp.srvf.team/api/admin/v1/members/<合成审核人R2成员ID>/memberships`（ID 脱敏） | 现有测试管理员；合成组织 A | 201；实际服务端路由已核对 | `cmwe1t2vk9eeb6843a505f43e42551f68` |
+| 05:16:53.501 | `GET https://dp.srvf.team/api/admin/v1/members/<合成审核人R2成员ID>/memberships`（ID 脱敏） | 现有测试管理员 | 200；一条组织 A 的 PRIMARY / ACTIVE 归属；服务端状态已核对 | `cmwe1t7lg4e6bf97623a092ed2ed57d88` |
+| 05:17:09.706 | `GET https://dp.srvf.team/api/admin/v1/users?page=1&pageSize=100&q=<合成审核人R2用户名>`（用户名脱敏） | 现有测试管理员 | 200 / total 0；创建前查重 | `cmwe1tk3jb5abd2755f42a2d3411050f9` |
+| 05:17:17.119 | `POST https://dp.srvf.team/api/admin/v1/users` | 现有测试管理员；合成审核人 R2 | 初次事件读取未取得回执，回查后在未截断事件中找到迟到的 201 / code 0；实际服务端路由已核对，未重试 | `cmwe1tptp691b67a850f3c85641e83224` |
+| 05:17:37.541 | `GET https://dp.srvf.team/api/admin/v1/users?page=1&pageSize=100&q=<合成审核人R2用户名>`（用户名脱敏） | 现有测试管理员 | 200 / code 0，total 1，精确匹配一条 USER / ACTIVE，成员暂空；服务端状态已核对 | `cmwe1u5kr3254b4ccb925acbdab8c70b1` |
+| 05:19:09.354 | `GET https://dp.srvf.team/api/admin/v1/users/<合成审核人R2用户ID>`（ID 脱敏） | 现有测试管理员 | 200；USER / ACTIVE，未绑定成员，无邮箱和手机号 | `cmwe1w4h344b09d5bc1236a5aa2e9b6e6` |
+| 05:19:14.471 | `GET https://dp.srvf.team/api/system/v1/users/<合成审核人R2用户ID>/roles`（ID 脱敏） | 现有测试管理员 | 200；空数组 | `cmwe1w8dp477c607c9a88602b480e9eb6` |
+| 05:19:19.370 | `GET https://dp.srvf.team/api/admin/v1/role-bindings?principalType=USER&principalId=<合成审核人R2用户ID>`（ID 脱敏） | 现有测试管理员 | 200；空数组 | `cmwe1wc6edb39c893e450e8fe831834cc` |
+| 05:19:24.882 | `GET https://dp.srvf.team/api/admin/v1/members/<合成审核人R2成员ID>`（ID 脱敏） | 现有测试管理员 | 200；绑定前 `hasAccount=false` | `cmwe1wgfbd3408cc7d62028581ff5d37b` |
+| 05:19:33.593 | `POST https://dp.srvf.team/api/admin/v1/members/<合成审核人R2成员ID>/account/bind`（ID 脱敏） | 现有测试管理员；合成审核人 R2 | 200；实际服务端路由已核对 | `cmwe1wn4kb8e0ad6e3f3e03d29a50dcdb` |
+| 05:19:39.112 | `GET https://dp.srvf.team/api/admin/v1/members/<合成审核人R2成员ID>`（ID 脱敏） | 现有测试管理员 | 200；绑定账号 ACTIVE，成员与账号对应 | `cmwe1wrdmac65febb5829e015e86f5c40` |
+| 05:19:44.802 | `GET https://dp.srvf.team/api/admin/v1/users/<合成审核人R2用户ID>`（ID 脱敏） | 现有测试管理员 | 200；memberId 匹配，USER / ACTIVE | `cmwe1wvrobf880311bd3768010bf587e6` |
+| 05:20:35.998 | `GET https://dp.srvf.team/api/system/v1/roles/<发布审核角色ID>/permissions`（ID 脱敏） | 现有测试管理员 | 200；`activity-publish-reviewer` 有 3 项权限 | `cmwe1xz9xe630061867e448af03617d90` |
+| 05:20:42.164 | `GET https://dp.srvf.team/api/system/v1/roles/<考勤初审角色ID>/permissions`（ID 脱敏） | 现有测试管理员 | 200；`attendance-first-reviewer` 有 5 项权限，含结算初审 | `cmwe1y43affc97fa85f78792054470a6d` |
+| 05:20:47.043 | `GET https://dp.srvf.team/api/system/v1/roles/<考勤终审角色ID>/permissions`（ID 脱敏） | 现有测试管理员 | 200；`attendance-final-reviewer` 有 6 项权限，含结算终审 | `cmwe1y7t7b88477676c9ba861c0411944` |
+| 05:21:01.135 | `GET https://dp.srvf.team/api/admin/v1/role-bindings/preview?principalType=USER&principalId=<R1>&roleId=<发布审核角色>&scopeType=ORGANIZATION&scopeOrgId=<组织A>`（ID 脱敏） | 现有测试管理员 | 200 / code 0，valid=true、冲突 0；仅预览 | `cmwe1yippa509f9025758f5de39ae46ad` |
+| 05:21:15.518 | `GET https://dp.srvf.team/api/admin/v1/role-bindings/preview?principalType=USER&principalId=<R1>&roleId=<考勤初审角色>&scopeType=ORGANIZATION&scopeOrgId=<组织A>`（ID 脱敏） | 现有测试管理员 | 200 / code 0，valid=true、冲突 0；仅预览 | `cmwe1ytueb132914e4c68b39d11ff4c4f` |
+| 05:21:47.464 | `GET https://dp.srvf.team/api/admin/v1/role-bindings/preview?principalType=USER&principalId=<R2>&roleId=<考勤终审角色>&scopeType=ORGANIZATION&scopeOrgId=<组织A>`（ID 脱敏） | 现有测试管理员 | 200 / code 0，valid=true、冲突 0；仅预览 | `cmwe1zigp7064e2499a72f2b4832b6767` |
+| 05:22:28.657 | `GET https://dp.srvf.team/api/system/v1/roles/<既有测试组织者角色ID>/permissions`（ID 脱敏） | 现有测试管理员 | 200；`qa1405-organizer-20261107` 有 4 项活动创建、更新及规则选择权限 | `cmwe20e8wc07bf058fccc4bea221adac1` |
+| 05:22:37.135 | `GET https://dp.srvf.team/api/admin/v1/role-bindings/preview?principalType=USER&principalId=<A>&roleId=<测试组织者角色>&scopeType=ORGANIZATION&scopeOrgId=<组织A>`（ID 脱敏） | 现有测试管理员 | 200 / code 0，valid=true、冲突 0；仅预览 | `cmwe20kscb7ccf56d0732decea243bd1b` |
+| 05:25:30.833 | `GET https://dp.srvf.team/api/admin/v1/role-bindings/preview`（A、组织者角色、组织 A、指定到期时间；ID 脱敏） | 现有测试管理员 | 200 / code 0，valid=true、冲突 0；响应未回显结束时间 | `cmwe24atpa5818b1f9988d302978a99b9` |
+| 05:25:37.641 | 同一预览路径（R1、发布审核角色、组织 A、指定到期时间；ID 脱敏） | 现有测试管理员 | 200 / code 0，valid=true、冲突 0 | `cmwe24g2o99feccfe9c46e06580162cbc` |
+| 05:25:44.789 | 同一预览路径（R1、考勤初审角色、组织 A、指定到期时间；ID 脱敏） | 现有测试管理员 | 200 / code 0，valid=true、冲突 0 | `cmwe24lkzd29c0a29f0ed1ada25b26466` |
+| 05:25:51.897 | 同一预览路径（R2、考勤终审角色、组织 A、指定到期时间；ID 脱敏） | 现有测试管理员 | 200 / code 0，valid=true、冲突 0 | `cmwe24r2fd67ab23c6c61ddca10f6bd4b` |
+| 05:26:01.533 | `GET https://dp.srvf.team/api/admin/v1/role-bindings?principalType=USER&principalId=<A>&roleId=<组织者角色>`（ID 脱敏） | 现有测试管理员 | 200；空数组 | `cmwe24yi31435cd107c4f7a6cbf4af7e6` |
+| 05:26:07.861 | 同一绑定列表路径（R1、发布审核角色；ID 脱敏） | 现有测试管理员 | 200；空数组 | `cmwe253dx32450028002addd83204d024` |
+| 05:26:13.772 | 同一绑定列表路径（R1、考勤初审角色；ID 脱敏） | 现有测试管理员 | 200；空数组 | `cmwe257y1f7dddc410574851fdab09ea0` |
+| 05:26:19.671 | 同一绑定列表路径（R2、考勤终审角色；ID 脱敏） | 现有测试管理员 | 200；空数组 | `cmwe25cmsd0d2d9363062d929f22436dd` |
+| 05:38:34.843 | `POST https://dp.srvf.team/api/auth/v1/login` | 普通合成账号 A；为独立活动测试建立新会话 | 200 / code 0；凭据和令牌仅在本机短时进程内处理 | `cmwe2l3v8242753de516924127f17dad6` |
+| 05:38:39.040 | `GET https://dp.srvf.team/api/app/v1/me` | 普通合成账号 A | 200 / code 0；memberId 匹配，USER、账号及成员 ACTIVE，`canUseApp=true` | `cmwe2l73182c7d1a9d9acfd1e6dc67d15` |
+| 05:39:02.754 | `GET https://dp.srvf.team/api/app/v1/my/managed-activities?page=1&pageSize=100&includeArchived=true` | 普通合成账号 A | 200 / code 0；完整分页预查，本轮唯一合成标题未命中 | `cmwe2lpe334dd3a0554893d48cc9d84e4` |
+| 05:39:02.869 | `POST https://dp.srvf.team/api/app/v1/my/managed-activities` | 普通合成账号 A；组织 A、邀请可见、关闭公开报名、无图片 | 503 / 20036；响应 message 未捕获，单次写入未重试 | `cmwe2lphuf2835c6296a7013ba9f28fa5` |
+| 05:39:02.981 | `GET https://dp.srvf.team/api/app/v1/my/managed-activities?page=1&pageSize=100&includeArchived=true` | 普通合成账号 A | 200 / code 0；完整分页回查未找到该唯一合成标题 | `cmwe2lplz3a0bd240d013555620d80d9c` |
+| 05:45:54.305 | `GET https://dp.srvf.team/api/admin/v1/activities/<合成草稿ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；draft、组织 A、invitation、invitation_only、公开报名关闭、无需保险、无图片；活动为 11 月 20 日 09:00–11:00 +08、报名截止为 null | `cmwe2uiy200d75796997d263d36d76617` |
+| 05:46:36.774 | `GET https://dp.srvf.team/api/admin/v1/activities/<合成草稿ID>/registrations?page=1&pageSize=100`（ID 脱敏） | 现有测试管理员 | 200 / code 0，total 0；邀请总数尚 UNKNOWN | `cmwe2vfojd76040e23303762b969191fb` |
+| 05:47:08.587 | `GET https://dp.srvf.team/api/app/v1/my/managed-activities/<合成草稿ID>/invitations?page=1&pageSize=100`（ID 脱敏） | 现有测试管理员，未绑定成员 | 403 / 40300；无法据此判断邀请列表为空 | `cmwe2w4959be2a59c6b61e2fe479b55e1` |
+| 05:49:23.189 | `PATCH https://dp.srvf.team/api/admin/v1/activities/<合成草稿ID>/publish`（ID 脱敏） | 现有测试管理员；邀请制合成活动 | 200 / code 0；实际服务端路由已核对 | `cmwe2z04b36c1c844b464922264cda166` |
+| 05:49:40.264 | `GET https://dp.srvf.team/api/admin/v1/activities/<合成活动ID>`（ID 脱敏） | 现有测试管理员 | 200 / code 0；published、publishedAt 已设置，组织 A、invitation、invitation_only、公开报名关闭、无需保险 | `cmwe2zd9fb1119ad40c882fb29eb57525` |
+| 05:49:55.119 | `GET https://dp.srvf.team/api/admin/v1/activities/<合成活动ID>/registrations?page=1&pageSize=100`（ID 脱敏） | 现有测试管理员 | 200 / code 0；total 0，服务端状态已核对 | `cmwe2zoqac14729a63a506638e2a4a0d5` |
+| 05:57:26.056 | `POST https://dp.srvf.team/api/auth/v1/login` | 合成账号 A；为独立保险测试建立新会话 | 200 / code 0 | `cmwe39ctz0f1f29ff4dbb978499dba333` |
+| 05:57:30.735 | `GET https://dp.srvf.team/api/app/v1/me` | 合成账号 A | 200 / code 0；成员匹配、USER、账号及成员 ACTIVE，App 可用 | `cmwe39gdh4e69be065382c487582ada6d` |
+| 05:57:34.976 | `POST https://dp.srvf.team/api/auth/v1/login` | 合成账号 B；为独立保险测试建立新会话 | 200 / code 0 | `cmwe39jn4e48891067c48e5f4b07a284c` |
+| 05:57:39.584 | `GET https://dp.srvf.team/api/app/v1/me` | 合成账号 B | 200 / code 0；成员匹配、USER、账号及成员 ACTIVE，App 可用 | `cmwe39n7j912e5578e1b5d730efeb4f75` |
+| 05:57:46.760 | `GET https://dp.srvf.team/api/app/v1/me/insurances?page=1&pageSize=100` | 合成账号 A | 200 / code 0；完整分页查重，唯一合成编号未命中；请求禁缓存 | `cmwe39sq46115214c6397bf55d01bce56` |
+| 05:57:46.841 | `POST https://dp.srvf.team/api/app/v1/me/insurances` | 合成账号 A；远期合成个人保险 | 201 / code 0；单次创建，响应 message 未保留 | `cmwe39ssh00d4aabe2bd4f0a2ed0c3652` |
+| 05:57:46.960 | `GET https://dp.srvf.team/api/app/v1/me/insurances?page=1&pageSize=100` | 合成账号 A | 200 / code 0；完整分页读回，合成字段和版本均匹配；请求禁缓存 | `cmwe39svv0e2809bf50634255587161dd` |
+| 05:57:53.988 | `PATCH https://dp.srvf.team/api/app/v1/me/insurances/<合成保单ID>`（ID 脱敏） | 合成账号 B；尝试修改 A 的保单 | 404 / 26001；单次请求，响应 message 未保留 | `cmwe39ybw03a24005582b738af53d24b2` |
+| 05:57:54.106 | `GET https://dp.srvf.team/api/app/v1/me/insurances?page=1&pageSize=100` | 合成账号 A | 200 / code 0；完整回读字段与版本均不变；请求禁缓存 | `cmwe39yejcfe9aec6be59168f981a643e` |
+| 05:57:58.705 | `DELETE https://dp.srvf.team/api/app/v1/me/insurances/<合成保单ID>?expectedVersion=<版本>`（ID、版本脱敏） | 合成账号 B；尝试删除 A 的保单 | 404 / 26001；单次请求，响应 message 未保留 | `cmwe3a1xvbe2a12f088e39d108883ee2d` |
+| 05:57:58.800 | `GET https://dp.srvf.team/api/app/v1/me/insurances?page=1&pageSize=100` | 合成账号 A | 200 / code 0；完整回读字段与版本均不变；请求禁缓存 | `cmwe3a21rf1afbf076316437b521837a6` |
+| 06:03:18.539 | 适配请求的预定目标 `GET https://dp.srvf.team/api/admin/v1/activities/<合成活动ID>/responsibilities`（ID 脱敏） | 现有测试管理员 | 409 / 20030；反馈活动当前状态不允许操作，data 为空或缺失，职责人数与组织均 UNKNOWN；实际服务端路径未独立核对 | `cmwe3gwp68fb761391c36a8cf063daab9` |
+| 06:16:19.577 | `POST https://dp.srvf.team/api/auth/v1/login` | 合成账号 B；为 App/后台只读对照建立新会话 | 200 / code 0 | `cmwe3xnik655a7a64768d135102fff515` |
+| 06:16:24.227 | `GET https://dp.srvf.team/api/app/v1/me` | 合成账号 B | 200 / code 0；USER、账号及成员 ACTIVE、App 可用，userId/memberId 均匹配 | `cmwe3xr3k3408cea3f2fe7f8c02cab344` |
+| 06:16:29.003 | `GET https://dp.srvf.team/api/app/v1/activities/<合成活动ID>`（ID 脱敏） | 合成账号 B | 404 / 20001；响应 message 未保留 | `cmwe3xus64a2624260d8e255bf109472e` |
+| 06:16:37.436 | `GET https://dp.srvf.team/api/admin/v1/activities/<同一合成活动ID>`（ID 脱敏） | 合成账号 B | 200 / code 0；ID 与组织 A 匹配，published、invitation、invitation_only、公开报名关闭 | `cmwe3y1a0d46ef2c4d8ea2904c584d689` |
+| 06:31:37.180 | `POST https://dp.srvf.team/api/auth/v1/login` | 合成账号 B；为报名负例建立独立会话 | 200 / code 0 | `cmwe4hbm5b1d159edfe4bf7083a551de6` |
+| 06:31:41.606 | `GET https://dp.srvf.team/api/app/v1/me` | 合成账号 B | 200 / code 0；用户与成员匹配、USER、账号及成员 ACTIVE、App 可用 | `cmwe4hezxbb390fd568c20ebfa1f3167e` |
+| 06:31:46.098 | `GET https://dp.srvf.team/api/admin/v1/activities/<合成活动ID>`（ID 脱敏） | 合成账号 B | 200 / code 0；同一组织 A 活动仍 published、invitation、invitation_only、公开报名关闭 | `cmwe4higq68c9926691f0d3f8bc84a521` |
+| 06:31:50.718 | `GET https://dp.srvf.team/api/app/v1/my/registrations?page=1&pageSize=100` | 合成账号 B | 200 / code 0；完整分页未找到该合成活动报名 | `cmwe4hm1m77fcbccec3428aca7b88d0d4` |
+| 06:31:50.843 | `POST https://dp.srvf.team/api/app/v1/my/registrations` | 合成账号 B；同一合成活动 | 409 / 20120；单次请求，响应 message 未保留 | `cmwe4hm4f72d08fcf9f9c23098ff1650a` |
+| 06:31:50.951 | `GET https://dp.srvf.team/api/app/v1/my/registrations?page=1&pageSize=100` | 合成账号 B | 200 / code 0；完整分页仍未找到该合成活动报名 | `cmwe4hm8gb717d41b92f9ee03ddba7f0d` |
+| 06:44:00.645 | `POST https://dp.srvf.team/api/auth/v1/login` | 合成账号 B；为随机对象负例建立独立会话 | 200 / code 0 | `cmwe4x98zaa8fcffd3731b832613e4daf` |
+| 06:44:05.029 | `GET https://dp.srvf.team/api/app/v1/me` | 合成账号 B | 200 / code 0；用户与成员匹配、USER、账号及成员 ACTIVE、App 可用 | `cmwe4xclt2d39c36e5216686be95a394d` |
+| 06:44:09.931 | `GET https://dp.srvf.team/api/admin/v1/activities/<随机合成对象ID>`（ID 脱敏） | 合成账号 B | 404 / 20001；先以详情 HTTP 确认未找到，再进行负例 | `cmwe4xgdr4c0fdca689a06dd178575137` |
+| 06:44:10.024 | `GET https://dp.srvf.team/api/app/v1/my/registrations?page=1&pageSize=100` | 合成账号 B | 200 / code 0；完整分页未找到该随机对象 | `cmwe4xggm69d4a69d826ff60fc539e404` |
+| 06:44:10.129 | `POST https://dp.srvf.team/api/app/v1/my/registrations` | 合成账号 B；随机合成对象 | 404 / 20001；单次请求，响应 message 未保留 | `cmwe4xgju937d5e854f2fc30b9e954a8c` |
+| 06:44:10.260 | `GET https://dp.srvf.team/api/app/v1/my/registrations?page=1&pageSize=100` | 合成账号 B | 200 / code 0；完整分页仍未找到该随机对象 | `cmwe4xgmo01388ac9cdb92700775269da` |
+
+- 历史 HTML 404 的 38 个方法中，累计 16 个已有对齐方法、路径及相应查询或无效请求体的匿名有限样本；其中企业微信绑定授权样本只恢复 HTTP 状态，响应类型未知。其余 22 项涉及有状态 POST、身份、短信或外部服务，未确认隔离条件前不盲目重放。企业微信登录授权负例未发起 OAuth 跳转，两个 step-up 负例均被匿名守卫拒绝。令牌负例[脱敏回执](evidence/20261113/history-integration-token-invalid.json)不含凭据，也未签发 token；[两条招新空 multipart](evidence/20261113/history-recruitment-empty-multipart.json)及[证书申报空 multipart](evidence/20261113/history-claim-empty-multipart.json)均无文件或字段。源码中的限流器可能写入限流桶，本轮未证明其实际写入状态。所有样本均不等于已认证流程或完整业务验收。
+- **LOCAL**：已核对并行前端分支 `codex/retire-legacy-attendance-consumer-20261112` 的候选 `e0ec0425302b746ee51048a8f6183516f9a71f7e`：其写集包括 `src/api/srvf-member.ts` 和 `members/cockpit.vue`，该会话仍在运行。新建队员的完整合同修复与共享文件重叠，未通过重复 API 或类型断言绕开，也未改动对方工作树；等待安全的串行集成条件。
+- **LOCAL 行为回归**：隔离前端分支 `codex/member-create-contract-test-20261113` 基于 `6375148a61445972e792ce37cb401fd8e5162538`，新增测试 `tests/member_create_contract.behavior.test.mjs`（当前工作树 SHA-256 `14d449dd21a974a4e156784c259681769c810d755f5b06f15d71822c1956ec89`；先前误将中间版本摘要 `c59e56091bcd157cf24566a74b176f55b57152a04389d9004d8f4f6131e4282c` 写为最终版本），未提交或推送。真实成员创建 API 包装器经 Axios 发往本机合成 fixture 的正确合同对照通过；使用同一修正后夹具，基线的真实 `useMembers` 提交编排 FAIL，序列化字段仅 `memberNo`/`displayName`；将并行会话候选 `1fe9ae3afa340237c63603f700c18a89c8fe6857` 的独立基线补丁仅应用至本隔离工作树后，2/2 测试通过。回调桩模拟表单校验，不能算 GUI 或线上验收；本机回环端口测试后均验证释放，未请求线上。首次 `location` 缺失及候选缺少字典方法均为已修正的夹具问题，不算产品失败；候选未部署。
+- 同一 **LOCAL 候选** 的独立补丁 SHA-256 `f6562e6bda02b583178980c8b50fb1f9b33e173fbe9c57589ee4d797ca54865b`，13 个补丁目标文件的 Git blob 与审查包后像一致；针对相关文件的只读 ESLint、Prettier 检查和 `pnpm exec vue-tsc --noEmit --skipLibCheck` 均通过。候选仍是独立工作树中的未提交变更，不等于仓库 main、部署或真实 GUI 回归通过。
+- 旧测试凭据文件、QA/SRVF 环境变量及目标域名钥匙串元数据未发现可用隔离账号。当前已知的管理员浏览器会话未绑定成员；普通角色和跨组织业务链仍 BLOCKED。不得从原始回执提取令牌或在本台账保存凭据。
+- **DEPLOYED_RUNTIME，只读运维证据**：04:10:15.229 之后至 04:17:12 之前，在已与真实请求日志关联的目标 API 容器中，只读检查编译产物及单个非秘密配置项。HTTP 请求日志序列化器用非凭据合成样本验证仅输出方法和去除查询串的路径，不输出请求体；配置含密码、令牌和认证头等字段的脱敏路径。活动责任开关 `ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED` 的容器环境值及编译解析结果均为 `false`。精确操作时间 UNKNOWN；这不证明运行进程内存配置、代理/自定义日志或浏览器扩展的行为，亦不证明部署 SHA。见[脱敏记录](evidence/20261113/runtime-logger-activity-flag.json)。
+- **DEPLOYED_RUNTIME 普通活动草稿代码核对**：目标容器编译产物中，普通活动 create 调用活动创建；检查的两个直接方法片段未匹配通知、outbox、微信、短信及网络请求关键词，创建路径含审计与图片签名，空图片 key 在附件签名 helper 中提前返回。[脱敏记录](evidence/20261113/runtime-managed-draft.json)的记录时间为 05:30:59、精确起始时刻 UNKNOWN；这不是完整调用图，不能排除间接调用、数据库触发器或非空图片 key 的外部访问。
+- **LOCAL 角色方案，尚未授权**：普通成员自助报名和本人打卡按本地合同不需要管理员角色；具体报名结果依分配模式而定，不能预设都要人工审批。若由成员 A 提交活动与考勤/结算，另需不同于 A、B 的合成一审 R1 和终审 R2；候选为组织 A 范围内的 `activity-publish-reviewer`、`attendance-first-reviewer`、`attendance-final-reviewer`，分别先核对线上角色和 scope。`org-admin` 是较宽的候选，源码目录约 50 项权限且包含通知相关权限，不得仅为凑前置盲目授予。发布及审核可能产生通知意图；结算终审同步成功不等于已入账，后台 worker 配置与实际账本状态仍需验证。以上均未做线上角色授权，不代替运行环境判权。
+- **GUI 浏览器限制与登录样本**：新建 Chrome 无痕窗口在原生界面显示无痕标识，但浏览器扩展对该标签返回 `Tab not found`，可控列表只含普通窗口；浏览器清单未提供另一个受支持的独立浏览器。应用户要求直接调用内置浏览器入口打开测试站，当前工具返回 `Browser is not available: iab`，未创建标签。该次空白无痕窗口已关闭，未修改扩展或密码设置。后续以受支持的原生窗口重新建立无痕会话，先用非凭据占位串确认密码框不在辅助信息中回显并清空，04:33:26.442 用合成账号 A 登录后进入 SRVF 首页；未见保存密码提示。无痕标签的登录 HTTP 状态码与请求 ID 均 UNKNOWN；随后原管理员会话仍能独立发出上表中的 200 请求并显示原页面标识。这支持两窗口当次隔离，但不证明跨角色业务或退出状态，普通账号完整 GUI 流程仍 NOT_RUN。
+- **GUI 内置浏览器复核**：应用户提醒，在北京时间 06:46:28 后、06:50:34 前再次读取当前计算机操作工具的浏览器清单，仅列出 Chrome；尝试为 `iab` 新建空白标签仍返回 `Browser is not available: iab`，没有创建标签或访问目标。该结论只限当前工具会话，不代表用户设备或其他浏览器无法使用；已保留原有 Chrome 账号窗口。
+- **GUI 普通账号有限操作**：账号 A 在无痕首页实际点击“活动列表”进入活动页，页面提示当前账号没有创建活动权限，本设备草稿入口显示无记录；04:35:40.818 点击刷新后仍为空。页面没有站内搜索框，浏览器页内查找本轮合成草稿标题未命中，只说明当前展示页，不能外推后端所有分页或权限范围。该无痕标签的 HTTP 回执、视口尺寸及截图暂未捕获；并非活动创建或普通角色业务闭环通过。
+- **GUI 第二账号登录样本**：以新建 Chrome Guest 窗口访问测试站，登录前为未登录页；非凭据占位输入的安全文本栏未在辅助信息回显，已清空。04:40:08.006 合成账号 B 登录后进入 SRVF 首页并显示其合成账号标识，未见保存密码提示；账号 A 的无痕页面与原管理员页面仍保留各自标识。Guest 标签在扩展清单中不可控，登录 HTTP 状态码和请求 ID 为 UNKNOWN；尚未证明 B 的业务或跨组织权限。未全局注销，服务端会话退出状态尚未验证。
+- **GUI 账号 B 权限反馈样本**：04:41:23.124 在 Guest 首页点击“队员列表”，提示无查看队员权限并列出 `member.read.record`；04:41:39.805 在同一窗口直接打开合成成员 A 的已知档案地址，显示“未找到该队员或无权查看”，未显示 A 的编号或姓名。该窗口 HTTP 状态、请求 ID 和截图 UNKNOWN / NOT_CAPTURED；由于 B 本身缺少全局队员读取权限，不能仅凭此样本认定跨组织授权隔离通过。
+- **GUI 账号 B 交互有限样本**：04:57:03.564 在无权限页面实际向下滚动，辅助信息仍含权限说明和页脚；连续 Tab 四次均有焦点落点，但无法仅凭辅助信息判断视觉焦点或控件是否在屏幕内。04:57:26.887 放大至 Chrome 显示的 110% 后再次滚动和 Tab，仍有上述辅助信息与焦点；随后执行 Cmd+0，110% 指示消失，但未独立读到明确 100% 数值。原生接口不支持设置精确窗口尺寸，Guest 标签不可由扩展控制，普通账号的三个指定分辨率和可脱敏截图仍为 NOT_RUN / NOT_CAPTURED；见[操作摘要](evidence/20261113/ordinary-gui-resume.json)。
+- **GUI 跨组织活动可见性待判**：05:55:11，组织 B 的普通 USER 在后台活动列表看到组织 A 的邀请制已发布合成活动的标题、地点、时间及非公开标记；05:57:44 实际点击进入同一活动详情，仍能看到标题和合成地点，报名区提示缺 `activity-registration.read.record`。具体操作见[脱敏证据](evidence/20261113/guest-b-activity-visibility.json)；Guest 标签的 HTTP 状态及 request ID UNKNOWN，未代报名或写入。当前 OpenAPI 和本地后台旧合同允许 USER 读取 published/completed 活动，未声明按组织或邀请过滤；[v1.1 正式方案 §10.1 与 AC-012](../archive/reviews/activity-business-overhaul-v1.1/SRVF_活动业务全流程修正方案_正式版_v1.1.md)要求邀请活动只对受邀人、参与人和工作人员可见。B 的邀请关系及该目标在当前部署的适用阶段尚未独立证实，不能据此直接认定漏洞或权限通过；应确认产品边界并实测 App 与后台各读面。
+- **DEPLOYED_HTTP App / 后台同对象对照**：B 的身份经 `/me` 确认后，访问同一合成活动的 App 详情返回 404 / 20001，后台详情返回 200 / code 0，且确认活动 ID、组织 A、published、invitation、invitation_only 和关闭公开报名均匹配。[逐请求证据](evidence/20261113/activity-app-admin-comparison.json)与上述 GUI 相互印证；邀请、参与及工作人员关系未独立证实，不能据此单独断定违反 v1.1 或完成全量权限验收。此独立会话未执行退出，服务端退出状态 UNKNOWN。
+- 现有管理员对该合成活动的职责列表单次适配查询返回 409 / 20030，[脱敏回执](evidence/20261113/activity-responsibilities.json)未独立核对服务端实际路径，无法据此得出职责人数或组织；本地源码在责任制开关关闭时可返回同一码，但部署 SHA UNKNOWN。
+- **合同差异，不判缺陷**：线上 OpenAPI 的 `AdminSubmitSimpleActivityReviewDto` 含可选 `expectedDraftHash`，当前本地源码同名 DTO 未声明该字段。部署 SHA UNKNOWN；不以本地实现保证线上送审并发或通知行为。
+- 单条合成队员创建准备时，隔离浏览器工具发生异常；保留的浏览器事件中未找到目标 POST，同编号回查 total 0，但事件缓冲标记截断。随后在独立 1Panel 终端只读核对目标 API 容器的 UTC 19:23:00–19:26:10 日志：命令退出 0，共 24 行，两次已知 GET 的请求 ID 各命中 2 行，按 JSON 方法和目标路径匹配的 POST 为 0；匹配表达式用合成 JSON 正负例验证。日志查询执行于北京时间 03:28:40–03:34:13 区间内，精确时刻未捕获。此结果支持请求未到达该容器，仍不能排除其他格式或异步情况；未显示、保存原始日志或凭据。核对后才考虑一次受控重试，不换编号盲目重放。
+- 后续在修正工具匹配逻辑、重新查重后，使用隔离浏览器分别单次适配请求体，线上创建合成成员 A、B 均返回 201 / code 0；当时各自独立列表和详情回读为 ACTIVE 且与合成字段一致，成员归属均为空、未绑定账号。此为 **DEPLOYED_HTTP** 有限数据准备，不能视为后台原表单已修复；后续组织和账号准备见下文。
+- 合成组织 A、B 在用户明确说明目标测试库及数据均为合成后，分别于唯一 ACTIVE 根节点下创建，未修改根或既有组织。由于单标签适配前的浏览器事件仍显示原路径，额外按各自创建 request ID 查目标容器限定时间日志，确认实际均为 `POST /api/admin/v1/organizations`；各自独立详情回读一致，两个 ID 不同。该记录为 **DEPLOYED_HTTP** 数据准备，不能冒充原组织表单 GUI 验收。
+- 合成成员 A→组织 A 与成员 B→组织 B 的 PRIMARY 归属分别单次写入，均通过成员归属列表、归属详情和有界容器日志独立核对：两条均为 ACTIVE、startedAt 有效、endedAt=null，且成员/组织/归属 ID 与各自回执一致。该时点两人尚未绑定登录账号；后续绑定见逐请求记录，不等于普通角色业务或跨组织权限通过。
+- 两个合成 USER 的创建和各自成员绑定使用受控浏览器请求体适配，创建前均查重，创建后均回读 ACTIVE / USER，无邮箱、手机号，普通角色列表与 role bindings 为空；绑定后分别从成员与账号两端回读一致。4 次写入的实际目标与状态均用目标容器[有界日志统计](evidence/20261113/account-ab-route-summary.json)按请求 ID 独立核对。口令未写入本台账、截图或仓库；这不证明其他代理、浏览器扩展或自定义日志的行为。账号 A、B 均有上述 GUI 登录样本；这不代表原 GUI 创建表单已修复。
+- **DEPLOYED_HTTP 普通身份通过样本**：A/B 分别通过 Mac 本机受控短时进程登录并读取 `/me`，4 次均为 200 / code 0；各自 memberId、USER、ACTIVE 与 App 可用状态均经布尔断言匹配。该进程仅监听回环、核对 PID 后接收合成账号信息，未输出或持久化口令/令牌；完成后已正常退出且端口无监听。[脱敏结果](evidence/20261113/ordinary-http-identity.json)不证明其他代理或扩展的日志行为。此次登录会建立服务端会话，未执行退出，服务端退出状态 UNKNOWN；不代表活动、考勤或结算业务通过。
+- **DEPLOYED_HTTP 普通活动创建 BLOCKED**：A 的 App 身份确认后，邀请制草稿创建单次返回 503 / 20036；完整本人列表写前、写后均未找到该唯一合成标题，未重试。响应 message 未捕获；本地源码将 20036 映射为活动责任制工作流未启用，目标容器此前读得该开关环境值 `false`，但部署 SHA 与进程内配置均 UNKNOWN。未取得草稿 ID，故未发送 B 的跨账号详情读取；[脱敏逐请求证据](evidence/20261113/ordinary-activity-disabled.json)。该新会话未尝试退出，状态 UNKNOWN；不修改全局开关或部署以绕过阻断。
+- **DEPLOYED_HTTP 关闭报名负例**：B 的身份和同一合成活动的 published / invitation / 公开报名关闭状态确认后，旧自助报名入口单次返回 409 / 20120；B 的本人报名列表前后均完整分页且未找到该活动。服务端 response message 未保留，20120 对应含义来自本地源码；分页并非数据库原子快照。[脱敏逐请求证据](evidence/20261113/registration-closed-negative.json)。该样本不代表正向报名、邀请接受或审批通过，也不能证明 outbox 全局状态；本机一次性空标记保留防止误重试，独立会话未退出、服务端会话状态 UNKNOWN。
+- **DEPLOYED_HTTP 信息差异对照，待判**：同一 B 身份对组织 A 合成活动的 App 详情得到 404 / 20001，自助报名得到 409 / 20120；另用本机随机生成对象作一次负例，先由后台详情得到 404 / 20001，再单次报名得到 404 / 20001，完整本人列表写前、写后均未找到该对象。[对照逐请求证据](evidence/20261113/registration-missing-control.json)的原始脱敏回执在上下文截断后从本会话本地记录找回，未重试。四条对应方法、脱敏路径、状态及同一 B 身份已按请求 ID 在[目标容器限时日志](evidence/20261113/registration-missing-control-server-routes.json)核对；日志不含查询串、请求体和响应业务码，仍以客户端回执为准。随机对象仅有 HTTP 未找到证据，非数据库独立不存在证明；完整分页非原子快照。两种响应确有差异，提示可能存在信息侧信道；但后台详情对已发布邀请活动返回 200，B 的受邀、参与和工作人员关系及 v1.1 当前适用范围均未证实，因此不判定为已确认漏洞或权限验收通过。该独立会话未退出，服务端会话状态 UNKNOWN。
+- 合成审核人 R1 已创建成员及默认 USER、绑定组织 A 的 PRIMARY 归属并双向核对，角色和 role bindings 为空；4 条写请求的路径及 7 条关键写后读取的状态经[有界日志](evidence/20261113/reviewer-r1-routes.json)核对。R1 尚未被授予审核权限，未登录，不代表审批流程通过。
+- 合成审核人 R2 已创建成员及默认 USER、绑定组织 A 的 PRIMARY 归属并双向核对，角色和 role bindings 为空；创建账号时先出现回执读取不明，先按用户名回查，再找到原请求的迟到 201，未重试。4 条写请求路径及最终绑定双向读取经[有界日志](evidence/20261113/reviewer-r2-routes.json)核对。R2 尚未被授予审核权限，未登录。
+- **DEPLOYED_HTTP 角色只读预览**：线上审核角色 `activity-publish-reviewer`、`attendance-first-reviewer`、`attendance-final-reviewer` 的权限 revision 均为 0，分别包含 3、5、6 个权限码；现有测试角色 `qa1405-organizer-20261107` 的 revision 为 0，含活动创建、更新以及时长/贡献政策选择 4 码。对 A、R1、R2 及组织 A 的多个组合均只读预览，4 个拟用组合传入到期时间 `2026-11-15T06:00:00+08:00`，均 valid / 无冲突，但预览不回显该时间；对应现有绑定均为空。尚未创建绑定；[完整请求与权限码](evidence/20261113/role-preview.json)。角色权限是可变引用；活动更新及政策选择可能影响活动和结算口径，后续具体动作仍需限定合成数据及通知边界。
+- **角色绑定 BLOCKED**：计算机操作工具要求对安全敏感的角色权限授予在实际执行时确认；已提交限定组织 A、到期时间及四个具体绑定的确认请求，当前尚无确认，未执行任何绑定。即使确认，也必须重新核对角色 revision、预览和现有绑定；下述 `rbac-global` 限制仍可能阻断后台链路，不扩大授权范围绕过。
+- **DEPLOYED_RUNTIME 授权边界限制**：目标容器编译产物中，所查后台活动创建/更新、考勤初审/终审及结算初审声明为 `rbac-global`，权限聚合方法使用 GLOBAL 绑定过滤；部分 App managed 路由另有组织 scope。故上述 ORGANIZATION 预览 valid 不保证后台接口或页面能放行，不为凑通过自行扩大为 GLOBAL。[脱敏检查](evidence/20261113/runtime-rbac-scope.json)记录于 05:35:25，精确检查时刻 UNKNOWN；未对授权后的具体接口作实测，其他 App 路径和线上部署 SHA 均 UNKNOWN。
+- 合成组织 A 的活动草稿采用唯一测试标题及合成地点，限定邀请可见且关闭公开报名；创建前查重，创建后详情读回 draft、字段及组织一致，`publishedAt=null`；服务端实际路径按 ID 经[有界日志](evidence/20261113/activity-draft-route-summary.json)核对。此次是 **DEPLOYED_HTTP** 草稿创建的有限样本，该时点未发布或邀请；后续管理员直发见下文，不代表真实 GUI 表单及活动业务闭环通过。
+- **DEPLOYED_HTTP 管理员直发有限样本**：上述草稿写前回读为邀请制、公开报名关闭、无需保险、无图片，报名总数 0；管理员邀请列表因未绑定成员返回 403，邀请总数 UNKNOWN。单次常规发布返回 200 / code 0，详情回读 published 且隔离字段保持，写后报名总数仍为 0；服务端路由和读取状态已按 ID 核对，见[脱敏回执](evidence/20261113/activity-publish.json)。该样本不经过审核，不代表普通报名、签到、考勤或结算通过；运行容器发布生产者的直接代码在公开报名关闭时跳过 outbox；一次按本活动定向只读计数的命令退出 1、未取得计数，故 outbox 状态及所有间接副作用仍 UNKNOWN。
+- 合成组织 A 的内容草稿创建前查重，创建后读回合成标题与正文、announcement、draft、仅该组织可见且未发布，附件数为 0；服务端实际路径按 ID 经[有界日志](evidence/20261113/content-draft-route-summary.json)核对。该 **DEPLOYED_HTTP** 样本不能替代缺原始请求的历史“公告创建 500”同条件回归，也不是发布或 GUI 验收通过。
+- 内容创建正文空值负例单次返回 400 / 40000，指出 body 长度校验；第一次写后列表浏览器显示 total 0，但服务端为 304；禁用缓存后再次查询为服务端 200 / total 0。实际服务端路由经[有界日志](evidence/20261113/content-negative-routes.json)核对；不能因此推广为所有空值或重复提交场景通过。
+- **DEPLOYED_HTTP 重复编号有限样本**：同一合成成员编号创建前后查询均为一条，重复 POST 返回 409 / 15002；详情回读原成员字段和账号绑定未变。测试标签缓存已禁用，实际服务端路由与读取状态已按 request ID 经[有界日志](evidence/20261113/member-duplicate-route.json)核对；不代表前端真实双击防重或所有写接口幂等。
+- **附件禁用负例 / 完整链 BLOCKED**：本轮只读配置显示 COS 未启用；对合成草稿单次申请 PDF 上传返回 503 / 13034，实际路径经有界日志核对。第一次写后读取由浏览器合并 304 缓存；禁用缓存后服务端 200，草稿仍无附件。未上传或确认附件，不能将禁用负例当作上传链通过；空附件列表也不能证明未创建存储 intent，线上 intent 状态仍 UNKNOWN；未输出任何签名 URL 或令牌。
+- **写后读取状态核对**：发现上述两条浏览器 200 实际合并了服务端 304 后，按各自 request ID 批量核对成员、组织、归属、账号绑定、活动/内容草稿及两次无缓存负例回读共 18 条关键 GET，服务端状态均为 200；最早一条在首个时间窗口外，另用较窄时间窗补核。[脱敏状态证据](evidence/20261113/postwrite-get-server-status.json)只证明日志状态，响应字段断言仍以上表及各自回读为准。
+- **保险副作用边界**：目标 API 容器编译产物的保险到期查询以上海当前日期加 30 天为上界，包含已过期项；个人保险提醒含站内与微信渠道，队保单路径为管理范围广播，定时表达式为上海时间每日 09:00。[只读证据](evidence/20261113/runtime-insurance-reminder.json)的记录时间为 04:56:01，精确检查时刻 UNKNOWN；不能据此证明任务已启用、收件人或外发配置。后续创建的远期合成个人保险可避开这一已观察窗口和本轮活动，但不能保证其他路径及未来零通知，须随测试数据统一处理。
+- **DEPLOYED_RUNTIME 保险写入与发布直接调用检查**：目标容器个人保险 create/update/soft-delete 直接方法包含保险数据写入和审计，未匹配通知、outbox、微信、短信或网络请求关键词；管理员常规活动发布调用发布通知生产器，所查编译代码在公开报名为 false 时于 outbox 之前返回。见[脱敏检查](evidence/20261113/runtime-insurance-write-publish.json)，记录时间 05:44:10，精确检查时刻 UNKNOWN。该检查不覆盖间接调用、数据库触发器或定时任务，不代表保单写入或活动发布已执行。
+- **DEPLOYED_RUNTIME 自助报名直接调用检查**：运行容器编译产物中，旧自助报名链对关闭公开报名的检查位于报名持久化之前；更早有读取、行锁和旧流程前置条件。已检查辅助方法未发现直接报名写入或 outbox 调用；新的 canonical 链在策略前还可能重放已有操作键。见[脱敏检查](evidence/20261113/runtime-self-registration-order.json)，记录时间 06:24:32；这不是线上 HTTP 验收，深层间接调用、数据库触发器和通知投递仍 UNKNOWN。
+- **DEPLOYED_HTTP 个人保险与跨账号有限样本**：A 单次创建远期合成保单返回 201，完整本人列表回读字段和版本一致；B 对该记录分别单次 PATCH 和 DELETE 均返回 404 / 26001，A 在每次之后通过新连接请求禁缓存重新完整回读，字段及版本均不变。两人分别属于本轮合成组织 A、B；这是针对单条本人保险记录的隔离样本，不代表所有组织或权限均通过。响应 message 未保留，缓存请求头不能证明所有中间层行为；详见[脱敏逐请求证据](evidence/20261113/ordinary-insurance-boundary.json)。这些不是历史原身份、原对象、原版本条件，不能关闭历史三个个人保险 500；本次独立会话未尝试退出，服务端会话状态 UNKNOWN。
+- **LOCAL 重入修复候选**：在首个合成 POST 保持未完成、或异步表单校验尚未完成时直接重入 `beforeSure`，并行候选均可发出重复请求；这是回调层面证据，真实 GUI 双击是否可触发及后端是否阻止重复入库均未验。已在我方独立工作树追加校验前提交锁，校验中/请求中重入、无效/异常释放锁及服务端 500 提示等本地行为测试 6/6 通过；针对性 ESLint、Prettier、类型和 diff 检查通过。[差量补丁](evidence/20261113/member-create-inflight-guard.patch)及[本地验证记录](evidence/20261113/member-create-inflight-guard-local.json)只含附加防护与回归测试，补丁 SHA-256 为 `a4d54fb4566095f823550cd5045b1d515dc6c523abdfd970957f412ba9c0e4b7`，须先有上述并行候选；对应前端源码未提交、推送或部署，不改并行会话工作树。
+- **操作记录**：06:46:28 后、06:50:34 前，子任务在 1Panel 现有“本地服务器（主节点）”终端的未闭合多行输入中误追加一行容器只读计数文本，终端仍显示续行提示且未出现计数输出，支持该次追加尚未执行；既有输入归属和更早行为 UNKNOWN。该终端未再输入、提交或中断，后续改用独立连接；请勿直接提交该旧终端中混合的输入，需由其使用者检查处理。
+- 续测开始时 PR #1414 的 head 为 `06000af93206e485749c26a414e6f018a49335f3`。该 head 的 Authenticated Human V3 在测试容器创建阶段失败，Fast checks、Golden journeys 与部分分片通过，其余分片当时仍运行；新提交的检查应分别核对。
+- **CI 指定提交失败**：截至北京时间 06:56，PR #1414 的 head `7002e29abe71dc316959ba326a6eeb3dbb4002b2` 上，[Authenticated Human V3 作业](https://github.com/BA7IEE/srvf-nest-api/actions/runs/43323965338/job/131551802904)失败；作业详情显示失败步骤为 `Real SCRAM qualification and current V3 regressions`，作业日志包含 `create-pg_EXIT_125`，表示 PostgreSQL 测试容器创建阶段失败；日志未输出到台账。Change set、Red-zone trusted scan、Red-zone (trusted)、Diff guards、Docker image build 和 Golden journeys 已通过；Harness selftests、Incident replay、Fast checks 与 5 个 Contract + E2E 分片仍在运行，Red-zone trusted approval 为 SKIPPED。具体 Docker 原因 UNKNOWN。独立的 [PR #1404](https://github.com/BA7IEE/srvf-nest-api/pull/1404) 当时仍为未合并草稿，不能把候选修复当成 CI 已恢复。该记录只针对上述 commit，后续 head 的检查另行核对。
+
+## 10. 2026-11-13 限期授权后续
+
+- 用户已明确确认四项仅限合成组织 A 的角色绑定，截止 2026-11-15 06:00 北京时间。授权前重读表明 A、R1、R2 均为 ACTIVE USER，与各自合成成员双向绑定且在组织 A 具有唯一 ACTIVE PRIMARY；四角色权限集合及 revision 0 与原预览一致。[逐请求脱敏记录](evidence/20261113/scoped-roles-confirmed.json)包含各项预检、单次写入及读回；四条实际服务端 POST 路由与状态已按请求 ID [独立核对](evidence/20261113/scoped-roles-server-routes-v11.json)。此前 §9 的“尚无确认”只描述当时状态，不再代表本节当前状态。
+- **DEPLOYED_HTTP 首项授权**：09:24:47.619 通过受控同源请求适配，拟向 `POST https://dp.srvf.team/api/admin/v1/role-bindings` 为合成 A 绑定 `qa1405-organizer-20261107`；客户端取得 201 / code 0，request ID `cmweao0ia0f5e4224b897e001d4d6f467`，实际服务端路由和状态已核对。09:24:59.232 和 09:24:59.825 按 A 和该角色精确列表、详情各回读 200，request ID 分别为 `cmweao9hc93467635892407e3ff8e2d8b`、`cmweao9xqc6dbd771fb326a659fcad9b7`；列表唯一，主体、角色、组织 A、ORGANIZATION、ACTIVE 和到期 `2026-11-15T06:00:00+08:00` 均匹配。原页面只能选择日期，此受控请求把到期字段适配为用户确认的精确时刻，不代表原 GUI 支持时分。
+- **DEPLOYED_HTTP 第二项授权**：09:27:13.404 拟经同一受控适配路径单次为 R1 绑定 `activity-publish-reviewer`，客户端 201 / code 0，request ID `cmwear4zke72811ed97b457628622564c`；浏览器响应 URL 未直接匹配改写目标，但实际服务端路由和状态已独立核对。09:27:33.152 的列表和 09:27:33.737 的详情均 200，request ID 分别为 `cmweark8068ce3f5961835f747f15e143`、`cmwearkoh66ec866478fda6d79217a879`；唯一绑定的主体、角色、组织 A、ORGANIZATION、ACTIVE 与精确到期均匹配，角色 revision 回读仍为 0。
+- **DEPLOYED_HTTP 第三项授权**：09:28:08.523 拟经同一受控适配路径单次为 R1 绑定 `attendance-first-reviewer`，客户端 201 / code 0，request ID `cmweasbiie695d837050942f329f3ad51`；实际服务端路由和状态已独立核对。09:28:24.624 的列表和 09:28:25.257 的详情均 200，request ID 分别为 `cmweasnxu6c7d898d4cf19a7682d4b676`、`cmweasofwb7ea15c24ff3d8930531fe5f`；唯一绑定的主体、角色、组织 A、ORGANIZATION、ACTIVE 与精确到期均匹配，角色 revision 回读仍为 0。
+- **DEPLOYED_HTTP 第四项授权**：09:28:51.429 拟经同一受控适配路径单次为 R2 绑定 `attendance-final-reviewer`，客户端 201 / code 0，request ID `cmweat8mba8aecaec9cea5043cbb8927e`；实际服务端路由和状态已独立核对。09:29:07.703 的列表和 09:29:08.296 的详情均 200，request ID 分别为 `cmweatl6f6bd5d9c17b0c97a3905d159d`、`cmweatlmxac2788081f994d23e9fa5f09`；唯一绑定的主体、角色、组织 A、ORGANIZATION、ACTIVE 与精确到期均匹配，角色 revision 回读仍为 0。四项均有独立读回，不代表目标业务判权或审核链通过。
+- **GUI 角色到期时间缺口 / LOCAL 修复候选**：现有线上角色绑定表单的任期止只显示日期日历，未观察到时分输入；本地当前源码按 `YYYY-MM-DD` 提交，列表也只显示年月日，无法在页面精确表达及核对本次批准的 06:00。本机独立分支 `codex/role-binding-expiry-datetime-20261113` 基于前端 `6375148a61445972e792ce37cb401fd8e5162538`，候选将到期时间选取和列表显示明确为北京时间，发送带明确时区的 ISO 时刻，保留任期起及备注编辑原语义。[候选补丁](evidence/20261113/role-binding-expiry-time.patch)及[LOCAL 验证](evidence/20261113/role-binding-expiry-time-local.json)已脱敏归档：最终测试 6/6，覆盖 UTC、洛杉矶及上海系统时区、空值、无效值及历史日期/毫秒回显；针对性 ESLint、Prettier、类型和 diff 检查通过。基线为先前 5 项版本的 2 通过、3 失败，不与最终 6 项测试混为同一文件哈希。源码候选未提交、推送或部署，真实浏览器操作、完整 lint 和构建 NOT_RUN；前端提交头规则与现行 commitlint 的冲突仍未解决。
+- **CI 指定提交终态**：北京时间 09:03 后复核 PR #1414 的 head `62ca73d9e071f52ffac00fba5b6eee9bd63862b0`，全部检查结束，`Authenticated Human V3` 与 `Lint / Typecheck / E2E` 汇总作业失败；前者[失败作业](https://github.com/BA7IEE/srvf-nest-api/actions/runs/43324527715/job/131553723362)日志含 `create-pg_EXIT_125`，后者[失败步骤](https://github.com/BA7IEE/srvf-nest-api/actions/runs/43324527715/job/131563397295)为 `Aggregate results`。Fast checks、Golden journeys、Docker image build、Harness selftests、Incident replay、Diff guards、5 个 Contract + E2E 分片及所列安全扫描通过；两项审批作业 SKIPPED。具体 Docker 失败原因 UNKNOWN。独立草稿 [PR #1404](https://github.com/BA7IEE/srvf-nest-api/pull/1404) 的 head `ea4a35792e3d107cebb975235821a21de9070b34` 当时检查全绿，但尚未合并，不能将其当成 #1414 的当前结果或线上部署。
+- **LOCAL 业务续测前置**：上述四个拟用 ORGANIZATION 绑定不包含报名创建、报名审批、考勤创建或结算草稿提交权限；所查后台旧考勤初终审及新结算审核入口声明 `rbac-global`，不能把组织级绑定等同于全局放行。旧 GPS 考勤和 v1.1 场次/结算由 `ACTIVITY_V11_WORKFLOW_ENABLED` 单轨闸互斥，本轮之前读取的 `ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED` 是另一个开关，不能据此判断 v1.1；部署 SHA、v1.1 当前进程配置及 worker 状态 UNKNOWN。已有合成活动在 11 月 20 日，晚于本次拟用权限的 11 月 15 日 06:00 到期，不能在这段权限期内用该活动证明结束后结算。新建受限短活动及管理员代报名可能作为前置，但审批、考勤终审和结算动作可能写定向站内通知，必须先独立确认合成收件人与线上外发边界；旧/新两条路径不得拼作一条验收通过链。
+- **DEPLOYED_RUNTIME v1.1 开关有限观察**：对与先前证据匹配的运行容器，以新启动的短寿命子进程仅读取 `ACTIVITY_V11_WORKFLOW_ENABLED` 单键，得到 `false`；同容器编译解析器对缺省值的结果是 development/test 为 false、production/smoke 为 ERROR，对该子进程值在 development/production 中均解析为 false。[脱敏检查](evidence/20261113/scoped-roles-server-routes-v11.json)不读取完整环境、密钥或运行进程内存；Nest 可从环境文件加载配置，因此上述子进程结果不能证明运行中 API 的实际配置。v1.1 线上进程状态、worker 和部署 SHA 均仍为 UNKNOWN。
+- **GUI 授权后的有限观察**：合成 A 的独立 Chrome 无痕窗口确认仍为该账号；09:39:03.171 在活动列表点击浏览器重新加载，09:39:12.687 页面稳定后仍提示“当前账号没有创建活动权限”，未见可点击的创建/筹备按钮，也未提交活动。[操作记录](evidence/20261113/gui-a-create-after-role.json)注明该无痕标签不在可控浏览器清单，请求状态、request ID 和截图为 UNKNOWN / NOT_CAPTURED；原因及接口实际判权待独立验证，不以此单独断言后端缺陷。管理员及 B 窗口未注销。
+- **LOCAL 页面权限来源线索**：当前前端源码 `src/store/modules/user.ts` 在登录时读取 `authz/me/effective-permissions` 并持久化权限，活动筹备页用 `activity.create.record` 控制入口；浏览器刷新不一定代表重新登录或重新读取权限。该源码对应的线上部署版本 UNKNOWN，需以新建独立会话的请求和实际 GUI 证明，不能据此推断上条观察的确切原因。
+- **LOCAL 角色探针首次接收未完成**：09:45:12.505 启动短寿命回环进程，canary 未携带 Cookie/Authorization；A 槽已接收，R1 未接收并出现仅保留 `Error` 类型的异常，R2 未执行。09:49:40.693 请求停止后进程退出码为 1，监听端口已释放；三个登录持久标记均不存在，没有向目标发起本批登录或业务请求。后续离线检查发现原探针入口会把正常 `SystemExit(0)` 一并捕获并转成退出 1，故该退出码本身不能区分正常停止和异常；R1 点击/响应阶段及具体异常原因仍 UNKNOWN。[脱敏状态](evidence/20261113/role-probe-intake-first-attempt.json)不含账号值或凭据。不得把此本机失败计作线上业务失败。
+- **DEPLOYED_HTTP 角色真实会话与有限读**：三组账号经独立 Mac 本机受控 HTTPS 进程登录，`/api/app/v1/me` 均为 200 / code 0，用户和成员 ID 与各自合成身份匹配，均为 USER、ACTIVE 且可用 App。10:03–10:04 的 [14 条逐请求脱敏证据](evidence/20261113/scoped-role-effective-http.json)显示：`authz/me/effective-permissions` 中，A 的 4 个、R1 的 8 个、R2 的 6 个预期权限码均存在；`rbac/me/permissions` 中对应码均不存在。该两个接口的汇总口径不同，不能用权限码存在与否直接代替具体操作判权。R1 与 R2 对先前创建的合成组织 A 活动考勤列表各单次 GET 均返回 200 / code 0（request ID `cmwec2ckm24c056305e67b142bbd6c4d5`、`cmwec2v9ned56e73338c16c673b1dbc4a`），具体列表数据和总数未保留；[服务端有界日志](evidence/20261113/attendance-scope-runtime.json)按各自 request ID 确认 GET、路径模板、200 和与 `/me` 一致的主体，且两名主体不同、活动相同；不代表考勤或审批通过。这一线上有限观察不能用本地 `rbac-global` 静态判断覆盖，部署 SHA 为 UNKNOWN。本机进程正常退出、端口释放，三份空的一次性登录标记保留；三个新服务端会话未尝试退出，状态 UNKNOWN。
+- **DEPLOYED_RUNTIME 列表判权解释**：目标容器直接编译代码中，考勤列表路由声明有 `rbac-global`，装饰器写入元数据，实际列表服务对活动资源调用 `AuthzService.explain`；旧 `rbac/me/permissions` 仅汇总 GLOBAL 用户绑定，资源判权另检查组织范围。故全局视图缺码与组织内列表 200 可并存，不应仅由声明推断该列表一定拒绝组织级角色；实际命中授权及其他审核端点仍需分别验证。[运行产物及日志记录](evidence/20261113/attendance-scope-runtime.json)包含检查时刻；LOCAL 源码的考勤列表还写读审计，不能把上述 GET 称为数据库绝无写入。部署 Git SHA UNKNOWN。
+- **DEPLOYED_RUNTIME 责任制开关复核**：10:13:52 对同一目标容器新启动子进程只读 `ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED` 单键，值为 `false`；编译解析器对缺省输入在 development/test 返回 false、production/smoke 报错，对该子进程值在 development/production 返回 false。该值不能独立证明此前 05:39 普通活动创建返回 503 / 20036 的原因；运行中 API 的 Nest 配置和部署 SHA 仍 UNKNOWN。
+- **DEPLOYED_RUNTIME 报名、通知与签到直接链检查**：10:27–10:32 目标容器编译产物显示：管理员代报名的直接创建方法在持久化前检查活动、成员、重复及资格等条件，未匹配直接通知关键词；审批向该报名成员产生 `in-app` 定向意图，所查 handler 的微信/企微子分支要求对应 channel；旧签到/签退写入前受维护态及 v1.1 gate 控制，直接方法未匹配通知关键词。非公开活动的旧常规发布分支在 outbox 前返回。详见[脱敏记录](evidence/20261113/registration-runtime-safety.json)。独立 worker 的镜像/配置、其他间接路径和数据库触发器未证明；子进程只读维护开关为 UNSET 且编译解析为 false，但运行中 API 的配置仍 UNKNOWN。不能由直接调用检查断言绝无外发或间接副作用。
+- **DEPLOYED_RUNTIME 通知收件人与签到闸补核**：11:27:27.457–11:53:09 区间内核对先前识别的目标容器编译产物，精确检查时刻 UNKNOWN。[脱敏投影](evidence/20261113/activity-notification-gates-runtime.json)显示：报名审核定向该报名成员；旧考勤终审及达标补充通知取本考勤单未删除记录中的成员；开场提醒取同一活动的 pass 名册。三处所查 producer 均声明 `in-app`，定向 handler 的微信/企微子任务要求相应 channel。只有在实际名册或考勤记录确实仅含合成成员时，直接代码中的收件人才限定于该成员；独立 worker、数据库触发器和其他间接副作用 UNKNOWN。旧/新自助签到业务方法均先经维护态及相应单轨闸，之后才进入不存在活动或无效二维码的负例分支；JWT 在此之前读取当前用户。此为运行产物顺序证据，并非实际 HTTP 闸门结果或运行进程配置；公网路由到当前进程及部署 SHA UNKNOWN。
+- **DEPLOYED_RUNTIME 二维码格式负例前置**：12:02:24.937 对前述目标容器的[脱敏检查](evidence/20261113/qr-verifier-runtime.json)确认，不含分隔符的非空字符串在二维码解码或签名校验前被同步格式检查拒绝；`selfPunch` 的单轨闸早于验证，验证早于业务事务，验证异常映射 404 / 22084。认证、成员准入、DTO 及闸门均可能先行拒绝，故这不是实际请求回执；限流、日志、其他间接副作用及公网路由到被检进程均 UNKNOWN。首次只读检查因脚本转义语法错误未执行，修正后获得上述结果；未发业务 HTTP。实际负例探针仍须完成本机隔离和独立安全复核。
+- **LOCAL / DEPLOYED_HTTP NOT_RUN 签到闸负例准备**：为避免重复旧报名，准备了独立随机活动及无效二维码负例；拟用 R1 是 ACTIVE USER 且有组织 A 审核角色，不能记作无额外角色的 B。R1 脚本在先前独立审查的基线上调整外部角色槽和输出，本机 fixture 独立重跑 27/27；主测试进程将 HTTPS 替换成失败桩，子进程未强制禁网但只测停止或业务调用前失败。启动前发现共享的本机登录一次性标记已存在，为 12:06:22.158 创建或修改的 0 字节文件；早期 fake opener 也可能创建相同标记，但来源仍 UNKNOWN。标记保持原样，所准备的 R1 探针未启动、未接收凭据、未登录、未发送两条签到请求。后续持有私有引用的子任务重启时出现模型不可用，故本轮未继续；脚本哈希、标记路径及限制见[脱敏记录](evidence/20261113/activity-gate-probe-not-run.json)。随机对象及 no-cache 指令均不能独立证明全库不存在或必然回源。
+- **GUI 权限诊断资源选项缺口**：10:17:08.465 观察现有权限诊断表单，资源类型下拉显示 11 项，含 activity、attendance_sheet 等，但没有 organization；当前 OpenAPI 诊断合同允许 organization。未采集含身份/资源标识的截图，不能由此推断 API 不支持该类型；跨组织诊断使用受控的同源只读请求适配。
+- **LOCAL 诊断选项修复候选**：将线上表单的 11 项与当前合同 14 项逐项对照，缺 organization、activity_publish_review、attendance_settlement_version。隔离分支 `codex/authz-resource-options-20261113` 基于前端 `6375148a61445972e792ce37cb401fd8e5162538`，只扩充现有资源联合类型与中文映射，不改诊断请求结构或引入额外组织查询。[补丁](evidence/20261113/authz-resource-options.patch)及[本地验证](evidence/20261113/authz-resource-options-local.json)：同一组最终测试基线 2 项失败、候选 2/2 通过，真实前端抽屉和 API 封装在合成本机夹具上验证 14 项及三个新增类型的序列化；定向 ESLint、Prettier、类型检查和补丁正反向应用检查通过。候选未提交、推送或部署，真实浏览器交互、完整 lint 和构建 NOT_RUN。
+- **DEPLOYED_HTTP 代报名前置，写入尚未执行**：10:34:07–10:34:45 禁缓存回读，原合成活动与组织 A 匹配、published、invitation、公开报名和保险均关闭，活动为 11 月 20 日 09:00–11:00、无报名截止，标题地点均为合成标记；A 成员 ACTIVE、与账号双向关联，组织 A 的有效 PRIMARY 唯一。活动岗位为 0；活动名册第一页 `pageSize=100` 的 total/items 均为 0，跨活动列表按该活动与 A 成员交叉筛选亦为 0；[七条脱敏回执](evidence/20261113/registration-preflight.json)。列表不包含软删除记录，其他外部并发写者 UNKNOWN。线上合同注明活动报名列表的 memberId 查询仅对全局横扫生效，故未把活动列表上的该参数当作有效过滤。场次、报名表和 scoped 资格规则三个 managed 读取未发出目标请求：原辅助器白名单拒绝路径，后续构造在调用前遇到仅保留类别的 `EvalError`；真实线上状态 UNKNOWN，不能写成空或接口拒绝。该时点 target 编译代码中相应检查是否发生于持久化之前尚未证明，代报名 POST 暂未执行；后续 10:39:39 的[独立只读检查](evidence/20261113/registration-guard-order.json)确认管理员建单调用该检查且早于报名持久化，但不能证明深层副作用或运行中进程状态。线上返回 DTO 未声明 revision，后续不可用本地默认值冒充线上回读。
+- **DEPLOYED_HTTP 代报名尝试结果 UNKNOWN**：10:44:25.292–10:44:29.157 禁缓存复核活动、组织、成员、归属、岗位和两份名册仍满足相同条件（以逐请求证据中的 UTC 时间换算北京时间，修正此前口头报出的 10:40 时间）。10:45:26 在诊断请求被暂停且来源校验匹配后，10:45:54 对拟送往 `POST https://dp.srvf.team/api/admin/v1/activities/{activityId}/registrations` 的单次适配调用 `Fetch.continueRequest` 返回 `Error`；具体原因、目标 POST 是否到达、状态和 request ID 均 UNKNOWN。10:46:16.659 的活动名册及 10:46:17.320 按活动+A 的全局交叉查询均 200 / code 0、total/items 为 0，request ID 分别为 `cmwedksyea328e2c36bb995923022b589` 和 `cmwedkte9625b08d107af3789cb78d75d`。[脱敏过程](evidence/20261113/registration-attempt-unknown.json)未记录正文或 ID。空列表不能证明请求未到达或不会延迟完成；未重试、未审批。[有界服务端日志](evidence/20261113/registration-log-unknown.json)确认两条 GET 锚点对应同一活动报名路径，但 POST 数量及脚本返回 UNKNOWN 的具体分支均为 UNKNOWN，不能把空详情视作零次；其他实例和在途请求亦未知。revision 仍 UNKNOWN。
+- **DEPLOYED_RUNTIME 代报名日志重核**：改进脚本分别处理 stdout/stderr；有界 `docker logs` 退出 0，stdout 的 65 个非空行均可解析，stderr 无非空行。写前名册和写后名册的请求 ID 各唯一匹配同一活动路径，服务端时间分别为 10:44:28.745 和 10:46:17.000；在实际读取且可解析的两锚点之间日志中，没有观察到相同路径的 POST 开始上下文或完成记录。[脱敏重核](evidence/20261113/registration-log-recheck.json)仅统计读到的日志，跨主机历史时钟同步、缺日志、未记录或在途请求及其他实例均 UNKNOWN；因此实际 POST 是否到达仍为 UNKNOWN，未重试。
+- **DEPLOYED_RUNTIME CMS 发布边界**：11:01:57–11:03:28 对目标容器直接编译链只读检查，CMS 内容发布在事务内检查状态/附件边界、更新内容并审计，事务后构造详情；发布和 transition 直接方法未匹配通知/outbox/微信/企微/短信关键词。附件边界含不按当前内容限定的历史 ownerless 上传操作探针，命中时阻止发布；还包含存储账目更新和创建 `orphan_delete` 的调用，但所查运行产物中该调用的精确 owner 范围当时未证实。无封面 key、无附件的详情过滤有提前返回；有附件或封面则可能执行 HEAD、生成 URL 及账目操作。[脱敏记录](evidence/20261113/cms-publish-runtime.json)不证明当前数据库是否命中探针、worker/触发器或其他间接外发。此前公告草稿曾申请上传且存储 intent 未知，不直接发布它；另行评估从未申请上传的合成草稿，部署 SHA UNKNOWN。
+- **DEPLOYED_RUNTIME CMS 存储写入范围补核**：11:08:02–11:10:25 的[独立编译检查](evidence/20261113/cms-storage-owner-scope.json)确认，候选存储对象的查询只使用当前内容的附件 key 或其 owner-v1 上传意图；对象重读与后续更新循环限定候选，写前还要求当前内容前缀匹配，已绑定附件分支跳过。全局 ownerless 探针是 SELECT，命中在后续存储写入前抛错。此为静态直接代码范围证据，未查询特定内容是否确无关联意图，也未证明 Prisma 空候选行为、异常关联、数据库触发器或 worker 副作用。
+- **LOCAL / 文档参考，非线上断言**：本机台账工作树安装的 Prisma Client 为 6.19.3；[Prisma v6 官方文档](https://www.prisma.io/docs/orm/v6/prisma-client/special-fields-and-types/null-and-undefined)说明零条件的 OR 返回空列表。11:22:57 对[目标容器安装包](evidence/20261113/prisma-runtime-version.json)只读核对同为 6.19.3，镜像与先前证据匹配；该新内容实际候选是否为空、数据库行为和运行进程配置仍未知，不能把文档直接当作该内容的线上回执。
+- **GUI + DEPLOYED_HTTP 新公告草稿有限样本**：11:12 禁缓存查到合成组织 A 有 3 条有效归属，恰为 ACTIVE 的合成 A/R1/R2；B 无当前有效 A 归属。唯一合成标题跨状态查重为 0 后，管理员通过真实后台表单选 announcement、department、仅 A，输入合成正文且未上传；11:18:13.680 单次保存 `POST https://dp.srvf.team/api/admin/v1/contents` 返回 201 / code 0，request ID `cmweepw42c192e566e6a4e7af882bce6e`。11:18:32–11:18:33 独立详情和两种内容附件列表均 200 / code 0，确认同一 draft、类型及唯一组织范围、无封面/附件；11:19:26.538 标题查询唯一，匹配该草稿。正文相对输入多 1 个末尾空白字符（UTF-16 长度 31 对 30），trim 后一致、无外链或附件占位，是否构成缺陷待产品确认；未为隐藏差异而重写或再提交。[脱敏记录](evidence/20261113/new-content-draft-gui.json)含全部请求 ID；截图 NOT_CAPTURED。草稿未发布、未申请上传，创建样本不替代历史公告创建 500 的同条件回归。
+- **GUI + DEPLOYED_HTTP 新公告发布失败**：11:24:11–11:24:16 发布前九条禁缓存回读均 200 / code 0，确认新内容仍为合成 draft、announcement、department 仅 A、无封面/附件/外链，A 当前有效受众恰为三名已知合成成员且 B 无有效 A 归属。管理员在真实后台定位唯一新草稿并单次确认发布；11:27:11.409 `POST https://dp.srvf.team/api/admin/v1/contents/{id}/publish` 返回 **503 / 13034**，request ID `cmwef1f118e48f3e2f11ca47c045818b7`。11:27:26.222–11:27:27.457 的内容详情与两类附件列表均 200 / code 0，request ID 分别为 `cmwef1qf15c51ec1fcd6814eedf93c1c1`、`cmwef1qxk2c3c4c3fe08b7731caa2f2e6`、`cmwef1rdf4b0b04eae3436cc5b2505d63`；同一内容仍 draft、publishedAt=null、字段一致且无附件/封面。未重试或操作旧草稿。[脱敏逐请求证据](evidence/20261113/content-publish-failed.json)记录客户端业务码；[目标容器日志](evidence/20261113/content-publish-server-log.json)按 request ID 确认同一 POST / 503，仅有通用错误，未验证业务码及数据库内部原因；间接副作用与 worker 状态 UNKNOWN，截图 NOT_CAPTURED。该样本不是历史公告创建 500 的原请求同条件回归。
+- **LOCAL 公告 503 排查边界**：本地发布路径先检查草稿和附件边界，再执行状态及审计事务；附件边界将历史全局 ownerless 记录、当前内容引用或存储账目不一致，以及数据库查询异常等不同情况统一映射到 13034。没有针对实际发布时刻的数据库证据，不能根据该码选定根因。历史 [#706](https://github.com/BA7IEE/srvf-nest-api/pull/706)、[#726](https://github.com/BA7IEE/srvf-nest-api/pull/726)、[#778](https://github.com/BA7IEE/srvf-nest-api/pull/778) 和 [#1049](https://github.com/BA7IEE/srvf-nest-api/pull/1049) 均已合并，但其范围及合并状态不证明本次 503 已修复或实际部署版本；本轮未找到可证明修复本次故障的候选。尚未确认不暴露凭据的只读连接对应同一逻辑库，因此未执行数据库探针；后续先核实连接范围，才可在只读事务中检查布尔结果，该结果也不能反证 11:27 的历史状态。
+- **DEPLOYED_HTTP 跨组织范围诊断**：诊断前回查 A、B 是不同的 ACTIVE 合成同级组织，R1、R2 均为 ACTIVE USER，分别与合成成员双向关联并在 A 有 ACTIVE PRIMARY，既有活动属于 A。以下均由现有管理员对 `POST https://dp.srvf.team/api/admin/v1/authz/explain` 单次查询 action `attendance.read.sheet`；响应为 200 / code 0，但 allow/deny 是响应中的诊断结论，不能以 HTTP 200 视为允许。资源和用户在原始响应中仅作内存断言，不保留原始 ID：
+
+| 北京时间 | 合成目标 | 资源 | 诊断结果 | 请求 ID |
+| --- | --- | --- | --- | --- |
+| 10:18:09.574 | R1 | 活动 A | allow=true，matched，role_binding / ORGANIZATION；角色和 scope ID 断言未保留 | `cmweckn525f6170805e89be8841e6b535` |
+| 10:18:58.941 | R1 | 组织 A | allow=true，matched，role_binding / ORGANIZATION；角色和 scope ID 断言未保留 | `cmweclp8144a013e992dc95004e1c2e97` |
+| 10:20:16.927 | R1 | 组织 B | allow=false，out_of_scope | `cmwecnddh95ccfffdc3157bea76bf515a` |
+| 10:20:44.472 | R2 | 活动 A | allow=true，matched，role_binding / ORGANIZATION；角色及 scope A 匹配 | `cmwecnymfbcfaa846c445dfbecaeea9fa` |
+| 10:21:08.085 | R2 | 组织 A | allow=true，matched，role_binding / ORGANIZATION；角色及 scope A 匹配 | `cmwecogur8c837cb8ad454a358c6ed18f` |
+| 10:21:25.944 | R2 | 组织 B | allow=false，out_of_scope | `cmwecoumrcfc474350a42c7e7bbc7cf82` |
+
+上述组织 A/B 同码对照是指定资源的诊断样本；R1、R2 对活动 A 的 allow 与此前该活动考勤列表 200 一致，但并不证明组织 B 的真实活动接口被拒、所有跨组织权限隔离通过或考勤审批成功。组织类型因为原表单缺选项而使用受控同源请求体适配；活动 A 通过原诊断表单执行。九条前置回读和六项结果见[脱敏逐请求证据](evidence/20261113/authz-explain-matrix.json)；部署 SHA UNKNOWN。

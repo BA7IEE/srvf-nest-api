@@ -1,0 +1,82 @@
+{
+  "classification": "DEPLOYED_HTTP",
+  "target": "https://dp.srvf.team",
+  "deployment_commit": "UNKNOWN",
+  "helper_sha256": "e3e57b2b6401b3091847811b8b37f689db0f842e274e55e19067300a856a3689",
+  "scope": "ordinary synthetic USER B; a random high-entropy locally generated activity identifier, redacted",
+  "receipt_recovery": "Recovered filtered tool output from this local session after model context output truncation; no request was retried.",
+  "results": [
+    {
+      "time": "2026-11-13T06:44:00.645600+08:00",
+      "role": "B",
+      "method": "POST",
+      "path": "/api/auth/v1/login",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe4x98zaa8fcffd3731b832613e4daf"
+    },
+    {
+      "time": "2026-11-13T06:44:05.029881+08:00",
+      "role": "B",
+      "method": "GET",
+      "path": "/api/app/v1/me",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe4xclt2d39c36e5216686be95a394d",
+      "user_and_member_match": true,
+      "role_is_user": true,
+      "account_and_member_active": true,
+      "can_use_app": true
+    },
+    {
+      "time": "2026-11-13T06:44:09.931315+08:00",
+      "role": "B",
+      "method": "GET",
+      "path": "/api/admin/v1/activities/{id}",
+      "status": 404,
+      "code": 20001,
+      "request_id": "cmwe4xgdr4c0fdca689a06dd178575137"
+    },
+    {
+      "time": "2026-11-13T06:44:10.024999+08:00",
+      "role": "B",
+      "method": "GET",
+      "path": "/api/app/v1/my/registrations?page=1&pageSize=100",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe4xggm69d4a69d826ff60fc539e404",
+      "complete": true,
+      "target_matched": false
+    },
+    {
+      "time": "2026-11-13T06:44:10.129817+08:00",
+      "role": "B",
+      "method": "POST",
+      "path": "/api/app/v1/my/registrations",
+      "status": 404,
+      "code": 20001,
+      "request_id": "cmwe4xgju937d5e854f2fc30b9e954a8c",
+      "single_attempt": true,
+      "response_message": "NOT_CAPTURED"
+    },
+    {
+      "time": "2026-11-13T06:44:10.260898+08:00",
+      "role": "B",
+      "method": "GET",
+      "path": "/api/app/v1/my/registrations?page=1&pageSize=100",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe4xgmo01388ac9cdb92700775269da",
+      "complete": true,
+      "target_matched": false
+    }
+  ],
+  "limits": [
+    "The random target was confirmed by admin detail 404 before the one-shot registration request; this is an HTTP not-found observation, not an independent database absence proof.",
+    "Complete pagination is not an atomic database snapshot.",
+    "The response message and target ID were not retained in this evidence.",
+    "The retained empty local one-shot marker prevents blind replay; the helper was stopped and listener released.",
+    "The independent B login session was not logged out; server-side session state UNKNOWN.",
+    "Comparison with the existing invitation-only activity shows a response distinction; the applicable visibility contract and B invitation, participation, and staff relationships are not independently verified."
+  ]
+}
