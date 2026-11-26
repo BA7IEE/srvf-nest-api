@@ -250,15 +250,12 @@ describe('App GET /api/app/v1/activities/:id (P2-4b)', () => {
     const directory = () =>
       get('/api/app/v1/activities?q=internal-public-registration', authHeader);
     const submit = () =>
-      request(httpServer(app))
-        .post(`${path}/registrations`)
-        .set('Authorization', authHeader)
-        .send({
-          operationKey: 'internal-public-registration-0001',
-          formVersion: null,
-          answers: [],
-          preferences: [],
-        });
+      request(httpServer(app)).post(`${path}/registrations`).set('Authorization', authHeader).send({
+        operationKey: 'internal-public-registration-0001',
+        formVersion: null,
+        answers: [],
+        preferences: [],
+      });
 
     const hidden = await directory();
     expect(hidden.status).toBe(200);
