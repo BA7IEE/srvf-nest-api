@@ -229,6 +229,56 @@ describe('App GET /api/app/v1/activities/:id (P2-4b)', () => {
     return authHeader ? r.set('Authorization', authHeader) : r;
   };
 
+  it('keeps internal public-registration activities hidden from informal members on all three routes', async () => {
+    const { authHeader, memberId } = await setupLinkedUser({
+      username: 'p24b_internal_registration',
+      memberNo: 'P24B-INTERNAL-REG',
+    });
+    await prisma.member.update({ where: { id: memberId }, data: { gradeCode: 'informal' } });
+    const activity = await createActivity('published', 'internal-public-registration');
+    await prisma.activity.update({
+      where: { id: activity.id },
+      data: {
+        visibilityCode: 'internal',
+        isPublicRegistration: true,
+        startAt: new Date('2099-06-01T08:00:00.000Z'),
+        endAt: new Date('2099-06-01T12:00:00.000Z'),
+        registrationDeadline: null,
+      },
+    });
+    const path = `/api/app/v1/activities/${activity.id}`;
+    const directory = () =>
+      get('/api/app/v1/activities?q=internal-public-registration', authHeader);
+    const submit = () =>
+      request(httpServer(app))
+        .post(`${path}/registrations`)
+        .set('Authorization', authHeader)
+        .send({
+          operationKey: 'internal-public-registration-0001',
+          formVersion: null,
+          answers: [],
+          preferences: [],
+        });
+
+    const hidden = await directory();
+    expect(hidden.status).toBe(200);
+    expect(hidden.body.data.items).toEqual([]);
+    const detail = await get(path, authHeader);
+    const denied = await submit();
+    expect(detail.status).toBe(404);
+    expect(denied.status).toBe(404);
+    expect(denied.body.code).toBe(20001);
+    expect(denied.body.code).toBe(detail.body.code);
+    expect(await prisma.activityRegistration.count({ where: { activityId: activity.id } })).toBe(0);
+
+    await prisma.member.update({ where: { id: memberId }, data: { gradeCode: 'level-1' } });
+    expect((await directory()).body.data.items).toEqual([
+      expect.objectContaining({ id: activity.id }),
+    ]);
+    expect((await get(path, authHeader)).status).toBe(200);
+    expect((await submit()).status).toBe(201);
+  });
+
   // =====================================================
   // 1. success published + 字段集恰好 13 项
   // =====================================================
