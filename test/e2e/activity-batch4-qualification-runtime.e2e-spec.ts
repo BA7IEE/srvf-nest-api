@@ -527,28 +527,16 @@ describe('activity batch4 qualification runtime', () => {
         where: { aggregateId: submit.body.data.registrationId },
       }),
     ]);
-    const approve = () =>
-      request(httpServer(app))
-        .patch(
-          `/api/admin/v1/activities/${fixture.activityId}/registrations/${submit.body.data.registrationId}/approve`,
-        )
-        .set('Authorization', reviewerAuth);
-    const allocationRequired = await approve().send({});
-    expect(allocationRequired.status).toBe(409);
-    expect(allocationRequired.body.code).toBe(BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED.code);
-    expect(beforeReview[0]).toEqual({ statusCode: 'pending', reviewedAt: null });
-    await expect(
-      prisma.activityParticipationIdentity.findFirstOrThrow({
-        where: { registrationId: submit.body.data.registrationId },
-        select: { currentStatusCode: true, capacityReservationId: true },
-      }),
-    ).resolves.toEqual({ currentStatusCode: 'pending', capacityReservationId: null });
-
     await prisma.member.update({
       where: { id: fixture.memberId },
       data: { gradeCode: 'level-2' },
     });
-    const blockedReview = await approve().send({ reviewNote: '资格事实已变化' });
+    const blockedReview = await request(httpServer(app))
+      .patch(
+        `/api/admin/v1/activities/${fixture.activityId}/registrations/${submit.body.data.registrationId}/approve`,
+      )
+      .set('Authorization', reviewerAuth)
+      .send({ reviewNote: '资格事实已变化' });
     expect(blockedReview.status).toBe(409);
     expect(blockedReview.body.code).toBe(BizCode.ACTIVITY_QUALIFICATION_NOT_MET.code);
     await expect(

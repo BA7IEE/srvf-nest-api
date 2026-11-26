@@ -411,6 +411,40 @@ describe('activity batch4 canonical registration command', () => {
     });
   }
 
+  it('keeps the registration and session participation pending when legacy approval is blocked', async () => {
+    const activity = await createNoFormCommandActivity({ title: 'Session Approval Guard' });
+    const session = await createScheduledCommandSession(activity.id, 'approval-guard');
+    const submitted = await request(httpServer(app))
+      .post(commandPath(activity.id))
+      .set('Authorization', applicantAuth)
+      .send({
+        operationKey: 'batch4-command-approval-guard-0001',
+        formVersion: null,
+        answers: [],
+        preferences: [{ sessionId: session.id, positionIds: [] }],
+      });
+    expect(submitted.status).toBe(201);
+    const registrationId = submitted.body.data.registrationId as string;
+
+    const approval = await request(httpServer(app))
+      .patch(`/api/admin/v1/activities/${activity.id}/registrations/${registrationId}/approve`)
+      .set('Authorization', superAuth)
+      .send({});
+    expectBizError(approval, BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED);
+    await expect(
+      prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: registrationId },
+        select: { statusCode: true, reviewedAt: true },
+      }),
+    ).resolves.toEqual({ statusCode: 'pending', reviewedAt: null });
+    await expect(
+      prisma.activityParticipationIdentity.findFirstOrThrow({
+        where: { registrationId, sessionId: session.id },
+        select: { currentStatusCode: true, capacityReservationId: true },
+      }),
+    ).resolves.toEqual({ currentStatusCode: 'pending', capacityReservationId: null });
+  });
+
   async function expectNoCanonicalCommandWrites(input: {
     activityId: string;
     memberId: string;
