@@ -197,6 +197,7 @@ function makePrismaMock() {
     findFirst: jest.fn().mockResolvedValue(null),
   };
   const activitySession = { findFirst: jest.fn().mockResolvedValue(null) };
+  const activityParticipationIdentity = { findFirst: jest.fn().mockResolvedValue(null) };
   const activityQualificationRuleSet = { findFirst: jest.fn().mockResolvedValue(null) };
   const registrationFormVersion = { findFirst: jest.fn().mockResolvedValue(null) };
   const member = {
@@ -241,6 +242,7 @@ function makePrismaMock() {
     activity,
     activityPosition,
     activitySession,
+    activityParticipationIdentity,
     activityQualificationRuleSet,
     registrationFormVersion,
     member,
@@ -850,6 +852,34 @@ describe('ActivityRegistrationsService (characterization)', () => {
       expect(prisma.activityRegistration.update).not.toHaveBeenCalled();
       expect(recorder.logReview).not.toHaveBeenCalled();
       expect(notificationProducer.enqueueReview).not.toHaveBeenCalled();
+    });
+
+    it('blocks legacy approval for a pending registration with a participation identity', async () => {
+      const prisma = makePrismaMock();
+      const recorder = makeAuditRecorderMock();
+      const notifications = makeNotificationProducerMock();
+      prisma.activityRegistration.findFirst.mockResolvedValue(
+        makeRegRow({ statusCode: 'pending' }),
+      );
+      prisma.activity.findFirst.mockResolvedValue(makeActivityRow({ capacity: null }));
+      prisma.activityParticipationIdentity.findFirst.mockResolvedValue({ id: 'identity-1' });
+      const service = makeService(
+        prisma,
+        recorder,
+        makeStateMachineMock({ allowed: true, nextStatusCode: 'pass' }),
+        notifications,
+      );
+
+      await expect(service.approve('act-1', 'reg-1', {}, makeCurrentUser(), META)).rejects.toEqual(
+        new BizException(BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED),
+      );
+      expect(prisma.activityParticipationIdentity.findFirst).toHaveBeenCalledWith({
+        where: { activityId: 'act-1', registrationId: 'reg-1' },
+        select: { id: true },
+      });
+      expect(prisma.activityRegistration.update).not.toHaveBeenCalled();
+      expect(recorder.logReview).not.toHaveBeenCalled();
+      expect(notifications.enqueueReview).not.toHaveBeenCalled();
     });
 
     it('active scoped RuleSet cannot make a legacy pending head without identity or preference guess a review target', async () => {
