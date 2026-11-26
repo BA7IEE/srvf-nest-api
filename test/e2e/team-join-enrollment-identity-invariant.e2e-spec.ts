@@ -309,6 +309,9 @@ describe('入队身份不变量:唯一 transition(M2)', () => {
       await expectBlocked(volunteer, applicationId, () =>
         membersA.update(volunteer.memberId, { gradeCode: 'level-1' }, admin),
       );
+      await expectBlocked(volunteer, applicationId, () =>
+        membersA.update(volunteer.memberId, { gradeCode: null }, admin),
+      );
       await assertEveryLiveApplicationStillReachable();
     },
     CASE_TIMEOUT_MS,

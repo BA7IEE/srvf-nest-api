@@ -59,7 +59,7 @@ describe('members 模块', () => {
       select: { id: true },
     });
     const active = await prisma.dictItem.create({
-      data: { typeId: gradeType.id, code: 'demo-grade-a', label: 'Active' },
+      data: { typeId: gradeType.id, code: 'level-1', label: 'Active' },
       select: { code: true },
     });
     activeGradeCode = active.code;
@@ -306,7 +306,7 @@ describe('members 模块', () => {
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
     });
 
-    it('PATCH realName / nickname / gradeCode → 200', async () => {
+    it('PATCH realName / nickname → 200，省略 gradeCode 时保留原级别', async () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberId}`)
         .set('Authorization', superAdminAuth)
@@ -314,8 +314,50 @@ describe('members 模块', () => {
       expect(res.status).toBe(200);
       expect(res.body.data.realName).toBe('Renamed');
       expect(res.body.data.nickname).toBe('老张');
+      expect(res.body.data.gradeCode).toBe(activeGradeCode);
       // DoD 6:label 由后端统一拼,外号非空 ⇒ 带括号。
       expect(res.body.data.label).toBe(`${res.body.data.memberNo} · Renamed(老张)`);
+    });
+
+    it('PATCH 可设为正式级别，再用 gradeCode: null 清空', async () => {
+      const member = await prisma.member.create({
+        data: { memberNo: 'demo-grade-clear', ...memberIdentityData('Grade Clear') },
+      });
+      const url = `/api/admin/v1/members/${member.id}`;
+      const assigned = await request(httpServer(app))
+        .patch(url)
+        .set('Authorization', adminAuth)
+        .send({ gradeCode: activeGradeCode });
+      expect(assigned.status).toBe(200);
+      expect(assigned.body.data.gradeCode).toBe(activeGradeCode);
+
+      const cleared = await request(httpServer(app))
+        .patch(url)
+        .set('Authorization', adminAuth)
+        .send({ gradeCode: null });
+      expect(cleared.status).toBe(200);
+      expect(cleared.body.data.gradeCode).toBeNull();
+      const stored = await prisma.member.findUniqueOrThrow({ where: { id: member.id } });
+      expect(stored.gradeCode).toBeNull();
+    });
+
+    it.each(['no-such-grade', 'demo-grade-i', 'demo-wrong-grade'])(
+      'PATCH gradeCode=%s → MEMBER_GRADE_CODE_INVALID',
+      async (gradeCode) => {
+        const res = await request(httpServer(app))
+          .patch(`/api/admin/v1/members/${memberId}`)
+          .set('Authorization', adminAuth)
+          .send({ gradeCode });
+        expectBizError(res, BizCode.MEMBER_GRADE_CODE_INVALID);
+      },
+    );
+
+    it.each(['', 123, 'x'.repeat(65)])('PATCH 非法 gradeCode %p → 400', async (gradeCode) => {
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/members/${memberId}`)
+        .set('Authorization', adminAuth)
+        .send({ gradeCode });
+      expect(res.status).toBe(400);
     });
 
     it('PATCH 拒绝 memberNo(forbidNonWhitelisted)', async () => {

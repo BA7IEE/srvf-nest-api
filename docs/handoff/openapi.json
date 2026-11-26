@@ -150796,8 +150796,9 @@
           },
           "gradeCode": {
             "type": "string",
-            "description": "等级字典 code",
-            "maxLength": 64
+            "description": "等级字典 code。传 null 清空为非正式级别，省略则保留原级别。",
+            "maxLength": 64,
+            "nullable": true
           }
         }
       },
