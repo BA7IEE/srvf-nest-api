@@ -40,7 +40,7 @@ function command(
   };
 }
 
-function makeTx() {
+function makeTx(allocationModeCode = 'manual') {
   const tx = {
     $queryRaw: jest
       .fn()
@@ -52,7 +52,7 @@ function makeTx() {
           registrationDeadline: null,
           genderRequirementCode: null,
           requiresInsurance: false,
-          allocationModeCode: 'manual',
+          allocationModeCode,
           title: '活动',
           startAt: new Date('2099-12-30T00:00:00.000Z'),
           endAt: new Date('2099-12-31T00:00:00.000Z'),
@@ -68,6 +68,7 @@ function makeTx() {
       create: jest.fn().mockResolvedValue({ id: 'registration-revision-1', submittedAt: NOW }),
     },
     registrationFormVersion: { findFirst: jest.fn().mockResolvedValue(null) },
+    activitySession: { findFirst: jest.fn().mockResolvedValue(null) },
     activityRegistration: {
       create: jest.fn().mockResolvedValue({ id: 'registration-1', currentRevision: 0 }),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -156,6 +157,25 @@ function makeService(tx: ReturnType<typeof makeTx>, opts: { transactionError?: E
 }
 
 describe('RegistrationCommandService', () => {
+  it('rejects empty preferences before writing a first-come registration with a scheduled session', async () => {
+    const tx = makeTx('first_come');
+    tx.activitySession.findFirst.mockResolvedValue({ id: 'session-1' });
+    const { service, allocations, audit } = makeService(tx);
+    allocations.hasInitializedCapacityTopologyInTransactionTrusted.mockResolvedValue(true);
+
+    await expect(
+      service.submit('activity-1', command(), user(), {
+        requestId: 'request-1',
+        ip: null,
+        ua: null,
+      }),
+    ).rejects.toEqual(new BizException(BizCode.BAD_REQUEST));
+    expect(tx.activityRegistration.create).not.toHaveBeenCalled();
+    expect(tx.activityParticipationIdentity.create).not.toHaveBeenCalled();
+    expect(allocations.applyFirstComeAfterSubmissionInTransactionTrusted).not.toHaveBeenCalled();
+    expect(audit.logCommandCreate).not.toHaveBeenCalled();
+  });
+
   it('creates a minimal first immutable command chain only after all pre-write rereads', async () => {
     const tx = makeTx();
     const { service, audit, insuranceRequirement } = makeService(tx);

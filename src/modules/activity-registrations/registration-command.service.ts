@@ -712,6 +712,11 @@ export class RegistrationCommandService {
       if (livePositions.length > 0) {
         throw new BizException(BizCode.ACTIVITY_POSITION_REQUIRED);
       }
+      const liveSession = await tx.activitySession.findFirst({
+        where: { activityId, statusCode: 'scheduled', deletedAt: null },
+        select: { id: true },
+      });
+      if (liveSession) invalidPreference();
       return;
     }
     const sessions = await tx.$queryRaw<

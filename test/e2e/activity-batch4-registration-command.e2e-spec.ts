@@ -1296,6 +1296,69 @@ describe('activity batch4 canonical registration command', () => {
     });
   });
 
+  it('requires a session preference for first-come capacity when there are no positions', async () => {
+    const activity = await createNoFormCommandActivity({ title: 'First Come Without Positions' });
+    const session = await createScheduledCommandSession(activity.id, 'first-come-no-positions');
+    await prisma.activityCapacityBucket.createMany({
+      data: [
+        {
+          activityId: activity.id,
+          scopeTypeCode: 'activity_person',
+          scopeId: activity.id,
+          capacity: 1,
+        },
+        {
+          activityId: activity.id,
+          scopeTypeCode: 'session_participation',
+          scopeId: session.id,
+          capacity: 1,
+        },
+      ],
+    });
+    await prisma.activityEvidenceState.create({ data: { activityId: activity.id } });
+    const auditCountBefore = await commandAuditCount(applicantUserId);
+    const body = {
+      operationKey: 'batch4-command-first-come-no-positions-0001',
+      formVersion: null,
+      answers: [],
+    };
+    const submit = (preferences: unknown[]) =>
+      request(httpServer(app))
+        .post(commandPath(activity.id))
+        .set('Authorization', applicantAuth)
+        .send({ ...body, preferences });
+
+    expectBizError(await submit([]), BizCode.BAD_REQUEST);
+    await expectNoCanonicalCommandWrites({
+      activityId: activity.id,
+      memberId: applicantMemberId,
+      actorUserId: applicantUserId,
+      auditCountBefore,
+    });
+    expect(
+      await prisma.capacityReservation.count({ where: { bucket: { activityId: activity.id } } }),
+    ).toBe(0);
+
+    const accepted = await submit([{ sessionId: session.id, positionIds: [] }]);
+    expect(accepted.status).toBe(201);
+    await expect(
+      prisma.activityParticipationIdentity.findFirstOrThrow({
+        where: { registrationId: accepted.body.data.registrationId, sessionId: session.id },
+        select: { currentStatusCode: true, capacityReservationId: true },
+      }),
+    ).resolves.toEqual({ currentStatusCode: 'pass', capacityReservationId: expect.any(String) });
+    await expect(
+      prisma.capacityReservation.findMany({
+        where: { bucket: { activityId: activity.id } },
+        select: { reservationType: true, status: true },
+        orderBy: { reservationType: 'asc' },
+      }),
+    ).resolves.toEqual([
+      { reservationType: 'activity_person', status: 'active' },
+      { reservationType: 'session_participation', status: 'active' },
+    ]);
+  });
+
   it('requires one or more positions when a selected scheduled session has live positions', async () => {
     const positionActivity = await createNoFormCommandActivity({
       title: 'Canonical Command Position Required',
