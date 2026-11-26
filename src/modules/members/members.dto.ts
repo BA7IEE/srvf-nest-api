@@ -380,12 +380,18 @@ export class UpdateMemberDto {
   @MaxLength(64)
   nickname?: string | null;
 
-  @ApiPropertyOptional({ description: '等级字典 code', maxLength: 64 })
+  @ApiPropertyOptional({
+    description: '等级字典 code。传 null 清空为非正式级别，省略则保留原级别。',
+    type: String,
+    maxLength: 64,
+    nullable: true,
+  })
   @IsOptional()
+  @ValidateIf((_, value) => value !== null)
   @IsString()
   @MinLength(1)
   @MaxLength(64)
-  gradeCode?: string;
+  gradeCode?: string | null;
 }
 
 export class UpdateMemberStatusDto {

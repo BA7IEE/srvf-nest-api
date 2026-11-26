@@ -370,7 +370,7 @@ export class MembersService {
       }
       await this.access.findMemberOrThrow(id, tx);
 
-      if (dto.gradeCode !== undefined) {
+      if (dto.gradeCode !== undefined && dto.gradeCode !== null) {
         await assertGradeCodeValid(tx, dto.gradeCode);
       }
 

@@ -38759,8 +38759,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   "UpdateMemberDto": {
     "properties": {
       "gradeCode": {
-        "description": "等级字典 code",
+        "description": "等级字典 code。传 null 清空为非正式级别，省略则保留原级别。",
         "maxLength": 64,
+        "nullable": true,
         "type": "string",
       },
       "nickname": {

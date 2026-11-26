@@ -580,10 +580,11 @@ D4 八个新增入口全部在 Human App managed activity 面，详见 [小程�
     「未入队志愿者」是一条 live 入队申请(`joining`/`pending_evaluation`/`approved`)**唯一**的走通前提 ——
     把它改掉,那条申请就成了没有任何终态通路的死行(evaluate 还能推到 approved,而一键入队从此永远 `28210`)。
     因此**八个写方**在该队员有 live 申请时统一返 **`28211`**「该队员有进行中的入队申请,请先完成一键入队或综合评估淘汰,再改动其身份/部门」:
-    `PATCH admin/v1/members/:id`(改 `gradeCode`)· `PATCH admin/v1/members/:id/status`(→ INACTIVE / 离队)·
+    `PATCH admin/v1/members/:id`(设置或清空 `gradeCode`)· `PATCH admin/v1/members/:id/status`(→ INACTIVE / 离队)·
     `PUT|DELETE admin/v1/members/:memberId/department` · `POST admin/v1/members/:memberId/memberships`(仅 `PRIMARY`)·
     `PATCH …/memberships/:id`(仅带 `membershipType` 时)· `DELETE …/memberships/:id` ·
     `POST admin/v1/memberships/transfer`(仅 `PRIMARY`)。
+    更新队员时，传 `gradeCode: null` 可清空为非正式级别，省略 `gradeCode` 则保留原级别。传字符串时须为启用的 `member_grade` 字典项，无效字典项返回 `15010`。
     **前端要做的**:这几个表单的失败分支加 `28211` 提示,并在文案里给出**两条出路**——去「入队申请」页一键入队,或综合评估淘汰。
     ⚠️ 过近似两处(可以直接照单提示,不必特判):`PUT …/department` 即使目标部门与当前相同(幂等无写)也会被拒;
     `DELETE …/memberships/:id` 结束的即使是一条 SECONDARY 也会被拒。
