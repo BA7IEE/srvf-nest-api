@@ -17,3 +17,9 @@
 ## 一次批准复测（未再打、未扩权）
 
 对审核单 `cmwz26jnx02b0ny01itbub0fm`（隔离草稿 `cmwz1vy7f02a1ny01xuigxskj`）只批准一次。GRANT 之后不再出现 42501。结果是 HTTP 409／业务码 20030：活动仍为 draft，但 `endAt` 已过（2026-11-28 02:02:11.001 Asia/Shanghai），冻结 8a `ensureInitialPublishable` 拒绝发布。审核单仍 pending，Issue 8 未走。
+
+## 续：RegistrationFormVersion 六列 UPDATE
+
+初次发布在 `apply()` 激活报名表版本时会对 `public."RegistrationFormVersion"` 执行 UPDATE（`statusCode`、`workflowRevision`、`schemaHash`、`activatedAt`、`retiredAt`、`updatedAt`）。官方 `grant-review.sql` 只授了该表列级 SELECT。验收库在 2026-11-28 07:44:30 Asia/Shanghai 按最小可逆范围补了这六列 UPDATE（无 GRANT OPTION）。对应 Prisma 迁移为 `20261128080001_review_registration_form_version_update`。REVOKE 见 `revoke-review-formversion-update.sql`。
+
+随后一次批准（07:44:44 Asia/Shanghai）不再出现 42501，返回业务码 20035（负责人／协办人不符合条件）。审核单仍 pending，未再打，未扩权，Issue 8 未走。
