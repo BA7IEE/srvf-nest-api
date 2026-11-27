@@ -584,7 +584,14 @@ export function controlOnsiteActiveCheckRemoved(): MutationControl {
  */
 export function controlSubmitUpstreamRecheckRemoved(): MutationControl {
   return mutated(SUBMIT_SERVICE, [
-    ['await this.assertAppAdmissionStillLive(input.tx, input.currentUser.id, input.memberId);', ''],
+    [
+      `await this.assertAppAdmissionStillLive(
+      input.tx,
+      input.currentUser.id,
+      input.memberId,
+    )`,
+      '{ gradeCode: null }',
+    ],
   ]);
 }
 

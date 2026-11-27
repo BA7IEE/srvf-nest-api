@@ -13,6 +13,7 @@ import {
   type RegistrationUploadSubmissionBinding,
 } from '../attachments/attachments.service';
 import { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
+import { isFormalMemberGradeCode } from '../members/member-grade';
 import { AppIdentityResolver } from '../users/app-identity.resolver';
 import {
   validateRegistrationFormAnswers,
@@ -143,6 +144,7 @@ export class RegistrationCommandService {
       Array<{
         id: string;
         statusCode: string;
+        visibilityCode: string | null;
         isPublicRegistration: boolean;
         registrationDeadline: Date | null;
         genderRequirementCode: string | null;
@@ -156,6 +158,7 @@ export class RegistrationCommandService {
       SELECT
         "id",
         "statusCode",
+        "visibilityCode",
         "isPublicRegistration",
         "registrationDeadline",
         "genderRequirementCode",
@@ -209,7 +212,18 @@ export class RegistrationCommandService {
 
     // Authorization is mutable state too.  A safe retry may bypass Form/finality checks, but it
     // must never replay after the app admission facts changed while waiting on the Activity lock.
-    await this.assertAppAdmissionStillLive(input.tx, input.currentUser.id, input.memberId);
+    const member = await this.assertAppAdmissionStillLive(
+      input.tx,
+      input.currentUser.id,
+      input.memberId,
+    );
+    if (
+      input.source === 'self' &&
+      activity.visibilityCode === 'internal' &&
+      !isFormalMemberGradeCode(member.gradeCode)
+    ) {
+      throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+    }
 
     // Idempotency must win before any Form/upload session validation, so a safe retry remains
     // replayable after the first request has consumed its one-time sessions.
@@ -621,12 +635,12 @@ export class RegistrationCommandService {
     tx: PrismaTx,
     userId: string,
     memberId: string,
-  ): Promise<void> {
+  ): Promise<{ gradeCode: string | null }> {
     const members = await tx.$queryRaw<
-      Array<{ id: string; status: MemberStatus; deletedAt: Date | null }>
+      Array<{ id: string; status: MemberStatus; deletedAt: Date | null; gradeCode: string | null }>
     >(
       Prisma.sql`
-        SELECT "id", "status", "deletedAt" FROM "Member"
+        SELECT "id", "status", "deletedAt", "gradeCode" FROM "Member"
         WHERE "id" = ${memberId}
         FOR SHARE
       `,
@@ -649,6 +663,7 @@ export class RegistrationCommandService {
     ) {
       throw new BizException(BizCode.FORBIDDEN);
     }
+    return members[0];
   }
 
   private async assertGenderRequirement(
