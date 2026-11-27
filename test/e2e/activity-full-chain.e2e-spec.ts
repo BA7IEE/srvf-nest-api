@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { BindingScopeType, BindingStatus, MemberStatus, PrincipalType, Role } from '@prisma/client';
 import request from 'supertest';
 
+import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import type { JwtConfig } from '../../src/config/jwt.config';
 import { PrismaService } from '../../src/database/prisma.service';
 import { ActivitiesModule } from '../../src/modules/activities/activities.module';
@@ -343,7 +344,7 @@ describe('活动全链路贯通(14 站 · 8 条接缝)', () => {
     return (body.data ?? {}) as Record<string, unknown>;
   }
 
-  it('canonical pending registration survives manual approval and allocation commit through HTTP', async () => {
+  it('canonical pending registration rejects legacy approval and proceeds through allocation over HTTP', async () => {
     const manager = await prisma.user.findUniqueOrThrow({
       where: { username: managerUsername },
       select: { id: true },
@@ -427,15 +428,27 @@ describe('活动全链路贯通(14 站 · 8 条接缝)', () => {
     ).expect(201);
     expect(registered.body.code).toBe(0);
     const registrationId = registered.body.data.registrationId as string;
-    const approved = await request(server)
+    const approval = await request(server)
       .patch(`${managed}/registrations/${registrationId}/approve`)
       .set('Authorization', ownerAuth)
       .send({})
-      .expect(200);
-    expect(approved.body.code).toBe(0);
-    expect(approved.body.data).toMatchObject({ registrationId, statusCode: 'pass' });
-    // Header approval is not an occupancy grant. Consume the real allocation
-    // protocol after its deadline; advance only the existing test application clock.
+      .expect(409);
+    expect(approval.body.code).toBe(BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED.code);
+    await expect(
+      prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: registrationId },
+        select: { statusCode: true, reviewedAt: true },
+      }),
+    ).resolves.toEqual({ statusCode: 'pending', reviewedAt: null });
+    const pendingIdentity = await prisma.activityParticipationIdentity.findFirstOrThrow({
+      where: { registrationId, sessionId },
+      select: { id: true, currentStatusCode: true, capacityReservationId: true },
+    });
+    expect(pendingIdentity).toMatchObject({
+      currentStatusCode: 'pending',
+      capacityReservationId: null,
+    });
+    // Allocation decides session participation after the registration deadline.
     freezeSystemTime(T_AFTER_DEADLINE);
     const allocationAuth = (await loginAs(app, managerUsername)).authHeader;
     const prepared = await post(`${managed}/allocation-batches`, allocationAuth, {
@@ -453,7 +466,7 @@ describe('活动全链路贯通(14 站 · 8 条接缝)', () => {
     expect(plan.batch.candidates).toHaveLength(1);
     expect(plan.batch.candidates[0].registrationId).toBe(registrationId);
     const identityId = plan.batch.candidates[0].participationIdentityId;
-    expect(identityId).toEqual(expect.any(String));
+    expect(identityId).toBe(pendingIdentity.id);
     const committed = await post(
       `${managed}/allocation-batches/${plan.batch.batchId}/commit`,
       allocationAuth,

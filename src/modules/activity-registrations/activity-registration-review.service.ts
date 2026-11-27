@@ -288,6 +288,16 @@ export class ActivityRegistrationReviewService {
               lockedReg,
               activeScopedQualificationRuleSet !== null,
             );
+      // Session participation is decided by allocation, which also reserves capacity.
+      const hasParticipationIdentity = reviewQualification
+        ? reviewQualification.context.identityCount > 0
+        : (await tx.activityParticipationIdentity.findFirst({
+            where: { activityId, registrationId: lockedReg.id },
+            select: { id: true },
+          })) !== null;
+      if (hasParticipationIdentity) {
+        throw new BizException(BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED);
+      }
       await this.insuranceRequirement.revalidateActivityRegistrationApproval(
         {
           id: lockedReg.id,
