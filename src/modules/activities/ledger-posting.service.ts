@@ -11,6 +11,7 @@ import {
 import { ParticipationTimeLedgerAccessService } from './participation-time-ledger-access.service';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Prisma } from '@prisma/client';
+import { createOrdinaryTimeRoot, hasTimeCutover } from './ordinary-time-root';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -390,15 +391,16 @@ export class LedgerPostingService {
           ));
         if (!readyV3ReceiptMatches) await this.timeCorrection.assertComplete(tx, batch.id, true);
       }
-      const classified = !correction && (await this.timeLedger.hasClassifiedSource(tx, batch));
-      if (classified) {
+      const timeSource = correction ? null : await this.timeLedger.sourceKind(tx, batch);
+      if (timeSource) {
         if (options.conversion) throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_SOURCE_INVALID);
-        await this.timeLedgerAccess.authorize(
-          tx,
-          currentUser.id,
-          activityId,
-          batch.settlementVersionId,
-        );
+        if (timeSource === 'policy')
+          await this.timeLedgerAccess.authorize(
+            tx,
+            currentUser.id,
+            activityId,
+            batch.settlementVersionId,
+          );
         await this.timeLedger.assertComplete(tx, batch);
       }
 
@@ -496,13 +498,31 @@ export class LedgerPostingService {
         // keeps the historical application-side complete-set recheck.
         if (!readyV3ReceiptMatches) await this.timeCorrection.assertComplete(tx, batch.id, true);
       }
-      if (classified) {
-        await this.timeLedgerAccess.authorize(
+      if (timeSource) {
+        if (timeSource === 'policy')
+          await this.timeLedgerAccess.authorize(
+            tx,
+            currentUser.id,
+            activityId,
+            batch.settlementVersionId,
+          );
+        await this.timeLedger.assertComplete(tx, batch);
+      } else if (
+        !correctionFact.hasApplication &&
+        !correction &&
+        !options.conversion &&
+        (await hasTimeCutover(tx))
+      ) {
+        if (native) throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_NOT_READY);
+        const identityIds = await createOrdinaryTimeRoot(
           tx,
-          currentUser.id,
           activityId,
-          batch.settlementVersionId,
+          version.id,
+          currentUser.id,
         );
+        if (!(await this.timeLedger.ensureManifest(tx, batch)))
+          throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_NOT_READY);
+        await this.timeLedger.prepareIdentities(tx, batch, identityIds);
         await this.timeLedger.assertComplete(tx, batch);
       }
       // Receipt selects only the fresh V3 entry; it never certifies E4 evidence.

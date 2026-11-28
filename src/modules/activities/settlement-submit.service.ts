@@ -24,6 +24,7 @@ import {
   type SettlementSubmissionRejection,
 } from './settlement-submission-validator';
 import { frozenContributionRegime } from './activity-contribution-settlement.service';
+import { createOrdinaryTimeRoot, hasTimeCutover } from './ordinary-time-root';
 import { validateManualHoursEvidence } from './settlement-hours-evidence-query';
 
 // ===== 活动改造 v1.1 第 2 批第三刀:提交不可变 SettlementVersion(合同 §5.10)=====
@@ -876,6 +877,8 @@ export class SettlementSubmitService {
         contentHash,
       });
       currentUser = await classified.reauthorize();
+    } else if (await hasTimeCutover(tx)) {
+      await createOrdinaryTimeRoot(tx, activityId, created.id, currentUser.id);
     }
 
     // ⑧ 更新 run 指针与状态。

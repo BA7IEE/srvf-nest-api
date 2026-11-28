@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { ACTIVITY_TIME_CUTOVER_RECEIPT_ID } from '../../src/modules/activities/activity-time-cutover-command';
 import type { INestApplication } from '@nestjs/common';
 import { Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
@@ -1298,5 +1299,48 @@ describe('settlement submit —— 提交不可变版本 (合同 §5.10)', () =>
       expect(error).toBeInstanceOf(BizException);
       expect((error as BizException).biz).toBe(BizCode.SETTLEMENT_SUBMIT_PENDING_RESULT);
     });
+  });
+
+  it('writes the classified root in the ordinary submit transaction after cutover', async () => {
+    const fixture = await createSubmittable();
+    await prisma.activityTimeCutoverReceipt.create({
+      data: {
+        id: ACTIVITY_TIME_CUTOVER_RECEIPT_ID,
+        operationKey: 'ordinary-submit-cutover',
+        requestHash: '1'.repeat(64),
+        evidenceBundleHash: '2'.repeat(64),
+        deployedMainSha: '3'.repeat(40),
+        contentHash: '0'.repeat(64),
+        actorUserId: actor.id,
+      },
+    });
+    const submitted = await service.submit(submitInput(fixture), actor, auditMeta);
+    const revision = await prisma.activitySettlementTimeRevision.findFirstOrThrow({
+      where: { settlementVersionId: submitted.settlementVersionId, kindCode: 'submitted' },
+      include: { buckets: true, sourceDraftTimeRevision: true, commandReceipt: true },
+    });
+    expect(revision).toMatchObject({
+      createdByUserId: actor.id,
+      draftContentHash: submitted.contentHash,
+      bucketCount: 4 * fixture.identityIds.length,
+      sourceCount: 0,
+      sourceDraftTimeRevision: { settlementVersionId: submitted.settlementVersionId },
+      commandReceipt: {
+        operationCode: 'submit_time_settlement',
+        resultJson: { contentHash: submitted.contentHash },
+      },
+    });
+    expect(
+      revision.buckets.filter(({ categoryCode }) => categoryCode === 'volunteer_service'),
+    ).toHaveLength(fixture.identityIds.length);
+    expect(await service.submit(submitInput(fixture), actor, auditMeta)).toMatchObject({
+      replayed: true,
+      settlementVersionId: submitted.settlementVersionId,
+    });
+    expect(
+      await prisma.activitySettlementTimeRevision.count({
+        where: { activityId: fixture.activityId },
+      }),
+    ).toBe(2);
   });
 });

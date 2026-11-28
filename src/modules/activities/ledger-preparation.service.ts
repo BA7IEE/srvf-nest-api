@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Injectable, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { createOrdinaryTimeRoot, hasTimeCutover } from './ordinary-time-root';
 
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -214,6 +215,8 @@ export class LedgerPreparationService {
     // 自己就翻面;写成 `now + 1` 后它与两个时钟的相对快慢无关。
     const availableAt = new Date((options.now ?? new Date()).getTime() + 1);
     return await this.prisma.$transaction(async (tx) => {
+      const afterCutover = await hasTimeCutover(tx);
+      if (afterCutover) await this.lockOrdinaryTimeRootParents(tx, postingBatchId);
       const batch = await this.lockBatch(tx, postingBatchId);
       if (batch.statusCode !== 'preparing') {
         throw new BizException(BizCode.LEDGER_PREPARE_BATCH_STATUS_INVALID);
@@ -230,11 +233,18 @@ export class LedgerPreparationService {
             throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
           this.activityWorkflowGate.assertV11WriteAllowed();
         }
+        const repaired = afterCutover ? await this.createMissingOrdinaryTimeRoot(tx, batch) : null;
+        if (repaired) {
+          await this.timeLedger.ensureManifest(tx, batch);
+          // Items that already succeeded did so before classified entries existed.
+          await this.timeLedger.prepareIdentities(tx, batch, repaired);
+        }
         await this.timeLedger.assertManifestForReplay(tx, batch);
         return { jobId: existing.id, itemCount: existing.total };
       }
 
       this.assertContributionWriteAllowed(batch.contributionRegimeCode);
+      if (afterCutover) await this.createMissingOrdinaryTimeRoot(tx, batch);
       await this.timeLedger.ensureManifest(tx, batch);
 
       const memberIds = await this.readVersionMemberIds(tx, batch.settlementVersionId);
@@ -450,7 +460,10 @@ export class LedgerPreparationService {
     return await this.prisma.$transaction(
       async (tx) => {
         const job = await this.lockJob(tx, jobId);
-        const batch = await this.lockBatch(tx, requireBatchId(job.postingBatchId));
+        const postingBatchId = requireBatchId(job.postingBatchId);
+        const afterCutover = await hasTimeCutover(tx);
+        if (afterCutover) await this.lockOrdinaryTimeRootParents(tx, postingBatchId);
+        const batch = await this.lockBatch(tx, postingBatchId);
 
         const pending = await tx.activityBatchJobItem.count({
           where: { jobId, statusCode: { not: 'succeeded' } },
@@ -511,6 +524,11 @@ export class LedgerPreparationService {
         }
 
         const baseline = readBaselineFromPayload(job.payload);
+        const repaired = afterCutover ? await this.createMissingOrdinaryTimeRoot(tx, batch) : null;
+        if (repaired) {
+          await this.timeLedger.ensureManifest(tx, batch);
+          await this.timeLedger.prepareIdentities(tx, batch, repaired);
+        }
         await this.timeLedger.assertComplete(tx, batch);
         if (native)
           await this.contributions!.assertVersionInTx(tx, batch.settlementVersionId, batch.id);
@@ -557,6 +575,46 @@ export class LedgerPreparationService {
     return true;
   }
 
+  private async lockOrdinaryTimeRootParents(tx: PrismaTx, postingBatchId: string) {
+    // Match the existing Activity → run → batch order before a time revision can be inserted.
+    const [anchor] = await tx.$queryRaw<Array<{ runId: string }>>`
+      SELECT r.id AS "runId" FROM "Activity" a
+      JOIN "AttendanceSettlementRun" r ON r."activityId" = a.id
+      JOIN "LedgerPostingBatch" b ON b."settlementRunId" = r.id
+      WHERE b.id = ${postingBatchId} FOR UPDATE OF a
+    `;
+    if (anchor)
+      await tx.$queryRaw`
+        SELECT id FROM "AttendanceSettlementRun" WHERE id = ${anchor.runId} FOR UPDATE
+      `;
+  }
+
+  private async createMissingOrdinaryTimeRoot(
+    tx: PrismaTx,
+    batch: Awaited<ReturnType<LedgerPreparationService['lockBatch']>>,
+  ): Promise<string[] | null> {
+    if (await this.timeLedger.sourceKind(tx, batch)) return null;
+    const correction = await tx.correctionApplication.findFirst({
+      where: {
+        OR: [
+          { newPostingBatchId: batch.id },
+          { newSettlementVersionId: batch.settlementVersionId },
+        ],
+      },
+      select: { id: true },
+    });
+    if (correction) return null;
+    if (frozenContributionRegime(batch.contributionRegimeCode) === 'policy_v1')
+      throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_NOT_READY);
+    if (!batch.submitterId) throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_NOT_READY);
+    return createOrdinaryTimeRoot(
+      tx,
+      batch.activityId,
+      batch.settlementVersionId,
+      batch.submitterId,
+    );
+  }
+
   private async lockBatch(
     tx: PrismaTx,
     postingBatchId: string,
@@ -567,6 +625,7 @@ export class LedgerPreparationService {
     settlementRunId: string;
     activityId: string;
     requestHash: string | null;
+    submitterId: string | null;
     preparedCount: number;
     totalCount: number;
     baselineJsonHash: string | null;
@@ -580,6 +639,7 @@ export class LedgerPreparationService {
         settlementRunId: string;
         activityId: string;
         requestHash: string | null;
+        submitterId: string | null;
         preparedCount: number;
         totalCount: number;
         baselineJsonHash: string | null;
@@ -588,7 +648,7 @@ export class LedgerPreparationService {
     >`
       SELECT b.id, b."statusCode", b."settlementVersionId", b."settlementRunId",
              r."activityId", b."requestHash", b."preparedCount", b."totalCount",
-             b."baselineJsonHash", v."contributionRegimeCode"
+             b."baselineJsonHash", v."contributionRegimeCode", v."createdByUserId" AS "submitterId"
       FROM "LedgerPostingBatch" b
       JOIN "AttendanceSettlementRun" r ON r.id = b."settlementRunId"
       JOIN "AttendanceSettlementVersion" v ON v.id = b."settlementVersionId" AND v."settlementRunId" = r.id

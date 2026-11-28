@@ -148,6 +148,7 @@ describe('LedgerPreparationService finalize characterization', () => {
       .spyOn(tx, '$queryRaw')
       .mockResolvedValueOnce([job()])
       .mockResolvedValueOnce([batch()]);
+    jest.spyOn(tx.activityTimeCutoverReceipt, 'findUnique').mockResolvedValue(null);
     pendingCount = jest.spyOn(tx.activityBatchJobItem, 'count').mockResolvedValue(0);
     timeComplete = jest.spyOn(timeLedger, 'assertComplete').mockImplementation(() => {
       events.push('time-complete');
