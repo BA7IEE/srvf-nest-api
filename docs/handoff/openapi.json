@@ -50547,6 +50547,16 @@
               "default": false,
               "type": "boolean"
             }
+          },
+          {
+            "name": "initiatedByMe",
+            "required": false,
+            "in": "query",
+            "description": "仅列出当前登录队员发起的活动",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -50946,6 +50956,16 @@
             }
           },
           {
+            "name": "includeDescendants",
+            "required": false,
+            "in": "query",
+            "description": "配合 organizationId:是否展开其全部后代组织(默认 false)",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          {
             "name": "limit",
             "required": false,
             "in": "query",
@@ -50961,6 +50981,16 @@
             "required": false,
             "in": "query",
             "description": "是否把已归档活动一并列出(默认 false;仅在未传 statusCode 时生效)",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "initiatedByMe",
+            "required": false,
+            "in": "query",
+            "description": "仅列出当前登录队员发起的活动",
             "schema": {
               "default": false,
               "type": "boolean"

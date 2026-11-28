@@ -40746,6 +40746,16 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
             "type": "boolean",
           },
         },
+        {
+          "description": "仅列出当前登录队员发起的活动",
+          "in": "query",
+          "name": "initiatedByMe",
+          "required": false,
+          "schema": {
+            "default": false,
+            "type": "boolean",
+          },
+        },
       ],
       "responses": {
         "200": {
@@ -41416,6 +41426,16 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
         },
         {
+          "description": "配合 organizationId:是否展开其全部后代组织(默认 false)",
+          "in": "query",
+          "name": "includeDescendants",
+          "required": false,
+          "schema": {
+            "default": false,
+            "type": "boolean",
+          },
+        },
+        {
           "description": "结果条数上限(默认 20,上限 100)",
           "in": "query",
           "name": "limit",
@@ -41430,6 +41450,16 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "description": "是否把已归档活动一并列出(默认 false;仅在未传 statusCode 时生效)",
           "in": "query",
           "name": "includeArchived",
+          "required": false,
+          "schema": {
+            "default": false,
+            "type": "boolean",
+          },
+        },
+        {
+          "description": "仅列出当前登录队员发起的活动",
+          "in": "query",
+          "name": "initiatedByMe",
           "required": false,
           "schema": {
             "default": false,
