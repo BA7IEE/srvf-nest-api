@@ -613,8 +613,14 @@ export class ActivityRegistrationLifecycleService {
         !revision ||
         revision.revision !== identity.currentRevision ||
         revision.statusCode !== identity.currentStatusCode ||
+        // 无占位状态必须保持 identity.currentPositionId = null，但当前修订仍可能
+        // 记下候补/意向岗位。对账若强求二者相等，会让 first_come 候补取消/拒绝
+        // 在写桶前以 20147 闭闸（WAVE89 04/06：修订有 positionId，指针为 null）。
         (identity.currentStatusCode !== 'cancelled' &&
           identity.currentStatusCode !== 'rejected' &&
+          identity.currentStatusCode !== 'waitlisted' &&
+          identity.currentStatusCode !== 'pending' &&
+          identity.currentStatusCode !== 'not_selected' &&
           revision.positionId !== identity.currentPositionId)
       ) {
         this.failClosed();

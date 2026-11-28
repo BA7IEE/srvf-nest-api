@@ -16,6 +16,7 @@ describe('ActivityRegistrationLifecycleService', () => {
     reservationScopeTypeCode?: string;
     revisionPresent?: boolean;
     revisionStatusCode?: string;
+    revisionPositionId?: string | null;
   }) {
     const pointer = options?.pointer === undefined ? 'session-reservation-1' : options.pointer;
     const populationIncluded = options?.populationIncluded ?? true;
@@ -128,7 +129,10 @@ describe('ActivityRegistrationLifecycleService', () => {
                   identityId: 'identity-1',
                   revision: 1,
                   statusCode: revisionStatusCode,
-                  positionId: currentPositionId,
+                  positionId:
+                    options?.revisionPositionId === undefined
+                      ? currentPositionId
+                      : options.revisionPositionId,
                 },
               ],
         ),
@@ -567,6 +571,32 @@ describe('ActivityRegistrationLifecycleService', () => {
       }),
     ).rejects.toEqual(new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED));
     expect(capacity.releaseInTransactionTrusted).not.toHaveBeenCalled();
+  });
+
+  it('cancels a waitlisted identity whose current revision records a target position while the occupancy pointer stays null', async () => {
+    const { service, tx, capacity } = setup({
+      statusCode: 'waitlisted',
+      pointer: null,
+      populationIncluded: false,
+      activeSessionReservation: false,
+      currentPositionId: null,
+      revisionPositionId: 'position-1',
+    });
+
+    await service.cancelInTransactionTrusted(tx as never, {
+      activityId: 'activity-1',
+      registrationId: 'registration-1',
+      memberId: 'member-1',
+      actorUserId: 'user-1',
+      sourceCode: 'self',
+      cancelReason: null,
+      cancelledAt,
+    });
+
+    expect(capacity.releaseInTransactionTrusted).toHaveBeenCalledTimes(1);
+    expect(tx.activityParticipationRevision.create).toHaveBeenCalledTimes(1);
+    expect(tx.activityRegistrationRevision.create).toHaveBeenCalledTimes(1);
+    expect(tx.activityEvidenceState.updateMany).not.toHaveBeenCalled();
   });
 
   it('does not advance population when cancellation changes no included identity', async () => {

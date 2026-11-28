@@ -1,0 +1,1 @@
+- 修复 first_come 候补取消/拒绝在对账时因 `ActivityParticipationIdentity.currentPositionId` 必须为 null、但当前修订仍记录目标岗位 `positionId` 而以 20147 闭闸的问题。无占位状态（pending / waitlisted / cancelled / rejected / not_selected）不再强求修订岗位与占用指针相等。不改桶计数或补预留行。
