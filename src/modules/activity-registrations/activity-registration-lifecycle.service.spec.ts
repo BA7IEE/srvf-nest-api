@@ -17,6 +17,7 @@ describe('ActivityRegistrationLifecycleService', () => {
     revisionPresent?: boolean;
     revisionStatusCode?: string;
     revisionPositionId?: string | null;
+    lockApprovalMember?: boolean;
   }) {
     const pointer = options?.pointer === undefined ? 'session-reservation-1' : options.pointer;
     const populationIncluded = options?.populationIncluded ?? true;
@@ -84,32 +85,34 @@ describe('ActivityRegistrationLifecycleService', () => {
               ]),
         ]
       : [];
+    const queryRaw = jest
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          id: 'registration-1',
+          activityId: 'activity-1',
+          memberId: 'member-1',
+          currentRevision: 1,
+          currentFormVersionId: null,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'identity-1',
+          activityId: 'activity-1',
+          memberId: 'member-1',
+          sessionId: 'session-1',
+          currentRevision: 1,
+          currentStatusCode: statusCode,
+          currentPositionId,
+          capacityReservationId: pointer,
+          populationIncluded,
+          version: 4,
+        },
+      ]);
+    if (options?.lockApprovalMember) queryRaw.mockResolvedValueOnce([{ id: 'member-1' }]);
     const tx = {
-      $queryRaw: jest
-        .fn()
-        .mockResolvedValueOnce([
-          {
-            id: 'registration-1',
-            activityId: 'activity-1',
-            memberId: 'member-1',
-            currentRevision: 1,
-            currentFormVersionId: null,
-          },
-        ])
-        .mockResolvedValueOnce([
-          {
-            id: 'identity-1',
-            activityId: 'activity-1',
-            memberId: 'member-1',
-            sessionId: 'session-1',
-            currentRevision: 1,
-            currentStatusCode: statusCode,
-            currentPositionId,
-            capacityReservationId: pointer,
-            populationIncluded,
-            version: 4,
-          },
-        ])
+      $queryRaw: queryRaw
         .mockResolvedValueOnce(activeReservations)
         .mockResolvedValueOnce([{ id: 'population-state-1', version: 8 }]),
       activityParticipationIdentity: {
@@ -120,6 +123,9 @@ describe('ActivityRegistrationLifecycleService', () => {
         findFirst: jest.fn().mockResolvedValue({ id: 'registration-revision-1' }),
         create: jest.fn().mockResolvedValue({ id: 'registration-revision-2' }),
       },
+      activitySessionPosition: { findFirst: jest.fn().mockResolvedValue(null) },
+      capacityReservation: { findMany: jest.fn() },
+      member: { findFirst: jest.fn().mockResolvedValue({ id: 'member-1', status: 'ACTIVE' }) },
       activityParticipationRevision: {
         findMany: jest.fn().mockResolvedValue(
           options?.revisionPresent === false
@@ -147,6 +153,7 @@ describe('ActivityRegistrationLifecycleService', () => {
       },
     };
     const capacity = {
+      reserveInTransactionTrusted: jest.fn(),
       releaseInTransactionTrusted: jest.fn().mockResolvedValue({
         outcome: 'released',
         releasedReservationIds: ['activity-reservation-1', 'session-reservation-1'],
@@ -157,6 +164,188 @@ describe('ActivityRegistrationLifecycleService', () => {
     );
     return { service, tx, capacity };
   }
+
+  describe('approve', () => {
+    const input = {
+      activityId: 'activity-1',
+      registrationId: 'registration-1',
+      memberId: 'member-1',
+      currentRevision: 1,
+      actorUserId: 'admin-1',
+      reviewNote: '通过',
+      reviewedAt: cancelledAt,
+    };
+
+    async function setupApproval(positionIds: string[], revisionPositionId: string | null = null) {
+      const { service, tx, capacity } = setup({
+        pointer: null,
+        populationIncluded: false,
+        statusCode: 'pending',
+        activeSessionReservation: false,
+        currentPositionId: null,
+        revisionPositionId,
+        lockApprovalMember: true,
+      });
+      tx.activityRegistrationRevision.findFirst.mockResolvedValue({
+        requestKey: 'submission-key',
+        positionPreferences: positionIds.map((positionId) => ({
+          sessionId: 'session-1',
+          positionId,
+        })),
+      });
+      // The first row set belongs to the caller's registration claim.
+      await tx.$queryRaw();
+      const identities = await service.lockRegistrationIdentitiesInTransactionTrusted(
+        tx as never,
+        input,
+      );
+      return {
+        approve: () => service.approveInTransactionTrusted(tx as never, input, identities),
+        tx,
+        capacity,
+      };
+    }
+
+    it.each([
+      { preferences: ['position-first', 'position-1'], revisionPositionId: null },
+      { preferences: [], revisionPositionId: 'position-1' },
+    ])(
+      'reserves the approved position and projects the session anchor ($revisionPositionId)',
+      async ({ preferences, revisionPositionId }) => {
+        const { approve, tx, capacity } = await setupApproval(preferences, revisionPositionId);
+        if (preferences.length > 1) {
+          capacity.reserveInTransactionTrusted.mockResolvedValueOnce({
+            outcome: 'capacity_unavailable',
+          });
+        }
+        capacity.reserveInTransactionTrusted.mockResolvedValue({
+          outcome: 'reserved',
+          activityPersonReservationId: 'activity-reservation-1',
+          identities: [
+            {
+              identityId: 'identity-1',
+              sessionReservationId: 'session-reservation-1',
+              positionReservationId: 'position-reservation-1',
+            },
+          ],
+        });
+        tx.capacityReservation.findMany.mockResolvedValue([
+          {
+            id: 'activity-reservation-1',
+            identityId: 'identity-1',
+            reservationType: 'activity_person',
+          },
+          {
+            id: 'session-reservation-1',
+            identityId: 'identity-1',
+            reservationType: 'session_participation',
+          },
+          {
+            id: 'position-reservation-1',
+            identityId: 'identity-1',
+            reservationType: 'position_participation',
+          },
+        ]);
+
+        await approve();
+
+        expect(capacity.reserveInTransactionTrusted.mock.calls).toEqual(
+          (preferences.length > 1 ? preferences : ['position-1']).map((positionId) => [
+            tx,
+            {
+              activityId: 'activity-1',
+              memberId: 'member-1',
+              selections: [{ identityId: 'identity-1', positionId }],
+            },
+          ]),
+        );
+        expect(tx.activityParticipationRevision.create).toHaveBeenCalledWith({
+          data: {
+            identityId: 'identity-1',
+            revision: 2,
+            statusCode: 'pass',
+            positionId: 'position-1',
+            preferenceSnapshot: { positionIds: preferences },
+            reviewedByUserId: 'admin-1',
+            reviewedAt: cancelledAt,
+            reviewNote: '通过',
+            effectiveAt: cancelledAt,
+            createdByUserId: 'admin-1',
+            sourceCode: 'admin',
+          },
+        });
+        expect(tx.activityParticipationIdentity.updateMany).toHaveBeenCalledWith({
+          where: { id: 'identity-1', currentRevision: 1, version: 4 },
+          data: {
+            currentRevision: 2,
+            currentStatusCode: 'pass',
+            currentPositionId: 'position-1',
+            capacityReservationId: 'session-reservation-1',
+            populationIncluded: true,
+            version: { increment: 1 },
+          },
+        });
+        expect(tx.activityEvidenceState.updateMany).toHaveBeenCalledTimes(1);
+        expect(tx.activityEvidenceState.updateMany).toHaveBeenCalledWith({
+          where: { id: 'population-state-1', version: 8 },
+          data: {
+            populationRevision: { increment: 1 },
+            version: { increment: 1 },
+            lastPopulationAt: cancelledAt,
+          },
+        });
+      },
+    );
+
+    it('fails before reserving when the selected session requires an unresolved position', async () => {
+      const { approve, tx, capacity } = await setupApproval([]);
+      tx.activitySessionPosition.findFirst.mockResolvedValue({ id: 'position-1' });
+
+      await expect(approve()).rejects.toEqual(new BizException(BizCode.ACTIVITY_POSITION_REQUIRED));
+
+      expect(capacity.reserveInTransactionTrusted).not.toHaveBeenCalled();
+      expect(tx.activityParticipationRevision.create).not.toHaveBeenCalled();
+      expect(tx.activityEvidenceState.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('returns the existing capacity error without projecting pass when capacity is exhausted', async () => {
+      const { approve, tx, capacity } = await setupApproval(['position-1']);
+      capacity.reserveInTransactionTrusted.mockResolvedValue({ outcome: 'capacity_unavailable' });
+
+      await expect(approve()).rejects.toEqual(new BizException(BizCode.ACTIVITY_CAPACITY_EXCEEDED));
+
+      expect(tx.activityParticipationRevision.create).not.toHaveBeenCalled();
+      expect(tx.activityParticipationIdentity.updateMany).not.toHaveBeenCalled();
+      expect(tx.activityEvidenceState.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('rechecks the member under lock before reserving', async () => {
+      const { approve, tx, capacity } = await setupApproval(['position-1']);
+      tx.member.findFirst.mockResolvedValue({ id: 'member-1', status: 'INACTIVE' });
+
+      await expect(approve()).rejects.toEqual(new BizException(BizCode.MEMBER_INACTIVE));
+
+      expect(capacity.reserveInTransactionTrusted).not.toHaveBeenCalled();
+      expect(tx.activityParticipationRevision.create).not.toHaveBeenCalled();
+    });
+
+    it('allows a header-only legacy row and rejects a canonical row missing its identities', async () => {
+      const { service, tx, capacity } = setup();
+      tx.$queryRaw.mockReset().mockResolvedValue([]);
+      tx.activityRegistrationRevision.findFirst
+        .mockResolvedValueOnce({ requestKey: null, positionPreferences: [] })
+        .mockResolvedValueOnce({ requestKey: 'submission-key', positionPreferences: [] });
+
+      await expect(
+        service.approveInTransactionTrusted(tx as never, input, []),
+      ).resolves.toBeUndefined();
+      await expect(service.approveInTransactionTrusted(tx as never, input, [])).rejects.toEqual(
+        new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED),
+      );
+
+      expect(capacity.reserveInTransactionTrusted).not.toHaveBeenCalled();
+    });
+  });
 
   it('releases capacity, appends both immutable revisions and advances all current projections', async () => {
     const { service, tx, capacity } = setup();

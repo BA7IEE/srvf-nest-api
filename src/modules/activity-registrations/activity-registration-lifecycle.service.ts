@@ -3,7 +3,13 @@ import { Prisma } from '@prisma/client';
 
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
-import { CapacityReservationService } from './capacity-reservation.service';
+import { assertActiveMemberLifecycle } from '../members/member-lifecycle-lock';
+import { readReservationAnchors } from './activity-allocation-locks';
+import { initialPreferencePositions } from './activity-allocation-policy';
+import {
+  CapacityReservationService,
+  type CapacityReservationReserveResult,
+} from './capacity-reservation.service';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -58,16 +64,167 @@ type ParticipationProjection = {
   populationIncluded: boolean;
 };
 
+type CurrentParticipationRevision = Prisma.ActivityParticipationRevisionGetPayload<{
+  select: {
+    identityId: true;
+    revision: true;
+    statusCode: true;
+    positionId: true;
+    preferenceSnapshot: true;
+  };
+}>;
+
 export type RegistrationCancellationSource = 'admin' | 'self';
 
 /**
- * Owns the cross-table projection for one registration cancellation. Callers must already hold
+ * Owns the cross-table projection for registration lifecycle transitions. Callers must already hold
  * the Activity root lock. The capacity kernel remains the only writer of reservations/buckets;
  * this coordinator owns immutable revisions and their current projections.
  */
 @Injectable()
 export class ActivityRegistrationLifecycleService {
   constructor(private readonly capacityReservations: CapacityReservationService) {}
+
+  async approveInTransactionTrusted(
+    tx: PrismaTx,
+    input: {
+      activityId: string;
+      registrationId: string;
+      memberId: string;
+      currentRevision: number;
+      actorUserId: string;
+      reviewNote: string | null;
+      reviewedAt: Date;
+    },
+    identities: readonly LockedParticipationLifecycle[],
+  ): Promise<void> {
+    if (identities.length > 0) {
+      await assertActiveMemberLifecycle(tx, input.memberId);
+    }
+    await this.assertCapacityPointersReconciledInTransactionTrusted(tx, identities, input);
+    const currentRevisions = await this.assertParticipationRevisionsReconciledInTransactionTrusted(
+      tx,
+      identities,
+    );
+    const registrationRevision =
+      input.currentRevision > 0
+        ? await tx.activityRegistrationRevision.findFirst({
+            where: { registrationId: input.registrationId, revision: input.currentRevision },
+            select: {
+              requestKey: true,
+              positionPreferences: {
+                orderBy: [{ sessionId: 'asc' }, { preferenceOrder: 'asc' }],
+                select: { sessionId: true, positionId: true },
+              },
+            },
+          })
+        : null;
+    if (input.currentRevision > 0 && !registrationRevision) this.failClosed();
+    if (identities.length === 0) {
+      // A legacy registration has no session identity or command request key.
+      if (
+        registrationRevision &&
+        (registrationRevision.requestKey !== null ||
+          registrationRevision.positionPreferences.length)
+      ) {
+        this.failClosed();
+      }
+      return;
+    }
+    if (!registrationRevision) this.failClosed();
+
+    const pendingIdentities = identities.filter(
+      (identity) => identity.currentStatusCode === 'pending',
+    );
+    if (
+      pendingIdentities.length === 0 ||
+      identities.some(
+        (identity) =>
+          !['pending', 'waitlisted', 'cancelled', 'rejected', 'not_selected'].includes(
+            identity.currentStatusCode,
+          ),
+      )
+    ) {
+      this.failClosed();
+    }
+
+    for (const identity of pendingIdentities) {
+      const revision = currentRevisions.get(identity.id);
+      if (!revision) this.failClosed();
+      // Reopen clears the projected position and creates a new pending revision. The
+      // registration revision still holds the applicant's ordered position preferences.
+      const preferenceSnapshot = revision.preferenceSnapshot ?? {
+        positionIds: registrationRevision.positionPreferences
+          .filter((preference) => preference.sessionId === identity.sessionId)
+          .map((preference) => preference.positionId),
+      };
+      const positions = initialPreferencePositions(preferenceSnapshot, revision.positionId);
+      if (positions[0] === null) {
+        const livePosition = await tx.activitySessionPosition.findFirst({
+          where: { activityId: input.activityId, sessionId: identity.sessionId, deletedAt: null },
+          select: { id: true },
+        });
+        if (livePosition !== null) throw new BizException(BizCode.ACTIVITY_POSITION_REQUIRED);
+      }
+
+      let selection: {
+        positionId: string | null;
+        reservation: Extract<CapacityReservationReserveResult, { outcome: 'reserved' }>;
+      } | null = null;
+      for (const positionId of positions) {
+        const reservation = await this.capacityReservations.reserveInTransactionTrusted(tx, {
+          activityId: input.activityId,
+          memberId: input.memberId,
+          selections: [{ identityId: identity.id, positionId }],
+        });
+        if (reservation.outcome !== 'reserved') continue;
+        selection = { positionId, reservation };
+        break;
+      }
+      if (selection === null) throw new BizException(BizCode.ACTIVITY_CAPACITY_EXCEEDED);
+
+      const { positionId, reservation } = selection;
+      const anchors = await readReservationAnchors(tx, identity.id, positionId, reservation);
+      const nextRevision = identity.currentRevision + 1;
+      await tx.activityParticipationRevision.create({
+        data: {
+          identityId: identity.id,
+          revision: nextRevision,
+          statusCode: 'pass',
+          positionId,
+          preferenceSnapshot,
+          reviewedByUserId: input.actorUserId,
+          reviewedAt: input.reviewedAt,
+          reviewNote: input.reviewNote,
+          effectiveAt: input.reviewedAt,
+          createdByUserId: input.actorUserId,
+          sourceCode: 'admin',
+        },
+      });
+      const updated = await tx.activityParticipationIdentity.updateMany({
+        where: {
+          id: identity.id,
+          currentRevision: identity.currentRevision,
+          version: identity.version,
+        },
+        data: {
+          currentRevision: nextRevision,
+          currentStatusCode: 'pass',
+          currentPositionId: positionId,
+          capacityReservationId: anchors.sessionReservationId,
+          populationIncluded: true,
+          version: { increment: 1 },
+        },
+      });
+      if (updated.count !== 1) this.failClosed();
+    }
+
+    await this.incrementPopulationRevisionInTransactionTrusted(
+      tx,
+      input.activityId,
+      input.reviewedAt,
+    );
+  }
 
   async rejectInTransactionTrusted(
     tx: PrismaTx,
@@ -81,7 +238,7 @@ export class ActivityRegistrationLifecycleService {
     },
   ): Promise<void> {
     await this.lockRegistration(tx, input);
-    const identities = await this.lockIdentities(tx, input);
+    const identities = await this.lockRegistrationIdentitiesInTransactionTrusted(tx, input);
     await this.assertCapacityPointersReconciledInTransactionTrusted(tx, identities, {
       activityId: input.activityId,
       memberId: input.memberId,
@@ -180,7 +337,7 @@ export class ActivityRegistrationLifecycleService {
     },
   ): Promise<void> {
     await this.lockRegistration(tx, input);
-    const identities = await this.lockIdentities(tx, input);
+    const identities = await this.lockRegistrationIdentitiesInTransactionTrusted(tx, input);
     await this.assertCapacityPointersReconciledInTransactionTrusted(tx, identities, {
       activityId: input.activityId,
       memberId: input.memberId,
@@ -249,7 +406,7 @@ export class ActivityRegistrationLifecycleService {
     },
   ): Promise<void> {
     const registration = await this.lockRegistration(tx, input);
-    const identities = await this.lockIdentities(tx, input);
+    const identities = await this.lockRegistrationIdentitiesInTransactionTrusted(tx, input);
     await this.assertCapacityPointersReconciledInTransactionTrusted(tx, identities, {
       activityId: input.activityId,
       memberId: input.memberId,
@@ -591,8 +748,8 @@ export class ActivityRegistrationLifecycleService {
         'id' | 'currentRevision' | 'currentStatusCode' | 'currentPositionId'
       >
     >,
-  ): Promise<void> {
-    if (identities.length === 0) return;
+  ): Promise<Map<string, CurrentParticipationRevision>> {
+    if (identities.length === 0) return new Map();
     if (identities.some((identity) => identity.currentRevision < 1)) this.failClosed();
     const revisions = await tx.activityParticipationRevision.findMany({
       where: {
@@ -601,7 +758,13 @@ export class ActivityRegistrationLifecycleService {
           revision: identity.currentRevision,
         })),
       },
-      select: { identityId: true, revision: true, statusCode: true, positionId: true },
+      select: {
+        identityId: true,
+        revision: true,
+        statusCode: true,
+        positionId: true,
+        preferenceSnapshot: true,
+      },
     });
     if (revisions.length !== identities.length) this.failClosed();
     const revisionByIdentity = new Map(
@@ -626,6 +789,7 @@ export class ActivityRegistrationLifecycleService {
         this.failClosed();
       }
     }
+    return revisionByIdentity;
   }
 
   private async lockRegistration(
@@ -655,7 +819,7 @@ export class ActivityRegistrationLifecycleService {
     }
   }
 
-  private async lockIdentities(
+  async lockRegistrationIdentitiesInTransactionTrusted(
     tx: PrismaTx,
     input: { activityId: string; registrationId: string; memberId: string },
   ): Promise<LockedParticipationLifecycle[]> {

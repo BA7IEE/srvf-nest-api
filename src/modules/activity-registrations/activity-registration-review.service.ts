@@ -13,6 +13,7 @@ import { hasActivityCapacity } from '../activities/activity-capacity';
 import { promoteActivityWaitlistWithinCapacity } from '../activities/activity-waitlist-promotion';
 import { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
+import { initialPreferencePositions } from './activity-allocation-policy';
 import { ActivityAllocationService } from './activity-allocation.service';
 import { ActivityRegistrationLifecycleService } from './activity-registration-lifecycle.service';
 import {
@@ -168,14 +169,22 @@ export class ActivityRegistrationReviewService {
       registrationRevisionId = revisions[0].id;
     }
     const identities = await tx.$queryRaw<
-      Array<{ id: string; sessionId: string; currentStatusCode: string }>
+      Array<{
+        id: string;
+        sessionId: string;
+        currentStatusCode: string;
+        positionId: string | null;
+        preferenceSnapshot: Prisma.JsonValue | null;
+      }>
     >(Prisma.sql`
-      SELECT "id", "sessionId", "currentStatusCode"
-      FROM "ActivityParticipationIdentity"
-      WHERE "activityId" = ${activityId}
-        AND "registrationId" = ${registration.id}
-      ORDER BY "id" ASC
-      FOR UPDATE
+      SELECT i."id", i."sessionId", i."currentStatusCode", r."positionId", r."preferenceSnapshot"
+      FROM "ActivityParticipationIdentity" i
+      LEFT JOIN "ActivityParticipationRevision" r
+        ON r."identityId" = i."id" AND r."revision" = i."currentRevision"
+      WHERE i."activityId" = ${activityId}
+        AND i."registrationId" = ${registration.id}
+      ORDER BY i."id" ASC
+      FOR UPDATE OF i
     `);
     const identityIdBySession = new Map<string, string>();
     for (const identity of identities) {
@@ -204,6 +213,26 @@ export class ActivityRegistrationReviewService {
         throw new BizException(BizCode.ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID);
       }
       targets.push({ sessionId: preference.sessionId, positionId: preference.positionId });
+    }
+    // Some pending revisions carry a position directly. Apply scoped rules to all
+    // positions the reservation path can use, including positions restored from a revision.
+    for (const identity of identities) {
+      if (identity.currentStatusCode !== 'pending') continue;
+      if (identity.positionId === null && identity.preferenceSnapshot === null) continue;
+      for (const positionId of initialPreferencePositions(
+        identity.preferenceSnapshot,
+        identity.positionId,
+      )) {
+        if (positionId === null) continue;
+        if (
+          targets.some(
+            (target) => target.sessionId === identity.sessionId && target.positionId === positionId,
+          )
+        ) {
+          continue;
+        }
+        targets.push({ sessionId: identity.sessionId, positionId });
+      }
     }
     return {
       registrationRevisionId,
@@ -260,6 +289,12 @@ export class ActivityRegistrationReviewService {
       if (!participationDecision.allowed) {
         throw new BizException(participationDecision.biz);
       }
+      const identities =
+        await this.registrationLifecycle.lockRegistrationIdentitiesInTransactionTrusted(tx, {
+          activityId,
+          registrationId: lockedReg.id,
+          memberId: lockedReg.memberId,
+        });
       // The Registration claim/currentRevision snapshot is fixed before insurance revalidation.
       // The following pre-read preserves MEMBER_NOT_FOUND / MEMBER_INACTIVE precedence; the
       // insurance service then locks/rereads the Member and exact source/evidence before capacity
@@ -311,10 +346,24 @@ export class ActivityRegistrationReviewService {
         tx,
       );
       const reviewedAt = new Date();
+      await this.registrationLifecycle.approveInTransactionTrusted(
+        tx,
+        {
+          activityId,
+          registrationId: lockedReg.id,
+          memberId: lockedReg.memberId,
+          currentRevision: lockedReg.currentRevision,
+          actorUserId: currentUser.id,
+          reviewNote: dto.reviewNote ?? null,
+          reviewedAt,
+        },
+        identities,
+      );
       const updated = await tx.activityRegistration.update({
         where: { id: lockedReg.id },
         data: {
           statusCode: transition.nextStatusCode,
+          statusSummaryCode: 'active',
           reviewedBy: currentUser.id,
           reviewedAt,
           reviewNote: dto.reviewNote ?? null,
