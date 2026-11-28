@@ -1,0 +1,66 @@
+{
+  "classification": "DEPLOYED_HTTP",
+  "target": "https://dp.srvf.team",
+  "deployment_commit": "UNKNOWN",
+  "helper_sha256": "1daf7e9fa9a0b1ec5e4f8528867c3f69a2c8372ad6682796c127f557b23dbbf9",
+  "role": "synthetic ordinary member A",
+  "results": [
+    {
+      "time": "2026-11-13T05:38:34.843432+08:00",
+      "method": "POST",
+      "path": "/api/auth/v1/login",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe2l3v8242753de516924127f17dad6"
+    },
+    {
+      "time": "2026-11-13T05:38:39.040995+08:00",
+      "method": "GET",
+      "path": "/api/app/v1/me",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe2l73182c7d1a9d9acfd1e6dc67d15",
+      "member_id_matches": true,
+      "role_is_user": true,
+      "account_is_active": true,
+      "member_is_active": true,
+      "can_use_app": true
+    },
+    {
+      "time": "2026-11-13T05:39:02.754936+08:00",
+      "method": "GET",
+      "path": "/api/app/v1/my/managed-activities?page=1&pageSize=100&includeArchived=true",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe2lpe334dd3a0554893d48cc9d84e4",
+      "unique_title_absent": true,
+      "scan_complete": true
+    },
+    {
+      "time": "2026-11-13T05:39:02.869403+08:00",
+      "method": "POST",
+      "path": "/api/app/v1/my/managed-activities",
+      "status": 503,
+      "code": 20036,
+      "request_id": "cmwe2lphuf2835c6296a7013ba9f28fa5",
+      "response_message": "NOT_CAPTURED",
+      "post_attempts": 1
+    },
+    {
+      "time": "2026-11-13T05:39:02.981283+08:00",
+      "method": "GET",
+      "path": "/api/app/v1/my/managed-activities?page=1&pageSize=100&includeArchived=true",
+      "status": 200,
+      "code": 0,
+      "request_id": "cmwe2lplz3a0bd240d013555620d80d9c",
+      "unique_title_absent": true,
+      "scan_complete": true
+    }
+  ],
+  "limits": [
+    "The response message was not retained; code meaning comes from local source, not the captured response.",
+    "The complete current list contained no matching title; this does not rule out every possible asynchronous side effect.",
+    "B detail check was not sent because no draft ID was available.",
+    "The independent client stopped and released its loopback listener; no logout was attempted and server-side session state is UNKNOWN."
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "recordedAt": "2026-11-13T05:44:10+08:00",
+  "evidence": "running API container compiled artifact read-only, not deployed HTTP acceptance",
+  "deploymentSha": "UNKNOWN",
+  "container": "target API container (redacted)",
+  "insurance": {
+    "path": "/app/dist/modules/insurances/app-me-insurances.service.js",
+    "createMy": {
+      "memberInsurance.create": true,
+      "auditLogs.log": true
+    },
+    "updateMy": {
+      "memberInsurance.update": true,
+      "auditLogs.log": true
+    },
+    "softDeleteMy": {
+      "memberInsurance.update": true,
+      "auditLogs.log": true
+    },
+    "directMethodKeywordsAbsent": [
+      "notification",
+      "outbox",
+      "wechat",
+      "sms",
+      "axios",
+      "fetch("
+    ],
+    "limits": [
+      "indirect calls and database triggers not established",
+      "scheduled insurance expiry notification is separate"
+    ],
+    "insuranceWritesExecuted": false
+  },
+  "publish": {
+    "service": "/app/dist/modules/activities/activity-status-command.service.js",
+    "producer": "/app/dist/modules/activities/activity-notification-producer.js",
+    "directBranchCallsEnqueuePublished": true,
+    "passesUpdatedPublicRegistrationFlag": true,
+    "producerReturnsBeforeOutboxWhenPublicRegistrationFalse": true,
+    "alsoReferences": [
+      "activity.update",
+      "logPublish",
+      "freezeAudienceTags",
+      "signImages"
+    ],
+    "limits": [
+      "workflow flag runtime value separately established",
+      "indirect calls and database triggers not established",
+      "not an executed publish"
+    ],
+    "publishExecuted": false
+  }
+}

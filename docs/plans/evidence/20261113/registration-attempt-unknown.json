@@ -1,0 +1,178 @@
+{
+  "classification": "DEPLOYED_HTTP",
+  "target_origin": "https://dp.srvf.team",
+  "deployment_sha": "UNKNOWN",
+  "role": "existing synthetic-system administrator",
+  "network_cache_disabled": true,
+  "preflight": {
+    "requests": [
+      {
+        "time_utc": "2026-11-13T02:44:25.292Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/activities/<ACTIVITY_A>",
+        "query_keys": [],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmwedieye90266f7f3c0d712d5951ec4d",
+        "loading_finished": true
+      },
+      {
+        "time_utc": "2026-11-13T02:44:25.906Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/organizations/<ORG_A>",
+        "query_keys": [],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmwediffde373f2511b13de918bc029a0",
+        "loading_finished": true
+      },
+      {
+        "time_utc": "2026-11-13T02:44:26.530Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/members/<MEMBER_A>",
+        "query_keys": [],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmwedifwt99215aa66d88edafaa20607b",
+        "loading_finished": true
+      },
+      {
+        "time_utc": "2026-11-13T02:44:27.182Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/members/<MEMBER_A>/memberships",
+        "query_keys": [
+          "page",
+          "pageSize"
+        ],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmwedigey61dbc8ebde42d7a856759b23",
+        "loading_finished": true
+      },
+      {
+        "time_utc": "2026-11-13T02:44:27.836Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/activities/<ACTIVITY_A>/positions",
+        "query_keys": [],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmwedigx3187cbf21f640fd907b7aa6c4",
+        "loading_finished": true
+      },
+      {
+        "time_utc": "2026-11-13T02:44:28.494Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/activities/<ACTIVITY_A>/registrations",
+        "query_keys": [
+          "page",
+          "pageSize"
+        ],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmwedihfcc0bf2c99dcd705b6f96298f9",
+        "loading_finished": true
+      },
+      {
+        "time_utc": "2026-11-13T02:44:29.157Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/registrations",
+        "query_keys": [
+          "page",
+          "pageSize",
+          "activityId",
+          "memberId"
+        ],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmwedihxpe49d65f67a5a2059b523d3ac",
+        "loading_finished": true
+      }
+    ],
+    "all_required_assertions_passed": true,
+    "assertions": {
+      "activity_org_a": true,
+      "activity_published": true,
+      "invitation": true,
+      "public_registration": false,
+      "requires_insurance": false,
+      "activity_future_and_not_ended": true,
+      "registration_deadline_open": true,
+      "synthetic_title_location": true,
+      "organization_active": true,
+      "member_active": true,
+      "member_matches_user_a": true,
+      "member_primary_active_org_a": true,
+      "positions_count": 0,
+      "activity_roster_total": 0,
+      "activity_roster_items": 0,
+      "member_cross_roster_total": 0,
+      "member_cross_roster_items": 0
+    }
+  },
+  "attempt": {
+    "kind": "single controlled adaptation of same-origin diagnostic JSON request",
+    "source": "POST /api/admin/v1/authz/explain",
+    "target_method": "POST",
+    "target_path_template": "/api/admin/v1/activities/<ACTIVITY_A>/registrations",
+    "target_body_field_names": [
+      "memberId"
+    ],
+    "diagnostic_click_time_utc": "2026-11-13T02:45:26.353Z",
+    "source_paused": true,
+    "source_fields_match": true,
+    "continue_attempt_time_utc": "2026-11-13T02:45:54.784Z",
+    "continue_attempted": true,
+    "continue_returned_success": false,
+    "error_category": "Error",
+    "error_details": "UNKNOWN",
+    "server_received_target_post": "UNKNOWN",
+    "http_status": "UNKNOWN",
+    "business_code": "UNKNOWN",
+    "request_id": "UNKNOWN",
+    "revision": "UNKNOWN",
+    "repeated": false
+  },
+  "post_attempt_readback": {
+    "requests": [
+      {
+        "time_utc": "2026-11-13T02:46:16.659Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/activities/<ACTIVITY_A>/registrations",
+        "query_keys": [
+          "page",
+          "pageSize"
+        ],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmwedksyea328e2c36bb995923022b589",
+        "loading_finished": true
+      },
+      {
+        "time_utc": "2026-11-13T02:46:17.320Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/registrations",
+        "query_keys": [
+          "page",
+          "pageSize",
+          "activityId",
+          "memberId"
+        ],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmwedkte9625b08d107af3789cb78d75d",
+        "loading_finished": true
+      }
+    ],
+    "activity_roster_total": 0,
+    "activity_roster_items": 0,
+    "member_cross_roster_total": 0,
+    "member_cross_roster_items": 0
+  },
+  "limitations": [
+    "Managed-activity session, form, and qualification-rule current states were not read and remain UNKNOWN.",
+    "The deployed list may omit soft-deleted rows; local code does so.",
+    "Readback is a point-in-time result and cannot prove whether an ambiguous POST was received.",
+    "Deployment commit and independent server-route evidence are UNKNOWN.",
+    "No approval or notification was executed."
+  ]
+}

@@ -1,0 +1,114 @@
+{
+  "recorded_at": "2026-11-13T04:54:34+08:00",
+  "scope": "target API container only",
+  "batch_window_utc": [
+    "2026-11-12T19:39:00Z",
+    "2026-11-12T20:53:30Z"
+  ],
+  "batch_exit_code": 0,
+  "narrow_window_exit_code": 0,
+  "results": [
+    {
+      "case": "member_A_list",
+      "request_id": "cmwdy9exof934315c251c82a237bf1e93",
+      "server_status": 200,
+      "initial_window_result": "NOT_COVERED",
+      "narrow_window_utc": [
+        "2026-11-12T19:37:00Z",
+        "2026-11-12T19:38:00Z"
+      ],
+      "narrow_window_matching_log_lines": 2
+    },
+    {
+      "case": "member_A_detail",
+      "request_id": "cmwdycgeycb4390278d723763357249e0",
+      "server_status": 200
+    },
+    {
+      "case": "member_B_list",
+      "request_id": "cmwdyierjb89987ad47b71da20c5c43e9",
+      "server_status": 200
+    },
+    {
+      "case": "member_B_detail",
+      "request_id": "cmwdyiqz7a276700c09b9fb4e7cc8b825",
+      "server_status": 200
+    },
+    {
+      "case": "organization_A_detail",
+      "request_id": "cmwdyow71b4ea5c8f508a0856879ea184",
+      "server_status": 200
+    },
+    {
+      "case": "organization_B_detail",
+      "request_id": "cmwdyu0cmd2f2e9ff157bcc556a40d649",
+      "server_status": 200
+    },
+    {
+      "case": "membership_A_list",
+      "request_id": "cmwdyy0jnc9b662d06599636345b170d9",
+      "server_status": 200
+    },
+    {
+      "case": "membership_A_detail",
+      "request_id": "cmwdyygk91743af8a1a64169e3a1309c5",
+      "server_status": 200
+    },
+    {
+      "case": "membership_B_list",
+      "request_id": "cmwdz1ktc765d81a2e328771a59cfd95e",
+      "server_status": 200
+    },
+    {
+      "case": "membership_B_detail",
+      "request_id": "cmwdz24b69b15e75ff5362ffd406f23c8",
+      "server_status": 200
+    },
+    {
+      "case": "bound_member_A_detail",
+      "request_id": "cmwdzrnch43c4a89083b86dbbfb68da11",
+      "server_status": 200
+    },
+    {
+      "case": "bound_user_A_detail",
+      "request_id": "cmwdzrraxc64fcb277a3b3a65d745f0af",
+      "server_status": 200
+    },
+    {
+      "case": "bound_member_B_detail",
+      "request_id": "cmwdzu5f1632e69115ead37475bf689d6",
+      "server_status": 200
+    },
+    {
+      "case": "bound_user_B_detail",
+      "request_id": "cmwdzu9ea3664aeef6ec3e3f493d4ae15",
+      "server_status": 200
+    },
+    {
+      "case": "activity_draft_detail",
+      "request_id": "cmwdzyys3d1c83a61b24d07733bd2aaa8",
+      "server_status": 200
+    },
+    {
+      "case": "content_draft_detail",
+      "request_id": "cmwe04gqa8c4990c763b9c3461725789e",
+      "server_status": 200
+    },
+    {
+      "case": "attachment_negative_fresh_read",
+      "request_id": "cmwe0xz7c3f85b46bc7de09cef8013760",
+      "server_status": 200,
+      "matching_log_lines": 2
+    },
+    {
+      "case": "empty_content_fresh_read",
+      "request_id": "cmwe0y3mm8ca010a09d96860c3cacff45",
+      "server_status": 200,
+      "matching_log_lines": 2
+    }
+  ],
+  "limitations": [
+    "Status reflects bounded container logs; response-body assertions are recorded separately.",
+    "Deployment Git SHA UNKNOWN."
+  ]
+}

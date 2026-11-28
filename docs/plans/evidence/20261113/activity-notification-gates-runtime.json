@@ -1,0 +1,67 @@
+{
+  "evidence_type": "DEPLOYED_RUNTIME",
+  "recorded_at_utc": "2026-11-13T03:54:05.140277+00:00",
+  "inspection_time_exact": "UNKNOWN",
+  "inspection_time_bound": {
+    "after": "2026-11-13T03:27:27.457Z",
+    "before": "2026-11-13T03:53:09Z"
+  },
+  "container_identity": {
+    "docker_exec_target_matches_previously_identified_container": true,
+    "external_route_to_running_instance": "UNKNOWN",
+    "deployment_sha": "UNKNOWN"
+  },
+  "inspection": {
+    "all_target_compiled_artifacts_present": true,
+    "registration_review": {
+      "approved_member_forwarded": true,
+      "targeted_helper_recipient_and_destination_are_that_member": true,
+      "direct_channel_in_app_only": true
+    },
+    "legacy_attendance_final": {
+      "nondeleted_records_filtered_by_sheet": true,
+      "events_derived_from_records": true,
+      "recipient_from_each_record_member": true,
+      "contribution_threshold_candidates_from_record_members": true,
+      "milestone_recipient_from_candidate_member": true,
+      "direct_channel_in_app_only": true
+    },
+    "activity_start_reminder": {
+      "same_activity_pass_registration_members": true,
+      "published_upcoming_window_24h": true,
+      "direct_channel_in_app_only": true
+    },
+    "targeted_notification_handler": {
+      "directed_member_preserved": true,
+      "wechat_child_requires_channel": true,
+      "wecom_child_requires_channel": true,
+      "no_sms_channel_keyword_in_checked_method": true
+    },
+    "gate_and_negative_probe_order": {
+      "legacy_checkin_gate_before_identity_lookup": true,
+      "legacy_missing_activity_detected_in_read_only_preflight_before_write_transaction": true,
+      "new_self_punch_gate_before_qr_verification": true,
+      "new_qr_verification_before_write_transaction": true,
+      "readonly_gate_before_v11_branch": true,
+      "readonly_gate_before_legacy_branch": true,
+      "jwt_validation_reads_current_user": true,
+      "both_controllers_require_app_member_scoped_access": true,
+      "control_plane_status_reflects_creation_mode_not_gate_or_maintenance": true,
+      "local_compiled_business_codes": {
+        "activity_not_found": 20001,
+        "v11_disabled": 20153,
+        "legacy_write_closed": 20154,
+        "readonly_maintenance": 20158,
+        "invalid_qr": 22084
+      }
+    }
+  },
+  "no_probe_requests_made": true,
+  "limitations": [
+    "Runtime code projection, not proof of actual API response or currently loaded process configuration.",
+    "Conditional recipient conclusion assumes the actual pass roster or final sheet records contain only the intended synthetic member.",
+    "Separate worker image/configuration, database triggers and other indirect effects remain UNKNOWN.",
+    "Container exec name matched earlier evidence; deployed route to current process and git SHA remain UNKNOWN.",
+    "Inspection time is bounded, not captured to the second."
+  ]
+}

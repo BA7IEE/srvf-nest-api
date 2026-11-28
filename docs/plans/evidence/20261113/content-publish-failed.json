@@ -1,0 +1,233 @@
+{
+  "classification": [
+    "DEPLOYED_HTTP",
+    "GUI"
+  ],
+  "origin": "https://dp.srvf.team",
+  "deployment_sha": "UNKNOWN",
+  "role": "existing synthetic-system administrator",
+  "readback_cache_disabled": true,
+  "preflight": {
+    "requests": [
+      {
+        "time_utc": "2026-11-13T03:24:11.401Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/contents/<NEW_CONTENT>",
+        "query": [],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmweexk3dfcd46ade363fa3aba1beab05",
+        "loading_finished": true
+      },
+      {
+        "time_utc": "2026-11-13T03:24:11.992Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/attachments",
+        "query": [
+          "page=1",
+          "pageSize=100",
+          "ownerType=content-image",
+          "ownerId=<NEW_CONTENT>"
+        ],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmweexkjr974f3f086abbbb5ce2059fd5",
+        "loading_finished": true
+      },
+      {
+        "time_utc": "2026-11-13T03:24:12.606Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/attachments",
+        "query": [
+          "page=1",
+          "pageSize=100",
+          "ownerType=content-file",
+          "ownerId=<NEW_CONTENT>"
+        ],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmweexl1a701c96f5b791366a0054520a",
+        "loading_finished": true
+      },
+      {
+        "time_utc": "2026-11-13T03:24:13.241Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/organizations/<ORG_A>/memberships",
+        "query": [
+          "status=ACTIVE",
+          "includeDescendants=false",
+          "page=1",
+          "pageSize=100"
+        ],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmweexlix3a719f3a21865e53d40b7ef0",
+        "loading_finished": true
+      },
+      {
+        "time_utc": "2026-11-13T03:24:13.950Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/members/<MEMBER_B>/memberships",
+        "query": [],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmweexm2e08285a61a0decdcbc3497bb0",
+        "loading_finished": true
+      },
+      {
+        "time_utc": "2026-11-13T03:24:14.535Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/organizations/<ORG_A>",
+        "query": [],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmweexmie467eae318ae4da1d07a4656e",
+        "loading_finished": true
+      },
+      {
+        "time_utc": "2026-11-13T03:24:15.157Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/members/<MEMBER_A>",
+        "query": [],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmweexmzu61ae1e9cefa99b6d7fe88f59",
+        "loading_finished": true
+      },
+      {
+        "time_utc": "2026-11-13T03:24:15.809Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/members/<MEMBER_R1>",
+        "query": [],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmweexnhtbb7c4489aa93ef0d8b2b3e9d",
+        "loading_finished": true
+      },
+      {
+        "time_utc": "2026-11-13T03:24:16.456Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/members/<MEMBER_R2>",
+        "query": [],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmweexo0346670c7e2971b26ceea69bf4",
+        "loading_finished": true
+      }
+    ],
+    "all_assertions_passed": true,
+    "content_status": "draft",
+    "content_type": "announcement",
+    "visibility": "department",
+    "visible_organization_exactly_a": true,
+    "synthetic_title_matches": true,
+    "body_matches_except_one_trailing_whitespace_code_unit": true,
+    "external_links": false,
+    "attachment_markup": false,
+    "cover_present": false,
+    "detail_and_attachment_lists_empty": true,
+    "organization_a_active": true,
+    "organization_a_active_memberships_count": 3,
+    "organization_a_member_set_exactly_a_r1_r2": true,
+    "all_three_members_active": true,
+    "member_b_has_no_current_a_membership": true
+  },
+  "gui": {
+    "unique_target_row_was_draft": true,
+    "opened_confirmation": true,
+    "initial_local_button_validation_duplicated_focused_line": true,
+    "initial_confirmation_click_attempted": false,
+    "network_observed_no_target_post_before_confirm": true,
+    "final_confirmation_click_count": 1,
+    "afterwards_row_still_draft": true,
+    "failure_message_visible_at_later_observation": false,
+    "screenshot": "NOT_CAPTURED"
+  },
+  "publish_attempt": {
+    "confirm_time_utc": "2026-11-13T03:27:11.347Z",
+    "request_time_utc": "2026-11-13T03:27:11.409Z",
+    "response_time_utc": "2026-11-13T03:27:11.547Z",
+    "method": "POST",
+    "path_template": "/api/admin/v1/contents/<NEW_CONTENT>/publish",
+    "request_body_present": false,
+    "http_status": 503,
+    "business_code": 13034,
+    "response_message": "NOT_CAPTURED",
+    "request_id": "cmwef1f118e48f3e2f11ca47c045818b7",
+    "loading_finished": true,
+    "observed_network_window_truncated": false,
+    "multiple_target_posts_observed": false,
+    "repeated": false,
+    "result": "FAILED"
+  },
+  "after": {
+    "requests": [
+      {
+        "time_utc": "2026-11-13T03:27:26.222Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/contents/<NEW_CONTENT>",
+        "query": [],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmwef1qf15c51ec1fcd6814eedf93c1c1",
+        "loading_finished": true
+      },
+      {
+        "time_utc": "2026-11-13T03:27:26.828Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/attachments",
+        "query": [
+          "page=1",
+          "pageSize=100",
+          "ownerType=content-image",
+          "ownerId=<NEW_CONTENT>"
+        ],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmwef1qxk2c3c4c3fe08b7731caa2f2e6",
+        "loading_finished": true
+      },
+      {
+        "time_utc": "2026-11-13T03:27:27.457Z",
+        "method": "GET",
+        "path_template": "/api/admin/v1/attachments",
+        "query": [
+          "page=1",
+          "pageSize=100",
+          "ownerType=content-file",
+          "ownerId=<NEW_CONTENT>"
+        ],
+        "http_status": 200,
+        "business_code": 0,
+        "request_id": "cmwef1rdf4b0b04eae3436cc5b2505d63",
+        "loading_finished": true
+      }
+    ],
+    "all_assertions_passed": true,
+    "same_content": true,
+    "status": "draft",
+    "published_at_null": true,
+    "title_matches": true,
+    "body_matches_except_one_trailing_whitespace_code_unit": true,
+    "external_links": false,
+    "content_type": "announcement",
+    "visibility": "department",
+    "visible_organization_exactly_a": true,
+    "cover_present": false,
+    "detail_and_attachment_lists_empty": true
+  },
+  "not_performed": [
+    "retry",
+    "upload",
+    "publish_old_draft",
+    "explicit_notification"
+  ],
+  "limitations": [
+    "Server-side root cause and independent server-route logs not established in this evidence.",
+    "Database trigger and worker behavior remain unknown.",
+    "Deployment commit unknown."
+  ],
+  "database_internal_reason": "UNKNOWN",
+  "indirect_side_effects": "UNKNOWN",
+  "screenshot": "NOT_CAPTURED"
+}

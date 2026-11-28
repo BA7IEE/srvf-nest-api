@@ -1,0 +1,28 @@
+{
+  "recorded_at": "2026-11-13T05:30:59+08:00",
+  "inspection_time_exact": "UNKNOWN",
+  "scope": "target API container compiled code, read only",
+  "artifacts": [
+    "/app/dist/modules/activities/app-managed-activities.service.js",
+    "/app/dist/modules/activities/activity-write.service.js",
+    "/app/dist/modules/activities/activity-image-signing.service.js",
+    "/app/dist/modules/attachments/attachments.service.js"
+  ],
+  "inspection": {
+    "managed_create_found": true,
+    "managed_create_calls_activities_create": true,
+    "managed_create_direct_notification_outbox_wechat_sms_axios_fetch_match": false,
+    "write_create_through_before_update_found": true,
+    "write_slice_direct_notification_outbox_wechat_sms_axios_fetch_match": false,
+    "write_slice_calls_audit_recorder": true,
+    "write_slice_calls_image_signing": true,
+    "image_signing_calls_attachment_signed_url_helper": true,
+    "attachment_signed_url_helper_has_empty_key_guard": true
+  },
+  "limits": [
+    "Substring inspection of direct method slices is not a complete call graph or proof of no indirect external action.",
+    "The empty-key guard applies only if an image key is actually empty; nonempty keys may invoke storage URL resolution.",
+    "Database triggers, running job settings and outbound provider behavior were not inspected.",
+    "No managed activity was created by this check; deployment Git SHA UNKNOWN."
+  ]
+}

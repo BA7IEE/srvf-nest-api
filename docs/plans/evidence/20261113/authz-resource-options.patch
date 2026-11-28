@@ -1,0 +1,403 @@
+diff --git a/src/api/srvf-authz.ts b/src/api/srvf-authz.ts
+index 827d2b9..4546344 100644
+--- a/src/api/srvf-authz.ts
++++ b/src/api/srvf-authz.ts
+@@ -21,10 +21,13 @@ export const AUTHZ_REASON_LABEL: Record<string, string> = {
+   state_forbidden: "权限允许，但资源当前状态不支持该操作"
+ };
+
+-/** 资源类型（explain / explain-batch / action-state 共用的 11 类白名单）。 */
++/** 资源类型（explain / explain-batch / action-state 共用的 14 类白名单）。 */
+ export type ExplainResourceType =
++  | "organization"
+   | "activity"
++  | "activity_publish_review"
+   | "attendance_sheet"
++  | "attendance_settlement_version"
+   | "attendance_record"
+   | "activity_registration"
+   | "member"
+@@ -36,8 +39,11 @@ export type ExplainResourceType =
+   | "attachment";
+
+ export const RESOURCE_TYPE_LABEL: Record<ExplainResourceType, string> = {
++  organization: "组织",
+   activity: "活动",
++  activity_publish_review: "活动发布审核",
+   attendance_sheet: "考勤单",
++  attendance_settlement_version: "考勤结算版本",
+   attendance_record: "考勤记录",
+   activity_registration: "报名",
+   member: "队员",
+diff --git a/tests/authz_resource_options.behavior.test.mjs b/tests/authz_resource_options.behavior.test.mjs
+new file mode 100644
+index 0000000..98be305
+--- /dev/null
++++ b/tests/authz_resource_options.behavior.test.mjs
+@@ -0,0 +1,366 @@
++/**
++ * LOCAL: mount the real diagnostic component in a small Vue test renderer and
++ * send its real API wrapper requests only to an ephemeral loopback fixture.
++ * This does not operate a browser or contact the deployed application.
++ * Run: node --test tests/authz_resource_options.behavior.test.mjs
++ */
++import assert from "node:assert/strict";
++import { createServer as createHttpServer } from "node:http";
++import { once } from "node:events";
++import { readFile } from "node:fs/promises";
++import { test } from "node:test";
++import path from "node:path";
++import { fileURLToPath } from "node:url";
++import { createServer as createViteServer } from "vite";
++import vuePlugin from "@vitejs/plugin-vue";
++import { compileScript, compileTemplate, parse } from "vue/compiler-sfc";
++import {
++  createRenderer,
++  defineComponent,
++  h,
++  inject,
++  nextTick,
++  onMounted,
++  provide
++} from "vue";
++
++const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
++const stateKey = "__srvfAuthzResourceFixture";
++const prefix = "\0srvf-authz-resource:";
++const expectedTypes = [
++  "organization",
++  "activity",
++  "activity_publish_review",
++  "attendance_sheet",
++  "attendance_settlement_version",
++  "attendance_record",
++  "activity_registration",
++  "member",
++  "member_profile",
++  "certificate",
++  "team_join_application",
++  "recruitment_application",
++  "notification",
++  "attachment"
++];
++const stubs = {
++  "@/api/srvf-error": `export const bizErrorMessage = (_error, fallback) => fallback;`,
++  "@/utils/message": `export const message = () => {};`,
++  "@/utils/auth": `export const hasPerms = code => code === 'authz.explain.decision';`,
++  "@/api/user": `export const getAdminMe = async () => ({code: 0, data: {userId: 'fixture-user'}});`,
++  "@/api/srvf-user": `export const getUserOptions = async () => ({code: 0, data: {items: []}});`,
++  "@/srvf-kit": `export const SrvfPermEmpty = {render(){return null}};`,
++  "@/utils/http": `
++    import axios from 'axios';
++    export const http = {async request(method, route, options = {}) {
++      const origin = globalThis.${stateKey}.origin;
++      const url = new URL(route, origin);
++      if (url.origin !== origin || url.hostname !== '127.0.0.1') throw new Error('non-loopback target');
++      return (await axios.request({method, url: url.href, data: options.data,
++        params: options.params, proxy: false, timeout: 3000})).data;
++    }};
++  `
++};
++
++function fixturePlugin(templateCode) {
++  return {
++    name: "srvf-authz-resource-fixture",
++    enforce: "pre",
++    resolveId(id) {
++      if (id === "virtual:srvf-authz-test-render") return prefix + "render";
++      const sourceRoot = `${path.join(root, "src")}${path.sep}`;
++      const key = id.startsWith(sourceRoot)
++        ? `@/${id.slice(sourceRoot.length).replaceAll(path.sep, "/").replace(/\.ts$/, "")}`
++        : id;
++      return Object.hasOwn(stubs, key) ? prefix + key : null;
++    },
++    load(id) {
++      if (id === prefix + "render") return templateCode;
++      return id.startsWith(prefix) ? stubs[id.slice(prefix.length)] : null;
++    }
++  };
++}
++
++function fakeRenderer() {
++  const node = (kind, text = "") => ({
++    kind,
++    text,
++    children: [],
++    parent: null,
++    style: {},
++    props: {}
++  });
++  const detach = child => {
++    if (!child.parent) return;
++    const index = child.parent.children.indexOf(child);
++    if (index >= 0) child.parent.children.splice(index, 1);
++    child.parent = null;
++  };
++  return createRenderer({
++    createElement: kind => node(kind),
++    createText: text => node("text", text),
++    createComment: text => node("comment", text),
++    setText: (item, text) => {
++      item.text = text;
++    },
++    setElementText: (item, text) => {
++      item.text = text;
++      item.children = [];
++    },
++    patchProp: (item, key, _previous, next) => {
++      item.props[key] = next;
++    },
++    insert: (child, parent, anchor) => {
++      detach(child);
++      child.parent = parent;
++      const index = anchor ? parent.children.indexOf(anchor) : -1;
++      parent.children.splice(
++        index < 0 ? parent.children.length : index,
++        0,
++        child
++      );
++    },
++    remove: detach,
++    parentNode: item => item.parent,
++    nextSibling: item => {
++      if (!item.parent) return null;
++      return (
++        item.parent.children[item.parent.children.indexOf(item) + 1] ?? null
++      );
++    }
++  });
++}
++
++function registerStubs(app, observed) {
++  const selectKey = Symbol("fixture-select");
++  const wrapper = defineComponent({
++    setup(_props, { slots }) {
++      return () => h("div", slots.default?.());
++    }
++  });
++  const form = defineComponent({
++    setup(_props, { expose, slots }) {
++      expose({ validate: callback => callback(true), clearValidate() {} });
++      return () => h("form", slots.default?.());
++    }
++  });
++  const select = defineComponent({
++    props: ["modelValue"],
++    emits: ["update:modelValue"],
++    setup(props, { emit, slots }) {
++      const entry = {
++        options: [],
++        set: value => emit("update:modelValue", value),
++        get: () => props.modelValue
++      };
++      provide(selectKey, entry);
++      onMounted(() => observed.selects.push(entry));
++      return () => h("select", slots.default?.());
++    }
++  });
++  const option = defineComponent({
++    props: ["label", "value"],
++    setup(props) {
++      const parent = inject(selectKey, null);
++      onMounted(() =>
++        parent?.options.push({ label: props.label, value: props.value })
++      );
++      return () => h("option", String(props.label ?? ""));
++    }
++  });
++  const input = defineComponent({
++    props: ["modelValue", "placeholder"],
++    emits: ["update:modelValue"],
++    setup(props, { emit }) {
++      onMounted(() =>
++        observed.inputs.push({
++          placeholder: props.placeholder,
++          set: value => emit("update:modelValue", value)
++        })
++      );
++      return () => h("input");
++    }
++  });
++  const button = defineComponent({
++    emits: ["click"],
++    setup(_props, { emit, slots }) {
++      const label = () =>
++        (slots.default?.() ?? [])
++          .map(vnode =>
++            typeof vnode.children === "string" ? vnode.children : ""
++          )
++          .join("")
++          .trim();
++      onMounted(() =>
++        observed.buttons.push({ label: label(), click: () => emit("click") })
++      );
++      return () => h("button", slots.default?.());
++    }
++  });
++  for (const name of [
++    "el-alert",
++    "el-tabs",
++    "el-tab-pane",
++    "el-form-item",
++    "el-card",
++    "el-tag",
++    "el-descriptions",
++    "el-descriptions-item",
++    "el-table",
++    "el-table-column"
++  ])
++    app.component(name, wrapper);
++  app.component("el-form", form);
++  app.component("el-select", select);
++  app.component("el-option", option);
++  app.component("el-input", input);
++  app.component("el-button", button);
++}
++
++async function withFixture(run) {
++  const requests = [];
++  const server = createHttpServer(async (request, response) => {
++    const chunks = [];
++    for await (const chunk of request) chunks.push(chunk);
++    requests.push({
++      method: request.method,
++      path: request.url,
++      body: JSON.parse(Buffer.concat(chunks).toString("utf8"))
++    });
++    response.writeHead(200, { "content-type": "application/json" });
++    response.end(
++      JSON.stringify({
++        code: 0,
++        data: {
++          targetUser: {},
++          decision: { allow: false, reason: "no_permission" }
++        }
++      })
++    );
++  });
++  server.listen(0, "127.0.0.1");
++  await once(server, "listening");
++  const port = server.address().port;
++  globalThis[stateKey] = { origin: `http://127.0.0.1:${port}` };
++  let vite;
++  let app;
++  try {
++    const source = await readFile(
++      path.join(
++        root,
++        "src/views/srvf/org-hr/role-bindings/authz-explain-drawer.vue"
++      ),
++      "utf8"
++    );
++    const filename = "authz-explain-drawer.vue";
++    const descriptor = parse(source, { filename }).descriptor;
++    const bindings = compileScript(descriptor, { id: "fixture" }).bindings;
++    const template = compileTemplate({
++      source: descriptor.template.content,
++      filename,
++      id: "fixture",
++      compilerOptions: { bindingMetadata: bindings }
++    });
++    assert.equal(template.errors.length, 0, "component template must compile");
++    vite = await createViteServer({
++      root,
++      configFile: false,
++      plugins: [fixturePlugin(template.code), vuePlugin()],
++      resolve: { alias: { "@": path.join(root, "src") } },
++      optimizeDeps: { noDiscovery: true, include: [] },
++      server: { middlewareMode: true, hmr: false },
++      logLevel: "error"
++    });
++    const { default: Drawer } = await vite.ssrLoadModule(
++      "/src/views/srvf/org-hr/role-bindings/authz-explain-drawer.vue"
++    );
++    Drawer.render = (
++      await vite.ssrLoadModule("virtual:srvf-authz-test-render")
++    ).render;
++    const observed = { selects: [], inputs: [], buttons: [] };
++    app = fakeRenderer().createApp(Drawer);
++    app.provide(Symbol.for("v-scx"), { modules: new Set() });
++    registerStubs(app, observed);
++    app.mount({ kind: "root", children: [], style: {}, props: {} });
++    await new Promise(resolve => setImmediate(resolve));
++    await nextTick();
++    await run({ observed, requests });
++  } finally {
++    if (app) app.unmount();
++    if (vite) await vite.close();
++    delete globalThis[stateKey];
++    server.close();
++    await once(server, "close");
++    const rebound = createHttpServer();
++    rebound.listen(port, "127.0.0.1");
++    await once(rebound, "listening");
++    rebound.close();
++    await once(rebound, "close");
++  }
++}
++
++function resourceSelect(observed) {
++  const select = observed.selects.find(item =>
++    item.options.some(option => option.value === "activity")
++  );
++  assert.ok(select, "diagnostic resource selector must be mounted");
++  return select;
++}
++
++test("diagnostic selector exposes every current contract resource type", async () => {
++  await withFixture(async ({ observed }) => {
++    const options = resourceSelect(observed).options;
++    assert.deepEqual(
++      options.map(option => option.value).sort(),
++      [...expectedTypes].sort()
++    );
++    for (const type of [
++      "organization",
++      "activity_publish_review",
++      "attendance_settlement_version"
++    ]) {
++      assert.ok(
++        options.find(option => option.value === type)?.label.includes(type)
++      );
++    }
++  });
++});
++
++test("selecting each formerly missing type serializes the real diagnostic request", async () => {
++  await withFixture(async ({ observed, requests }) => {
++    const select = resourceSelect(observed);
++    const resourceId = observed.inputs.find(input =>
++      input.placeholder?.startsWith("resourceRef.id")
++    );
++    const submit = observed.buttons.find(button => button.label === "开始诊断");
++    assert.ok(
++      resourceId && submit,
++      "diagnostic inputs and submit must be mounted"
++    );
++    for (const [index, type] of [
++      "organization",
++      "activity_publish_review",
++      "attendance_settlement_version"
++    ].entries()) {
++      assert.ok(
++        select.options.some(option => option.value === type),
++        "resource must be selectable before submission"
++      );
++      select.set(type);
++      resourceId.set(`fixture-resource-${index}`);
++      await nextTick();
++      submit.click();
++      const deadline = Date.now() + 3000;
++      while (requests.length <= index && Date.now() < deadline)
++        await new Promise(resolve => setTimeout(resolve, 10));
++      assert.equal(requests.length, index + 1);
++      assert.equal(requests[index].method, "POST");
++      assert.equal(requests[index].path, "/api/admin/v1/authz/explain");
++      assert.deepEqual(requests[index].body, {
++        userId: "fixture-user",
++        action: "attendance.final-approve.sheet",
++        resourceRef: { type, id: `fixture-resource-${index}` }
++      });
++    }
++  });
++});

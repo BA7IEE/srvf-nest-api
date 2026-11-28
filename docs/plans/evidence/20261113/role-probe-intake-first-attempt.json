@@ -1,0 +1,29 @@
+{
+  "classification": "LOCAL",
+  "started_at": "2026-11-13T09:45:12.505+08:00",
+  "stop_requested_at": "2026-11-13T09:49:40.693+08:00",
+  "target_requests": "NOT_RUN",
+  "canary": {
+    "cookie_present": false,
+    "authorization_present": false
+  },
+  "slots_received": {
+    "A": true,
+    "R1": false,
+    "R2": false
+  },
+  "r1_error": "Error; exact cause and click/response stage UNKNOWN",
+  "login_markers_exist": {
+    "A": false,
+    "R1": false,
+    "R2": false
+  },
+  "process_exit_code": 1,
+  "listener_released": true,
+  "limits": [
+    "No login command or target business request was triggered in this attempt.",
+    "The exact exception cause and the R1 click/response stage were not retained.",
+    "The local intake page and listener were closed; no account value, credential, or identifier is recorded.",
+    "A later offline audit found that the script entrypoint also converts normal SystemExit(0) into exit 1; the observed exit code cannot distinguish normal stop from an exception."
+  ]
+}

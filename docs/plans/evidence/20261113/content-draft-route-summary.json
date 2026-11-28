@@ -1,0 +1,24 @@
+{
+  "recorded_at": "2026-11-13T04:30:33+08:00",
+  "scope": "target API container only",
+  "window_utc": [
+    "2026-11-12T20:28:30Z",
+    "2026-11-12T20:30:30Z"
+  ],
+  "exit_code": 0,
+  "create_request_id": "cmwe045ltaa5df8238934a7418534e325",
+  "precheck_request_id": "cmwe03mch955ac44b7bddc26348789424",
+  "detail_request_id": "cmwe04gqa8c4990c763b9c3461725789e",
+  "matching_lines": {
+    "create": 2,
+    "precheck": 2,
+    "detail": 2
+  },
+  "create_post_route_201": true,
+  "route": "/api/admin/v1/contents",
+  "limits": [
+    "Bounded target-container logs only.",
+    "Deployment Git SHA UNKNOWN.",
+    "Does not resolve historical announcement 500 without its original request."
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "evidence_type": "DEPLOYED_RUNTIME",
+  "deployment_git_sha": "UNKNOWN",
+  "checks": [
+    {
+      "checked_at": "2026-11-13T11:08:02+08:00",
+      "files": [
+        "/app/dist/modules/attachments/attachment-content-boundary.js",
+        "/app/dist/modules/storage/storage-consistency.types.js"
+      ],
+      "facts": {
+        "prefixes_use_current_content": true,
+        "owner_v1_prefix_derived_from_owner": true,
+        "attachments_scoped_to_content": true,
+        "intents_scoped_to_prefixes": true,
+        "candidate_ids_derive_from_query": true,
+        "initial_candidate_pattern_check": "UNKNOWN"
+      }
+    },
+    {
+      "checked_at": "2026-11-13T11:09:17+08:00",
+      "files": [
+        "/app/dist/modules/attachments/attachment-content-boundary.js"
+      ],
+      "facts": {
+        "or_array_parsed": true,
+        "two_sources_only": true,
+        "attachment_key_source_exact": true,
+        "owner_intent_object_source_exact": true,
+        "candidate_exact_two_sources": true
+      }
+    },
+    {
+      "checked_at": "2026-11-13T11:10:25+08:00",
+      "files": [
+        "/app/dist/modules/attachments/attachment-content-boundary.js"
+      ],
+      "facts": {
+        "ownerless_direct_select_only": true,
+        "ownerless_hit_throws": true,
+        "ownerless_guard_before_writes": true,
+        "object_reload_limited_to_candidate_ids": true,
+        "loop_uses_reloaded_objects": true,
+        "owner_prefix_match_before_write": true,
+        "bound_attachment_skips_write": true,
+        "update_targets_current_object": true,
+        "orphan_targets_current_object": true
+      }
+    }
+  ],
+  "current_content_records_queried": false,
+  "unknowns": {
+    "current_content_related_records": "UNKNOWN",
+    "prisma_empty_candidate_behavior": "UNKNOWN",
+    "database_triggers": "UNKNOWN",
+    "worker_side_effects": "UNKNOWN",
+    "deployment_git_sha": "UNKNOWN"
+  },
+  "limitations": [
+    "静态检查目标容器的直接编译代码，不证明特定内容实际没有附件或关联上传意图。",
+    "候选来源与写入范围的检查不证明异常数据关联或其他间接调用的影响。",
+    "未查询数据库，未发送业务 HTTP，也未检查触发器或独立 worker 的实际行为。"
+  ]
+}

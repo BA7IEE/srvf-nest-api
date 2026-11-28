@@ -1,0 +1,46 @@
+{
+  "classification": "DEPLOYED_RUNTIME",
+  "target": "https://dp.srvf.team",
+  "deployment_commit": "UNKNOWN",
+  "scope": "read-only bounded target container logs; request IDs matched exactly; known B /me subject compared in memory; identifiers redacted",
+  "window": "2026-11-13T06:43:59+08:00 to 2026-11-13T06:46:28+08:00",
+  "results": [
+    {
+      "server_time": "2026-11-13T06:44:10.685+08:00",
+      "method": "GET",
+      "path": "/api/admin/v1/activities/{id}",
+      "status": 404,
+      "request_id": "cmwe4xgdr4c0fdca689a06dd178575137",
+      "subject_matches_b_me": true
+    },
+    {
+      "server_time": "2026-11-13T06:44:10.787+08:00",
+      "method": "GET",
+      "path": "/api/app/v1/my/registrations",
+      "status": 200,
+      "request_id": "cmwe4xggm69d4a69d826ff60fc539e404",
+      "subject_matches_b_me": true
+    },
+    {
+      "server_time": "2026-11-13T06:44:10.902+08:00",
+      "method": "POST",
+      "path": "/api/app/v1/my/registrations",
+      "status": 404,
+      "request_id": "cmwe4xgju937d5e854f2fc30b9e954a8c",
+      "subject_matches_b_me": true
+    },
+    {
+      "server_time": "2026-11-13T06:44:11.002+08:00",
+      "method": "GET",
+      "path": "/api/app/v1/my/registrations",
+      "status": 200,
+      "request_id": "cmwe4xgmo01388ac9cdb92700775269da",
+      "subject_matches_b_me": true
+    }
+  ],
+  "limits": [
+    "Query, request body, and response business code are not retained by these server logs; see the paired client receipt.",
+    "Server log timestamps are independent from client timestamps.",
+    "This confirms the observed request routes and statuses, not a complete security or business acceptance."
+  ]
+}
