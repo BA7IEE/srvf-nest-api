@@ -358,7 +358,6 @@ describe('ActivityCheckInQueryService', () => {
     });
   });
 
-
   describe('v1.1 official segment reads', () => {
     function officialSegment(params: {
       id: string;
@@ -382,7 +381,10 @@ describe('ActivityCheckInQueryService', () => {
           geoVerified: true,
           outOfRange: params.outOfRange ?? false,
         },
-        sourceCloseEvent: params.checkOutAt === null ? null : { distance: null, geoVerified: true, outOfRange: false },
+        sourceCloseEvent:
+          params.checkOutAt === null
+            ? null
+            : { distance: null, geoVerified: true, outOfRange: false },
         identity: {
           activityId: ACTIVITY.id,
           registrationId: params.registrationId,
@@ -484,5 +486,4 @@ describe('ActivityCheckInQueryService', () => {
       );
     });
   });
-
 });

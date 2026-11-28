@@ -354,5 +354,4 @@ export class ActivityParticipationQueryService {
           : Number((registeredAttendeeCount / passMemberIds.size).toFixed(4)),
     };
   }
-
 }

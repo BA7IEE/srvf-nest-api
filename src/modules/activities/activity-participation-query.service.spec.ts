@@ -104,9 +104,7 @@ describe('ActivityParticipationQueryService feedback aggregate integration', () 
         ]),
       },
       participantServiceSegmentRevision: {
-        findMany: jest.fn().mockResolvedValue([
-          { identity: { memberId: 'member-1' } },
-        ]),
+        findMany: jest.fn().mockResolvedValue([{ identity: { memberId: 'member-1' } }]),
       },
       $transaction: jest.fn((run: (tx: unknown) => unknown) => run({})),
     } as unknown as PrismaService;
