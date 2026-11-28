@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { assertActiveMemberLifecycle } from '../members/member-lifecycle-lock';
 import { readReservationAnchors } from './activity-allocation-locks';
 import { initialPreferencePositions } from './activity-allocation-policy';
@@ -119,6 +120,15 @@ export class ActivityRegistrationLifecycleService {
           })
         : null;
     if (input.currentRevision > 0 && !registrationRevision) this.failClosed();
+    const activity = await tx.activity.findFirst({
+      where: notDeletedWhere({ id: input.activityId }),
+      select: { allocationModeCode: true },
+    });
+    const allocationModeCode = activity?.allocationModeCode;
+    const deferredAllocation =
+      allocationModeCode === 'qualification_rank' || allocationModeCode === 'lottery';
+    if (allocationModeCode !== 'first_come' && !deferredAllocation) this.failClosed();
+
     if (identities.length === 0) {
       // A submission without session choices can have a request key and no participation identity.
       if (registrationRevision && registrationRevision.positionPreferences.length > 0) {
@@ -142,6 +152,9 @@ export class ActivityRegistrationLifecycleService {
     ) {
       this.failClosed();
     }
+
+    // Batch allocation needs pending identities and revisions when it runs after the deadline.
+    if (deferredAllocation) return;
 
     for (const identity of pendingIdentities) {
       const revision = currentRevisions.get(identity.id);

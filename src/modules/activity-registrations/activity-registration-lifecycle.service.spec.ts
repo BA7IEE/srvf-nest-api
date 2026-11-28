@@ -119,6 +119,7 @@ describe('ActivityRegistrationLifecycleService', () => {
         findFirst: jest.fn().mockResolvedValue(null),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      activity: { findFirst: jest.fn().mockResolvedValue({ allocationModeCode: 'first_come' }) },
       activityRegistrationRevision: {
         findFirst: jest.fn().mockResolvedValue({ id: 'registration-revision-1' }),
         create: jest.fn().mockResolvedValue({ id: 'registration-revision-2' }),
@@ -296,6 +297,37 @@ describe('ActivityRegistrationLifecycleService', () => {
         });
       },
     );
+
+    it.each(['qualification_rank', 'lottery'])(
+      'keeps the identity pending for %s allocation after approval',
+      async (allocationModeCode) => {
+        const { approve, tx, capacity } = await setupApproval(['position-1']);
+        tx.activity.findFirst.mockResolvedValue({ allocationModeCode });
+        capacity.reserveInTransactionTrusted.mockResolvedValue({ outcome: 'capacity_unavailable' });
+
+        await expect(approve()).resolves.toBeUndefined();
+
+        expect(tx.activityParticipationRevision.findMany).toHaveBeenCalledTimes(1);
+        expect(capacity.reserveInTransactionTrusted).not.toHaveBeenCalled();
+        expect(tx.activityParticipationRevision.create).not.toHaveBeenCalled();
+        expect(tx.activityParticipationIdentity.updateMany).not.toHaveBeenCalled();
+        expect(tx.activityEvidenceState.create).not.toHaveBeenCalled();
+        expect(tx.activityEvidenceState.updateMany).not.toHaveBeenCalled();
+      },
+    );
+
+    it('rejects an unknown allocation mode even when the registration has no identities', async () => {
+      const { service, tx, capacity } = setup();
+      tx.activity.findFirst.mockResolvedValue({ allocationModeCode: 'unknown' });
+      tx.$queryRaw.mockReset().mockResolvedValue([]);
+      tx.activityRegistrationRevision.findFirst.mockResolvedValue({ positionPreferences: [] });
+
+      await expect(service.approveInTransactionTrusted(tx as never, input, [])).rejects.toEqual(
+        new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED),
+      );
+
+      expect(capacity.reserveInTransactionTrusted).not.toHaveBeenCalled();
+    });
 
     it('fails before reserving when the selected session requires an unresolved position', async () => {
       const { approve, tx, capacity } = await setupApproval([]);
