@@ -351,6 +351,8 @@ type OrganizationsMock = ReturnType<typeof makeOrganizationsMock>;
 
 function makeRegistrationLifecycleMock() {
   return {
+    lockRegistrationIdentitiesInTransactionTrusted: jest.fn().mockResolvedValue([]),
+    approveInTransactionTrusted: jest.fn().mockResolvedValue(undefined),
     rejectInTransactionTrusted: jest.fn().mockResolvedValue(undefined),
     reopenInTransactionTrusted: jest.fn().mockResolvedValue(undefined),
     cancelInTransactionTrusted: jest
@@ -410,6 +412,7 @@ function makeService(
   organizations: OrganizationsMock = makeOrganizationsMock(),
   insuranceRequirement: InsuranceRequirementMock = makeInsuranceRequirementMock(),
   qualificationEvaluator: QualificationEvaluatorMock = makeQualificationEvaluatorMock(),
+  lifecycle: ReturnType<typeof makeRegistrationLifecycleMock> = makeRegistrationLifecycleMock(),
 ): ActivityRegistrationsService {
   // stateMachine mock 仅含 decide,结构上可直接赋给 ActivityRegistrationStateMachine,无需断言。
   // Phase 6-B 第三域第二刀:三个新类全部传**真实实例**并喂同一组 mock ——
@@ -421,8 +424,7 @@ function makeService(
   } as unknown as AuditLogsService;
   const participationPolicy = new ActivityParticipationPolicy();
   const presenterReal = new ActivityRegistrationPresenter();
-  const lifecycleMock =
-    makeRegistrationLifecycleMock() as unknown as ActivityRegistrationLifecycleService;
+  const lifecycleMock = lifecycle as unknown as ActivityRegistrationLifecycleService;
   const allocationsMock = {
     promoteAfterCancellationInTransactionTrusted: jest.fn().mockResolvedValue({
       handled: false,
@@ -748,10 +750,11 @@ describe('ActivityRegistrationsService (characterization)', () => {
       expect(recorder.logReview).not.toHaveBeenCalled();
     });
 
-    it('approve allowed → update 写 nextStatusCode;logReview action=approve,tx 透传', async () => {
+    it('approve allowed → 报名头投影为 pass/active，并在同一事务审计', async () => {
       const prisma = makePrismaMock();
       const recorder = makeAuditRecorderMock();
       const insuranceRequirement = makeInsuranceRequirementMock();
+      const lifecycle = makeRegistrationLifecycleMock();
       const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'pass' });
       const observed = makeRegRow({ statusCode: 'pending', activityId: 'act-1' });
       const locked = makeRegRow({
@@ -774,6 +777,8 @@ describe('ActivityRegistrationsService (characterization)', () => {
         undefined,
         undefined,
         insuranceRequirement,
+        undefined,
+        lifecycle,
       );
 
       const result = await service.approve(
@@ -787,10 +792,23 @@ describe('ActivityRegistrationsService (characterization)', () => {
       expect(stateMachine.decide).toHaveBeenCalledWith('approve', 'pending');
       expect(prisma.activityRegistration.update).toHaveBeenCalledTimes(1);
       const updateArg = prisma.activityRegistration.update.mock.calls[0][0] as {
-        data: { statusCode: string; reviewedBy: string | null };
+        data: { statusCode: string; statusSummaryCode: string; reviewedBy: string | null };
       };
       expect(updateArg.data.statusCode).toBe('pass');
+      expect(updateArg.data.statusSummaryCode).toBe('active');
       expect(updateArg.data.reviewedBy).toBe('admin-1');
+      expect(lifecycle.approveInTransactionTrusted).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({
+          activityId: 'act-1',
+          registrationId: 'reg-1',
+          memberId: 'mem-1',
+        }),
+        [],
+      );
+      expect(lifecycle.approveInTransactionTrusted.mock.invocationCallOrder[0]).toBeLessThan(
+        prisma.activityRegistration.update.mock.invocationCallOrder[0],
+      );
       expect(recorder.logReview).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'approve', nextStatusCode: 'pass', tx: prisma }),
       );
@@ -911,6 +929,57 @@ describe('ActivityRegistrationsService (characterization)', () => {
       expect(prisma.activityRegistration.update).not.toHaveBeenCalled();
       expect(recorder.logReview).not.toHaveBeenCalled();
       expect(notificationProducer.enqueueReview).not.toHaveBeenCalled();
+    });
+
+    it('includes the pending revision position in the scoped qualification targets', async () => {
+      const prisma = makePrismaMock();
+      const qualificationEvaluator = makeQualificationEvaluatorMock();
+      prisma.activityRegistration.findFirst.mockResolvedValue(
+        makeRegRow({ statusCode: 'pending', activityId: 'act-1', currentRevision: 1 }),
+      );
+      prisma.activity.findFirst.mockResolvedValue(makeActivityRow({ capacity: null }));
+      prisma.activityQualificationRuleSet.findFirst.mockResolvedValue({ id: 'rule-set' });
+      prisma.activityRegistration.update.mockResolvedValue(makeRegRow({ statusCode: 'pass' }));
+      prisma.$queryRaw.mockImplementation((query: unknown) => {
+        const text = (query as { sql?: string }).sql ?? '';
+        if (text.includes('ActivityParticipationIdentity')) {
+          return Promise.resolve([
+            {
+              id: 'identity-1',
+              sessionId: 'session-1',
+              currentStatusCode: 'pending',
+              positionId: 'position-1',
+              preferenceSnapshot: null,
+            },
+          ]);
+        }
+        if (text.includes('ActivityPositionPreference')) return Promise.resolve([]);
+        if (text.includes('ActivityRegistrationRevision')) {
+          return Promise.resolve([{ id: 'revision-1' }]);
+        }
+        return Promise.resolve([{ id: 'act-1' }]);
+      });
+      const service = makeService(
+        prisma,
+        makeAuditRecorderMock(),
+        makeStateMachineMock({ allowed: true, nextStatusCode: 'pass' }),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        qualificationEvaluator,
+      );
+
+      await service.approve('act-1', 'reg-1', {}, makeCurrentUser(), META);
+
+      expect(qualificationEvaluator.evaluate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          targets: [
+            { sessionId: 'session-1', positionId: null },
+            { sessionId: 'session-1', positionId: 'position-1' },
+          ],
+        }),
+      );
     });
   });
 
