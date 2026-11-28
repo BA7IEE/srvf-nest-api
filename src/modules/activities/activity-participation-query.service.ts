@@ -266,6 +266,17 @@ export class ActivityParticipationQueryService {
       this.readOfficialTime(activityId),
     ]);
     const metrics = buildActivityParticipationMetrics(activity.statusCode, registrations, records);
+    // 到场人数在 v1.1 下改按当前官方服务段统计；工时 / 账本仍走合同 §16.2
+    // committed-ledger，不把 draft 段提前记入贡献真值。
+    const attendanceCounts = this.activityWorkflowGate.isV11Enabled()
+      ? await this.buildOfficialAttendanceCounts(activityId, activity.statusCode, registrations)
+      : {
+          attendeeCount: metrics.attendeeCount,
+          registeredAttendeeCount: metrics.registeredAttendeeCount,
+          temporaryAttendeeCount: metrics.temporaryAttendeeCount,
+          noShowCount: metrics.noShowCount,
+          attendanceRate: metrics.attendanceRate,
+        };
 
     // 取数源由闸决定(合同 §16.2 第三项);范式与 participation-summary-query 同构。
     const preCutoverSettlement =
@@ -289,11 +300,7 @@ export class ActivityParticipationQueryService {
       activityId,
       activityStatusCode: activity.statusCode,
       registrationCounts: metrics.registrationCounts,
-      attendeeCount: metrics.attendeeCount,
-      registeredAttendeeCount: metrics.registeredAttendeeCount,
-      temporaryAttendeeCount: metrics.temporaryAttendeeCount,
-      noShowCount: metrics.noShowCount,
-      attendanceRate: metrics.attendanceRate,
+      ...attendanceCounts,
       ...settlement,
       durationHistogram:
         officialTime === null
@@ -302,4 +309,50 @@ export class ActivityParticipationQueryService {
       feedback,
     };
   }
+
+  private async buildOfficialAttendanceCounts(
+    activityId: string,
+    activityStatusCode: string,
+    registrations: readonly { memberId: string; statusCode: string }[],
+  ): Promise<{
+    attendeeCount: number;
+    registeredAttendeeCount: number;
+    temporaryAttendeeCount: number;
+    noShowCount: number;
+    attendanceRate: number;
+  }> {
+    const segments = await this.prisma.participantServiceSegmentRevision.findMany({
+      where: {
+        statusCode: { in: ['draft', 'committed'] },
+        resultCode: { in: ['valid', 'early_departure_zero'] },
+        identity: { activityId },
+      },
+      select: { identity: { select: { memberId: true } } },
+    });
+    const attendeeMemberIds = new Set(segments.map((segment) => segment.identity.memberId));
+    const registeredMemberIds = new Set(registrations.map((registration) => registration.memberId));
+    const passMemberIds = new Set(
+      registrations
+        .filter((registration) => registration.statusCode === ACTIVITY_REGISTRATION_STATUS.PASS)
+        .map((registration) => registration.memberId),
+    );
+    const registeredAttendeeCount = [...passMemberIds].filter((memberId) =>
+      attendeeMemberIds.has(memberId),
+    ).length;
+    const temporaryAttendeeCount = [...attendeeMemberIds].filter(
+      (memberId) => !registeredMemberIds.has(memberId),
+    ).length;
+    return {
+      attendeeCount: attendeeMemberIds.size,
+      registeredAttendeeCount,
+      temporaryAttendeeCount,
+      noShowCount:
+        activityStatusCode === 'completed' ? passMemberIds.size - registeredAttendeeCount : 0,
+      attendanceRate:
+        passMemberIds.size === 0
+          ? 0
+          : Number((registeredAttendeeCount / passMemberIds.size).toFixed(4)),
+    };
+  }
+
 }
