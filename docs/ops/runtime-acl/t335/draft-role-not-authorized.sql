@@ -1,0 +1,20 @@
+-- NOT AUTHORIZED FOR AUTOMATIC APPLY.
+-- This file is a ledger only. Do not include it in prisma migrations, and do
+-- not run it on the accept database until a later explicit authorization names
+-- srvf_activity_draft.
+--
+-- Same-window form GET (@ActivityCommand('draft')) also failed with
+-- SQLSTATE 42501 on public."RegistrationFormField" for role srvf_activity_draft.
+-- The live t335 grant and this PR's migration grant srvf_activity_review only.
+--
+-- If later authorized, the expected minimal reversible statement would be the
+-- same 21-column SELECT, to role srvf_activity_draft, with no GRANT OPTION and
+-- no DML:
+--
+-- GRANT SELECT (
+--   "id", "fieldCode", "typeCode", "label", "helpText", "required",
+--   "visibilityCode", "exportable", "sortOrder", "minValue", "maxValue",
+--   "minLength", "maxLength", "maxSelections", "optionsJson", "purposeCode",
+--   "dataClassCode", "retentionPolicyCode", "maskingPolicyCode",
+--   "prefillSourceCode", "formVersionId"
+-- ) ON TABLE public."RegistrationFormField" TO "srvf_activity_draft";
