@@ -4,6 +4,7 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -520,8 +521,12 @@ describe('App GET /api/app/v1/activities/available (P2-4a)', () => {
         'updatedAt',
       ].sort();
 
-      // 用一个新 ADMIN 账号(不绑定 member),只为验证旧路径权限 + 字段集
-      await createTestUser(app, { username: 'p24a_legacy_admin', role: Role.ADMIN });
+      // 用一个新 ADMIN 账号(不绑定 member),只为验证旧路径权限 + 字段集。
+      // 列表已接组织数据范围:裸 ADMIN 无活动管理授权且无 memberId 时会得到空列表。
+      // 按既有业务 e2e 约定补 GLOBAL 活动管理范围(与 activities.e2e-spec 相同),不放宽产品门。
+      const admin = await createTestUser(app, { username: 'p24a_legacy_admin', role: Role.ADMIN });
+      const bizSeed = await seedBizAdminPermissionsAndRole(app);
+      await grantBizAdminToUser(app, admin.id, bizSeed.bizAdminRoleId);
       const { authHeader } = await loginAs(app, 'p24a_legacy_admin');
       // 保证至少一条 published 活动可见
       await createActivity('published', 'legacy-1');
