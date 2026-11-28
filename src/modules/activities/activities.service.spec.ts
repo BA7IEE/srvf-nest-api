@@ -1,4 +1,5 @@
 import { Prisma, Role, UserStatus } from '@prisma/client';
+import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -7,9 +8,10 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import type { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
+  ActivityOptionsQueryDto,
   CreateActivityDto,
   type CancelActivityDto,
-  type ListActivitiesQueryDto,
+  ListActivitiesQueryDto,
   type UpdateActivityDto,
 } from './activities.dto';
 import { CreateAppManagedActivityDto } from './dto/app/app-managed-activity.dto';
@@ -26,7 +28,7 @@ import type { InsuranceRequirementService } from '../insurances/insurance-requir
 import type { ActivityStateDecision } from './activity-state-machine';
 import type { OrganizationsService } from '../organizations/organizations.service';
 import type { RbacService } from '../permissions/rbac.service';
-import type { AuthzService } from '../authz/authz.service';
+import type { AuthzService, VisibleOrganizationScope } from '../authz/authz.service';
 import type { ActivityInitiationPolicy } from './activity-initiation-policy';
 import type { ActivityNotificationProducer } from './activity-notification-producer';
 import type { ActivityPublishReviewService } from './activity-publish-review.service';
@@ -326,6 +328,9 @@ function makeAuthzMock(
   decision: { allow: boolean; reason: string } = { allow: true, reason: 'matched' },
 ) {
   return {
+    getVisibleOrganizationScope: jest
+      .fn<Promise<VisibleOrganizationScope>, [CurrentUserPayload, string]>()
+      .mockResolvedValue({ hasPermission: true, global: true, organizationIds: [] }),
     explain: jest
       .fn<Promise<{ allow: boolean; reason: string }>, [unknown, string, unknown]>()
       .mockResolvedValue(decision),
@@ -721,6 +726,149 @@ describe('ActivitiesService (characterization)', () => {
       const arg = prisma.activity.findMany.mock.calls[0][0] as { where: { statusCode?: unknown } };
       expect(arg.where.statusCode).toBeUndefined();
     });
+  });
+
+  describe('list / options — 组织数据范围与发起人', () => {
+    const noGrant: VisibleOrganizationScope = {
+      hasPermission: false,
+      global: false,
+      organizationIds: [],
+    };
+    const orgScope = (...organizationIds: string[]): VisibleOrganizationScope => ({
+      hasPermission: true,
+      global: false,
+      organizationIds,
+    });
+    const globalScope: VisibleOrganizationScope = {
+      hasPermission: true,
+      global: true,
+      organizationIds: [],
+    };
+
+    it.each<{
+      name: string;
+      grants?: Record<string, VisibleOrganizationScope>;
+      query?: ActivityOptionsQueryDto;
+      memberId?: string | null;
+      filter: Prisma.ActivityWhereInput;
+    }>([
+      { name: '无码时只看本人发起', filter: { initiatorMemberId: 'member-1' } },
+      { name: '无码且未绑定队员时返回空', memberId: null, filter: { id: { in: [] } } },
+      {
+        name: '合并仅持有更新或取消权限的组织范围',
+        grants: {
+          'activity.update.record': orgScope('org-a', 'org-b'),
+          'activity.cancel.record': orgScope('org-b', 'org-c'),
+        },
+        filter: { organizationId: { in: ['org-a', 'org-b', 'org-c'] } },
+      },
+      {
+        name: '精确组织请求不能扩大授权范围',
+        grants: { 'activity.complete.record': orgScope('org-b') },
+        query: { organizationId: 'org-a' },
+        filter: { organizationId: { in: [] } },
+      },
+      {
+        name: '展开请求组织后与授权范围取交集',
+        grants: { 'activity.publish.record': orgScope('org-b', 'org-c') },
+        query: { organizationId: 'org-a', includeDescendants: true },
+        filter: { organizationId: { in: ['org-b'] } },
+      },
+      {
+        name: '任一管理码有全局范围即不限制组织和发起人',
+        grants: {
+          'activity.publish.record': orgScope('org-b'),
+          'activity.complete.record': globalScope,
+        },
+        query: { initiatedByMe: false },
+        filter: {},
+      },
+      {
+        name: '全局范围仍应用请求的组织过滤',
+        grants: { 'activity.publish.record': globalScope },
+        query: { organizationId: 'org-a', includeDescendants: true },
+        filter: { organizationId: { in: ['org-a', 'org-b'] } },
+      },
+      {
+        name: '有码但组织集合为空时返回空',
+        grants: { 'activity.update.record': orgScope() },
+        filter: { organizationId: { in: [] } },
+      },
+      {
+        name: '全局范围可筛回本人发起',
+        grants: { 'activity.publish.record': globalScope },
+        query: { initiatedByMe: true },
+        filter: { initiatorMemberId: 'member-1' },
+      },
+      {
+        name: '本人发起可跨授权组织并保留请求的组织过滤',
+        grants: { 'activity.update.record': orgScope('org-b') },
+        query: { initiatedByMe: true, organizationId: 'org-a' },
+        filter: { initiatorMemberId: 'member-1', organizationId: 'org-a' },
+      },
+      {
+        name: '全局范围未绑定队员时筛本人发起返回空',
+        grants: { 'activity.publish.record': globalScope },
+        query: { initiatedByMe: true },
+        memberId: null,
+        filter: { id: { in: [] } },
+      },
+    ])('$name，保留 Q-A7', async ({ grants = {}, query = {}, memberId = 'member-1', filter }) => {
+      const prisma = makePrismaMock();
+      prisma.activity.findMany.mockResolvedValue([]);
+      prisma.activity.count.mockResolvedValue(0);
+      const authz = makeAuthzMock();
+      authz.getVisibleOrganizationScope.mockImplementation((_user, code) =>
+        Promise.resolve(grants[code] ?? noGrant),
+      );
+      const organizations = makeOrganizationsMock();
+      organizations.queryDescendantOrgIds.mockResolvedValue(['org-a', 'org-b']);
+      const service = makeService(prisma, { authz, organizations });
+      const user = makeCurrentUser({ role: Role.USER, memberId });
+      const request = { ...query, statusCode: 'archived', includeArchived: true };
+      const where = {
+        ...filter,
+        statusCode: { in: ['published', 'completed'] },
+        deletedAt: null,
+      };
+
+      expect(await service.list(makeListQuery(request), user)).toEqual({
+        items: [],
+        total: 0,
+        page: 1,
+        pageSize: 20,
+      });
+      expect(await service.options(request, user)).toEqual({ items: [] });
+      expect(prisma.activity.findMany).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ where }),
+      );
+      expect(prisma.activity.findMany).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ where }),
+      );
+      expect(prisma.activity.count).toHaveBeenCalledWith({ where });
+    });
+
+    it.each([ListActivitiesQueryDto, ActivityOptionsQueryDto])(
+      '%p 的 initiatedByMe 接受省略和布尔查询值，拒绝 null 和非法值',
+      async (Dto: new () => { initiatedByMe?: boolean }) => {
+        const omitted = plainToInstance(Dto, {});
+        const enabled = plainToInstance(Dto, { initiatedByMe: 'true' });
+        const disabled = plainToInstance(Dto, { initiatedByMe: 'false' });
+        expect(enabled.initiatedByMe).toBe(true);
+        expect(disabled.initiatedByMe).toBe(false);
+        for (const query of [omitted, enabled, disabled]) {
+          expect(await validate(query)).toEqual([]);
+        }
+        for (const initiatedByMe of [null, 'invalid']) {
+          const invalid = plainToInstance(Dto, { initiatedByMe });
+          expect(await validate(invalid)).toEqual([
+            expect.objectContaining({ property: 'initiatedByMe' }),
+          ]);
+        }
+      },
+    );
   });
 
   // ============ C. findOne:可见性 ============

@@ -828,6 +828,12 @@ export class ListActivitiesQueryDto extends PaginationQueryDto {
   @Transform(parseQueryBoolean)
   @IsBoolean()
   includeArchived?: boolean;
+
+  @ApiPropertyOptional({ description: '仅列出当前登录队员发起的活动', default: false })
+  @OmittableOnly()
+  @Transform(parseQueryBoolean)
+  @IsBoolean()
+  initiatedByMe?: boolean;
 }
 
 // ============ F1/A6 选择器(路线图 §4;D2/D3 拍板)============
@@ -851,6 +857,15 @@ export class ActivityOptionsQueryDto {
   @MaxLength(64)
   organizationId?: string;
 
+  @ApiPropertyOptional({
+    description: '配合 organizationId:是否展开其全部后代组织(默认 false)',
+    default: false,
+  })
+  @OmittableOnly()
+  @Transform(parseQueryBoolean)
+  @IsBoolean()
+  includeDescendants?: boolean;
+
   @ApiPropertyOptional({ description: '结果条数上限(默认 20,上限 100)', minimum: 1, maximum: 100 })
   @IsOptional()
   @Type(() => Number)
@@ -870,6 +885,12 @@ export class ActivityOptionsQueryDto {
   @Transform(parseQueryBoolean)
   @IsBoolean()
   includeArchived?: boolean;
+
+  @ApiPropertyOptional({ description: '仅列出当前登录队员发起的活动', default: false })
+  @OmittableOnly()
+  @Transform(parseQueryBoolean)
+  @IsBoolean()
+  initiatedByMe?: boolean;
 }
 
 export class ActivityOptionItemDto {

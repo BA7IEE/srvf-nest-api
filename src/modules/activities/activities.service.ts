@@ -40,6 +40,14 @@ import { ActivityNotificationProducer } from './activity-notification-producer';
 import { ActivityPublishReviewService } from './activity-publish-review.service';
 import { ActivityAllocationModeService } from './activity-allocation-mode.service';
 
+// 发布审核员持 publish，活动负责人持 update/cancel/complete。取现有管理码的范围并集。
+const ACTIVITY_LIST_SCOPE_CODES = [
+  'activity.publish.record',
+  'activity.update.record',
+  'activity.cancel.record',
+  'activity.complete.record',
+] as const;
+
 // V2 第一阶段批次 3A activities service。
 // 详见 docs:
 //   - 批次3_API前评审决议表.md v1.0 §1.7 / §1.11 / §1.12
@@ -78,8 +86,7 @@ export class ActivitiesService {
     private readonly activityAuditRecorder: ActivityAuditRecorder,
     private readonly auditLogs: AuditLogsService,
     private readonly rbac: RbacService,
-    // 终态 scoped-authz PR12(2026-07-02;冻结稿 §11 逐面迁移第一批):统一判权大脑,5 个写方法
-    // 判权从 rbac.can 切 authz.explain(见 assertCanOrThrow);list / findOne 仍无码仅登录不变。
+    // list/options 复用活动管理码的组织范围，入口仍仅要求登录。
     private readonly authz: AuthzService,
     // PR-L2:业务写 + audit + durable intent 同事务；独立 worker 仅在 commit 后执行通知 Effect。
     private readonly notificationProducer: ActivityNotificationProducer,
@@ -153,6 +160,46 @@ export class ActivitiesService {
     }
   }
 
+  private async buildListScopeFilter(
+    query: Pick<ActivityOptionsQueryDto, 'organizationId' | 'includeDescendants' | 'initiatedByMe'>,
+    currentUser: CurrentUserPayload,
+  ): Promise<Prisma.ActivityWhereInput> {
+    const { organizationId, includeDescendants, initiatedByMe } = query;
+    const scopes = initiatedByMe
+      ? []
+      : await Promise.all(
+          ACTIVITY_LIST_SCOPE_CODES.map((code) =>
+            this.authz.getVisibleOrganizationScope(currentUser, code),
+          ),
+        );
+    const grantedScopes = scopes.filter((scope) => scope.hasPermission);
+    const ownOnly = grantedScopes.length === 0;
+    if (ownOnly && !currentUser.memberId) return { id: { in: [] } };
+
+    const requestedOrgIds =
+      organizationId === undefined
+        ? undefined
+        : includeDescendants
+          ? await this.organizations.queryDescendantOrgIds(organizationId)
+          : [organizationId];
+    if (ownOnly || grantedScopes.some((scope) => scope.global)) {
+      return {
+        ...(ownOnly ? { initiatorMemberId: currentUser.memberId } : {}),
+        ...(requestedOrgIds !== undefined
+          ? { organizationId: includeDescendants ? { in: requestedOrgIds } : organizationId }
+          : {}),
+      };
+    }
+
+    const visibleOrgIds = [...new Set(grantedScopes.flatMap((scope) => scope.organizationIds))];
+    const requestedSet = requestedOrgIds === undefined ? undefined : new Set(requestedOrgIds);
+    return {
+      organizationId: {
+        in: requestedSet ? visibleOrgIds.filter((id) => requestedSet.has(id)) : visibleOrgIds,
+      },
+    };
+  }
+
   // ============ 建单 / 改单 / 状态流转 / findOne:薄委托(Phase 6-B 第三域第三刀)============
   //
   // 实现已迁至 activity-write.service.ts / activity-status-command.service.ts /
@@ -216,24 +263,17 @@ export class ActivitiesService {
       pageSize,
       statusCode,
       activityTypeCode,
-      organizationId,
       isPublicRegistration,
       q,
       dateFrom,
       dateTo,
-      includeDescendants,
       includeStats,
       includeArchived,
     } = query;
 
-    const filters: Prisma.ActivityWhereInput = {};
+    const filters = await this.buildListScopeFilter(query, currentUser);
     this.applyStatusCodeFilter(filters, currentUser, statusCode, includeArchived);
     if (activityTypeCode !== undefined) filters.activityTypeCode = activityTypeCode;
-    if (organizationId !== undefined) {
-      filters.organizationId = includeDescendants
-        ? { in: await this.organizations.queryDescendantOrgIds(organizationId) }
-        : organizationId;
-    }
     if (isPublicRegistration !== undefined) filters.isPublicRegistration = isPublicRegistration;
     if (q !== undefined) {
       filters.title = { contains: q, mode: 'insensitive' };
@@ -281,11 +321,10 @@ export class ActivitiesService {
     query: ActivityOptionsQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<ActivityOptionsResponseDto> {
-    const { q, statusCode, organizationId, limit, includeArchived } = query;
+    const { q, statusCode, limit, includeArchived } = query;
 
-    const filters: Prisma.ActivityWhereInput = {};
+    const filters = await this.buildListScopeFilter(query, currentUser);
     this.applyStatusCodeFilter(filters, currentUser, statusCode, includeArchived);
-    if (organizationId !== undefined) filters.organizationId = organizationId;
     if (q !== undefined) {
       filters.title = { contains: q, mode: 'insensitive' };
     }
