@@ -1,0 +1,1 @@
+- 修复 v1.1 官方 QR 打卡后，管理端 `check-ins` / `attendance-sheet-draft` 仍读取已空的 `ActivityCheckIn`，以及活动 `participation-summary` 的 `attendeeCount` 仍按 `AttendanceRecord` 统计，导致已闭合官方段不可见的问题。闸开启后改为读取当前官方服务段（`draft|committed` 且 `valid|early_departure_zero`）。账本与工时仍走结算后的 committed-ledger，见 [Issue 1465](https://github.com/BA7IEE/srvf-nest-api/issues/1465)。
