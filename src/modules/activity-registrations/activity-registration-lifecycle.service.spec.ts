@@ -329,16 +329,36 @@ describe('ActivityRegistrationLifecycleService', () => {
       expect(tx.activityParticipationRevision.create).not.toHaveBeenCalled();
     });
 
-    it('allows a header-only legacy row and rejects a canonical row missing its identities', async () => {
+    it.each([null, 'submission-key'])(
+      'allows approval without preferences or identities (request key: %s)',
+      async (requestKey) => {
+        const { service, tx, capacity } = setup();
+        tx.$queryRaw.mockReset().mockResolvedValue([]);
+        tx.activityRegistrationRevision.findFirst.mockResolvedValue({
+          requestKey,
+          positionPreferences: [],
+        });
+
+        await expect(
+          service.approveInTransactionTrusted(tx as never, input, []),
+        ).resolves.toBeUndefined();
+
+        expect(capacity.reserveInTransactionTrusted).not.toHaveBeenCalled();
+        expect(tx.activityParticipationRevision.create).not.toHaveBeenCalled();
+        expect(tx.activityParticipationIdentity.updateMany).not.toHaveBeenCalled();
+        expect(tx.activityEvidenceState.create).not.toHaveBeenCalled();
+        expect(tx.activityEvidenceState.updateMany).not.toHaveBeenCalled();
+      },
+    );
+
+    it('fails reconciliation when the registration revision has preferences but no identities', async () => {
       const { service, tx, capacity } = setup();
       tx.$queryRaw.mockReset().mockResolvedValue([]);
-      tx.activityRegistrationRevision.findFirst
-        .mockResolvedValueOnce({ requestKey: null, positionPreferences: [] })
-        .mockResolvedValueOnce({ requestKey: 'submission-key', positionPreferences: [] });
+      tx.activityRegistrationRevision.findFirst.mockResolvedValue({
+        requestKey: 'submission-key',
+        positionPreferences: [{ sessionId: 'session-1', positionId: 'position-1' }],
+      });
 
-      await expect(
-        service.approveInTransactionTrusted(tx as never, input, []),
-      ).resolves.toBeUndefined();
       await expect(service.approveInTransactionTrusted(tx as never, input, [])).rejects.toEqual(
         new BizException(BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED),
       );

@@ -111,7 +111,6 @@ export class ActivityRegistrationLifecycleService {
         ? await tx.activityRegistrationRevision.findFirst({
             where: { registrationId: input.registrationId, revision: input.currentRevision },
             select: {
-              requestKey: true,
               positionPreferences: {
                 orderBy: [{ sessionId: 'asc' }, { preferenceOrder: 'asc' }],
                 select: { sessionId: true, positionId: true },
@@ -121,12 +120,8 @@ export class ActivityRegistrationLifecycleService {
         : null;
     if (input.currentRevision > 0 && !registrationRevision) this.failClosed();
     if (identities.length === 0) {
-      // A legacy registration has no session identity or command request key.
-      if (
-        registrationRevision &&
-        (registrationRevision.requestKey !== null ||
-          registrationRevision.positionPreferences.length)
-      ) {
+      // A submission without session choices can have a request key and no participation identity.
+      if (registrationRevision && registrationRevision.positionPreferences.length > 0) {
         this.failClosed();
       }
       return;
