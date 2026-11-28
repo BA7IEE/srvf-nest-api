@@ -54,6 +54,7 @@ describe('ActivityParticipationQueryService feedback aggregate integration', () 
       }),
     } as unknown as LedgerQueryService;
     const gate = {
+      isV11Enabled: jest.fn().mockReturnValue(false),
       participationReadSource: jest.fn().mockReturnValue('approved-attendance'),
     } as unknown as ActivityWorkflowGate;
     const participationTimeTruth = {
@@ -102,6 +103,9 @@ describe('ActivityParticipationQueryService feedback aggregate integration', () 
           },
         ]),
       },
+      participantServiceSegmentRevision: {
+        findMany: jest.fn().mockResolvedValue([{ identity: { memberId: 'member-1' } }]),
+      },
       $transaction: jest.fn((run: (tx: unknown) => unknown) => run({})),
     } as unknown as PrismaService;
     const authz = {
@@ -136,6 +140,7 @@ describe('ActivityParticipationQueryService feedback aggregate integration', () 
       ledgerQuery,
       participationTimeTruth,
       {
+        isV11Enabled: jest.fn().mockReturnValue(true),
         participationReadSource: jest.fn().mockReturnValue('committed-ledger'),
       } as unknown as ActivityWorkflowGate,
     );

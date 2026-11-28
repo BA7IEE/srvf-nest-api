@@ -16,11 +16,16 @@ function makePrismaMock() {
   const prisma = {
     activity: { findFirst: jest.fn() },
     activityCheckIn: { findMany: jest.fn(), count: jest.fn() },
+    participantServiceSegmentRevision: { findMany: jest.fn(), count: jest.fn() },
     activityRegistration: { findMany: jest.fn() },
     member: { findMany: jest.fn() },
     $transaction: jest.fn((operations: Array<Promise<unknown>>) => Promise.all(operations)),
   };
   return prisma;
+}
+
+function makeGateMock(enabled = false) {
+  return { isV11Enabled: jest.fn(() => enabled) };
 }
 
 function makePresenterMock() {
@@ -89,10 +94,15 @@ function makePresenterMock() {
   };
 }
 
-function makeService(prisma: PrismaMock, presenter = makePresenterMock()) {
+function makeService(
+  prisma: PrismaMock,
+  presenter = makePresenterMock(),
+  gate = makeGateMock(false),
+) {
   return {
-    service: new ActivityCheckInQueryService(prisma as never, presenter as never),
+    service: new ActivityCheckInQueryService(prisma as never, presenter as never, gate as never),
     presenter,
+    gate,
   };
 }
 
@@ -345,6 +355,135 @@ describe('ActivityCheckInQueryService', () => {
       expect(prisma.activityRegistration.findMany).not.toHaveBeenCalled();
       expect(prisma.activityCheckIn.findMany).not.toHaveBeenCalled();
       expect(prisma.member.findMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('v1.1 official segment reads', () => {
+    function officialSegment(params: {
+      id: string;
+      memberId: string;
+      registrationId: string;
+      createdAt: Date;
+      checkOutAt?: Date | null;
+      outOfRange?: boolean;
+    }) {
+      return {
+        id: params.id,
+        createdAt: params.createdAt,
+        updatedAt: params.createdAt,
+        checkInAt: new Date('2026-07-15T08:00:00.000Z'),
+        checkOutAt:
+          params.checkOutAt === undefined
+            ? new Date('2026-07-15T10:00:00.000Z')
+            : params.checkOutAt,
+        sourceCheckInEvent: {
+          distance: new Prisma.Decimal('3.21'),
+          geoVerified: true,
+          outOfRange: params.outOfRange ?? false,
+        },
+        sourceCloseEvent:
+          params.checkOutAt === null
+            ? null
+            : { distance: null, geoVerified: true, outOfRange: false },
+        identity: {
+          activityId: ACTIVITY.id,
+          registrationId: params.registrationId,
+          memberId: params.memberId,
+        },
+      };
+    }
+
+    it('list 改读当前官方段，不再查询 ActivityCheckIn', async () => {
+      const prisma = makePrismaMock();
+      const { service } = makeService(prisma, makePresenterMock(), makeGateMock(true));
+      const newer = officialSegment({
+        id: 'seg-new',
+        memberId: MEMBER_A.id,
+        registrationId: 'reg-a',
+        createdAt: new Date('2026-07-15T09:00:00.000Z'),
+      });
+      const older = officialSegment({
+        id: 'seg-old',
+        memberId: MEMBER_B.id,
+        registrationId: 'reg-b',
+        createdAt: new Date('2026-07-15T08:00:00.000Z'),
+      });
+      prisma.activity.findFirst.mockResolvedValue(ACTIVITY);
+      prisma.participantServiceSegmentRevision.findMany.mockResolvedValue([newer, older]);
+      prisma.participantServiceSegmentRevision.count.mockResolvedValue(2);
+      prisma.member.findMany.mockResolvedValue([MEMBER_A, MEMBER_B]);
+
+      const page = await service.list(ACTIVITY.id, { page: 1, pageSize: 20 });
+
+      expect(prisma.activityCheckIn.findMany).not.toHaveBeenCalled();
+      expect(prisma.participantServiceSegmentRevision.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.participantServiceSegmentRevision.count).toHaveBeenCalledTimes(1);
+      expect(page.total).toBe(2);
+      expect(page.items).toHaveLength(2);
+      expect(page.items[0]).toMatchObject({
+        id: 'seg-new',
+        registrationId: 'reg-a',
+        checkInDistance: '3.21',
+      });
+    });
+
+    it('list 空分页在 v11 下仍执行 members IN []，且不碰 ActivityCheckIn', async () => {
+      const prisma = makePrismaMock();
+      const { service } = makeService(prisma, makePresenterMock(), makeGateMock(true));
+      prisma.activity.findFirst.mockResolvedValue(ACTIVITY);
+      prisma.participantServiceSegmentRevision.findMany.mockResolvedValue([]);
+      prisma.participantServiceSegmentRevision.count.mockResolvedValue(0);
+      prisma.member.findMany.mockResolvedValue([]);
+
+      const page = await service.list(ACTIVITY.id, { page: 1, pageSize: 20 });
+
+      expect(page.total).toBe(0);
+      expect(page.items).toEqual([]);
+      expect(prisma.member.findMany).toHaveBeenCalledWith({
+        where: { id: { in: [] } },
+        select: ADMIN_ACTIVITY_CHECK_IN_MEMBER_SELECT,
+      });
+      expect(prisma.activityCheckIn.findMany).not.toHaveBeenCalled();
+    });
+
+    it('attendanceSheetDraft 把当前官方段映射为 records，无段的 pass 报名仍为 absent', async () => {
+      const prisma = makePrismaMock();
+      const { service, presenter } = makeService(prisma, makePresenterMock(), makeGateMock(true));
+      const registrationA = {
+        id: 'reg-a',
+        memberId: MEMBER_A.id,
+        registeredAt: new Date('2026-07-14T00:00:00.000Z'),
+        activityPosition: { attendanceRoleCode: 'member', endAt: ACTIVITY_POSITION_END },
+      };
+      const registrationB = {
+        id: 'reg-b',
+        memberId: MEMBER_B.id,
+        registeredAt: new Date('2026-07-14T01:00:00.000Z'),
+        activityPosition: null,
+      };
+      prisma.activity.findFirst.mockResolvedValue(ACTIVITY);
+      prisma.activityRegistration.findMany.mockResolvedValue([registrationA, registrationB]);
+      prisma.participantServiceSegmentRevision.findMany.mockResolvedValue([
+        officialSegment({
+          id: 'seg-a',
+          memberId: MEMBER_A.id,
+          registrationId: 'reg-a',
+          createdAt: new Date('2026-07-15T08:00:00.000Z'),
+        }),
+      ]);
+      prisma.member.findMany.mockResolvedValue([MEMBER_A, MEMBER_B]);
+
+      const draft = await service.attendanceSheetDraft(ACTIVITY.id);
+
+      expect(prisma.activityCheckIn.findMany).not.toHaveBeenCalled();
+      expect(draft.records).toHaveLength(1);
+      expect(draft.absentRegistrations).toHaveLength(1);
+      expect(draft.absentRegistrations[0]).toMatchObject({ registrationId: 'reg-b' });
+      expect(presenter.toAttendanceSheetDraftRecordDto).toHaveBeenCalledWith(
+        expect.objectContaining({ registrationId: 'reg-a', memberId: MEMBER_A.id }),
+        ACTIVITY_POSITION_END,
+        'member',
+      );
     });
   });
 });
