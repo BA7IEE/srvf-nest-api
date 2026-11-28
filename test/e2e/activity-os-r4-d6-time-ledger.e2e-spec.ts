@@ -961,7 +961,7 @@ describe('D6 classified ledger through real preparation and commit', () => {
       const ensureManifest = ledger.ensureManifest.bind(ledger);
       const prepareIdentities = ledger.prepareIdentities.bind(ledger);
       const assertComplete = ledger.assertComplete.bind(ledger);
-      const hasClassifiedSource = ledger.hasClassifiedSource.bind(ledger);
+      const sourceKind = ledger.sourceKind.bind(ledger);
       const assertNotClassifiedCorrectionBatch =
         ledger.assertNotClassifiedCorrectionBatch.bind(ledger);
       const authorize = access.authorize.bind(access);
@@ -975,8 +975,8 @@ describe('D6 classified ledger through real preparation and commit', () => {
         .spyOn(ledger, 'assertComplete')
         .mockImplementation((...args) => measureClassification(() => assertComplete(...args)));
       jest
-        .spyOn(ledger, 'hasClassifiedSource')
-        .mockImplementation((...args) => measureClassification(() => hasClassifiedSource(...args)));
+        .spyOn(ledger, 'sourceKind')
+        .mockImplementation((...args) => measureClassification(() => sourceKind(...args)));
       jest
         .spyOn(ledger, 'assertNotClassifiedCorrectionBatch')
         .mockImplementation((...args) =>

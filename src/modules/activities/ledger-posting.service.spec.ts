@@ -84,7 +84,7 @@ describe('ledger posting draft member query characterization', () => {
             nativeUnchanged: change === 'native-unchanged',
           }),
         },
-        timeLedger: { hasClassifiedSource: jest.fn().mockRejectedValue(checkpoint) },
+        timeLedger: { sourceKind: jest.fn().mockRejectedValue(checkpoint) },
       };
       // The parent drift is rejected even if its own regime can still be read.
       const client = {
@@ -117,7 +117,7 @@ describe('ledger posting draft member query characterization', () => {
           },
         ),
       ).rejects.toMatchObject({ biz: BizCode.LEDGER_COMMIT_BATCH_STATUS_INVALID });
-      expect(context.timeLedger.hasClassifiedSource).not.toHaveBeenCalled();
+      expect(context.timeLedger.sourceKind).not.toHaveBeenCalled();
     },
   );
 
@@ -148,7 +148,7 @@ describe('ledger posting draft member query characterization', () => {
           .fn()
           .mockResolvedValue({ required: false, hasApplication: false, nativeUnchanged: false }),
       },
-      timeLedger: { hasClassifiedSource: jest.fn().mockResolvedValue(false) },
+      timeLedger: { sourceKind: jest.fn().mockResolvedValue(null) },
       replayResult: jest.fn().mockResolvedValue(result),
     };
     await expect(

@@ -80,18 +80,24 @@ export class ParticipationTimeLedgerService {
     throw error;
   }
 
-  async hasClassifiedSource(tx: Prisma.TransactionClient, batch: TimeLedgerBatch) {
+  async sourceKind(tx: Prisma.TransactionClient, batch: TimeLedgerBatch) {
+    const select = {
+      sourceDraftTimeRevision: { select: { settlementVersionId: true } },
+    } as const;
     const manifest = await tx.participationTimeLedgerManifest.findUnique({
       where: { postingBatchId: batch.id },
-      select: { id: true },
+      select: { timeRevision: { select } },
     });
-    if (manifest) return true;
-    return (
+    const revision =
+      manifest?.timeRevision ??
       (await tx.activitySettlementTimeRevision.findFirst({
         where: { settlementVersionId: batch.settlementVersionId, kindCode: 'submitted' },
-        select: { id: true },
-      })) !== null
-    );
+        select,
+      }));
+    if (!revision) return null;
+    return revision.sourceDraftTimeRevision?.settlementVersionId === batch.settlementVersionId
+      ? 'ordinary'
+      : 'policy';
   }
 
   async assertLegacyCorrection(tx: Prisma.TransactionClient, baseSettlementVersionId: string) {

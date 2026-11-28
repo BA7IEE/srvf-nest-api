@@ -16,6 +16,9 @@ import {
   ledgerBaselineKey,
   ledgerBaselineValue,
 } from '../../src/modules/activities/ledger-preparation.service';
+import { ACTIVITY_TIME_CUTOVER_RECEIPT_ID } from '../../src/modules/activities/activity-time-cutover-command';
+import { LedgerReadyBatchCommitter } from '../../src/modules/activities/ledger-ready-batch-committer.service';
+import * as ordinaryTimeRoot from '../../src/modules/activities/ordinary-time-root';
 import { LedgerPostingAuditRecorder } from '../../src/modules/activities/ledger-posting-audit-recorder';
 import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
 import { LedgerQueryService } from '../../src/modules/activities/ledger-query.service';
@@ -97,7 +100,10 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
     posting = app.get(LedgerPostingService);
     ledgerQuery = app.get(LedgerQueryService);
     auditRecorder = app.get(LedgerPostingAuditRecorder);
+    await seedPostingActor();
+  });
 
+  async function seedPostingActor() {
     const user = await createTestUser(app, {
       username: 'ledger-posting-actor',
       role: Role.SUPER_ADMIN,
@@ -115,7 +121,7 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
       select: { id: true },
     });
     organizationId = organization.id;
-  });
+  }
 
   afterEach(() => {
     jest.restoreAllMocks();
@@ -143,6 +149,7 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
       /** 每条 result revision 的认定贡献值。 */
       recognizedPoints?: number;
       recognizedHours?: number;
+      remainingDraft?: boolean;
       /**
        * 整体时间平移(毫秒)。**默认 0 ⇒ 既有全部调用方逐字保持原时刻**,
        * 本参数不改动任何既有用例的被测对象。两处用途:
@@ -293,24 +300,32 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
         // 第四刀终审通过之后的形态:run 已在 `posting`,账还没记。
         statusCode: 'posting',
         currentDraftVersion: 1,
-        currentSubmittedVersion: 1,
+        currentSubmittedVersion: options.remainingDraft ? 2 : 1,
       },
       select: { id: true },
     });
 
+    const versionFacts = {
+      settlementRunId: run.id,
+      evidenceSealId: seal.id,
+      evidenceRevision: 0,
+      populationRevision: 0,
+      workflowRevision: 0,
+      personCount: memberCount,
+      sessionParticipationCount: memberCount * sessionCount,
+      serviceSegmentCount: memberCount * sessionCount,
+      createdByUserId: actor.id,
+    };
+    if (options.remainingDraft) {
+      await prisma.attendanceSettlementVersion.create({
+        data: { ...versionFacts, version: 1, statusCode: 'draft', contentHash: 'd'.repeat(64) },
+      });
+    }
     const version = await prisma.attendanceSettlementVersion.create({
       data: {
-        settlementRunId: run.id,
-        version: 1,
-        evidenceSealId: seal.id,
-        evidenceRevision: 0,
-        populationRevision: 0,
-        workflowRevision: 0,
-        contentHash: `content-hash-${tag}`,
-        personCount: memberCount,
-        sessionParticipationCount: memberCount * sessionCount,
-        serviceSegmentCount: memberCount * sessionCount,
-        createdByUserId: actor.id,
+        ...versionFacts,
+        version: options.remainingDraft ? 2 : 1,
+        contentHash: options.remainingDraft ? 'a'.repeat(64) : `content-hash-${tag}`,
         submittedAt: sealAt,
         statusCode: 'approved',
         operationKey: `${tag}-submit-key`,
@@ -1089,6 +1104,11 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
       expect(result.dayStateCount).toBe(2);
       expect(result.entryCount).toBe(4);
       expect(result.replayed).toBe(false);
+      expect(
+        await prisma.participationTimeLedgerManifest.count({
+          where: { postingBatchId: fixture.batchId },
+        }),
+      ).toBe(0);
 
       // ① 批次 committed
       const batch = await prisma.ledgerPostingBatch.findUniqueOrThrow({
@@ -2111,6 +2131,172 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
         WHERE locktype = 'advisory' AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
       `;
       expect(row?.count ?? 0).toBe(0);
+    });
+  });
+
+  describe('post-cutover E4-off ordinary posting', () => {
+    beforeEach(async () => {
+      await resetDb(app);
+      await seedPostingActor();
+      await prisma.activityTimeCutoverReceipt.create({
+        data: {
+          id: ACTIVITY_TIME_CUTOVER_RECEIPT_ID,
+          operationKey: 'ordinary-posting-cutover',
+          requestHash: '1'.repeat(64),
+          evidenceBundleHash: '2'.repeat(64),
+          deployedMainSha: '3'.repeat(40),
+          contentHash: '0'.repeat(64),
+          actorUserId: actor.id,
+        },
+      });
+    });
+
+    async function approvedFixture() {
+      const fixture = await createPostingFixture({
+        recognizedHours: 1.16,
+        memberCount: 1,
+        remainingDraft: true,
+      });
+      const reviewer = await createTestUser(app, {
+        username: 'ordinary-final-reviewer',
+        role: Role.SUPER_ADMIN,
+      });
+      await prisma.settlementReviewAction.create({
+        data: {
+          settlementVersionId: fixture.versionId,
+          stageCode: 'final',
+          actionCode: 'approve',
+          actorUserId: reviewer.id,
+          actedAt: SEAL_AT,
+          operationKey: `ordinary-approve:${fixture.versionId}`,
+        },
+      });
+      return { ...fixture, reviewerId: reviewer.id };
+    }
+
+    async function expectRoot(fixture: PostingFixture, expectedActorId: string) {
+      const manifest = await prisma.participationTimeLedgerManifest.findUniqueOrThrow({
+        where: { postingBatchId: fixture.batchId },
+        include: { timeRevision: { include: { buckets: true, sourceDraftTimeRevision: true } } },
+      });
+      expect(manifest).toMatchObject({
+        settlementVersionId: fixture.versionId,
+        expectedEntryCount: 4,
+        recognizedSecondsTotal: 4176n,
+        timeRevision: {
+          settlementVersionId: fixture.versionId,
+          createdByUserId: expectedActorId,
+          kindCode: 'submitted',
+          draftContentHash: 'a'.repeat(64),
+          sourceCount: 0,
+          sourceDraftTimeRevision: { settlementVersionId: fixture.versionId, kindCode: 'draft' },
+        },
+      });
+      expect(manifest.timeRevision.buckets).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ categoryCode: 'volunteer_service', recognizedSeconds: 4176 }),
+          ...['training', 'organization', 'non_creditable'].map((categoryCode) =>
+            expect.objectContaining({ categoryCode, recognizedSeconds: 0 }),
+          ),
+        ]),
+      );
+      expect(
+        await prisma.participationTimeLedgerEntry.count({
+          where: { manifestId: manifest.id },
+        }),
+      ).toBe(4);
+      return manifest.id;
+    }
+
+    async function expectBinding(fixture: PostingFixture, manifestId: string) {
+      expect(
+        await prisma.participationTimeCutoverBinding.findMany({
+          where: { postingBatchId: fixture.batchId },
+        }),
+      ).toMatchObject([
+        { cutoverReceiptId: ACTIVITY_TIME_CUTOVER_RECEIPT_ID, rootManifestId: manifestId },
+      ]);
+    }
+
+    it('prepares an approved legacy version and binds its classified root at commit', async () => {
+      const fixture = await approvedFixture();
+      await prepareBatch(fixture);
+      const manifestId = await expectRoot(fixture, actor.id);
+      expect(await prisma.participationTimeCutoverBinding.count()).toBe(0);
+      const committer = app.get(LedgerReadyBatchCommitter);
+      await expect(committer.commitReadyBatch(fixture.batchId)).resolves.toMatchObject({
+        batchStatus: 'committed',
+        replayed: false,
+      });
+      await expectBinding(fixture, manifestId);
+    });
+
+    it('repairs an already-ready batch atomically and binds exactly once across retries', async () => {
+      const fixture = await approvedFixture();
+      // Simulate an older preparation worker against the same live cutover constraints.
+      const oldWorker = jest.spyOn(ordinaryTimeRoot, 'hasTimeCutover').mockResolvedValue(false);
+      await prepareBatch(fixture);
+      oldWorker.mockRestore();
+      expect(
+        await prisma.ledgerPostingBatch.findUnique({ where: { id: fixture.batchId } }),
+      ).toMatchObject({ statusCode: 'ready' });
+      expect(await prisma.activitySettlementTimeRevision.count()).toBe(0);
+      expect(await prisma.participationTimeLedgerManifest.count()).toBe(0);
+
+      const committer = app.get(LedgerReadyBatchCommitter);
+      const autoCommit = new ActivityBatchWorker(prisma, preparation, committer, true);
+      const failure = new Error('rollback after binding');
+      const audit = jest.spyOn(auditRecorder, 'log').mockRejectedValueOnce(failure);
+      await expect(autoCommit.drainOnce()).resolves.toMatchObject({
+        batchStatus: 'ready',
+        commitAttempted: true,
+        commitErrorCode: 'Error',
+      });
+      audit.mockRestore();
+      expect(await prisma.activitySettlementTimeRevision.count()).toBe(0);
+      expect(await prisma.participationTimeLedgerManifest.count()).toBe(0);
+      expect(await prisma.participationTimeCutoverBinding.count()).toBe(0);
+      expect(
+        await prisma.ledgerPostingBatch.findUnique({ where: { id: fixture.batchId } }),
+      ).toMatchObject({ statusCode: 'ready' });
+
+      const deferred = await prisma.activityBatchJob.findUniqueOrThrow({
+        where: { operationKey: `${LEDGER_PREPARE_JOB_TYPE}:${fixture.batchId}` },
+      });
+      expect(deferred.statusCode).toBe('pending');
+      await expect(autoCommit.drainOnce({ now: deferred.availableAt })).resolves.toMatchObject({
+        batchStatus: 'committed',
+        commitAttempted: true,
+        commitErrorCode: null,
+      });
+      const manifestId = await expectRoot(fixture, fixture.reviewerId);
+      await expect(committer.commitReadyBatch(fixture.batchId)).resolves.toMatchObject({
+        batchStatus: 'committed',
+        replayed: true,
+      });
+      expect(await prisma.activitySettlementTimeRevision.count()).toBe(2);
+      await expectBinding(fixture, manifestId);
+    });
+
+    it('rejects a ready batch whose frozen result has a blocker and rolls the repair back', async () => {
+      const fixture = await approvedFixture();
+      const oldWorker = jest.spyOn(ordinaryTimeRoot, 'hasTimeCutover').mockResolvedValue(false);
+      await prepareBatch(fixture);
+      oldWorker.mockRestore();
+      await prisma.participantSettlementResultRevision.update({
+        where: { id: fixture.resultRevisionIds[0] },
+        data: { exceptionFlagsJson: { blockers: ['missing_rule'] } },
+      });
+
+      await expect(
+        app.get(LedgerReadyBatchCommitter).commitReadyBatch(fixture.batchId),
+      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY });
+      expect(
+        await prisma.ledgerPostingBatch.findUnique({ where: { id: fixture.batchId } }),
+      ).toMatchObject({ statusCode: 'ready' });
+      expect(await prisma.activitySettlementTimeRevision.count()).toBe(0);
+      expect(await prisma.participationTimeLedgerManifest.count()).toBe(0);
+      expect(await prisma.participationTimeCutoverBinding.count()).toBe(0);
     });
   });
 });
